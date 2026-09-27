@@ -1,0 +1,24 @@
+{
+ "schema": 1,
+ "generated": "2026-09-27T23:21:11+0800",
+ "_why": "事实台账：每条 = 一个**测出来**的值 + 复跑命令 + 出处。别手改，跑 zreflect/facts.py。",
+ "facts": {
+  "py_files": {
+   "value": 9,
+   "cmd": "find . -name '*.py' -not -path './.git/*' | wc -l",
+   "source": "repo",
+   "note": "示例事实：换掉 measure_example()"
+  },
+  "md_files": {
+   "value": 4,
+   "cmd": "find . -name '*.md' -not -path './.git/*' | wc -l",
+   "source": "repo"
+  },
+  "py_lines": {
+   "value": 912,
+   "cmd": "find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l",
+   "source": "repo",
+   "note": "刻意 ≥100，用来示范裸数字判据"
+  }
+ }
+}
