@@ -63,7 +63,10 @@ def problems(files, exists=None):
             out.append("%s：缺 `**Settling:**` 行 —— 没有结算件的悬案只能算「猜想」" % name)
             continue
         if sv.startswith(NONE_LIKE):
-            if "第一交付物" not in sv:
+            # 接受「第一交付物」与「第一个交付物」两种写法 —— 约定文档里写的是后者，
+            # 检查器只认前者的话，**合规的悬案会被判成不合规**（本仓实测踩到：
+            # 15 张单里那张用了自然语序的，被自己的闸门报「没说明第一交付物」）。
+            if "第一交付物" not in sv.replace("的", ""):
                 out.append("%s：Settling 写了「不存在」，但没说明**第一交付物就是它** —— "
                            "否则读者不知道下一步干什么" % name)
             continue
@@ -115,7 +118,7 @@ def _cases():
         # ① 正常不报
         ("合规悬案（结算件存在）⇒ 不报",
          lambda: problems(ok, exists=lambda p: True) == []),
-        ("结算件标「不存在 —— 本工单的第一交付物」⇒ 不报（合法悬案）",
+        ("结算件标「不存在 —— 本工单的第一交付物」⇒ 不报（合法悬案；「的」不影响判定）",
          lambda: problems({"questions/02.md": _q(settling="不存在 —— 本工单的第一交付物是造它")},
                           exists=lambda p: False) == []),
         ("resolved 的悬案同样要合规", lambda: problems(
@@ -132,6 +135,10 @@ def _cases():
         ("★ Status 不合法 ⇒ 必须报",
          lambda: any("不合法" in x for x in problems(
              {"questions/06.md": _q(status="随便写的")}, exists=lambda p: True))),
+        ("★ Settling 写「不存在」但**没说明第一交付物** ⇒ 必须报（如实写「不存在」有信息，"
+         "但不说下一步干什么等于把问题丢回去）",
+         lambda: any("第一交付物" in x for x in problems(
+             {"questions/08.md": _q(settling="不存在")}, exists=lambda p: False))),
         ("★ 缺 Status ⇒ 必须报",
          lambda: any("缺 `**Status:**`" in x for x in problems(
              {"questions/07.md": "**Settling:** x.py —— rc=0 ⇒ a；rc=1 ⇒ b"},
