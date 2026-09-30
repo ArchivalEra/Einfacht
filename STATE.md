@@ -34,8 +34,8 @@
 | 键 | 值 | 复跑命令 |
 |---|---|---|
 | `md_files` | **4** | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `py_files` | **9** | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **912** | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `py_files` | **12** | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **1259** | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 3 条事实。
 <!-- /AUTO:FACTS -->

@@ -1,0 +1,23 @@
+#!/bin/sh
+# pre-commit：重算事实块并跑全部闸门 —— 从 Octave-Full-Wasm 的 pre-commit 迁移泛化。
+#
+# 两个原则（那边踩出来的）：
+#   · 机器块是**机器维护**的：提交前重算并 `git add`，人不手改数字；
+#   · 提交时刻是**检查活状态断言**的最后一道闸（过了这一刻，过时断言就进了历史）。
+set -e
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO=$(CDPATH= cd -- "$HERE/.." && pwd)
+cd "$REPO"
+
+# ① 机器块重算（REFLECT_DOC 名字跟随环境；默认 STATE.md）
+DOC=${REFLECT_DOC:-STATE.md}
+if [ -f "$DOC" ]; then
+  python3 zreflect/facts.py --render-doc "$DOC"
+  git add "$DOC"
+fi
+
+# ② 全部闸门：发现式名录（gates-selftest 扫 zreflect/check_*.py）+ 三个内容闸门
+python3 zreflect/check_facts.py
+python3 zreflect/check_retractions.py
+python3 zreflect/check_stale.py
+python3 zreflect/check_questions.py

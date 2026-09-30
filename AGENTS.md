@@ -2,7 +2,7 @@
 
 给在这个仓里工作的 agent 的硬规矩。**这些不是建议，是闸门会拦的东西。**
 
-## 五条纪律
+## 七条纪律
 
 1. **数值/行为只认实测**，并把复跑方式写在断言旁边。
    写不出复跑方式的句子，只能当历史读 —— 不许写成「现在如此」。
@@ -16,6 +16,12 @@
    - **推断**写进 `questions/`（作为悬案）或笔记，并注明**哪个实验能结案**；
      写不出结案实验的推断 = 猜想，不许留在活状态；
    - **被推翻**的进 `retractions.json`，`check_retractions.py` 会在它重新出现时报错。
+6. **写文档先懂"活状态"**（`zreflect/living.py`）：历史章节（`REFLECT_HISTORY_SECS` 声明）
+   里的数字是"当时如此"；行内带历史/退役/已翻案标记的行也是。除此之外——**含无编号
+   章节**——全是活状态，闸门会拿它跟台账对账。想把旧值留在正文里，**必须带标记**。
+7. **写 `measure()` 先读采集器契约**（`zreflect/collect.py`）：只读持久盘、不引入会自己
+   变的输入（墙上时钟 / HEAD sha ⇒ `--check` 永不收敛）、读不到就 `unavailable()` 明说
+   （**绝不编 0**）、贵的测量用机器块回收做缓存。
 
 ## 提交前
 
@@ -24,8 +30,10 @@ sh gates-selftest.sh                       # 每个闸门先证明自己会红
 python3 zreflect/facts.py --render-doc STATE.md
 python3 zreflect/check_facts.py
 python3 zreflect/check_retractions.py
+python3 zreflect/check_stale.py
 python3 zreflect/check_questions.py
 ```
+（装了 `sh reflect-hooks/install.sh` 的话，pre-commit / pre-push 会自动做这些。）
 
 ## 硬坑
 

@@ -15,16 +15,23 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import repo, require_nonempty, selftest        # noqa: E402
 from ledger import load                                  # noqa: E402
+from living import HIST_MARK, living_lines               # noqa: E402
 
-MARKERS = ("已翻案", "更正", "是错的", "误读", "推翻", "曾写", "曾经", "已作废",
-           "废弃", "不再成立", "superseded", "retracted")
 REQUIRED = ("id", "text", "why", "evidence", "fixed_in")
 DOCS = tuple(d for d in os.environ.get(
     "REFLECT_DOCS", "STATE.md,AGENTS.md,README.md").split(",") if d)
+HIST_SECS = tuple(s for s in os.environ.get("REFLECT_HISTORY_SECS", "").split(",") if s)
 
 
-def problems(retractions, docs):
-    """返回问题清单（纯函数：自证要用）。`docs` = {文件名: 正文}。"""
+def problems(retractions, docs, hist_secs=None):
+    """返回问题清单（纯函数：自证要用）。`docs` = {文件名: 正文}。
+
+    只扫**活状态**（`zreflect/living.py` 的判定）：append-only 的历史章节用
+    `REFLECT_HISTORY_SECS` 声明后豁免 —— 那里的"当时如此"不是"现在如此"，
+    拿它跟现状比只会逼人毁掉记录。历史章节里的重现行**仍然要带标记**吗？
+    不用 —— 历史章节天然就是"当时"的记录；这个豁免正是从 Octave 迁来的纪律。
+    """
+    hist = HIST_SECS if hist_secs is None else hist_secs
     out = []
     if retractions is None or "retractions" not in (retractions or {}):
         # 零值守卫：结构都不对，就别谈「没有违规」。
@@ -40,8 +47,10 @@ def problems(retractions, docs):
         if not text:
             continue
         for name, body in sorted(docs.items()):
-            for i, line in enumerate((body or "").splitlines(), 1):
-                if text in line and not any(m in line for m in MARKERS):
+            for i, line, is_living in living_lines(body or "", hist):
+                if not is_living:
+                    continue
+                if text in line and not HIST_MARK.search(line):
                     out.append("%s:%d 出现已被推翻的断言「%s」（%s）：要么删掉，要么带更正标记"
                                % (name, i, text, r.get("id", "?")))
     return out
@@ -83,9 +92,15 @@ def _cases():
         ("完全没有这条断言 ⇒ 不报", lambda: problems(ok_r, {"A.md": "干净的文档\n"}) == []),
         ("空翻案列表 + 有文档 ⇒ 不报（还没翻过案是合法状态）",
          lambda: problems({"retractions": []}, {"A.md": "x\n"}) == []),
+        ("声明过的历史章节里的重现行 ⇒ 不报（那里天然是「当时」）",
+         lambda: problems(ok_r, {"A.md": "## 5 历史\n这东西是绿的。\n"},
+                          hist_secs=("5",)) == []),
         # ② 该报的必须报
         ("★ 断言重新出现且无标记 ⇒ 必须报",
          lambda: any("R-1" in x for x in problems(ok_r, {"A.md": "这东西是绿的。\n"}))),
+        ("★ 未声明历史章节 ⇒ 里面的重现行照报（默认从严）",
+         lambda: any("R-1" in x for x in problems(
+             ok_r, {"A.md": "## 5 历史\n这东西是绿的。\n"}, hist_secs=()))),
         ("★ 条目缺字段 ⇒ 必须报",
          lambda: any("缺 `evidence`" in x for x in problems(
              {"retractions": [{"id": "R-2", "text": "t", "why": "w", "fixed_in": "f"}]},

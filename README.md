@@ -35,7 +35,7 @@
 第 5 条是让前四条不至于变成口号的：**每条断言有生命周期** —— 实测 / 推断 / 翻案。
 活状态文档里只写实测；推断写进笔记并注明"哪个实验能结案"；被推翻的进翻案台账。
 
-## 五个部件
+## 五个部件 + 从 Octave 迁来的第二组
 
 | 部件 | 文件 | 它挡住什么 |
 |---|---|---|
@@ -44,6 +44,27 @@
 | **事实闸门** | `zreflect/check_facts.py` | 文档块与台账不一致、正文裸数字、引用不存在的键 |
 | **翻案台账** | `zreflect/check_retractions.py` | 被推翻的断言**重新出现** |
 | **悬案台账** | `zreflect/check_questions.py` | 未结案的问题只活在散文里、没有能跑的结算件 |
+
+### 从 Octave-Full-Wasm 迁来的第二组（2026-09-30）
+
+第一组机制抽自那边（见文末「来源」）；这一组是把那边 `.githooks/` 里**剩下的实战机制**
+也整体迁来 —— 那个仓跑了几个月的量。迁移时只留机制、剥掉一切项目数据：
+
+| 部件 | 文件 | 它挡住什么 |
+|---|---|---|
+| **活状态抽取** | `zreflect/living.py` | 闸门分不清「现在如此」和「当时如此」。历史章节、行内历史标记、**带明确出处的记录**三种出口，加上「默认从严」（无编号章节也是活状态）的判定，全在这一份；各检查器共用，词表只生产一次 |
+| **陈旧断言闸门** | `zreflect/check_stale.py` | 活状态里**没有出处**的 sha 断言、退役组件名悄悄回来 —— 那边实测过：换了构建，头部还挂着旧 sha 没人发现 |
+| **采集器契约** | `zreflect/collect.py` | `measure()` 写成"会自己变的输入"（墙上时钟 / HEAD sha ⇒ `--check` 永不收敛）、读不到就编个 0、贵的测量不做缓存 —— 四条原则 + 机器块回收帮手 |
+| **git hooks** | `reflect-hooks/` | 闸门躺在仓库里**从未被执行**：pre-commit 重算机器块并跑全部闸门，pre-push 拒推不新鲜的块（**不自动改文件、不动历史**） |
+
+新旋钮：`REFLECT_HISTORY_SECS`（声明哪些编号章节是 append-only 历史，如 `5,9,10`）·
+`REFLECT_RETIRED`（退役组件名名单；不配 = 该规则**明说未启用**，不假装查过）。
+翻案闸门从此只扫活状态 —— 历史章节里的旧值天然是"当时"，豁免它不是放过，是不逼人毁记录。
+
+那边的 `check-wants.py`（验收断言的可证伪性：单个数字的 want 必须按数字边界匹配；
+匹配必须用完整输出，截断只许出现在显示里）与 `check-consistency.py`（同一件知识写在
+好几处会走散）是**各仓库自己写闸门**的两个好范本 —— 它们粘死了那边的文件形状，
+搬过来只会变成没人能用的空壳，所以只在这里记下规则本身。
 
 ### 一、闸门平台：检查器必须先证明自己会红
 
@@ -122,14 +143,19 @@ Settling: <可执行的路径或命令> —— rc=0 ⇒ 结论A；rc=7 ⇒ 结�
 ## 用法
 
 ```bash
-cp -r zreflect gates-selftest.sh /path/to/your-repo/
+cp -r zreflect reflect-hooks gates-selftest.sh /path/to/your-repo/
 # 1. 写你的 measure()：把"测出来的事实"填进 FACTS.json（参考 facts.py 的 measure_example）
+#    ⚠️ 采集器四条原则见 zreflect/collect.py —— 只读持久盘、不引入会自己变的输入、
+#    读不到就明说、贵的测量做缓存。
 python3 zreflect/facts.py                      # 量一遍
 python3 zreflect/facts.py --render-doc STATE.md # 把机器块写进文档
-# 2. 挂进 pre-commit / pre-push
+# 2. 挂进 pre-commit / pre-push（重算机器块 + 全部闸门）
+sh reflect-hooks/install.sh
+# 3. 手动复验（也是 hooks 会跑的那几条）
 sh gates-selftest.sh                           # 每个闸门先证明自己会红
 python3 zreflect/check_facts.py
 python3 zreflect/check_retractions.py
+python3 zreflect/check_stale.py
 python3 zreflect/check_questions.py
 ```
 
@@ -169,7 +195,9 @@ python3 zreflect/check_questions.py
 |---|---|---|
 | `REFLECT_FACTS` | `FACTS.json` | 台账文件名 |
 | `REFLECT_DOC` | `STATE.md` | 活状态文档（机器块渲染进它） |
-| `REFLECT_DOCS` | `STATE.md,AGENTS.md,README.md` | 翻案检测扫描的**活状态**文档清单（逗号分隔；历史文档**不要**放进来） |
+| `REFLECT_DOCS` | `STATE.md,AGENTS.md,README.md` | 翻案/陈旧断言检测扫描的**活状态**文档清单（逗号分隔；历史文档**不要**放进来） |
+| `REFLECT_HISTORY_SECS` | 空 | 声明哪些**编号**章节是 append-only 历史（如 `5,9,10`）—— 豁免它们的"当时如此" |
+| `REFLECT_RETIRED` | 空 | 退役组件名名单（逗号分隔）；不配 = 陈旧断言闸门的 R2 **明说未启用** |
 
 `GATE_REPO`（`zreflect/gate.py`）指向**被检查的仓库根** —— 自证靠它在夹具树上跑，
 不碰真仓库。
@@ -187,6 +215,11 @@ python3 zreflect/check_questions.py
 那次实践里抓到的最有价值的一条：**一条守卫因为一个未定义变量，从落地起就没有生效过** ——
 而它失效的方式是"只在真的该报警时才崩"。这正是为什么本仓要求每个闸门
 `--selftest` 的三类用例里必须有"该报的必须报"。
+
+**2026-09-30 第二次迁移**：那边 `.githooks/` 里剩下的实战机制（活状态抽取、陈旧断言
+闸门、采集器契约、git hooks）也整体迁了进来 —— 见「从 Octave-Full-Wasm 迁来的第二组」
+一节。迁移本身遵守同一条纪律：**剥掉一切项目数据，只留机制**；每一条"踩出来的规矩"
+都写在它所属文件的头上，别处不许复述（复述会漂）。
 
 ## License
 
