@@ -106,13 +106,13 @@ fi
 #       （否则说明这一节是恒真的空转，什么都没证明）。
 configurable_selftest() {
   tmp=$(mktemp -d)
-  mkdir -p "$tmp/questions"
   printf 'x = 1\n' > "$tmp/a.py"
   # 机器块标记要**先手工放一次**（工具自己的约定：找不到块 ≠ 块是对的）
   printf '# 标题\n\n正文引用 [[py_files]] 与 [[md_files]]（引用键，不手抄数字）。\n\n<!-- AUTO:FACTS -->\n<!-- /AUTO:FACTS -->\n' > "$tmp/NOTES.md"
   printf '# AGENTS\n' > "$tmp/AGENTS.md"
-  printf '# 例\n\n**Status:** ready-for-agent\n\n**Settling:** `python3 a.py` —— rc=0 ⇒ A；rc=7 ⇒ B\n' > "$tmp/questions/01-x.md"
-  printf '{"schema":1,"retractions":[]}\n' > "$tmp/retractions.json"
+  printf '{"schema":1,"retractions":[]}\n' > "$tmp/RETRACT.json"        # 换名：REFLECT_RETRACTIONS
+  mkdir -p "$tmp/cases"                                                  # 换名：REFLECT_QUESTIONS
+  printf '# 例2\n\n**Status:** ready-for-agent\n\n**Settling:** `python3 a.py` —— rc=0 ⇒ A；rc=7 ⇒ B\n' > "$tmp/cases/02-y.md"
   # 生成台账并把机器块渲染进 **NOTES.md**（名字全换掉）
   # ① 先量一遍（新仓库的正确顺序：量测 → 渲染）
   GATE_REPO="$tmp" REFLECT_FACTS=LEDGER.json REFLECT_DOC=NOTES.md \
@@ -124,22 +124,31 @@ configurable_selftest() {
   for g in "$HERE"/zreflect/check_*.py; do
     n=$((n + 1))
     if GATE_REPO="$tmp" REFLECT_FACTS=LEDGER.json REFLECT_DOC=NOTES.md \
-       REFLECT_DOCS=NOTES.md,AGENTS.md python3 "$g" >/dev/null 2>&1; then
+       REFLECT_DOCS=NOTES.md,AGENTS.md REFLECT_RETRACTIONS=RETRACT.json \
+       REFLECT_QUESTIONS=cases python3 "$g" >/dev/null 2>&1; then
       ok=$((ok + 1))
     else
       echo "  ❌ 换名字后 $g 红了（说明名字还被写死在代码里）"
     fi
   done
   [ "$n" -gt 0 ] || { echo "  ❌ 夹具里一个闸门都没跑到"; rm -rf "$tmp"; return 1; }
-  # 反向：用**默认名字**跑同一夹具（它没有 FACTS.json/STATE.md）⇒ 必须红
-  red=0
+  # 反向：用**默认名字**跑同一夹具 ⇒ **每一个依赖改名输入的闸门都必须红**。
+  # ⚠️ 这一段的判据第一版只数了个数（`red>0`）—— 分辨力不足：夹具当时没换
+  #    retractions.json/questions 的名字，那两个闸门绿着却被算作"证明过了"
+  #    （issue #1 ② 的原话）。现在逐个点名，缺一个红就失败。
+  red_need="check_facts.py check_retractions.py check_questions.py"
+  red=""
   for g in "$HERE"/zreflect/check_*.py; do
-    if GATE_REPO="$tmp" python3 "$g" >/dev/null 2>&1; then red=$((red + 1)); fi
+    b=$(basename "$g")
+    if ! GATE_REPO="$tmp" python3 "$g" >/dev/null 2>&1; then red="$red $b"; fi
+  done
+  for b in $red_need; do
+    case " $red " in *" $b "*) ;; *) echo "  ❌ 默认名字下 $b **没有红** ⇒ 换名自证对它的名字什么都没证明"; red=""; break;; esac
   done
   rm -rf "$tmp"
-  [ "$ok" = "$n" ] && [ "$red" -gt 0 ] || {
-    echo "  ❌ 可配置性自证不成立（换名全绿=$ok/$n；默认名仍绿=$red，应为 >0）"; return 1; }
-  echo "  ✅ 换名字（LEDGER.json/NOTES.md）$ok/$n 全绿，且默认名字下 $red 个闸门**红** ⇒ 没有硬编码"
+  [ "$ok" = "$n" ] && [ -n "$red" ] || {
+    echo "  ❌ 可配置性自证不成立（换名全绿=$ok/$n；默认名下没红的闸门=[$red_need]）"; return 1; }
+  echo "  ✅ 四个名字全换（LEDGER.json/NOTES.md/RETRACT.json/cases）$ok/$n 全绿；默认名字下 [$red_need] 全红 ⇒ 没有硬编码"
   return 0
 }
 echo "── 跨仓库可配置性 ──"

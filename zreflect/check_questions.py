@@ -79,7 +79,9 @@ def problems(files, exists=None):
     return out
 
 
-def collect(d="questions"):
+def collect(d=None):
+    # 名字可配（issue #1 ②）：默认 questions/，可用 REFLECT_QUESTIONS 换
+    d = d or os.environ.get("REFLECT_QUESTIONS", "questions")
     root = os.path.join(GATE_REPO, d)
     files = {}
     if os.path.isdir(root):
@@ -91,7 +93,7 @@ def collect(d="questions"):
 
 
 def run(argv):
-    files = collect(argv[0] if argv else "questions")
+    files = collect(argv[0] if argv else None)
     try:
         require_nonempty("check_questions", files, "悬案文件（questions/*.md）")
     except SystemExit as e:

@@ -57,7 +57,8 @@ def problems(retractions, docs, hist_secs=None):
 
 
 def run(argv):
-    rp = repo("retractions.json")
+    # 名字可配（issue #1 ②）：不写死，换仓库只改环境变量
+    rp = repo(os.environ.get("REFLECT_RETRACTIONS", "retractions.json"))
     if not os.path.exists(rp):
         print("FATAL: 缺 %s" % rp, file=sys.stderr)
         return 2
