@@ -19,7 +19,8 @@ from ledger import load                                  # noqa: E402
 MARKERS = ("已翻案", "更正", "是错的", "误读", "推翻", "曾写", "曾经", "已作废",
            "废弃", "不再成立", "superseded", "retracted")
 REQUIRED = ("id", "text", "why", "evidence", "fixed_in")
-DOCS = ("STATE.md", "AGENTS.md", "README.md")
+DOCS = tuple(d for d in os.environ.get(
+    "REFLECT_DOCS", "STATE.md,AGENTS.md,README.md").split(",") if d)
 
 
 def problems(retractions, docs):

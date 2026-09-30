@@ -1,0 +1,15 @@
+{
+  "_why": [
+    "SessionStart hook 的**示例接线**（zcode-reflect 自用）。",
+    "为什么值得占一个 hook：会话开始时 agent 手上没有状态，于是会**重新提出已经结案的问题**、",
+    "或**照抄一份过期的数字**。这个 hook 把那两件事的输入摆在桌面上（未结案的悬案 + 台账规模）。",
+    "⚠️ 输出必须短 —— hook 的 stdout 会进上下文。"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "command": "python3 .zcode/inject-state.py"
+      }
+    ]
+  }
+}

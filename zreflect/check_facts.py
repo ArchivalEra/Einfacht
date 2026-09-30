@@ -55,12 +55,12 @@ def problems(ledger, doc_text):
 
 
 def run(argv):
-    doc = argv[0] if argv else "STATE.md"
+    doc = argv[0] if argv else os.environ.get("REFLECT_DOC", "STATE.md")
     p = doc if os.path.isabs(doc) else repo(doc)
     if not os.path.exists(p):
         print("FATAL: 文档不存在：%s —— 找不到文件不许算通过（零值守卫）" % p, file=sys.stderr)
         return 2
-    led = load(repo("FACTS.json"))
+    led = load(repo(os.environ.get("REFLECT_FACTS", "FACTS.json")))
     probs = problems(led, open(p, encoding="utf-8").read())
     for x in probs:
         print("  · %s" % x, file=sys.stderr)

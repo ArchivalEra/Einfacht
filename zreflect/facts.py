@@ -23,8 +23,9 @@ from ledger import (changed_keys, dropped_keys, fact,  # noqa: E402
                     facts_of, load, _short)
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
 
-OUT = repo("FACTS.json")
-DOC = "STATE.md"
+LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
+OUT = repo(LEDGER_NAME)
+DOC = os.environ.get("REFLECT_DOC", "STATE.md")
 
 
 # ══ 你的部分 ══════════════════════════════════════════════════════════════════
@@ -168,16 +169,30 @@ def measure(argv):
     return 0
 
 
+def _load_or_die():
+    """读台账；**没有就给出可操作的提示**而不是原始 traceback。
+    为什么单列：新仓库第一次用时台账还不存在，而这个脚本今天会直接抛
+    FileNotFoundError —— 那是"为本仓写死"的味道（我们那边永远有 FACTS.json）。
+    语义仍是 fail-loud（空台账照样拒绝渲染），只是**把下一步写在错误里**。"""
+    if not os.path.exists(OUT):
+        print("FATAL: 还没有台账 %s\n"
+              "       先在仓库根跑一遍量测：python3 zreflect/facts.py\n"
+              "       然后再 --render-doc 把机器块写进文档。" % os.path.basename(OUT),
+              file=sys.stderr)
+        raise SystemExit(2)
+    return load(OUT)
+
+
 def main(argv):
     if argv and argv[0] == "--render":
-        sys.stdout.write(render_block(load(OUT)) + "\n")
+        sys.stdout.write(render_block(_load_or_die()) + "\n")
         return 0
     if argv and argv[0] == "--render-doc":
-        return write_doc(argv[1] if len(argv) > 1 else DOC, load(OUT))
+        return write_doc(argv[1] if len(argv) > 1 else DOC, _load_or_die())
     if argv and argv[0] == "--check":
-        return check_doc(argv[1] if len(argv) > 1 else DOC, load(OUT))
+        return check_doc(argv[1] if len(argv) > 1 else DOC, _load_or_die())
     if argv and argv[0] == "show":
-        led = load(OUT)
+        led = _load_or_die()
         f = facts_of(led)
         keys = [argv[1]] if len(argv) > 1 else sorted(f)
         rc = 0

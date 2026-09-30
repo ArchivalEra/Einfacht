@@ -12,9 +12,18 @@
 import json
 
 
-def load(path):
-    with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
+def load(path, missing_ok=False):
+    """读 JSON。`missing_ok=True` 时**缺文件返回空表** ——
+    给"新仓库第一次跑"用：那时台账还不存在，而 `facts.py` 的两道守卫
+    （掉条 / 改口）必须能处理"没有上一版"这件事。**默认仍是硬错误**：
+    调用方要显式说自己接受缺失，免得把"路径写错了"静默当成"还没有台账"。"""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except FileNotFoundError:
+        if missing_ok:
+            return {}
+        raise
 
 
 def facts_of(ledger):

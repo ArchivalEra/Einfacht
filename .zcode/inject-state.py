@@ -41,7 +41,7 @@ def main():
     # 2) 台账规模
     try:
         from ledger import facts_of, load                    # noqa: PLC0415
-        f = facts_of(load(os.path.join(GATE_REPO, "FACTS.json")))
+        f = facts_of(load(os.path.join(GATE_REPO, os.environ.get("REFLECT_FACTS", "FACTS.json"))))
         print("台账：%d 条事实（数字请写引用，别手抄）" % len(f))
     except Exception as e:                                   # noqa: BLE001
         print("台账：读不到（%r）" % e)

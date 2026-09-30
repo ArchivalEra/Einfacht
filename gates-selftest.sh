@@ -99,3 +99,49 @@ else
   echo "闸门自证（发现式名录）："
   run_gates "$HERE"
 fi
+
+# ── 跨仓库可配置性自证（**没有硬编码**的可证伪证据）────────────────────────────
+# 做法：搭一个**临时夹具仓库**，把三个名字全换掉（REFLECT_FACTS/REFLECT_DOC/DOCS），
+#       三个闸门必须仍全绿；再用**默认名字**跑同一夹具 —— **必须红**
+#       （否则说明这一节是恒真的空转，什么都没证明）。
+configurable_selftest() {
+  tmp=$(mktemp -d)
+  mkdir -p "$tmp/questions"
+  printf 'x = 1\n' > "$tmp/a.py"
+  # 机器块标记要**先手工放一次**（工具自己的约定：找不到块 ≠ 块是对的）
+  printf '# 标题\n\n正文引用 [[py_files]] 与 [[md_files]]（引用键，不手抄数字）。\n\n<!-- AUTO:FACTS -->\n<!-- /AUTO:FACTS -->\n' > "$tmp/NOTES.md"
+  printf '# AGENTS\n' > "$tmp/AGENTS.md"
+  printf '# 例\n\n**Status:** ready-for-agent\n\n**Settling:** `python3 a.py` —— rc=0 ⇒ A；rc=7 ⇒ B\n' > "$tmp/questions/01-x.md"
+  printf '{"schema":1,"retractions":[]}\n' > "$tmp/retractions.json"
+  # 生成台账并把机器块渲染进 **NOTES.md**（名字全换掉）
+  # ① 先量一遍（新仓库的正确顺序：量测 → 渲染）
+  GATE_REPO="$tmp" REFLECT_FACTS=LEDGER.json REFLECT_DOC=NOTES.md \
+    python3 "$HERE/zreflect/facts.py" >/dev/null 2>&1
+  # ② 再把机器块渲染进 NOTES.md（名字全换掉）
+  GATE_REPO="$tmp" REFLECT_FACTS=LEDGER.json REFLECT_DOC=NOTES.md \
+    python3 "$HERE/zreflect/facts.py" --render-doc NOTES.md >/dev/null 2>&1
+  ok=0; n=0
+  for g in "$HERE"/zreflect/check_*.py; do
+    n=$((n + 1))
+    if GATE_REPO="$tmp" REFLECT_FACTS=LEDGER.json REFLECT_DOC=NOTES.md \
+       REFLECT_DOCS=NOTES.md,AGENTS.md python3 "$g" >/dev/null 2>&1; then
+      ok=$((ok + 1))
+    else
+      echo "  ❌ 换名字后 $g 红了（说明名字还被写死在代码里）"
+    fi
+  done
+  [ "$n" -gt 0 ] || { echo "  ❌ 夹具里一个闸门都没跑到"; rm -rf "$tmp"; return 1; }
+  # 反向：用**默认名字**跑同一夹具（它没有 FACTS.json/STATE.md）⇒ 必须红
+  red=0
+  for g in "$HERE"/zreflect/check_*.py; do
+    if GATE_REPO="$tmp" python3 "$g" >/dev/null 2>&1; then red=$((red + 1)); fi
+  done
+  rm -rf "$tmp"
+  [ "$ok" = "$n" ] && [ "$red" -gt 0 ] || {
+    echo "  ❌ 可配置性自证不成立（换名全绿=$ok/$n；默认名仍绿=$red，应为 >0）"; return 1; }
+  echo "  ✅ 换名字（LEDGER.json/NOTES.md）$ok/$n 全绿，且默认名字下 $red 个闸门**红** ⇒ 没有硬编码"
+  return 0
+}
+echo "── 跨仓库可配置性 ──"
+configurable_selftest || bad=$((bad + 1))
+
