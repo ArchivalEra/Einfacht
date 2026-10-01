@@ -5,6 +5,7 @@
     python3 zreflect/facts.py                      # 量一遍并写 FACTS.json（掉条/改口会拒绝）
     python3 zreflect/facts.py --allow-drop         # 允许本次掉条（掉掉的键会打出来）
     python3 zreflect/facts.py --accept-changes     # 允许本次改口（旧值→新值会打出来）
+    python3 zreflect/facts.py --accept-changes=k1,k2  # 只接受列出的键，其余改口仍拒绝（issue #3 ①）
     python3 zreflect/facts.py --render-doc [文件]  # 把机器块写进文档（默认 STATE.md）
     python3 zreflect/facts.py --check [文件]       # 文档里的块是否与台账一致
     python3 zreflect/facts.py show [键]            # 打印某条事实
@@ -15,12 +16,13 @@
 """
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import GATE_REPO, repo, selftest             # noqa: E402
-from ledger import (changed_keys, dropped_keys, fact,  # noqa: E402
-                    facts_of, load, _short)
+from ledger import (age_days, changed_keys, dropped_keys,  # noqa: E402
+                    fact, facts_of, load, _short)
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
 
 LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
@@ -111,6 +113,40 @@ def check_doc(path_rel, ledger):
     return 0
 
 
+def _accepted_keys(argv):
+    """解析 `--accept-changes[=k1,k2]`（issue #3 ①）：裸旗 ⇒ None（全收）；
+    列键 ⇒ 集合（空串 ⇒ 空集 = 一个都不收）；没传 ⇒ False（全拒，同旧行为）。"""
+    for a in argv:
+        if a == "--accept-changes":
+            return None
+        if a.startswith("--accept-changes="):
+            raw = a.split("=", 1)[1].strip()
+            return {k.strip() for k in raw.split(",") if k.strip()}
+    return False
+
+
+def filter_accepted(changed, accepted):
+    """改口清单里**还没被接受**的部分（纯函数：自证要用）。
+
+    `accepted=None` ⇒ 全收；`False` ⇒ 全拒；集合 ⇒ 只留未列出的键。
+    """
+    if accepted is None:
+        return []
+    if accepted is False:
+        return list(changed or [])
+    return [c for c in (changed or []) if c[0] not in accepted]
+
+
+def _age_human(entry):
+    """`measured_at` 的人话（issue #3 ②）：今天 / N 天前 / 未记录。"""
+    d = age_days(entry)
+    if d is None:
+        return "未记录测量时间"
+    if d < 1:
+        return "今天测的"
+    return "%d 天前测的" % int(d)
+
+
 def measure(argv):
     """量一遍并写台账。**必须接 `argv`** —— 两道守卫都要读它。
 
@@ -135,15 +171,23 @@ def measure(argv):
         print("⚠ --allow-drop：本次掉掉 %d 条：%s" % (len(dropped), ", ".join(dropped)),
               file=sys.stderr)
 
-    # 守卫二：改口（值换了）
+    # 守卫二：改口（值换了）。`--accept-changes[=k1,k2]`：裸旗全收；列键只收列出的，
+    # 其余照旧拒绝 —— 全收会把"真坏了的测量"一起洗白（issue #3 ①）。
     changed = changed_keys(old, facts)
-    if changed and "--accept-changes" not in argv:
-        print("FATAL: 本次重测会**改掉 %d 条事实的值**（未经接受的改口）：" % len(changed),
+    accepted = _accepted_keys(argv)
+    remaining = filter_accepted(changed, accepted)
+    if remaining:
+        print("FATAL: 本次重测会**改掉 %d 条事实的值**（未经接受的改口）：" % len(remaining),
               file=sys.stderr)
-        for k, o, n in changed:
+        for k, o, n in remaining:
             print("       %-24s %s → %s" % (k, _short(o), _short(n)), file=sys.stderr)
+        if accepted:
+            print("       已按 --accept-changes 接受 %d 条：%s —— 其余仍拒绝。"
+                  % (len(changed) - len(remaining), ", ".join(sorted(accepted))),
+                  file=sys.stderr)
         print("       台账不写。逐条确认这些变化**是实测出来的**（不是输入不在/量错了）之后，"
-              "再显式 `--accept-changes`。", file=sys.stderr)
+              "再显式 `--accept-changes`（或 `--accept-changes=k1,k2` 逐条放行）。",
+              file=sys.stderr)
         return 2
     if changed:
         print("⚠ --accept-changes：本次接受 %d 条改口：" % len(changed))
@@ -165,7 +209,7 @@ def measure(argv):
         fh.write("\n")
     print("已写出 %s（%d 条事实）" % (os.path.relpath(OUT, GATE_REPO), len(facts)))
     for k, v in sorted(facts.items()):
-        print("  %-20s %s" % (k, v["value"]))
+        print("  %-20s %s（%s）" % (k, v["value"], _age_human(v)))
     return 0
 
 
@@ -226,6 +270,23 @@ CASES = [
                        check_doc("/tmp/_zr_empty.md", {"facts": {"a": 1}}))[1])() == 2),
     ("★ 文档文件不存在 ⇒ check_doc 必须报（不许因为找不到就算通过）",
      lambda: check_doc("/tmp/_zr_no_such_file_%d.md" % os.getpid(), {"facts": {"a": 1}}) == 2),
+    # ① 逐条接受（issue #3 ①）
+    ("解析：裸旗 --accept-changes ⇒ 全收", lambda: _accepted_keys(["--accept-changes"]) is None),
+    ("解析：--accept-changes=k1,k2 ⇒ 键集",
+     lambda: _accepted_keys(["--accept-changes=a,b"]) == {"a", "b"}),
+    ("解析：没传旗 ⇒ 全拒（同旧行为）", lambda: _accepted_keys([]) is False),
+    ("逐条接受：列出的键被滤掉，其余留下",
+     lambda: filter_accepted([("a", 1, 2), ("b", 3, 4)], {"a"}) == [("b", 3, 4)]),
+    ("裸旗 ⇒ 改口全被接受", lambda: filter_accepted([("a", 1, 2)], None) == []),
+    ("★ 逐条接受：未列出的键必须仍算改口（该报的必须报）",
+     lambda: filter_accepted([("a", 1, 2)], {"zzz"}) == [("a", 1, 2)]),
+    ("★ 空接受集 ⇒ 一条都不收（空输入不是通过）",
+     lambda: filter_accepted([("a", 1, 2)], set()) != []),
+    # ② 测龄人话（issue #3 ②）
+    ("年龄：缺失 measured_at ⇒ 明说未记录",
+     lambda: _age_human({"value": 1}) == "未记录测量时间"),
+    ("年龄：刚刚测的 ⇒ 今天",
+     lambda: _age_human({"measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}) == "今天测的"),
 ]
 
 

@@ -30,9 +30,16 @@ run_gates() {
       echo "  ❌ $rel"
       printf '%s\n' "$out" | tail -3 | sed 's/^/      /'
       bad=$((bad + 1))
-    else
-      echo "  ✅ $rel  $(printf '%s\n' "$out" | tail -1)"
+      continue
     fi
+    # 机器摘要行（issue #3 ③）：每个自证必须以 `=== N PASS / M FAIL ===` 收尾。
+    # 缺了 ⇒ 红（runner/CI 靠它机器读；没有它的自证 = 不可机器读的自证）。
+    if ! printf '%s\n' "$out" | grep -qE '^=== [0-9]+ PASS / [0-9]+ FAIL ===$'; then
+      echo "  ❌ $rel 自证缺机器摘要行（=== N PASS / M FAIL ===，issue #3 ③）"
+      bad=$((bad + 1))
+      continue
+    fi
+    echo "  ✅ $rel  $(printf '%s\n' "$out" | tail -1)"
   done
   if [ "$n" -eq 0 ]; then
     echo "  ❌ 一个闸门都没发现 —— 零值守卫：空输入不是通过"
@@ -49,12 +56,13 @@ run_gates() {
 selftest() {
   t=$(mktemp -d)
   bad=0
-  mkdir -p "$t/good/zreflect" "$t/nomark/zreflect" "$t/failing/zreflect" "$t/empty/zreflect"
+  mkdir -p "$t/good/zreflect" "$t/nomark/zreflect" "$t/failing/zreflect" "$t/empty/zreflect" "$t/nomachine/zreflect"
 
-  # 夹具①：广告了 --selftest 且全过 ⇒ 应该全绿
+  # 夹具①：广告了 --selftest 且全过（含机器摘要行）⇒ 应该全绿
   cat >"$t/good/zreflect/check_ok.py" <<'EOF'
 import sys
 print("=== ok 自证：3 PASS / 0 fail ===")
+print("=== 3 PASS / 0 FAIL ===")
 sys.exit(0 if "--selftest" in sys.argv else 0)
 EOF
   # 夹具②：没广告 --selftest ⇒ 必须红
@@ -66,9 +74,16 @@ EOF
   cat >"$t/failing/zreflect/check_bad.py" <<'EOF'
 import sys
 print("=== bad 自证：1 PASS / 1 fail ===")
+print("=== 1 PASS / 1 FAIL ===")
 sys.exit(1 if "--selftest" in sys.argv else 0)
 EOF
   # 夹具④：一个闸门都没有 ⇒ 必须红（零值守卫）
+  # 夹具⑤：rc=0 且广告了 --selftest、但自证缺机器摘要行 ⇒ 必须红（issue #3 ③）
+  cat >"$t/nomachine/zreflect/check_nomachine.py" <<'EOF'
+import sys
+print("=== no machine line ===")
+sys.exit(0 if "--selftest" in sys.argv else 0)
+EOF
 
   show() { printf '%s' "$1" | sed 's/^/      /'; }
 
@@ -84,9 +99,12 @@ EOF
   out=$(run_gates "$t/empty" 2>&1) && { echo "  fail | 一个闸门都没有 ⇒ runner 竟然绿了（零值守卫失效）"; bad=1; } \
     || echo "  PASS | 一个闸门都没有 ⇒ runner 红（零值守卫）"
 
+  out=$(run_gates "$t/nomachine" 2>&1) && { echo "  fail | 缺机器摘要行的闸门 ⇒ runner 竟然绿了（issue #3 ③）"; bad=1; } \
+    || echo "  PASS | 缺机器摘要行的闸门 ⇒ runner 红（issue #3 ③）"
+
   rm -rf "$t"
   if [ "$bad" -eq 0 ]; then
-    echo "=== gates-selftest 自证：4 PASS / 0 fail ==="
+    echo "=== gates-selftest 自证：5 PASS / 0 fail ==="
     return 0
   fi
   echo "=== gates-selftest 自证：有失败 ==="

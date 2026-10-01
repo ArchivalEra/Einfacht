@@ -131,6 +131,20 @@ of development, then run `python3 zreflect/facts.py --accept-changes`. Never wea
 skip this step — no "auto-accept for counters": `--accept-changes` is the single mark of "I checked",
 and "cmd changes don't warn" is already **the one justified exception** — don't open a second.
 
+**Selective acceptance** (issue #3 ①): when one re-measure legitimately changes N values,
+accept only the ones you verified — `--accept-changes=k1,k2` accepts exactly those keys and
+still refuses every other changed value. Blanket-accepting a batch that contains a genuinely
+broken measurement would launder it; the per-key form keeps the guard sharp when only part
+of a change is understood.
+
+Every entry also carries `measured_at` — the **collection-time** stamp (issue #3 ②).
+`facts.py` prints the age in human words ("measured 3 days ago"), and the machine block
+renders a "measured at" column with the **raw timestamp** (deterministic — an age computed
+from the wall clock would never converge under `--check`). `check_stale` can warn past a
+configured age: `REFLECT_STALE_DAYS` (unset = that rule **says out loud it is off**).
+The stamp records *when*, and is never a measurement input — feeding it back as one is
+exactly what would make `--check` never converge.
+
 ### 3. Retraction ledger: overturning leaves a trace
 
 `retractions.json` stores **refuted** claims: a distinctive fragment `text`, why it was wrong `why`,
@@ -190,6 +204,11 @@ file to advertise `--selftest`, and turns red if one is missing.
 The reality of hand-written registries: they always drift. Add a checker, forget to register it,
 and that checker becomes "a checker nobody watches" — while the registry itself stays green,
 reporting all-is-well. So it works the other way here: **registration is discovered, not remembered.**
+
+Every `--selftest` ends with a machine-readable summary line, `=== N PASS / M FAIL ===`
+(kept alongside the human line, issue #3 ③) — runners and CI grep one fixed format
+regardless of the checker's name, and `gates-selftest.sh` turns red when a selftest
+lacks it.
 
 ### 6. Trilingual README: the trio moves as one — or the push is refused
 
@@ -273,6 +292,8 @@ variables, never by editing code:
 | `REFLECT_DOCS` | `STATE.md,AGENTS.md,README.md,README.zh.md,README.de.md` | living-state docs scanned by the retraction / stale gates (comma-separated; do **not** put history docs in here) |
 | `REFLECT_HISTORY_SECS` | empty | which **numbered** sections are append-only history (e.g. `5,9,10`) — their "as of then" is exempt |
 | `REFLECT_RETIRED` | empty | retired component names (comma-separated); unset = the stale gate's R2 **says out loud it is off** |
+| `REFLECT_NAKED_MIN` | `100` | bare-number threshold of the fact gate: integers below it are ignored (1/2/3 are everywhere — checking them is noise); fenced code blocks and inline code are exempt (re-run commands naturally contain numbers) |
+| `REFLECT_STALE_DAYS` | empty | warn when a fact's `measured_at` is older than this many days; unset = the staleness rule **says out loud it is off** |
 | `REFLECT_REPLAY` | empty (on) | `off` ⇒ the replay gate **says out loud it is off**. Individual entries that need build artifacts should opt out one by one with the ledger field `"replay": false` (a fully-exempt ledger turns the replay gate red itself) — don't switch the whole gate off |
 | `REFLECT_REPLAY_TIMEOUT` | `10` | seconds allowed per replayed `cmd`; timeout ⇒ reported (a measurement that never finishes belongs in `replay: false`, not in the data) |
 | `REFLECT_READMES` | `README.md,README.zh.md,README.de.md` | the README trio: input to the structure check **and** to "every push must update all of them"; the hook, the gate and CI all read this knob |

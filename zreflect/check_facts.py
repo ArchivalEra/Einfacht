@@ -4,7 +4,9 @@
 三条规则对应三种真实事故：
 
   · 块与台账不一致 —— 有人手改了块（或者改了台账忘了重渲染）；
-  · 正文裸数字 —— 数字被手抄进散文，从这一刻起它就开始腐烂；
+  · 正文裸数字 —— 数字被手抄进散文，从这一刻起它就开始腐烂
+    （阈值 `REFLECT_NAKED_MIN` 可配；围栏代码块 / 行内代码内豁免 ——
+    文档里的复跑命令天然带数字，把它当裸数字是误报，issue #3 ④）；
   · 引用不存在的键 —— 键被改名/删掉，引用原地变成一句没有出处的断言。
 """
 import os
@@ -21,12 +23,50 @@ from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # no
 # 这样「有没有引用」是**可判定的**，不靠正则猜散文。
 CITE_RE = re.compile(r"\[\[([A-Za-z_][A-Za-z0-9_]*)\]\]")
 
-BARE_MIN = 100   # 小于这个值的整数不查裸数字：1/2/3 遍地都是，查了全是噪音
+BARE_MIN = 100   # 默认裸数字阈值：小于它的整数不查（1/2/3 遍地都是，查了全是噪音）
+FENCE_RE = re.compile(r"^\s*```")
+INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 
 
-def problems(ledger, doc_text):
-    """返回问题清单（纯函数：自证要用）。空列表 = 通过。"""
+def _bare_min():
+    """裸数字阈值（issue #3 ④）：`REFLECT_NAKED_MIN` 可配；坏值 ⇒ 默认 + 告警。"""
+    raw = os.environ.get("REFLECT_NAKED_MIN", "").strip()
+    if not raw:
+        return BARE_MIN
+    try:
+        return int(raw)
+    except ValueError:
+        print("⚠ REFLECT_NAKED_MIN=%r 不是整数 ⇒ 用默认 %d" % (raw, BARE_MIN),
+              file=sys.stderr)
+        return BARE_MIN
+
+
+def _number_lines(doc_text):
+    """裸数字判据要扫的行（issue #3 ④）：**围栏代码块与行内代码豁免**。
+
+    返回 [(行号, 去掉行内代码后的行)]；行号保持**原文编号** ——
+    诊断要对得上人读的文档。围栏的开/关行本身不扫。
+    """
+    prose = prose_of(doc_text)
+    in_fence = False
     out = []
+    for i, line in enumerate(prose.splitlines(), 1):
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        out.append((i, INLINE_CODE_RE.sub("", line)))
+    return out
+
+
+def problems(ledger, doc_text, bare_min=None):
+    """返回问题清单（纯函数：自证要用）。空列表 = 通过。
+
+    `bare_min` 覆盖裸数字阈值（自证显式传）；默认读 `REFLECT_NAKED_MIN`。
+    """
+    out = []
+    bm = _bare_min() if bare_min is None else bare_min
     f = facts_of(ledger)
     if not f:
         # 零值守卫：台账空着不是「没有违规」，是「什么都没量」。
@@ -44,11 +84,12 @@ def problems(ledger, doc_text):
             if k not in f:
                 out.append("正文第 %d 行引用了**不存在**的键：`%s`" % (i, k))
 
+    nlines = _number_lines(doc_text)
     for k, entry in sorted(f.items()):
         v = _value(entry)
-        if isinstance(v, bool) or not isinstance(v, int) or v < BARE_MIN:
+        if isinstance(v, bool) or not isinstance(v, int) or v < bm:
             continue
-        for i, line in enumerate(prose.splitlines(), 1):
+        for i, line in nlines:
             if str(v) in line and ("[[%s]]" % k) not in line:
                 out.append("正文第 %d 行出现裸数字 %s（属于 `%s`）⇒ 改写成 [[%s]]" % (i, v, k, k))
     return out
@@ -93,6 +134,23 @@ def _cases():
         # ③ 空输入必须报
         ("★ 空台账 ⇒ 必须报（空不是通过）", lambda: problems({"facts": {}}, good) != []),
         ("★ 文档没有块标记 ⇒ 必须报", lambda: problems(LED, "完全没有块的文档") != []),
+        # ④ 裸数字判据扩展（issue #3 ④）
+        ("围栏代码块内的裸数字 ⇒ 豁免（复跑命令天然带数字）",
+         lambda: problems(LED, "```\n速度是 4752 次\n```\n" + render_block(LED)) == []),
+        ("行内代码里的裸数字 ⇒ 豁免",
+         lambda: problems(LED, "见 `4752` 次\n" + render_block(LED)) == []),
+        ("阈值默认 100：小于它的值不算裸数字 ⇒ 不报",
+         lambda: problems({"facts": {"n": {"value": 50, "cmd": "c"}}},
+                          "有 50 只\n" + render_block(
+                              {"facts": {"n": {"value": 50, "cmd": "c"}}})) == []),
+        ("★ 阈值可配：bare_min=10 时 50 必须报（该报的必须报）",
+         lambda: any("裸数字" in x for x in problems(
+             {"facts": {"n": {"value": 50, "cmd": "c"}}},
+             "有 50 只\n" + render_block({"facts": {"n": {"value": 50, "cmd": "c"}}}),
+             bare_min=10))),
+        ("★ 围栏外同行仍必须报（豁免只罩代码，不罩断言）",
+         lambda: any("裸数字" in x for x in problems(
+             LED, "```\n4752\n```\n速度是 4752 次\n" + render_block(LED)))),
     ]
 
 

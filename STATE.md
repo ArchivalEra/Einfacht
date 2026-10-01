@@ -10,17 +10,19 @@
 > ⚠️ 上面三行就是正确写法。若把最后一行写成「本仓有 486 行 Python」，
 > `check_facts.py` 会报**正文裸数字** —— 因为那个数字从写下的那一刻起就开始腐烂：
 > 代码一增减，它就成了假话，而没人会记得回来改它。引用键名则永远不会过期。
-> （判据只查 ≥ 100 的整数：`1`/`2` 这类小数字遍地都是，查了全是噪音。）
+> （判据默认查 ≥ 100 的整数，`REFLECT_NAKED_MIN` 可调 —— `1`/`2` 这类小数字
+> 遍地都是，查了全是噪音；围栏代码块 / 行内代码内的数字豁免，复跑命令天然带数字。）
 
 ## 现在是什么
 
 - **两道守卫生效中**：重测时掉条（键没了）与改口（值换了）都会拒绝写盘，除非显式
-  `--allow-drop` / `--accept-changes`。
+  `--allow-drop` / `--accept-changes`（后者支持逐条：`--accept-changes=k1,k2`
+  只放行列出的键，其余照旧拒绝）。
 - **六道闸门在线**：`check_facts`（块一致性 / 裸数字 / 坏引用）、`check_facts_replay`
   （台账 `cmd` 逐字复跑，stdout 必须等于值）、`check_retractions`（翻案重现；
   扫描面 = `REFLECT_DOCS` 清单）、`check_questions`（悬案必须挂结算件）、
   `check_readme_sync`（三语 README 同批：结构互链 + 推送集必须含全部名单）、
-  `check_stale`（sha 出处 / 退役名）。
+  `check_stale`（sha 出处 / 退役名 / 测龄：`REFLECT_STALE_DAYS` 开启）。
 - **一条悬案**：见 `questions/01-example.md`。
 
 ## 那条示例翻案
@@ -34,11 +36,11 @@
 > 本区块由 `zreflect/facts.py --render-doc` 从 `FACTS.json` 渲染，**不要手改**（pre-commit 会重算并 `git add`）。
 > 正文里的「测出来的数字」只在这里生产：要引用就写 `[[键名]]`，不要手抄数字。
 
-| 键 | 值 | 复跑命令 |
-|---|---|---|
-| `md_files` | **8** | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `py_files` | **14** | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **1633** | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| 键 | 值 | 测于 | 复跑命令 |
+|---|---|---|---|
+| `md_files` | **8** | 2026-10-01T14:54:21+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `py_files` | **14** | 2026-10-01T14:54:21+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **1846** | 2026-10-01T14:54:21+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 3 条事实。
 <!-- /AUTO:FACTS -->

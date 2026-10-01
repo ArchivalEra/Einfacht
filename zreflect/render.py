@@ -32,10 +32,14 @@ def render_block(ledger):
         # 空表看起来像「一切正常」，而事实是「一条都没量到」。
         lines += ["**台账为空** —— 一条事实都没有。空不是「通过」：先查 measure() 是不是坏了。", ""]
     else:
-        lines += ["| 键 | 值 | 复跑命令 |", "|---|---|---|"]
+        # 「测于」列 = 台账里的 measured_at（采集时刻的记录，纯函数输入 ——
+        # 不渲染「几天前」：那会随墙上时钟变，--check 永不收敛。issue #3 ②）
+        lines += ["| 键 | 值 | 测于 | 复跑命令 |", "|---|---|---|---|"]
         for k in sorted(f):
             e = f[k] if isinstance(f[k], dict) else {"value": f[k]}
-            lines.append("| `%s` | %s | `%s` |" % (k, _fmt(e.get("value")), e.get("cmd", "?")))
+            lines.append("| `%s` | %s | %s | `%s` |"
+                         % (k, _fmt(e.get("value")), e.get("measured_at", "—"),
+                            e.get("cmd", "?")))
         lines += ["", "%d 条事实。" % len(f)]
     lines.append(BLOCK_END)
     return "\n".join(lines)

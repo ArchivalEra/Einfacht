@@ -65,6 +65,9 @@ def selftest(name, cases):
         print("%s | %s" % ("PASS" if ok else "fail", label))
         bad += 0 if ok else 1
     print("=== %s 自证：%d PASS / %d fail ===" % (name, len(cases) - bad, bad))
+    # 机器摘要行（issue #3 ③）：与检查器名无关的固定格式，runner/CI 直接
+    # grep；gates-selftest.sh 会校验每个自证都有这一行（缺了 ⇒ 红）。
+    print("=== %d PASS / %d FAIL ===" % (len(cases) - bad, bad))
     return 1 if bad else 0
 
 

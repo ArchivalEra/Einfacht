@@ -20,15 +20,21 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
 
 ## 1. 心智模型（60 秒版）
 
-- **事实** = {键， 值， 复跑命令， 出处}，由 `measure()` 采集。写 `measure()` 先读 `zreflect/collect.py`
-  的四条契约（只读持久盘 / 不引入会自己变的输入 / 读不到就 `unavailable()` 明说 / 贵的测量做缓存）。
+- **事实** = {键， 值， 复跑命令， 出处， measured_at}，由 `measure()` 采集。
+  写 `measure()` 先读 `zreflect/collect.py` 的四条契约（只读持久盘 / 不引入
+  会自己变的输入 / 读不到就 `unavailable()` 明说 / 贵的测量做缓存）。
+  `measured_at` 是采集时刻的**记录**，不是测量输入（拿它当输入 ⇒ `--check`
+  永不收敛，issue #3 ②）。
 - **渲染** = `facts.py --render-doc` 把台账写进活状态文档末尾的 AUTO 块（**别手改**，hook 会重算并 `git add`）。
-- **闸门** = 六道：`check_facts`（块一致性 / 正文裸数字 / 坏引用）、`check_facts_replay`（台账 `cmd`
+- **闸门** = 六道：`check_facts`（块一致性 / 正文裸数字（`REFLECT_NAKED_MIN`
+  可配、代码块内豁免）/ 坏引用）、`check_facts_replay`（台账 `cmd`
   逐字复跑，stdout 必须等于值 —— 裸值契约见 `ledger.fact()`）、`check_retractions`（翻案重现，
   扫描面 = `REFLECT_DOCS`）、`check_questions`（悬案必须挂结算件）、`check_readme_sync`（三语 README
   同批：默认模式查结构互链，`--changed` 模式查推送改动集；pre-push 与 CI 都走后者）、
-  `check_stale` + `living.py`（活状态 vs 历史章节的口径）。
-- **守卫** = `facts.py` 写盘前的两道闸：**掉条**拒绝（`--allow-drop` 显式放行）、**改口**拒绝（`--accept-changes`）。
+  `check_stale` + `living.py`（活状态 vs 历史章节的口径；另带测龄报警 `REFLECT_STALE_DAYS`，
+  不配 = 明说未启用）。
+- **守卫** = `facts.py` 写盘前的两道闸：**掉条**拒绝（`--allow-drop` 显式放行）、**改口**拒绝
+  （`--accept-changes`；`--accept-changes=k1,k2` 只放行列出的键，其余照旧拒绝，issue #3 ①）。
 
 ## 2. 接手当天（30 分钟，逐条可复跑）
 
@@ -48,11 +54,14 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
 
 ## 3. 日常操作（每条一个入口）
 
-- **重测**：`python3 zreflect/facts.py`（无参 = 重测 + 渲染 + 写盘）。
-- **值变了** → `--accept-changes`（先确认是真实测出来的，不是输入坏了）；**键没了** → `--allow-drop`
+- **重测**：`python3 zreflect/facts.py`（无参 = 重测 + 渲染 + 写盘；结尾打印每条事实
+  的测龄，如「3 天前测的」）。
+- **值变了** → `--accept-changes`（先确认是真实测出来的，不是输入坏了；只确认其中
+  几条 ⇒ `--accept-changes=k1,k2` 逐条放行，其余照旧拒绝）；**键没了** → `--allow-drop`
   （先想清楚为什么掉：输入消失？测量坏了？掉条是**信号**，不是麻烦）。
 - **新增事实**：写 `measure()` → 跑 → 渲染 → 提交（复跑命令跟着进台账）。
-- **新增闸门**：`zreflect/check_<名>.py` + `--selftest`（自证里必须有"该报的必须报"用例）。
+- **新增闸门**：`zreflect/check_<名>.py` + `--selftest`（自证里必须有"该报的必须报"用例；
+  收尾必须有机器摘要行 `=== N PASS / M FAIL ===`，照 `gate.selftest()` 写自动有）。
 - **翻案**：`retractions.json` 追加 `R-xxx`（text/why/evidence/fixed_in），活状态里的旧句子**带更正标记**。
 - **悬案**：`questions/NN-*.md`，头部 `**Settling:**` 指向一个**可跑**的结算件（写不出结算件的推断 = 猜想）。
 - **三语 README**：改任何一份 = 这次推送的改动集**三份全含**（pre-push 缺一份拒推，CI 同判据）。
@@ -61,8 +70,13 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
 ## 4. 已知边界（别当新 bug 重复发现）
 
 - `check_questions` 的结算件判据只看路径**首词**（README 已记此限制）。
-- `check_facts` 的裸数字判据只查 ≥100 的整数（1/2 这类小数字遍地都是，查了全是噪音）。
+- `check_facts` 的裸数字判据：阈值 `REFLECT_NAKED_MIN`（默认 100，1/2 这类小数字遍地
+  都是，查了全是噪音）；围栏代码块 / 行内代码内豁免（复跑命令天然带数字）。
+- **测龄报警默认关**：`REFLECT_STALE_DAYS` 不配 = 测龄规则明说未启用；开了之后，
+  `measured_at` 缺失/坏 ⇒ 也报（读不到就明说，不许猜 0）。
 - **纯函数保持安静**：`problems()` 一类的纯函数不许 print —— 自证输出是给人核对的接口（issue #1 ③）。
+- 自证输出末尾的机器摘要行（`=== N PASS / M FAIL ===`）是 runner/CI 的读接口，
+  `gates-selftest.sh` 会校验它在（issue #3 ③）。
 - 闸门有盲区：只看「已暂存/已登记」输入的检查器，看不见从未登记的文件；新增目录后主动看一眼。
 - 守卫失效的典型方式是「只在真的该报警时才崩」—— 所以反向断言不是可选项。
 

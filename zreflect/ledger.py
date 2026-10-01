@@ -10,6 +10,8 @@
 **再也查不到它变过**。所以守卫的范围要窄而准。
 """
 import json
+import time
+from datetime import datetime, timedelta, timezone
 
 
 def load(path, missing_ok=False):
@@ -79,13 +81,34 @@ def fact(value, cmd, source, note="", replay=True):
 
     要起服务 / 要构建产物、在这个环境里根本跑不了的条目：显式写 `replay=False`
     （复跑闸门跳过它，并在「全部条目都豁免」时报警 —— 豁免是有名单的，不静默）。
+
+    `measured_at` 在**采集时刻**自动盖上（issue #3 ②）：它是「何时测的」的记录，
+    供渲染「测于」列与测龄用，**不许当成测量输入**（collect.py 原则 2：
+    否则 `--check` 永不收敛 —— 它是输出，不是输入）。
     """
-    d = {"value": value, "cmd": cmd, "source": source}
+    d = {"value": value, "cmd": cmd, "source": source,
+         "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     if note:
         d["note"] = note
     if not replay:
         d["replay"] = False
     return d
+
+
+def age_days(entry):
+    """该事实距采集时刻的天数（非负小数，issue #3 ②）。
+
+    `measured_at` 缺失 / 不可解析 ⇒ None —— 读不到就明说，不许猜 0
+    （0 会被当成「刚刚测的」，那是一条假断言）。
+    """
+    ts = entry.get("measured_at") if isinstance(entry, dict) else None
+    if not ts:
+        return None
+    try:
+        when = datetime.strptime(str(ts), "%Y-%m-%dT%H:%M:%S%z")
+    except ValueError:
+        return None
+    return (datetime.now(timezone.utc) - when).total_seconds() / 86400.0
 
 
 # ── 自证（三档：正常不报 / 该报的必须报 / 空输入必须报）──────────────────────────
@@ -111,6 +134,18 @@ def _cases():
          and facts_of({"a": 1}) == {"a": 1}),
         ("sha 型长值在提示里被截断", lambda: _short("a" * 64) == "a" * 16 + "…"),
         ("raises 能识别「确实报了」", lambda: raises(lambda: (_ for _ in ()).throw(SystemExit(2)))),
+        # ② 测龄（issue #3 ②）
+        ("fact() 盖采集时刻戳", lambda: isinstance(fact(1, "c", "s").get("measured_at"), str)),
+        ("age_days：缺失 measured_at ⇒ None（读不到就明说）",
+         lambda: age_days({"value": 1}) is None),
+        ("age_days：坏时间戳 ⇒ None（不许猜 0）",
+         lambda: age_days({"measured_at": "不是时间"}) is None),
+        ("age_days：刚刚测的 ⇒ 不足一天",
+         lambda: 0 <= age_days({"measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}) < 1),
+        ("age_days：40 天前 ⇒ 约 40 天",
+         lambda: 39 < age_days({"measured_at": (datetime.now(timezone.utc)
+                                                 - timedelta(days=40)
+                                                 ).strftime("%Y-%m-%dT%H:%M:%S%z")}) < 41),
     ]
 
 

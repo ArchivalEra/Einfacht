@@ -1,23 +1,26 @@
 {
  "schema": 1,
- "generated": "2026-10-01T13:57:07+0800",
+ "generated": "2026-10-01T14:54:21+0800",
  "_why": "事实台账：每条 = 一个**测出来**的值 + 复跑命令 + 出处。别手改，跑 zreflect/facts.py。",
  "facts": {
   "py_files": {
    "value": 14,
    "cmd": "find . -name '*.py' -not -path './.git/*' | wc -l",
    "source": "repo",
+   "measured_at": "2026-10-01T14:54:21+0800",
    "note": "示例事实：换掉 measure_example()"
   },
   "md_files": {
    "value": 8,
    "cmd": "find . -name '*.md' -not -path './.git/*' | wc -l",
-   "source": "repo"
+   "source": "repo",
+   "measured_at": "2026-10-01T14:54:21+0800"
   },
   "py_lines": {
-   "value": 1633,
+   "value": 1846,
    "cmd": "find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l",
    "source": "repo",
+   "measured_at": "2026-10-01T14:54:21+0800",
    "note": "刻意 ≥100，用来示范裸数字判据"
   }
  }

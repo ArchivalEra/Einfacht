@@ -30,11 +30,12 @@
 import os
 import re
 import sys
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import repo, require_nonempty, selftest        # noqa: E402
-from ledger import _value, facts_of, load                # noqa: E402
+from ledger import _value, age_days, facts_of, load       # noqa: E402
 from living import DATED_RECORD, HIST_MARK, living_lines  # noqa: E402
 
 DOCS = tuple(d for d in os.environ.get(
@@ -42,6 +43,21 @@ DOCS = tuple(d for d in os.environ.get(
     "STATE.md,AGENTS.md,README.md,README.zh.md,README.de.md").split(",") if d)
 HIST_SECS = tuple(s for s in os.environ.get("REFLECT_HISTORY_SECS", "").split(",") if s)
 RETIRED = tuple(s for s in os.environ.get("REFLECT_RETIRED", "").split(",") if s)
+STALE_DAYS_RAW = os.environ.get("REFLECT_STALE_DAYS", "").strip()
+
+
+def _stale_days():
+    """测龄报警阈值（天，issue #3 ②）：`REFLECT_STALE_DAYS` 可配。
+
+    不配 / 坏值 ⇒ None —— 该规则**明说未启用**（同 REFLECT_RETIRED 的先例），
+    不假装查过。
+    """
+    if not STALE_DAYS_RAW:
+        return None
+    try:
+        return float(STALE_DAYS_RAW)
+    except ValueError:
+        return None
 
 SHA_NEAR = re.compile(r"sha|hash|校验|指纹", re.I)
 SHA_TOKEN = re.compile(r"(?<![0-9a-f`])([0-9a-f]{8,64})(?![0-9a-f`])")
@@ -62,10 +78,11 @@ def _is_sourced(line):
     return bool(HIST_MARK.search(line) or DATED_RECORD.search(line))
 
 
-def problems(ledger, docs, retired=RETIRED, hist_secs=None):
+def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
     """返回问题清单（纯函数：自证要用）。`docs` = {文件名: 正文}。
 
     `hist_secs=None` ⇒ 用模块级的 `REFLECT_HISTORY_SECS`；自证显式传，才能测到它。
+    `stale_days=None` ⇒ 用 `REFLECT_STALE_DAYS`（未配 ⇒ 测龄规则未启用）。
     """
     hist = HIST_SECS if hist_secs is None else hist_secs
     out = []
@@ -92,6 +109,18 @@ def problems(ledger, docs, retired=RETIRED, hist_secs=None):
                     out.append("%s:%d sha 断言无出处：`%s` 不在台账里 —— "
                                "改写成 [[键名]] 引用，或带上历史标记/出处"
                                % (name, lineno, tok[:16]))
+    # 测龄（issue #3 ②）：台账里的 measured_at 距今天的天数超阈值 ⇒ 报。
+    # 未配置 ⇒ 不查（明说未启用）；读不到时间戳 ⇒ 也报（读不到就明说，不许猜 0）。
+    sd = _stale_days() if stale_days is None else stale_days
+    if sd is not None:
+        for k in sorted(f):
+            d = age_days(f[k])
+            if d is None:
+                out.append("`%s` 的 measured_at 缺失或不可解析 —— 测龄判据无法评估"
+                           "（读不到就明说，不许猜）" % k)
+            elif d > sd:
+                out.append("`%s` 已 %.0f 天没测（阈值 %.0f 天）—— 重测并显式 "
+                           "`--accept-changes`" % (k, d, sd))
     # R2 退役名：名单不配 = 未启用（run() 会明说，这里不打印 —— 纯函数保持安静）。
     for name, body in sorted(docs.items()):
         for lineno, line, is_living in living_lines(body, hist):
@@ -130,6 +159,12 @@ def run(argv):
     if not RETIRED:
         print("R2（退役名）：REFLECT_RETIRED 未配置 ⇒ 本条规则未启用（要启用："
               "REFLECT_RETIRED=名1,名2）", file=sys.stderr)
+    if _stale_days() is None:
+        print("测龄：REFLECT_STALE_DAYS 未配置 ⇒ 本条规则未启用（要启用："
+              "REFLECT_STALE_DAYS=天）", file=sys.stderr)
+    elif STALE_DAYS_RAW and _stale_days() is None:
+        print("⚠ REFLECT_STALE_DAYS=%r 不是数 ⇒ 测龄规则未启用" % STALE_DAYS_RAW,
+              file=sys.stderr)
     print("陈旧断言检测：OK（扫了 %d 份文档；退役名 %s）"
           % (len(docs), "未配置" if not RETIRED else "%d 个" % len(RETIRED)))
     return 0
@@ -139,6 +174,12 @@ def _cases():
     led_sha = {"facts": {"site_sha": {"value": "a" * 64, "cmd": "sha256sum x", "source": "s"}}}
     led_plain = {"facts": {"n": {"value": 7, "cmd": "echo 7", "source": "s"}}}
     bare = "部署 sha256 deadbeefdeadbeef00cafe00\n"
+    fresh = (datetime.now(timezone.utc) - timedelta(days=1)).strftime(
+        "%Y-%m-%dT%H:%M:%S%z")
+    led_fresh = {"facts": {"n": {"value": 7, "cmd": "echo 7", "source": "s",
+                                 "measured_at": fresh}}}
+    led_old = {"facts": {"n": {"value": 7, "cmd": "echo 7", "source": "s",
+                               "measured_at": "2020-01-01T00:00:00+0000"}}}
     return [
         # ① 正常不报
         ("sha 与台账一致（16 位前缀也能对上）⇒ 不报",
@@ -173,6 +214,17 @@ def _cases():
         # ③ 空输入必须报
         ("★ 台账空 ⇒ 必须报", lambda: problems({"facts": {}}, {"A.md": "x\n"}) != []),
         ("★ 一份文档都没扫到 ⇒ 必须报", lambda: problems(led_plain, {}) != []),
+        # ② 测龄（issue #3 ②）
+        ("测龄低于阈值 ⇒ 不报",
+         lambda: problems(led_fresh, {"A.md": "x\n"}, stale_days=30) == []),
+        ("阈值未配置 ⇒ 不报（规则明说未启用）",
+         lambda: problems(led_old, {"A.md": "x\n"}, stale_days=None) == []),
+        ("★ 测龄超阈值 ⇒ 必须报",
+         lambda: any("没测" in x for x in problems(
+             led_old, {"A.md": "x\n"}, stale_days=30))),
+        ("★ measured_at 缺失 + 阈值开启 ⇒ 必须报（读不到就明说）",
+         lambda: any("measured_at" in x for x in problems(
+             led_plain, {"A.md": "x\n"}, stale_days=30))),
     ]
 
 

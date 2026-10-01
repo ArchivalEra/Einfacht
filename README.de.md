@@ -136,6 +136,21 @@ jede Änderung als echten Entwicklungszuwachs bestätigen, dann
 kein „Auto-Akzept für Zähler": `--accept-changes` ist das einzige Siegel für „nachgesehen", und
 „cmd-Änderungen warnen nicht" ist **die eine begründete Ausnahme** — keine zweite öffnen.
 
+**Selektives Akzeptieren** (issue #3 ①): Wenn ein Re-Mess-Lauf legitim N Werte ändert,
+können Sie nur die geprüften übernehmen — `--accept-changes=k1,k2` akzeptiert genau
+diese Schlüssel und verweigert weiterhin jede andere Wertänderung. Ein Pauschal-Akzept
+einer Batch, die eine tatsächlich kaputte Messung enthält, wäscht sie weiß; die
+per-Key-Form hält den Guard scharf, wenn nur ein Teil der Änderung verstanden ist.
+
+Jeder Eintrag trägt außerdem `measured_at` — den Zeitstempel des **Sammelzeitpunkts**
+(issue #3 ②). `facts.py` druckt das Alter in Menschenworten („vor 3 Tagen gemessen")
+und der Maschinenblock rendert eine „gemessen am"-Spalte mit dem **Rohzeitstempel**
+(deterministisch — ein aus der Wanduhr berechnetes Alter würde unter `--check` nie
+konvergieren). `check_stale` kann ab konfigurierten Tagen warnen: `REFLECT_STALE_DAYS`
+(leer = diese Regel **sagt laut, dass sie aus ist**). Der Stempel zeichnet das *Wann*
+auf und ist nie ein Mess-Eingang — ihn als solchen zu füttern, ist genau das, was
+`--check` nie konvergieren ließe.
+
 ### 3. Retraktions-Ledger: Widerlegung hinterlässt eine Spur
 
 `retractions.json` speichert **widerlegte** Aussagen: ein charakteristisches Fragment `text`,
@@ -201,6 +216,11 @@ Die Realität handgeschriebener Register: sie driften immer. Ein Prüfer, beim H
 registriert, wird zu „einem Prüfer, den niemand beobachtet" — während das Register selbst grün
 bleibt und Alles-okay meldet. Darum läuft es hier umgekehrt: **Registrierung wird entdeckt,
 nicht erinnert.**
+
+Jedes `--selftest` endet mit einer maschinenlesbaren Zusammenfassungszeile,
+`=== N PASS / M FAIL ===` (neben der Menschenzeile, issue #3 ③) — Runner und CI
+greifen ein festes Format, unabhängig vom Namen des Prüfers; `gates-selftest.sh`
+wird rot, wenn eine Selbstprüfung sie fehlt.
 
 ### 6. Trilinguales README: das Trio bewegt als Ganzes — sonst wird der Push abgewiesen
 
@@ -286,6 +306,8 @@ Repos passiert über Variablen, niemals über Code-Edits:
 | `REFLECT_DOCS` | `STATE.md,AGENTS.md,README.md,README.zh.md,README.de.md` | von Retraktions-/Stale-Gates gescannte Living-State-Docs (Komma-getrennt; Geschichte-Docs gehören **nicht** hinein) |
 | `REFLECT_HISTORY_SECS` | leer | welche **nummerierten** Abschnitte append-only Geschichte sind (z. B. `5,9,10`) — ihr „damals so" ist freigestellt |
 | `REFLECT_RETIRED` | leer | pensionierte Komponentennamen (Komma-getrennt); leer = R2 des Stale-Gates **sagt laut, dass es aus ist** |
+| `REFLECT_NAKED_MIN` | `100` | Schwellenwert für nackte Zahlen im Fakten-Gate: Ganzzahlen darunter werden ignoriert (1/2/3 sind überall — sie zu prüfen ist Rauschen); eingerahmte Code-Blöcke und Inline-Code sind freigestellt (Replay-Befehle enthalten naturgemäß Zahlen) |
+| `REFLECT_STALE_DAYS` | leer | warnen, wenn `measured_at` eines Fakts älter als diese Tage ist; leer = die Staleness-Regel **sagt laut, dass sie aus ist** |
 | `REFLECT_REPLAY` | leer (an) | `off` ⇒ das Replay-Gate **sagt laut, dass es aus ist**. Einzelne Einträge, die Build-Artefakte brauchen, steigen per Ledger-Feld `"replay": false` einzeln aus (ein komplett freigestelltes Ledger macht das Replay-Gate selbst rot) — nicht gleich das ganze Gate abschalten |
 | `REFLECT_REPLAY_TIMEOUT` | `10` | Sekunden pro wiederausgeführtem `cmd`; Timeout ⇒ gemeldet (eine Messung, die nie fertig wird, gehört in `replay: false`, nicht in die Daten) |
 | `REFLECT_READMES` | `README.md,README.zh.md,README.de.md` | das README-Trio: Eingang für die Strukturaudit **und** für „jeder Push muss alle im Änderungssatz haben"; Hook, Gate und CI lesen denselben Knopf |
