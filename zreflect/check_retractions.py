@@ -18,8 +18,10 @@ from ledger import load                                  # noqa: E402
 from living import HIST_MARK, living_lines               # noqa: E402
 
 REQUIRED = ("id", "text", "why", "evidence", "fixed_in")
+# 默认 = 本仓自用名单（三语 README 后共五份活状态文档；换仓改 REFLECT_DOCS，不改代码）
 DOCS = tuple(d for d in os.environ.get(
-    "REFLECT_DOCS", "STATE.md,AGENTS.md,README.md").split(",") if d)
+    "REFLECT_DOCS",
+    "STATE.md,AGENTS.md,README.md,README.zh.md,README.de.md").split(",") if d)
 HIST_SECS = tuple(s for s in os.environ.get("REFLECT_HISTORY_SECS", "").split(",") if s)
 
 

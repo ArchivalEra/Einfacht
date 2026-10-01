@@ -69,11 +69,22 @@ def changed_keys(old_facts, new_facts):
     return out
 
 
-def fact(value, cmd, source, note=""):
-    """造一条事实：值 + 复跑命令 + 出处（+ 可选备注）。"""
+def fact(value, cmd, source, note="", replay=True):
+    """造一条事实：值 + 复跑命令 + 出处（+ 可选备注）。
+
+    ⚠️ **`cmd` 的裸值契约（issue #2 ①）**：`check_facts_replay.py` 会**逐字执行**它
+    （cwd=仓库根，bash + `pipefail`），并把 **stdout 去掉首尾空白**与 `value` 比对。
+    所以 `cmd` 必须**只打印值本身** —— 打印「含该值的整行」人眼可读、机器不可判，
+    复跑闸门只会把它读成「不符」。这条契约是「能复跑」可判定的前提。
+
+    要起服务 / 要构建产物、在这个环境里根本跑不了的条目：显式写 `replay=False`
+    （复跑闸门跳过它，并在「全部条目都豁免」时报警 —— 豁免是有名单的，不静默）。
+    """
     d = {"value": value, "cmd": cmd, "source": source}
     if note:
         d["note"] = note
+    if not replay:
+        d["replay"] = False
     return d
 
 

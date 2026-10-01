@@ -6,6 +6,8 @@
 
 1. **数值/行为只认实测**，并把复跑方式写在断言旁边。
    写不出复跑方式的句子，只能当历史读 —— 不许写成「现在如此」。
+   台账里的 `cmd` 由 `check_facts_replay.py` **逐字执行**（stdout 必须是裸值；坏命令 /
+   超时 / 没 cmd 都报）——「能复跑」是被每道 pre-commit 重证的断言，不是口号。
 2. **数字只生产一次**。文档里引用写 `[[键名]]`，**不手抄数字**。
    `check_facts.py` 会拦正文里的裸数字和指向不存在键的引用。
 3. **能编过 ≠ 能用了**。碰运行期行为必须在真实环境里测；构建成功不算功能验收。
@@ -15,7 +17,9 @@
    - 活状态文档里**只写实测**；
    - **推断**写进 `questions/`（作为悬案）或笔记，并注明**哪个实验能结案**；
      写不出结案实验的推断 = 猜想，不许留在活状态；
-   - **被推翻**的进 `retractions.json`，`check_retractions.py` 会在它重新出现时报错。
+   - **被推翻**的进 `retractions.json`，`check_retractions.py` 会在它**重新出现在
+  `REFLECT_DOCS` 声明的活状态文档里**时报错 —— 扫描面**有界**：清单外的文件（源码注释、
+  配置）不在面内，这是写明的缺口（issue #2 ②），不是「查过」。
 6. **写文档先懂"活状态"**（`zreflect/living.py`）：历史章节（`REFLECT_HISTORY_SECS` 声明）
    里的数字是"当时如此"；行内带历史/退役/已翻案标记的行也是。除此之外——**含无编号
    章节**——全是活状态，闸门会拿它跟台账对账。想把旧值留在正文里，**必须带标记**。
@@ -28,10 +32,9 @@
 ```bash
 sh gates-selftest.sh                       # 每个闸门先证明自己会红
 python3 zreflect/facts.py --render-doc STATE.md
-python3 zreflect/check_facts.py
-python3 zreflect/check_retractions.py
-python3 zreflect/check_stale.py
-python3 zreflect/check_questions.py
+for g in zreflect/check_*.py; do python3 "$g" || exit 1; done
+# ↑ 发现式名录，与 hooks / gates-selftest 同款 —— 手写闸门清单本身会漂（issue #2 ②），
+#   所以这里也不许列名单：新增 check_*.py 自动被三道地方（hooks / 自证 / 手动）吃到。
 ```
 （装了 `sh reflect-hooks/install.sh` 的话，pre-commit / pre-push 会自动做这些。）
 
@@ -44,6 +47,10 @@ python3 zreflect/check_questions.py
 - **守卫必须吃「该报的必须报」这类断言**。本系统抽出来的那次实践里，一条守卫因为一个
   未定义变量，**从落地起从未生效过** —— 它失效的方式是「只在真的该报警时才崩」。
   没有反向断言的守卫，和没有守卫是一样的。
+- **三语 README 是同一条断言的三份拷贝**（2026-10-01 起）：`README.md`（英语，默认）/
+  `README.zh.md` / `README.de.md`。改任何一份 ⇒ 这次推送的改动集必须**三份全含**，
+  pre-push 缺一份拒推、CI 跑同一条判据（`git push --no-verify` 只躲得过本地）。
+  改判据/口径时三份都要动 —— 语言漂移就是口径漂移的开始。名单可换：`REFLECT_READMES`。
 - **纯函数保持安静**（issue #1 ③）：自证期间 `problems()` 一类的纯函数**不许 print** ——
   自证输出是给人核对的接口（每 case 一行 + 末尾摘要行），被诊断刷屏就没法核对了；
   打印归 `run()`/顶层。同一个提示也会被十几个用例各打一遍。

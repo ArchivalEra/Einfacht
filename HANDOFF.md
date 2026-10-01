@@ -6,7 +6,8 @@
 
 ## 0. 一句话：你接手的是什么
 
-一套让「测出来的数字」**只被生产一次**的小系统：`zreflect/` 库 + 4 道闸门 + git hooks + 发现式自证。
+一套让「测出来的数字」**只被生产一次**的小系统：`zreflect/` 库 + 6 道闸门 + git hooks + 发现式自证。
+README 是三语的（英语默认 / 中文 / 德语），三份是同一条断言 —— pre-push 要求每次推送同批更新。
 当前全部绿（接手时的健康判据见 §2，逐条可复跑）。
 
 **三条不能破的不变量**（README/AGENTS 是它们的展开，违反了系统存在的意义就没了）：
@@ -22,8 +23,11 @@
 - **事实** = {键， 值， 复跑命令， 出处}，由 `measure()` 采集。写 `measure()` 先读 `zreflect/collect.py`
   的四条契约（只读持久盘 / 不引入会自己变的输入 / 读不到就 `unavailable()` 明说 / 贵的测量做缓存）。
 - **渲染** = `facts.py --render-doc` 把台账写进活状态文档末尾的 AUTO 块（**别手改**，hook 会重算并 `git add`）。
-- **闸门** = 四道：`check_facts`（块一致性 / 正文裸数字 / 坏引用）、`check_retractions`（翻案重现）、
-  `check_questions`（悬案必须挂结算件）、`check_stale` + `living.py`（活状态 vs 历史章节的口径）。
+- **闸门** = 六道：`check_facts`（块一致性 / 正文裸数字 / 坏引用）、`check_facts_replay`（台账 `cmd`
+  逐字复跑，stdout 必须等于值 —— 裸值契约见 `ledger.fact()`）、`check_retractions`（翻案重现，
+  扫描面 = `REFLECT_DOCS`）、`check_questions`（悬案必须挂结算件）、`check_readme_sync`（三语 README
+  同批：默认模式查结构互链，`--changed` 模式查推送改动集；pre-push 与 CI 都走后者）、
+  `check_stale` + `living.py`（活状态 vs 历史章节的口径）。
 - **守卫** = `facts.py` 写盘前的两道闸：**掉条**拒绝（`--allow-drop` 显式放行）、**改口**拒绝（`--accept-changes`）。
 
 ## 2. 接手当天（30 分钟，逐条可复跑）
@@ -33,13 +37,10 @@
 
    ```sh
    python3 zreflect/facts.py --render-doc STATE.md
-   python3 zreflect/check_facts.py
-   python3 zreflect/check_retractions.py
-   python3 zreflect/check_stale.py
-   python3 zreflect/check_questions.py
+   for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # 发现式名录，别列清单
    ```
 
-3. `sh gates-selftest.sh` —— 应输出「发现 4 个闸门，全部能红」，另有跨仓库换名自证 4/4。
+3. `sh gates-selftest.sh` —— 应输出「发现 6 个闸门，全部能红」，另有跨仓库换名自证 6/6。
 4. **故意弄红一次再恢复**（练手感，10 分钟）：在 `STATE.md` 正文写一句含 ≥100 裸数字的话 →
    `check_facts` 应红（裸数字）→ 删掉恢复变绿。再试：把 `FACTS.json` 某键的值改掉 →
    `facts.py` 应拒绝写盘并提示 `--accept-changes`。
@@ -54,6 +55,8 @@
 - **新增闸门**：`zreflect/check_<名>.py` + `--selftest`（自证里必须有"该报的必须报"用例）。
 - **翻案**：`retractions.json` 追加 `R-xxx`（text/why/evidence/fixed_in），活状态里的旧句子**带更正标记**。
 - **悬案**：`questions/NN-*.md`，头部 `**Settling:**` 指向一个**可跑**的结算件（写不出结算件的推断 = 猜想）。
+- **三语 README**：改任何一份 = 这次推送的改动集**三份全含**（pre-push 缺一份拒推，CI 同判据）。
+  改判据/口径时三份都要动 —— 语言漂移就是口径漂移的开始。换语言名单：`REFLECT_READMES`。
 
 ## 4. 已知边界（别当新 bug 重复发现）
 
@@ -66,7 +69,8 @@
 ## 5. 接手时的状态快照
 
 - HEAD 以 `git log -1` 为准；origin 已配置。
-- 四道闸门全绿；发现式自证 4/4；跨仓库换名自证 4/4（证明没有硬编码路径）；两道守卫在线。
+- 六道闸门全绿；发现式自证 6/6；跨仓库换名自证 6/6（证明没有硬编码路径）；两道守卫在线。
+  三语 README 同批判据：pre-push（本地）+ GitHub Actions（正面）双层执行。
 - `questions/` 里有 1 张**示例**悬案（它存在的意义是示范 `Settling:` 的写法，看完可删）。
 - 来源与 License：见 README 末两节。
 

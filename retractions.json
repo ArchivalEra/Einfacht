@@ -9,7 +9,7 @@
       "id": "R-001",
       "text": "ZCODE_REFLECT_TYPO",
       "why": "（示例）把一条**假**的翻案条目留在仓里，是为了让这条机制开箱就有一次真实运行 —— 删掉它即可。",
-      "evidence": "python3 zreflect/check_retractions.py（它必须扫到 STATE.md / AGENTS.md / README.md）",
+      "evidence": "python3 zreflect/check_retractions.py（它必须扫到 STATE.md / AGENTS.md / README.md / README.zh.md / README.de.md）",
       "fixed_in": "本文件（示例条目）"
     }
   ]

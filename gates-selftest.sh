@@ -113,6 +113,10 @@ configurable_selftest() {
   printf '{"schema":1,"retractions":[]}\n' > "$tmp/RETRACT.json"        # 换名：REFLECT_RETRACTIONS
   mkdir -p "$tmp/cases"                                                  # 换名：REFLECT_QUESTIONS
   printf '# 例2\n\n**Status:** ready-for-agent\n\n**Settling:** `python3 a.py` —— rc=0 ⇒ A；rc=7 ⇒ B\n' > "$tmp/cases/02-y.md"
+  # 换名：REFLECT_READMES —— 三语 trio 在夹具里也全部改名（互链判据按名单全员链接）
+  for f in R1 R2 R3; do
+    printf '# %s\n\n切换器：[R1.md](R1.md) [R2.md](R2.md) [R3.md](R3.md)\n' "$f" > "$tmp/$f.md"
+  done
   # 生成台账并把机器块渲染进 **NOTES.md**（名字全换掉）
   # ① 先量一遍（新仓库的正确顺序：量测 → 渲染）
   GATE_REPO="$tmp" REFLECT_FACTS=LEDGER.json REFLECT_DOC=NOTES.md \
@@ -125,7 +129,8 @@ configurable_selftest() {
     n=$((n + 1))
     if GATE_REPO="$tmp" REFLECT_FACTS=LEDGER.json REFLECT_DOC=NOTES.md \
        REFLECT_DOCS=NOTES.md,AGENTS.md REFLECT_RETRACTIONS=RETRACT.json \
-       REFLECT_QUESTIONS=cases python3 "$g" >/dev/null 2>&1; then
+       REFLECT_QUESTIONS=cases REFLECT_READMES=R1.md,R2.md,R3.md \
+       python3 "$g" >/dev/null 2>&1; then
       ok=$((ok + 1))
     else
       echo "  ❌ 换名字后 $g 红了（说明名字还被写死在代码里）"
@@ -136,7 +141,7 @@ configurable_selftest() {
   # ⚠️ 这一段的判据第一版只数了个数（`red>0`）—— 分辨力不足：夹具当时没换
   #    retractions.json/questions 的名字，那两个闸门绿着却被算作"证明过了"
   #    （issue #1 ② 的原话）。现在逐个点名，缺一个红就失败。
-  red_need="check_facts.py check_retractions.py check_questions.py"
+  red_need="check_facts.py check_readme_sync.py check_retractions.py check_questions.py"
   red=""
   for g in "$HERE"/zreflect/check_*.py; do
     b=$(basename "$g")
@@ -148,7 +153,7 @@ configurable_selftest() {
   rm -rf "$tmp"
   [ "$ok" = "$n" ] && [ -n "$red" ] || {
     echo "  ❌ 可配置性自证不成立（换名全绿=$ok/$n；默认名下没红的闸门=[$red_need]）"; return 1; }
-  echo "  ✅ 四个名字全换（LEDGER.json/NOTES.md/RETRACT.json/cases）$ok/$n 全绿；默认名字下 [$red_need] 全红 ⇒ 没有硬编码"
+  echo "  ✅ 五个名字全换（LEDGER.json/NOTES.md/RETRACT.json/cases/R1-R3.md）$ok/$n 全绿；默认名字下 [$red_need] 全红 ⇒ 没有硬编码"
   return 0
 }
 echo "── 跨仓库可配置性 ──"

@@ -1,0 +1,32 @@
+# 三语 README「每次推送必须同批更新」是**承诺**，不是本地建议：
+# pre-push 可被 `git push --no-verify` 跳过，也只装在跑过 install.sh 的机器上 ——
+# 只在自己方便时生效的闸门 = 本仓最擅长的那种"从未跑过的闸门"。所以 CI 正面执行同一条判据。
+# 判据与 reflect-hooks/pre-push、zreflect/check_readme_sync.py --changed 完全同源（复用闸门本体）。
+name: readme-sync
+
+on:
+  push: {}
+
+jobs:
+  trio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # 判据要 diff 推送前后两个点
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3"
+      - name: 三语 README 必须同批更新（名单：REFLECT_READMES，默认三语 trio）
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          zero=0000000000000000000000000000000000000000
+          if [ "${BEFORE:-$zero}" != "$zero" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            git diff --name-only "$BEFORE" "$AFTER"
+          else
+            echo "无可用基线（新分支 / 强推 / tag）⇒ 按全部可见历史判定，不静默放行"
+            git log --name-only --pretty=format: "$AFTER"
+          fi | sed '/^[[:space:]]*$/d' | sort -u \
+            | python3 zreflect/check_readme_sync.py --changed -

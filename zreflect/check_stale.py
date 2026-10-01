@@ -38,7 +38,8 @@ from ledger import _value, facts_of, load                # noqa: E402
 from living import DATED_RECORD, HIST_MARK, living_lines  # noqa: E402
 
 DOCS = tuple(d for d in os.environ.get(
-    "REFLECT_DOCS", "STATE.md,AGENTS.md,README.md").split(",") if d)
+    "REFLECT_DOCS",
+    "STATE.md,AGENTS.md,README.md,README.zh.md,README.de.md").split(",") if d)
 HIST_SECS = tuple(s for s in os.environ.get("REFLECT_HISTORY_SECS", "").split(",") if s)
 RETIRED = tuple(s for s in os.environ.get("REFLECT_RETIRED", "").split(",") if s)
 

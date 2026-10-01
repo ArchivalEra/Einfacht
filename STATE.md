@@ -16,8 +16,11 @@
 
 - **两道守卫生效中**：重测时掉条（键没了）与改口（值换了）都会拒绝写盘，除非显式
   `--allow-drop` / `--accept-changes`。
-- **三个闸门在线**：`check_facts`（块一致性 / 裸数字 / 坏引用）、
-  `check_retractions`（翻案重现）、`check_questions`（悬案必须挂结算件）。
+- **六道闸门在线**：`check_facts`（块一致性 / 裸数字 / 坏引用）、`check_facts_replay`
+  （台账 `cmd` 逐字复跑，stdout 必须等于值）、`check_retractions`（翻案重现；
+  扫描面 = `REFLECT_DOCS` 清单）、`check_questions`（悬案必须挂结算件）、
+  `check_readme_sync`（三语 README 同批：结构互链 + 推送集必须含全部名单）、
+  `check_stale`（sha 出处 / 退役名）。
 - **一条悬案**：见 `questions/01-example.md`。
 
 ## 那条示例翻案
@@ -33,9 +36,9 @@
 
 | 键 | 值 | 复跑命令 |
 |---|---|---|
-| `md_files` | **4** | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `py_files` | **12** | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **1259** | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **8** | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `py_files` | **14** | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **1633** | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 3 条事实。
 <!-- /AUTO:FACTS -->

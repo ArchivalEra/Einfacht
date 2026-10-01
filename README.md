@@ -1,170 +1,241 @@
-# zcode-reflect
+# Einfacht
 
-**Agent 的记忆不该是散文，该是一条能复跑的断言。**
+**An agent's memory should not be prose — it should be an assertion you can re-run.**
 
-一个给 agent 驱动型仓库用的**反幻觉事实系统**。它不训练模型、不做检索、不存 embedding——
-它只做一件事：让"现在如此"这句话**必须能被一条命令证明**，并且**在被推翻时能被自动抓到**。
+**Languages:** **English** (this file, default) · [简体中文](README.zh.md) · [Deutsch](README.de.md)
+
+> Formerly `zcode-reflect`.
+
+A **fact system against hallucination**, built for agent-driven repos. It does not train models,
+does not do retrieval, does not store embeddings — it does exactly one thing: it makes every
+"this is how things are" **provable by a command**, and it **catches automatically** the moment
+that claim is overturned.
 
 ```
-自称事实的句子  ──▶  要么挂一个生产者命令（能复跑）
-                     要么标成推断（并写明哪个实验能结案）
-                     要么进翻案台账（并配一条重现检测）
-                     三者都不是 ⇒ 闸门报错
+a sentence claiming to be fact  ──▶  attach a producer command (re-runnable)
+                                     or mark it as inference (and name the experiment that settles it)
+                                     or move it into the retraction ledger (with reappearance detection)
+                                     none of the three ⇒ a gate turns red
 ```
 
-## 为什么需要它
+## Why this exists
 
-模型会产生**看起来很确定的错**。这不是可以靠"提醒它仔细点"解决的问题，因为错的形态不是"胡说"，
-而是**旧话照抄**：
+Models produce **confident-looking errors**. No amount of "please be careful" fixes this, because
+the failure mode is not nonsense — it is **copying stale text**:
 
-- 一个数字在 6 处文档里手抄着，改了一处，其余 5 处继续对外宣称旧值；
-- 一句已经**被实测推翻**的断言，在更正之后**仍留在同一个文件里**（甚至还有一份副本）；
-- 一个"十几分钟就能定位"的成本估计，从没和产物对过账——实际第一步是一次 29MB 重链；
-- 一条用来防止"事实被静默覆盖"的守卫，因为一个未定义变量，**从落地起没有生效过**。
+- one number hand-copied into six docs; you fix one, the other five keep asserting the old value;
+- an assertion **already refuted by measurement** still sitting in the same file after the
+  correction (with a copy in another file);
+- a "findable in fifteen minutes" cost estimate that was never reconciled against the artifacts —
+  the real first step was a 29 MB relink;
+- a guard meant to stop facts from being silently overwritten **never fired once**, because of a
+  single undefined variable.
 
-这些都不是知识错误，是**知识的生命周期没有归宿**。zcode-reflect 给每一类知识一个归宿，
-并给每个归宿配一条**能红**的检查。
+None of these are knowledge errors. They are **knowledge lifecycles without a home**. Einfacht
+gives every kind of claim a home — and every home a check **that can turn red**.
 
-## 四条纪律
+## Four disciplines
 
-1. **数值/行为只认实测**，并把复跑方式写在断言旁边。写不出复跑方式的句子，只能当历史读。
-2. **数字只生产一次**。文档里引用键名，不手抄数字。
-3. **能编过 ≠ 能用了**。碰运行期行为必须在真实环境里测；构建成功不算功能验收。
-4. **断言要能证伪**：新契约至少配一条**反向**断言（该报错的必须报错）。
+1. **Numbers and behaviors come from measurement only**, with the re-run command written next to
+   the claim. A sentence without a re-run command may be read as history — never as "current state".
+2. **Numbers are produced exactly once.** Docs cite key names; they never hand-copy digits.
+3. **Compiles ≠ works.** Runtime claims must be tested in the real environment; a green build is
+   not functional acceptance.
+4. **Assertions must be falsifiable**: every new contract ships with at least one **reverse**
+   assertion (what must fail, must fail).
 
-第 5 条是让前四条不至于变成口号的：**每条断言有生命周期** —— 实测 / 推断 / 翻案。
-活状态文档里只写实测；推断写进笔记并注明"哪个实验能结案"；被推翻的进翻案台账。
+The fifth discipline is what keeps the first four from becoming slogans: **every assertion has a
+lifecycle** — measured / inferred / retracted. Living-state docs hold only measurements; inferences
+go into notes with "which experiment settles this" written down; refuted claims go into the
+retraction ledger.
 
-## 五个部件 + 从 Octave 迁来的第二组
+## Seven components + the second group from Octave
 
-| 部件 | 文件 | 它挡住什么 |
+| Component | File | What it stops |
 |---|---|---|
-| **闸门平台** | `zreflect/gate.py` | 检查器静默变绿（零值守卫 + 三档自证） |
-| **事实台账** | `zreflect/ledger.py` + `facts.py` | 数字被手抄、被静默覆盖 |
-| **事实闸门** | `zreflect/check_facts.py` | 文档块与台账不一致、正文裸数字、引用不存在的键 |
-| **翻案台账** | `zreflect/check_retractions.py` | 被推翻的断言**重新出现** |
-| **悬案台账** | `zreflect/check_questions.py` | 未结案的问题只活在散文里、没有能跑的结算件 |
+| **Gate platform** | `zreflect/gate.py` | checkers silently turning green (zero-value guards + three-tier selftest) |
+| **Fact ledger** | `zreflect/ledger.py` + `facts.py` | numbers hand-copied or silently overwritten |
+| **Fact gate** | `zreflect/check_facts.py` | doc block out of sync with the ledger, bare numbers in prose, citations of keys that don't exist |
+| **Replay gate** | `zreflect/check_facts_replay.py` | "re-runnable" used to be an assertion **with no executor** (issue #2 ①): now every ledger `cmd` is executed verbatim (stdout must equal the value; broken command / timeout / missing cmd all reported; entries that need build artifacts opt out with `replay: false`) |
+| **Retraction ledger** | `zreflect/check_retractions.py` | retracted claims **reappearing inside the living-state docs declared by `REFLECT_DOCS`** |
+| **Question ledger** | `zreflect/check_questions.py` | open questions living only in prose, with no executable settler |
+| **Trilingual README gate** | `zreflect/check_readme_sync.py` | editing one language README while the others drift: the trio must exist, cross-link each other, and **move together in every push** |
 
-### 从 Octave-Full-Wasm 迁来的第二组（2026-09-30）
+### The second group, migrated from Octave-Full-Wasm (2026-09-30)
 
-第一组机制抽自那边（见文末「来源」）；这一组是把那边 `.githooks/` 里**剩下的实战机制**
-也整体迁来 —— 那个仓跑了几个月的量。迁移时只留机制、剥掉一切项目数据：
+The first group was extracted from that project (see "Origins"); this second group migrates
+**everything that was left** in its `.githooks/` — mechanisms that ran in anger for months.
+Only the mechanisms were kept; all project data was stripped:
 
-| 部件 | 文件 | 它挡住什么 |
+| Component | File | What it stops |
 |---|---|---|
-| **活状态抽取** | `zreflect/living.py` | 闸门分不清「现在如此」和「当时如此」。历史章节、行内历史标记、**带明确出处的记录**三种出口，加上「默认从严」（无编号章节也是活状态）的判定，全在这一份；各检查器共用，词表只生产一次 |
-| **陈旧断言闸门** | `zreflect/check_stale.py` | 活状态里**没有出处**的 sha 断言、退役组件名悄悄回来 —— 那边实测过：换了构建，头部还挂着旧 sha 没人发现 |
-| **采集器契约** | `zreflect/collect.py` | `measure()` 写成"会自己变的输入"（墙上时钟 / HEAD sha ⇒ `--check` 永不收敛）、读不到就编个 0、贵的测量不做缓存 —— 四条原则 + 机器块回收帮手 |
-| **git hooks** | `reflect-hooks/` | 闸门躺在仓库里**从未被执行**：pre-commit 重算机器块并跑全部闸门，pre-push 拒推不新鲜的块（**不自动改文件、不动历史**） |
+| **Living-state extraction** | `zreflect/living.py` | gates failing to tell "how things are" from "how things were". Three exits — declared history sections, inline history marks, records with an **explicit source** — plus "strict by default" (unnumbered sections are living state too), all in one file shared by every checker; the word list is produced exactly once |
+| **Stale-assertion gate** | `zreflect/check_stale.py` | sha claims **without a source** in living state; retired component names sneaking back — measured over there: the build changed and the header still showed the old sha, unnoticed |
+| **Collector contract** | `zreflect/collect.py` | `measure()` reading inputs **that change by themselves** (wall-clock / HEAD sha ⇒ `--check` never converges), inventing a 0 when a read fails, expensive measurements without caching — four principles + a block-recycling helper |
+| **git hooks** | `reflect-hooks/` | gates lying in the repo **never executed**: pre-commit recomputes the machine block and runs every gate; pre-push refuses stale blocks (**it never edits files or rewrites history**) |
 
-新旋钮：`REFLECT_HISTORY_SECS`（声明哪些编号章节是 append-only 历史，如 `5,9,10`）·
-`REFLECT_RETIRED`（退役组件名名单；不配 = 该规则**明说未启用**，不假装查过）。
-翻案闸门从此只扫活状态 —— 历史章节里的旧值天然是"当时"，豁免它不是放过，是不逼人毁记录。
+New knobs: `REFLECT_HISTORY_SECS` (which numbered sections are append-only history, e.g. `5,9,10`) ·
+`REFLECT_RETIRED` (retired-component names; unset = that rule **says out loud that it is off**
+instead of pretending to have checked). Since then the retraction gate scans living state only —
+old values in history sections are naturally "as of then"; exempting them is not mercy, it is
+refusing to make people destroy records.
 
-那边的 `check-wants.py`（验收断言的可证伪性：单个数字的 want 必须按数字边界匹配；
-匹配必须用完整输出，截断只许出现在显示里）与 `check-consistency.py`（同一件知识写在
-好几处会走散）是**各仓库自己写闸门**的两个好范本 —— 它们粘死了那边的文件形状，
-搬过来只会变成没人能用的空壳，所以只在这里记下规则本身。
+Over there there are also `check-wants.py` (falsifiability of acceptance assertions: a single-number
+want must match on numeric boundaries, and matching uses full output — truncation belongs on
+display only) and `check-consistency.py` (the same piece of knowledge written in several places
+will drift apart). They are two good models for **writing your own gates** — but both are welded to
+that repo's file shapes, so they are recorded here as rules rather than shipped as empty shells.
 
-### 一、闸门平台：检查器必须先证明自己会红
+### 1. Gate platform: a checker must first prove it can turn red
 
-最危险的不是"没有检查"，是**检查在输入消失时静默变绿**：
+The dangerous thing is not "no check". It is **a check silently turning green when its inputs
+disappear**:
 
-- 三个站点同时缺 `VERSION`，一致性闸门报"完全一致"；
-- 声明的集合是空的，出厂核对报 `verdict: "ok"`；
-- 自检脚本 `0/0` 算"全部通过"。
+- three sites simultaneously missing `VERSION`, and the consistency gate reports "fully consistent";
+- an empty declared set, and the shipping audit returns `verdict: "ok"`;
+- a self-check script reporting `0/0` as "all passed".
 
-所以 `gate.py` 提供两件事：
+So `gate.py` provides two things:
 
-- `require_nonempty(name, seq)` —— **零值守卫**。收集阶段什么都没收到，必须报错，不许当"干净"。
-- `selftest(name, cases)` —— 每个检查器的 `--selftest` 必须写齐三类用例：
-  **正常不报 / 该报的必须报 / 空输入必须报**。中间那类是关键：它证明这个检查器**不是装饰**。
+- `require_nonempty(name, seq)` — the **zero-value guard**. If collection gathered nothing, that is
+  an error, never "clean".
+- `selftest(name, cases)` — every checker's `--selftest` must cover three case classes:
+  **normal stays quiet / what must fire, fires / empty input fires**. The middle class is the key:
+  it proves the checker **is not decoration**.
 
-### 二、事实台账：两道守卫
+### 2. Fact ledger: two write guards
 
-`FACTS.json` 每条事实 = 一个**测出来的值** + 复跑命令 + 出处。渲染进文档的机器块，
-正文只许引用**键名**。
+Each entry in `FACTS.json` is one **measured value** + re-run command + provenance. It renders into
+the machine block of the living-state doc; prose may cite **key names** only.
 
-重测（`facts.py`）有两个静默的坏法，各配一道守卫：
+Re-measuring (`facts.py`) has two silent failure modes, each with a guard:
 
-| 坏法 | 现象 | 守卫 |
+| Failure mode | Symptom | Guard |
 |---|---|---|
-| **掉条** | 输入不在 ⇒ 事实**静默消失** | `dropped_keys()` + `--allow-drop` |
-| **改口** | 输入变了或量错了 ⇒ 事实**静默变成另一个数** | `changed_keys()` + `--accept-changes` |
+| **dropped entries** | input gone ⇒ facts **vanish silently** | `dropped_keys()` + `--allow-drop` |
+| **changed values** | input changed (or was mis-measured) ⇒ facts **silently become a different number** | `changed_keys()` + `--accept-changes` |
 
-改口那条更阴：如果闸门只对少数几个 sha 回盘核对，其余条目的旧值一旦被覆盖，**再也查不到它变过**。
-所以 `facts.py` 默认**拒绝写盘**，把 `旧值 → 新值` 打出来，等人逐条确认那是实测出来的。
+The second is nastier: if gates only cross-check a few shas against disk, every other overwritten
+value is **unrecoverable — nobody can ever see that it changed**. So `facts.py` refuses to write by
+default and prints `old → new`, waiting for a human to confirm each change was measured.
 
-⚠️ 改口守卫**只比 `value`**，不比 `cmd`/`source`/`note` —— 那些是"复跑方式"的描述，改它们是文档
-维护的正常动作。若连它们也要显式接受，守卫会变成噪音，最后被 `--accept-changes` 一律糊过去，守卫就废了。
+⚠️ The value guard compares **`value` only**, never `cmd`/`source`/`note` — those describe *how to
+re-run*, and editing them is normal doc maintenance. Making humans explicitly accept those too
+turns the guard into noise, which gets blanket-`--accept-changes`ed, which kills the guard.
 
-### 三、翻案台账：推翻也要留痕
+⚠️ **Which value changes are expected** (issue #2 ③): every entry that **counts the live tree**
+(files / lines / tests) changes with ordinary development — one file added, one test added, done.
+This is the most frequent and most predictable class, and first-timers misread it as "the guard is
+crying wolf — did it mis-measure?" Copy-paste answer: confirm each change really is the accumulation
+of development, then run `python3 zreflect/facts.py --accept-changes`. Never weaken the guard to
+skip this step — no "auto-accept for counters": `--accept-changes` is the single mark of "I checked",
+and "cmd changes don't warn" is already **the one justified exception** — don't open a second.
 
-`retractions.json` 存**已被推翻**的断言：特征片段 `text`、为什么错 `why`、复跑方式 `evidence`、
-现在哪里说对了 `fixed_in`。闸门扫描活状态文档：出现 `text` 的行**必须带更正标记**
-（已翻案/更正/是错的/误读/推翻…），否则报错。
+### 3. Retraction ledger: overturning leaves a trace
 
-目的只有一个：**翻过的句子不能悄悄回来当现状。**
+`retractions.json` stores **refuted** claims: a distinctive fragment `text`, why it was wrong `why`,
+how to re-verify `evidence`, where the truth now lives `fixed_in`. The gate scans living-state
+docs: any line containing `text` **must carry a correction marker** (see `HIST_MARK` in
+`zreflect/living.py` — e.g. retracted / superseded / deprecated / 已翻案), or the gate reports.
 
-### 四、悬案台账：没结案的问题等于没被问过
+One purpose: **a sentence that was retracted must not sneak back as current state.**
 
-`questions/NN-slug.md` 一条悬案一个文件。头部必须有一行：
+**The scan surface is bounded** (issue #2 ②): the gate scans exactly the living-state docs declared
+by `REFLECT_DOCS`. The same sentence reappearing in **source comments, config, or any unlisted
+file** ⇒ **invisible**. That is a **documented gap**, not "checked". Widening the surface requires
+calibrating false positives first: source comments have no notion of "history sections", and
+discussing history inside a comment is legitimate — a gate that cries wolf gets blanket-`--accept`ed,
+which is worse than no gate.
+
+⚠️ Boundary of inline correction markers (measured in the same round): markers exist for **citing
+an old value while stating that it is old** — not for the assertion itself. Self-negation inside the
+same line (e.g. `ZCODE_REFLECT_TYPO — this sentence is retracted.`) exempts that line. Using this
+shape to immunize a *current* claim is bypassing the gate yourself.
+
+### 4. Question ledger: an unsettled question is as good as unasked
+
+One question per file in `questions/NN-slug.md`. Its header must carry:
 
 ```
-Settling: <可执行的路径或命令> —— rc=0 ⇒ 结论A；rc=7 ⇒ 结论B
+Settling: <an executable path or command> —— rc=0 ⇒ conclusion A; rc=7 ⇒ conclusion B
 ```
 
-规则：
+Rules:
 
-- `Settling:` 必须写**仓库内的相对路径**或一条能直接跑的命令，不许写"见某笔记"。
-- 两种结论必须给出**不同的退出码 / 可区分的输出**，否则它证伪不了任何东西。
-- **结算件还不存在的悬案是合法悬案** —— 那这张工单的第一个交付物就是造它。
-  这种情况写 `Settling: 不存在 —— 本工单的第一交付物`，**别编一个假路径**。
-  （如实写"不存在"是有信息的；编个路径会让闸门绿着骗人。）
-- 结案后把结论写进笔记，改 `Status: resolved`。**别删文件** —— 历史要留。
+- `Settling:` must name **a repo-relative path** or a directly runnable command — "see some note"
+  is not a settler.
+- The two outcomes must produce **distinct exit codes / distinguishable output**, or the settler
+  falsifies nothing.
+- **A question whose settler does not exist yet is legitimate** — then the ticket's first deliverable
+  is to build it. Write `Settling: none — this ticket's first deliverable`. **Never invent a path.**
+  Saying "none" honestly carries information; a fake path makes the gate green and lying.
+- When settled, write the conclusion into notes and set `Status: resolved`. **Do not delete the
+  file** — history stays.
 
-`check_questions.py` 会验：`Status:` 合法、`Settling:` 存在、它指的文件真的在、以及
-**一条悬案都没收集到时报错**（零值守卫）。
+`check_questions.py` verifies: valid `Status:`, `Settling:` present, the file it points to exists,
+and **reports when it collected not a single question** (zero-value guard).
 
-⚠️ **已知限制（别把它当保证读）**：路径存在性只查 `Settling:` 的**第一个词**（当它像路径时）。
-所以 `跑一下 scripts/missing.sh` 这种把路径藏在句子中间的写法**查不出来**。
-把它做严需要先标定误报（`<站点>/…` 这类占位符、参数里的 `.sh` 都会被误伤），
-在没有夹具标定之前，宁可留一个**写明的缺口**，也不要一个会误报的严判据 ——
-会误报的闸门最后会被人一律 `--accept` 掉，那比没有更糟。
+⚠️ **Known limitation (read it as a limit, not a guarantee)**: path existence is checked for the
+**first token** of `Settling:` only (when it looks like a path). A phrasing like
+`just run scripts/missing.sh sometime` hides the path from the check. Tightening it first needs
+false-positive calibration (placeholders like `<site>/…`, `.sh` inside arguments, all get hit).
+Until a fixture calibrates that, better a **documented gap** than a strict check that cries wolf —
+a wolf-crying gate gets blanket-`--accept`ed, and that is worse than nothing.
 
-### 五、闸门名录：发现，不是清单
+### 5. Gate registry: discovered, not listed
 
-`gates-selftest.sh` **不接受手写名单**。它扫描 `zreflect/check_*.py`，要求每个都广告
-`--selftest`，缺了就红。
+`gates-selftest.sh` **takes no hand-written list**. It scans `zreflect/check_*.py`, requires every
+file to advertise `--selftest`, and turns red if one is missing.
 
-手写名录的现实是：它一定会漂。加新检查器时忘了登记，那个检查器就变成"没人盯着的检查器"——
-而名录本身还绿着告诉你一切正常。所以这里反过来：**登记是被发现的，不是被记得的。**
+The reality of hand-written registries: they always drift. Add a checker, forget to register it,
+and that checker becomes "a checker nobody watches" — while the registry itself stays green,
+reporting all-is-well. So it works the other way here: **registration is discovered, not remembered.**
 
-## 用法
+### 6. Trilingual README: the trio moves as one — or the push is refused
+
+This repo's face exists in three languages: `README.md` (English, default), `README.zh.md`,
+`README.de.md`. The three files are **one claim in three copies** — edit one and let the others
+drift, and "the same sentence" has quietly become two contradicting assertions. The rule is
+deliberately brutal: **every push must update all three together.**
+
+- `reflect-hooks/pre-push` parses the **push range** from git's stdin protocol and refuses the push
+  if the changed-file set of any pushed ref is missing a single copy of the trio.
+- `check_readme_sync.py` (picked up automatically by the discovery registry) additionally checks
+  structure on every commit and every selftest: all files exist, are non-empty, and each one
+  contains all names of the trio — a broken language switcher is a broken entry point.
+- CI (`.github/workflows/readme-sync.yml`) runs the **same judgment** — because a local hook cannot
+  stop `git push --no-verify`. A promise that binds only when convenient is exactly the
+  "gate that never executed" this repo exists to kill.
+- Different languages, different file names: `REFLECT_READMES=a.md,b.md,c.md` — the hook, the gate
+  and CI all read the same knob.
+
+## Usage
 
 ```bash
 cp -r zreflect reflect-hooks gates-selftest.sh /path/to/your-repo/
-# 1. 写你的 measure()：把"测出来的事实"填进 FACTS.json（参考 facts.py 的 measure_example）
-#    ⚠️ 采集器四条原则见 zreflect/collect.py —— 只读持久盘、不引入会自己变的输入、
-#    读不到就明说、贵的测量做缓存。
-python3 zreflect/facts.py                      # 量一遍
-python3 zreflect/facts.py --render-doc STATE.md # 把机器块写进文档
-# 2. 挂进 pre-commit / pre-push（重算机器块 + 全部闸门）
+# 1. Write your measure(): fill FACTS.json with measured facts (see measure_example in facts.py)
+#    ⚠️ the collector's four principles live in zreflect/collect.py — persistent disk only,
+#    no inputs that change by themselves, say "unavailable" out loud, cache the expensive ones.
+python3 zreflect/facts.py                       # measure once
+python3 zreflect/facts.py --render-doc STATE.md # write the machine block into the doc
+# 2. Install pre-commit / pre-push (recompute block + run all gates;
+#    pre-push additionally refuses pushes that don't update the README trio together)
 sh reflect-hooks/install.sh
-# 3. 手动复验（也是 hooks 会跑的那几条）
-sh gates-selftest.sh                           # 每个闸门先证明自己会红
-python3 zreflect/check_facts.py
-python3 zreflect/check_retractions.py
-python3 zreflect/check_stale.py
-python3 zreflect/check_questions.py
+# 3. Manual re-verification (the same commands the hooks run)
+sh gates-selftest.sh                            # every gate must first prove it can turn red
+for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # discovered registry — no hand-written lists, not even here
 ```
 
-`facts.py` 里的 `measure_example()` 是**占位实现**（量的是本仓自己的文件数），
-换掉它 —— 系统只提供机制，你的输入只有你知道怎么量。
+`measure_example()` in `facts.py` is a **placeholder** (it counts this repo's own files) — replace
+it. The system ships the mechanism; only you know how to measure *your* inputs.
 
-### ZCode hook 接线
+(Repo-local docs: `STATE.md` is the living-state example and `AGENTS.md` holds the agent rules —
+both are kept in Chinese; the trilingual rule applies to the README trio.)
 
-`.zcode/config.json` 给了一份可直接用的配置：会话开始注入活状态、压缩前提醒未结案、停止时刷新机器块。
+### Hook wiring for ZCode sessions
+
+`.zcode/config.json` ships a ready-made config: inject living state at session start, remind about
+open questions before compaction, refresh the machine block on stop.
 
 ```json
 {
@@ -179,47 +250,65 @@ python3 zreflect/check_questions.py
 }
 ```
 
-## 它不做什么
+## What this is not
 
-- **不做检索**。它不管"语料太大塞不进上下文"——那是 RAG 的问题。这里的问题是**断言不可验证**。
-- **不做记忆**。它不捕获"用户纠正了我"然后写进散文。散文是它要消灭的东西。
-- **不依赖模型**。全部是纯 Python 脚本 + 退出码，没有 API key，没有网络，没有服务。
-- **不替你决定什么算事实**。它只要求你为每一条打上一个归宿。
+- **Not retrieval.** It does not care that "the corpus does not fit in context" — that is RAG's
+  problem. This system's problem is **unverifiable assertions**.
+- **Not memory.** It does not capture "the user corrected me" into prose. Prose is what it exists
+  to destroy.
+- **Not model-dependent.** Everything is plain Python scripts and exit codes. No API keys, no
+  network, no services.
+- **Not an arbiter of what counts as fact.** It only demands that every claim you make gets a home.
 
-## 配置（**没有一个名字是写死的**）
+## Configuration (**no name is hardcoded**)
 
-本仓用三个环境变量把"叫什么"与"机制"分开 —— 默认值就是本仓自用的名字，
-换仓库只改环境变量，不改代码：
+Environment variables separate "what things are called" from "how the mechanism works" — the
+defaults are simply the names this repo uses for itself; port to another repo by setting
+variables, never by editing code:
 
-| 变量 | 默认 | 作用 |
+| Variable | Default | What it does |
 |---|---|---|
-| `REFLECT_FACTS` | `FACTS.json` | 台账文件名 |
-| `REFLECT_DOC` | `STATE.md` | 活状态文档（机器块渲染进它） |
-| `REFLECT_DOCS` | `STATE.md,AGENTS.md,README.md` | 翻案/陈旧断言检测扫描的**活状态**文档清单（逗号分隔；历史文档**不要**放进来） |
-| `REFLECT_HISTORY_SECS` | 空 | 声明哪些**编号**章节是 append-only 历史（如 `5,9,10`）—— 豁免它们的"当时如此" |
-| `REFLECT_RETIRED` | 空 | 退役组件名名单（逗号分隔）；不配 = 陈旧断言闸门的 R2 **明说未启用** |
+| `REFLECT_FACTS` | `FACTS.json` | ledger file name |
+| `REFLECT_DOC` | `STATE.md` | living-state doc (the machine block renders into it) |
+| `REFLECT_DOCS` | `STATE.md,AGENTS.md,README.md,README.zh.md,README.de.md` | living-state docs scanned by the retraction / stale gates (comma-separated; do **not** put history docs in here) |
+| `REFLECT_HISTORY_SECS` | empty | which **numbered** sections are append-only history (e.g. `5,9,10`) — their "as of then" is exempt |
+| `REFLECT_RETIRED` | empty | retired component names (comma-separated); unset = the stale gate's R2 **says out loud it is off** |
+| `REFLECT_REPLAY` | empty (on) | `off` ⇒ the replay gate **says out loud it is off**. Individual entries that need build artifacts should opt out one by one with the ledger field `"replay": false` (a fully-exempt ledger turns the replay gate red itself) — don't switch the whole gate off |
+| `REFLECT_REPLAY_TIMEOUT` | `10` | seconds allowed per replayed `cmd`; timeout ⇒ reported (a measurement that never finishes belongs in `replay: false`, not in the data) |
+| `REFLECT_READMES` | `README.md,README.zh.md,README.de.md` | the README trio: input to the structure check **and** to "every push must update all of them"; the hook, the gate and CI all read this knob |
 
-`GATE_REPO`（`zreflect/gate.py`）指向**被检查的仓库根** —— 自证靠它在夹具树上跑，
-不碰真仓库。
+`GATE_REPO` (`zreflect/gate.py`) points at **the repo being checked** — selftests run against
+fixture trees through it and never touch the real repo.
 
-**跨仓库自证**（可复跑）：`gates-selftest.sh` 的最后一节会在一个**临时夹具仓库**里，
-把上面三个名字全换成别的（`LEDGER.json` / `NOTES.md`），仍要求闸门全绿 ——
-这就是"没有硬编码"的**可证伪**判据；名字改不动，那一节会红。
+**Cross-repo selftest** (re-runnable): the last section of `gates-selftest.sh` builds a **throwaway
+fixture repo**, renames **all of these** (`LEDGER.json` / `NOTES.md` / `RETRACT.json` / `cases/` /
+the README trio under different names) and requires every gate green — then runs the same fixture
+under the **default** names and requires every name-dependent gate red. That is the falsifiable
+criterion for "no hardcoded names": if a name cannot be changed, that section turns red.
 
-## 来源
+## Origins
 
-这套机制是在一个真实的长期项目里长出来的（把大型 C/Fortran 科学计算栈编成 wasm 在浏览器里跑：
-每个产物 sha、每个性能数字、每条「实测/推断/翻案」的断言都配闸门）。
-抽出来时去掉了那个项目的一切路径与数据，只留机制 —— 上面那张配置表就是"去掉"的落点。
+This system grew out of one real long-running project (compiling a large C/Fortran scientific
+stack to wasm for the browser: every artifact sha, every performance number, every
+measured/inferred/retracted claim under a gate). Extracting it removed every path and every piece
+of data from that project and kept only the mechanisms — the configuration table above is where
+"removed" landed.
 
-那次实践里抓到的最有价值的一条：**一条守卫因为一个未定义变量，从落地起就没有生效过** ——
-而它失效的方式是"只在真的该报警时才崩"。这正是为什么本仓要求每个闸门
-`--selftest` 的三类用例里必须有"该报的必须报"。
+The single most valuable lesson from that practice: **a guard, because of one undefined variable,
+never fired from the day it shipped** — and it failed in the shape of "it only crashes when it
+actually had something to report". Which is exactly why every gate here must include "what must
+fire, fires" in its `--selftest`.
 
-**2026-09-30 第二次迁移**：那边 `.githooks/` 里剩下的实战机制（活状态抽取、陈旧断言
-闸门、采集器契约、git hooks）也整体迁了进来 —— 见「从 Octave-Full-Wasm 迁来的第二组」
-一节。迁移本身遵守同一条纪律：**剥掉一切项目数据，只留机制**；每一条"踩出来的规矩"
-都写在它所属文件的头上，别处不许复述（复述会漂）。
+**2026-09-30, second migration**: the remaining field-tested mechanisms from that repo's
+`.githooks/` (living-state extraction, stale-assertion gate, collector contract, git hooks) were
+migrated in full — see "The second group" above. The migration followed the same discipline:
+**strip all project data, keep only mechanism**; every scar-rule is written at the top of the file
+it governs, and must not be restated elsewhere (restated things drift).
+
+**2026-10-01, renamed and trilingual**: the project is now called **Einfacht** (formerly
+`zcode-reflect`). The README exists in three languages (English default / 简体中文 / Deutsch)
+as one claim in three copies — see "The trilingual README" section for the gate and the hook that
+enforce it.
 
 ## License
 
