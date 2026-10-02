@@ -25,6 +25,11 @@
 要起服务、要编二进制的那些，写 `fact(值, cmd, 出处, replay=False)` 显式退出 ——
 这是有名单、有明说的豁免，不是静默；整道闸也留了 `REFLECT_REPLAY=off` 的整仓出口
 （同 `REFLECT_RETIRED` 的先例：**明说未启用，不假装查过**）。
+还有一类不需要构建产物、只是**每跑必变**（随机填充长度、GREASE 载荷、时间戳
+类，issue #4 ⑤）：存**一次实测采样** + 配一对 `*_stable` 稳定性标记键
+（消费侧分两档：stable 逐字判、不稳定档结构判），或显式 `replay=False` ——
+**不许裸存**：裸存 = 这条事实永远红 = 噪音 = 最后整闸被关。
+值会变 ≠ 不能进台账，得先声明它怎么变。
 
 ⚠️ 本闸门执行的是**本仓台账里的命令** —— 信任边界与 pre-commit 脚本本身相同。
 台账是仓库自己生产、自己审查的文件；改台账 = 改构建脚本级别的承诺，不是运行时输入。
@@ -107,9 +112,11 @@ def replay_all(ledger, runner=None):
         got = stdout.strip()
         want = str(_value(entry))
         if got != want:
-            out.append("`%s` 复跑输出与台账不符：stdout=%s vs 台账=%s —— 要么值烂了"
-                       "（重测并 --accept-changes），要么 cmd 违反裸值契约（stdout 只能"
-                       "打值本身）" % (k, _q(got), _q(want)))
+            out.append("`%s` 复跑输出与台账不符：stdout=%s vs 台账=%s —— 修法是"
+                       "**重测**：python3 zreflect/facts.py，改口逐条"
+                       " `--accept-changes=k1,k2` 放行；重测后仍不符，才是"
+                       "cmd 违反裸值契约（stdout 只能打值本身）"
+                       % (k, _q(got), _q(want)))
             continue
         stats["ok"] += 1
     if stats["attempts"] and stats["ran"] == 0:
@@ -169,8 +176,8 @@ def _cases():
         ("声明 replay=False 的条目被跳过，其余一致 ⇒ 不报",
          lambda: replay_all(multi, runner=lambda c: (0, "1"))["problems"] == []),
         # ② 该报的必须报
-        ("★ stdout ≠ 台账值 ⇒ 必须报（值烂了要当场抓住）",
-         lambda: any("不符" in x for x in
+        ("★ stdout ≠ 台账值 ⇒ 必须报，且报错指向重测（issue #4 ③）",
+         lambda: any("不符" in x and "重测" in x and "accept-changes" in x for x in
                      replay_all(LED, runner=lambda c: (0, "13"))["problems"])),
         ("★ stdout 打了「含该值的整行」⇒ 必须报（裸值契约：机器只认整段 stdout）",
          lambda: any("不符" in x for x in

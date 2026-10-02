@@ -237,6 +237,7 @@ cp -r zreflect reflect-hooks gates-selftest.sh /path/to/your-repo/
 #    no inputs that change by themselves, say "unavailable" out loud, cache the expensive ones.
 python3 zreflect/facts.py                       # measure once
 python3 zreflect/facts.py --render-doc STATE.md # write the machine block into the doc
+python3 zreflect/facts.py --get py_lines         # bare value of one fact (for scripts / other languages)
 # 2. Install pre-commit / pre-push (recompute block + run all gates;
 #    pre-push additionally refuses pushes that don't update the README trio together)
 sh reflect-hooks/install.sh
@@ -248,13 +249,23 @@ for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # discovered reg
 `measure_example()` in `facts.py` is a **placeholder** (it counts this repo's own files) — replace
 it. The system ships the mechanism; only you know how to measure *your* inputs.
 
+Consumers (CI jobs, tests in other languages) read the ledger through `--get KEY` —
+**never parse `FACTS.json` yourselves**: a hand-rolled parser's classic failure is
+substring-matching `"value"` and grabbing **another key's** value (issue #4 ④).
+
+CI runs the same judgment on every push (`.github/workflows/gates.yml`):
+`facts.py --check` plus every discovered checker — `check_facts_replay` included,
+so every `cmd` is really executed in CI too. Local hooks only bind machines that ran
+`install.sh`; CI is the promise's front line (issue #4 ②).
+
 (Repo-local docs: `STATE.md` is the living-state example and `AGENTS.md` holds the agent rules —
 both are kept in Chinese; the trilingual rule applies to the README trio.)
 
 ### Hook wiring for ZCode sessions
 
-`.zcode/config.json` ships a ready-made config: inject living state at session start, remind about
-open questions before compaction, refresh the machine block on stop.
+`.zcode/config.json` ships a ready-made config — **in this exact shape** (this repo's own
+wiring was once a broken copy of this example, issue #4 ①): inject living state at session
+start, refresh the machine block on stop.
 
 ```json
 {
@@ -263,11 +274,25 @@ open questions before compaction, refresh the machine block on stop.
     "events": {
       "SessionStart": [{ "matcher": "startup|resume|clear|compact",
         "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/inject-state.py\"" }] }],
-      "Stop": [{ "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/zreflect/facts.py\" --render-doc STATE.md" }] }]
+      "Stop": [{ "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/stop-refresh.py\"" }] }]
     }
   }
 }
 ```
+
+Three shapes are load-bearing:
+
+- **`enabled: true` is part of the shape** — config-file hooks ship disabled. Entries are
+  `{ matcher?, hooks: [{ type, command }] }` under `hooks.events.<Event>`; the flat
+  `hooks.<Event>` form is one ZCode never sees.
+- **hook stdout is parsed as strict JSON**: `inject-state.py` emits the
+  `{"hookSpecificOutput": {…}}` envelope when the hook runs it (non-tty) and plain text
+  only when run by hand in a terminal. Plain text in hook context is silently dropped —
+  the log keeps one failed line that looks minor.
+- **Stop hooks must always exit 0**. ZCode's exit codes are `0` pass / `2` block /
+  other = error, and `facts.py --render-doc` exits 2 on a missing ledger — wiring it
+  directly takes the session hostage on one missing file. `.zcode/stop-refresh.py` is the
+  always-0 wrapper: failures degrade to one stderr line.
 
 ## What this is not
 

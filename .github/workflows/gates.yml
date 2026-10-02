@@ -1,0 +1,24 @@
+# 六道闸门与事实新鲜度在 CI 的正面落点（issue #4 ②）：
+# reflect-hooks/pre-commit / pre-push 只装在跑过 install.sh 的机器上，
+# 且可被 git push --no-verify 跳过 —— 只在自己方便时生效的闸门
+# = 本仓最擅长的那种"从未跑过的闸门"。这里正面执行与本地 hook
+# 同一条判据：facts --check（机器块 ↔ 台账）+ 发现式名录里的
+# 全部闸门（check_facts_replay 含在内 ⇒ 台账每条 cmd 在 CI 里
+# 真的被逐字执行）。
+name: gates
+
+on:
+  push: {}
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3"
+      - name: 事实块与台账一致 + 六道闸门全绿
+        run: |
+          python3 zreflect/facts.py --check "${REFLECT_DOC:-STATE.md}"
+          for g in zreflect/check_*.py; do echo "--- $g"; python3 "$g" || exit 1; done

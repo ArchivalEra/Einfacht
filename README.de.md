@@ -250,6 +250,7 @@ cp -r zreflect reflect-hooks gates-selftest.sh /path/to/your-repo/
 #    keine selbständernden Eingänge, „unavailable" laut sagen, das Teure cachen.
 python3 zreflect/facts.py                        # einmal messen
 python3 zreflect/facts.py --render-doc STATE.md  # den Maschinenblock ins Doc schreiben
+python3 zreflect/facts.py --get py_lines          # Bare-Wert eines Fakts (für Skripte / andere Sprachen)
 # 2. pre-commit / pre-push einhängen (Block neu rechnen + alle Gates;
 #    pre-push weist außerdem Pushes ab, die das README-Trio nicht gemeinsam aktualisieren)
 sh reflect-hooks/install.sh
@@ -261,13 +262,26 @@ for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # Entdeckungsreg
 `measure_example()` in `facts.py` ist ein **Platzhalter** (er zählt die eigenen Repo-Dateien) —
 ersetzen. Das System liefert den Mechanismus; nur du weißt, wie *deine* Eingänge zu messen sind.
 
+Konsumenten (CI-Jobs, Tests in anderen Sprachen) lesen das Ledger über
+`--get KEY` — **nie `FACTS.json` selbst parsen**: das klassische Scheitern
+eines handgeschriebenen Parsers ist Substring-Matching auf `"value"` und
+damit der **fremde** Wert eines anderen Schlüssels (issue #4 ④).
+
+CI fährt dieselbe Prüfung bei jedem Push (`.github/workflows/gates.yml`):
+`facts.py --check` plus jedes entdeckte Gate — `check_facts_replay`
+eingeschlossen, also wird jeder `cmd` in CI wirklich ausgeführt. Lokale
+Hooks binden nur Maschinen, die `install.sh` liefen; CI ist die Frontlinie
+des Versprechens (issue #4 ②).
+
 (Repo-interne Docs: `STATE.md` ist das Living-State-Beispiel, `AGENTS.md` enthält die
 Agent-Regeln — beide auf Chinesisch gepflegt; die Trilingual-Regel gilt für das README-Trio.)
 
 ### Hook-Verkabelung für ZCode-Sessions
 
-`.zcode/config.json` liefert eine fertige Konfiguration: Living State beim Sessionstart injizieren,
-vor dem Compaction an offene Fragen erinnern, beim Stopp den Maschinenblock auffrischen.
+`.zcode/config.json` liefert eine fertige Konfiguration — **in genau dieser Form**
+(die eigene Verkabelung dieses Repos war einmal eine kaputte Kopie dieses Beispiels,
+issue #4 ①): Living State beim Sessionstart injizieren, beim Stopp den
+Maschinenblock auffrischen.
 
 ```json
 {
@@ -276,11 +290,26 @@ vor dem Compaction an offene Fragen erinnern, beim Stopp den Maschinenblock auff
     "events": {
       "SessionStart": [{ "matcher": "startup|resume|clear|compact",
         "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/inject-state.py\"" }] }],
-      "Stop": [{ "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/zreflect/facts.py\" --render-doc STATE.md" }] }]
+      "Stop": [{ "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/stop-refresh.py\"" }] }]
     }
   }
 }
 ```
+
+Drei Formen sind tragend:
+
+- **`enabled: true` ist Teil der Form** — Config-File-Hooks sind standardmäßig
+  deaktiviert. Einträge sind `{ matcher?, hooks: [{ type, command }] }` unter
+  `hooks.events.<Event>`; die flache `hooks.<Event>`-Form sieht ZCode nie.
+- **Hook-stdout wird als striktes JSON geparst**: `inject-state.py` sendet im
+  Hook-Kontext (non-tty) den `{"hookSpecificOutput": {…}}`-Umschlag und nur
+  im Terminal von Hand plain text. Plain text im Hook-Kontext wird still
+  verworfen — das Log behält eine failed-Zeile, die wie ein Kavaliersdelikt aussieht.
+- **Stop-Hooks müssen immer mit 0 enden**. Zcodes Exit-Codes: `0` pass /
+  `2` block / sonst error — und `facts.py --render-doc` endet mit 2 bei
+  fehlendem Ledger. Direkt verdrahtet nimmt ein fehlendes Ledger die ganze
+  Session als Geisel. `.zcode/stop-refresh.py` ist der immer-0-Wrapper:
+  Fehler degradieren zu einer stderr-Zeile.
 
 ## Was es nicht ist
 

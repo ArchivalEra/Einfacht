@@ -63,3 +63,16 @@ for g in zreflect/check_*.py; do python3 "$g" || exit 1; done
 - **裸数字判据可配且豁免代码**：`REFLECT_NAKED_MIN`（默认 100）调阈值；围栏代码块 /
   行内代码内的数字豁免（复跑命令天然带数字，issue #3 ④）。`REFLECT_STALE_DAYS`
   开测龄报警（不配 = 明说未启用，issue #3 ②）。
+- **会话 hook 接线按 ZCode schema**（issue #4 ①）：配置文件形状是
+  `hooks.events.<Event>`、条目带 `type` 的 hooks 数组、且默认禁用需
+  `"enabled": true`（平铺的 `hooks.<Event>` 是 ZCode 看不见的形状）；
+  hook 的 stdout 按**严格 JSON 信封**解析（`hookSpecificOutput`），
+  纯文本只在手工 tty 跑时发；Stop 类 hook **永远退 0**（`facts.py`
+  缺台账时退 2 = 阻塞，会把会话当人质 —— 用 `.zcode/stop-refresh.py`
+  壳降级）。
+- **每跑必变的量不许裸存**（issue #4 ⑤）：存**一次实测采样** + 配
+  `*_stable` 稳定性标记键（消费侧分两档：stable 逐字判、不稳定档
+  结构判），或显式 `replay=False` —— 裸存 = 复跑永远红 = 噪音。
+- **消费方读台账走 `--get KEY`**（issue #4 ④）：只打印裸值；
+  **不要自己解析 `FACTS.json`**（substring 找 `"value"` 会取到
+  别的键的值）。

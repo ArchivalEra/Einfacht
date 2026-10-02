@@ -197,6 +197,7 @@ cp -r zreflect reflect-hooks gates-selftest.sh /path/to/your-repo/
 #    读不到就明说、贵的测量做缓存。
 python3 zreflect/facts.py                      # 量一遍
 python3 zreflect/facts.py --render-doc STATE.md # 把机器块写进文档
+python3 zreflect/facts.py --get 键名             # 只打印一条事实的裸值（脚本 / 其它语言用）
 # 2. 挂进 pre-commit / pre-push（重算机器块 + 全部闸门；pre-push 还要求三语 README 同批更新）
 sh reflect-hooks/install.sh
 # 3. 手动复验（也是 hooks 会跑的那几条）
@@ -207,12 +208,22 @@ for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # 发现式名�
 `facts.py` 里的 `measure_example()` 是**占位实现**（量的是本仓自己的文件数），
 换掉它 —— 系统只提供机制，你的输入只有你知道怎么量。
 
+消费方（CI job、其它语言的测试）一律走 `--get KEY` 读台账 ——
+**不要自己解析 `FACTS.json`**：手写 parser 的经典坑是 substring 找
+`"value"`、取到**别的键**上的值（issue #4 ④）。
+
+CI 每次推送都正面执行同一条判据（`.github/workflows/gates.yml`）：
+`facts.py --check` + 发现式名录里的全部闸门（含 `check_facts_replay`
+—— 每条 `cmd` 在 CI 里真的逐字执行）。本地 hook 只约束跑过
+install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
+
 （仓内文档：`STATE.md` 是活状态示例、`AGENTS.md` 是给 agent 的硬规矩 —— 两份都用中文维护；
 三语同批规则只管 README trio。）
 
 ### ZCode hook 接线
 
-`.zcode/config.json` 给了一份可直接用的配置：会话开始注入活状态、压缩前提醒未结案、停止时刷新机器块。
+`.zcode/config.json` 给了一份可直接用的配置 —— **就是下面这个形状**（本仓自己那份接线
+曾经是这个示例的坏拷贝，issue #4 ①）：会话开始注入活状态、停止时刷新机器块。
 
 ```json
 {
@@ -221,11 +232,24 @@ for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # 发现式名�
     "events": {
       "SessionStart": [{ "matcher": "startup|resume|clear|compact",
         "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/inject-state.py\"" }] }],
-      "Stop": [{ "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/zreflect/facts.py\" --render-doc STATE.md" }] }]
+      "Stop": [{ "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/stop-refresh.py\"" }] }]
     }
   }
 }
 ```
+
+三个形状都是承重的：
+
+- **`enabled: true` 是形状的一部分** —— 配置文件 hook 默认禁用。条目是
+  `hooks.events.<Event>` 下的 `{ matcher?, hooks: [{ type, command }] }`；
+  `hooks.<Event>` 平铺写法 ZCode 根本看不见。
+- **hook 的 stdout 按严格 JSON 解析**：`inject-state.py` 被 hook 调用（非 tty）时发
+  `{"hookSpecificOutput": {…}}` 信封，只有手工在终端跑才发纯文本。hook 上下文里的
+  纯文本会被静默丢弃 —— 日志只留一条看起来像小毛病的 failed。
+- **Stop 类 hook 必须永远退 0**。ZCode 的退出码语义是 `0` 放行 / `2` 阻塞 /
+  其它非零算错误，而 `facts.py --render-doc` 在台账缺失时退 2 —— 直接接线，
+  一次台账缺文件就把整个会话当人质。`.zcode/stop-refresh.py` 是永远退 0 的壳：
+  失败降级为 stderr 一句。
 
 ## 它不做什么
 
