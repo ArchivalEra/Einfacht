@@ -24,6 +24,9 @@
   `check_readme_sync`（三语 README 同批：结构互链 + 推送集必须含全部名单）、
   `check_stale`（sha 出处 / 退役名 / 测龄：`REFLECT_STALE_DAYS` 开启）。
 - **一条悬案**：见 `questions/01-example.md`。
+- **CI 正面执行同一判据**：`gates` workflow 每推跑 `facts.py --check`
+  + 六道闸门（每条 `cmd` 真的逐字复跑）；`readme-sync` 查三语同批。
+  本地 hook 只约束跑过 install.sh 的机器（issue #4 ②）。
 
 ## 那条示例翻案
 
@@ -38,9 +41,10 @@
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `md_files` | **8** | 2026-10-01T14:54:21+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `py_files` | **14** | 2026-10-01T14:54:21+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **1846** | 2026-10-01T14:54:21+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **8** | 2026-10-02T08:44:30+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `md_lines` | **1320** | 2026-10-02T08:44:30+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
+| `py_files` | **15** | 2026-10-02T08:44:30+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **1959** | 2026-10-02T08:44:30+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
-3 条事实。
+4 条事实。
 <!-- /AUTO:FACTS -->

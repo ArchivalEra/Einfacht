@@ -60,6 +60,9 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   几条 ⇒ `--accept-changes=k1,k2` 逐条放行，其余照旧拒绝）；**键没了** → `--allow-drop`
   （先想清楚为什么掉：输入消失？测量坏了？掉条是**信号**，不是麻烦）。
 - **新增事实**：写 `measure()` → 跑 → 渲染 → 提交（复跑命令跟着进台账）。
+- **消费方读台账**（CI job / 其它语言的测试）：`python3 zreflect/facts.py --get KEY`
+  —— 只打印裸值；**不要自己解析 `FACTS.json`**（substring 找 `"value"`
+  会取到别的键的值，issue #4 ④）。
 - **新增闸门**：`zreflect/check_<名>.py` + `--selftest`（自证里必须有"该报的必须报"用例；
   收尾必须有机器摘要行 `=== N PASS / M FAIL ===`，照 `gate.selftest()` 写自动有）。
 - **翻案**：`retractions.json` 追加 `R-xxx`（text/why/evidence/fixed_in），活状态里的旧句子**带更正标记**。
@@ -74,6 +77,12 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   都是，查了全是噪音）；围栏代码块 / 行内代码内豁免（复跑命令天然带数字）。
 - **测龄报警默认关**：`REFLECT_STALE_DAYS` 不配 = 测龄规则明说未启用；开了之后，
   `measured_at` 缺失/坏 ⇒ 也报（读不到就明说，不许猜 0）。
+- **每跑必变的量不许裸存**（issue #4 ⑤）：存**一次实测采样** + 配 `*_stable`
+  稳定性标记键（消费侧分两档：stable 逐字判、不稳定档结构判），或
+  `replay=False` —— 裸存 = 复跑永远红 = 噪音 = 最后整闸被关。
+- **md_lines 用块排除 awk 模式**（issue #4 ⑥）：机器块就渲染在文档里，
+  数进去会让渲染一遍值就过期、复跑恒定失败；`FNR==1{b=0}` 是必需的
+  （`find -exec {} +` 会把多个文件喂给同一个 awk 进程）。
 - **纯函数保持安静**：`problems()` 一类的纯函数不许 print —— 自证输出是给人核对的接口（issue #1 ③）。
 - 自证输出末尾的机器摘要行（`=== N PASS / M FAIL ===`）是 runner/CI 的读接口，
   `gates-selftest.sh` 会校验它在（issue #3 ③）。
@@ -85,6 +94,13 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
 - HEAD 以 `git log -1` 为准；origin 已配置。
 - 六道闸门全绿；发现式自证 6/6；跨仓库换名自证 6/6（证明没有硬编码路径）；两道守卫在线。
   三语 README 同批判据：pre-push（本地）+ GitHub Actions（正面）双层执行。
+- **CI 正面执行同一判据**（issue #4 ②）：`gates` workflow 每推跑
+  `facts.py --check` + 全闸门（含 `check_facts_replay` —— 每条 `cmd`
+  真的逐字执行）；`readme-sync` 查三语同批。本地 hook 只约束跑过
+  install.sh 的机器。
+- `.zcode/` 接线按 ZCode schema（`hooks.events` + `type` + `enabled`）；
+  SessionStart 注入在非 tty 发 JSON 信封；Stop 经 `stop-refresh.py`
+  壳永远退 0（issue #4 ①）。
 - `questions/` 里有 1 张**示例**悬案（它存在的意义是示范 `Settling:` 的写法，看完可删）。
 - 来源与 License：见 README 末两节。
 

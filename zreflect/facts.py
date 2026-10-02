@@ -8,6 +8,7 @@
     python3 zreflect/facts.py --accept-changes=k1,k2  # 只接受列出的键，其余改口仍拒绝（issue #3 ①）
     python3 zreflect/facts.py --render-doc [文件]  # 把机器块写进文档（默认 STATE.md）
     python3 zreflect/facts.py --check [文件]       # 文档里的块是否与台账一致
+    python3 zreflect/facts.py --get 键名           # 只打印该键的值（消费方出口，issue #4 ④）
     python3 zreflect/facts.py show [键]            # 打印某条事实
     python3 zreflect/facts.py --selftest           # 自证：两道守卫必须都能红
 
@@ -15,6 +16,7 @@
 没日志就把那条事实**留空**，而不是写 0 —— 0 是一个数字，会被人当结果引用。
 """
 import os
+import subprocess
 import sys
 import time
 
@@ -22,7 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import GATE_REPO, repo, selftest             # noqa: E402
 from ledger import (age_days, changed_keys, dropped_keys,  # noqa: E402
-                    fact, facts_of, load, _short)
+                    fact, facts_of, load, _short, _value)
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
 
 LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
@@ -63,6 +65,23 @@ def measure_example():
     facts["py_lines"] = fact(lines_py, "find . -name '*.py' -not -path './.git/*' "
                              "-exec cat {} + | wc -l", "repo",
                              "刻意 ≥100，用来示范裸数字判据")
+    # ⑥ 块排除模式（issue #4 ⑥）：md_lines 数**块以外**的行 —— 机器块
+    # 就渲染在这些文档里，数进去 ⇒ 渲染一遍值就过期 ⇒ 复跑恒定失败
+    # （而 check_facts 比的是「块↔台账」，两边一起陈旧 ⇒ 全绿）。
+    # awk 的 FNR==1{b=0} 是必需的：find -exec {} + 会把多个文件喂给
+    # 同一个 awk 进程，漏了按文件重置，第一个带块的文件之后全被跳过，
+    # 而输出仍然「像个行数」。起始标记与 render.py 的输出逐字一致。
+    md_lines_cmd = ("find . -name '*.md' -not -path './.git/*'"
+                    " -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l")
+    # cwd=GATE_REPO：计数（os.walk(GATE_REPO)）与复跑（闸门在仓库根
+    # 逐字执行 cmd）都锚定 GATE_REPO —— 不传 cwd 时，在夹具里量到的是
+    # 调用方仓库的行数，换名自证会红（跨仓库可配置性自证抓到的回归）。
+    facts["md_lines"] = fact(
+        int(subprocess.run(md_lines_cmd, shell=True, capture_output=True,
+                             text=True, check=True,
+                             cwd=GATE_REPO).stdout.strip()),
+        md_lines_cmd, "repo",
+        "不含机器块：块就渲染在文档里，数进去会让渲染一遍值就过期")
 
     # 例：**量不到就不写**。把 UPSTREAM_VERSION 设上才有这条事实。
     v = os.environ.get("UPSTREAM_VERSION", "").strip()
@@ -213,6 +232,22 @@ def measure(argv):
     return 0
 
 
+def get_value(ledger, key):
+    """按键取台账值 —— 跨语言消费方的**官方只读出口**（issue #4 ④）。
+
+    消费方（CI、其它语言的测试进程）一律走 `facts.py --get KEY`，
+    **不要自己解析 FACTS.json**：手写 parser 的经典坑是 substring 找
+    `"value"` 再取引号内 —— 同一文件里到处都是 `"value": …`，会取到
+    **别的键**上的值。这里把值取完整。
+    键不存在 ⇒ (False, 错误句)；存在 ⇒ (True, 值)。
+    """
+    f = facts_of(ledger)
+    if key not in f:
+        return False, "台账里没有键 `%s`（现有：%s）" % (
+            key, ", ".join(sorted(f)) or "空")
+    return True, _value(f[key])
+
+
 def _load_or_die():
     """读台账；**没有就给出可操作的提示**而不是原始 traceback。
     为什么单列：新仓库第一次用时台账还不存在，而这个脚本今天会直接抛
@@ -235,6 +270,16 @@ def main(argv):
         return write_doc(argv[1] if len(argv) > 1 else DOC, _load_or_die())
     if argv and argv[0] == "--check":
         return check_doc(argv[1] if len(argv) > 1 else DOC, _load_or_die())
+    if argv and argv[0] == "--get":
+        if len(argv) < 2:
+            print("FATAL: --get 需要一个键名：--get KEY", file=sys.stderr)
+            return 2
+        ok, v = get_value(_load_or_die(), argv[1])
+        if not ok:
+            print("FATAL: %s" % v, file=sys.stderr)
+            return 2
+        print(v)                       # 只打印值本身：不解释、不带前缀
+        return 0
     if argv and argv[0] == "show":
         led = _load_or_die()
         f = facts_of(led)
@@ -287,6 +332,13 @@ CASES = [
      lambda: _age_human({"value": 1}) == "未记录测量时间"),
     ("年龄：刚刚测的 ⇒ 今天",
      lambda: _age_human({"measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}) == "今天测的"),
+    # ④ 官方只读出口（issue #4 ④）
+    ("--get：键存在（字典形状）⇒ (True, 裸值)",
+     lambda: get_value({"facts": {"n": {"value": 12, "cmd": "c"}}}, "n") == (True, 12)),
+    ("--get：键存在（裸值形状）⇒ (True, 值)",
+     lambda: get_value({"facts": {"n": 7}}, "n") == (True, 7)),
+    ("★ --get：键不存在 ⇒ (False, 错误句)（空输入不是通过）",
+     lambda: get_value({"facts": {"n": 1}}, "zzz")[0] is False),
 ]
 
 

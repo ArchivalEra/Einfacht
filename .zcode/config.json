@@ -1,15 +1,41 @@
 {
   "_why": [
-    "SessionStart hook 的**示例接线**（zcode-reflect 自用）。",
-    "为什么值得占一个 hook：会话开始时 agent 手上没有状态，于是会**重新提出已经结案的问题**、",
-    "或**照抄一份过期的数字**。这个 hook 把那两件事的输入摆在桌面上（未结案的悬案 + 台账规模）。",
+    "SessionStart / Stop hook 的**示例接线**（zcode-reflect 自用）。",
+    "为什么值得占 hook：会话开始时 agent 手上没有状态，于是会**重新提出已经结案的问题**、",
+    "或**照抄一份过期的数字**。SessionStart 把那两件事的输入摆在桌面上（未结案的悬案 + 台账规模）。",
+    "Stop 重渲染机器块 —— 经 stop-refresh.py 壳，**永远退 0**：",
+    "ZCode 的退出码语义是 0 放行 / 2 阻塞 / 其它非零算错误，而 facts.py 在台账",
+    "缺失时退 2 —— 直接挂进 Stop 会把一次台账缺文件变成「阻塞整个会话」。",
+    "⚠️ 形状按 ZCode schema：hooks.events.<Event>、条目带 type 的 hooks 数组、",
+    "且配置文件 hook 默认禁用 ⇒ enabled: true 是形状的一部分。",
+    "⚠️ hook 的 stdout 按严格 JSON 解析 —— inject-state.py 在非 tty（即 hook",
+    "上下文）发 JSON 信封，手工跑（tty）才发纯文本。",
     "⚠️ 输出必须短 —— hook 的 stdout 会进上下文。"
   ],
   "hooks": {
-    "SessionStart": [
-      {
-        "command": "python3 .zcode/inject-state.py"
-      }
-    ]
+    "enabled": true,
+    "events": {
+      "SessionStart": [
+        {
+          "matcher": "startup|resume|clear|compact",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/inject-state.py\""
+            }
+          ]
+        }
+      ],
+      "Stop": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/stop-refresh.py\""
+            }
+          ]
+        }
+      ]
+    }
   }
 }
