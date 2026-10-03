@@ -28,7 +28,9 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
 - **渲染** = `facts.py --render-doc` 把台账写进活状态文档末尾的 AUTO 块（**别手改**，hook 会重算并 `git add`）。
 - **闸门** = 六道：`check_facts`（块一致性 / 正文裸数字（`REFLECT_NAKED_MIN`
   可配、代码块内豁免）/ 坏引用）、`check_facts_replay`（台账 `cmd`
-  逐字复跑，stdout 必须等于值 —— 裸值契约见 `ledger.fact()`）、`check_retractions`（翻案重现，
+  逐字复跑，stdout 必须等于值 —— 裸值契约见 `ledger.fact()`；另有
+  第三档**见证**：`replay=False` 的贵事实可挂 `witness`/`witness_expect`
+  （两者同给），来源每提交真跑，issue #5）、`check_retractions`（翻案重现，
   扫描面 = `REFLECT_DOCS`）、`check_questions`（悬案必须挂结算件）、`check_readme_sync`（三语 README
   同批：默认模式查结构互链，`--changed` 模式查推送改动集；pre-push 与 CI 都走后者）、
   `check_stale` + `living.py`（活状态 vs 历史章节的口径；另带测龄报警 `REFLECT_STALE_DAYS`，
@@ -60,6 +62,10 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   几条 ⇒ `--accept-changes=k1,k2` 逐条放行，其余照旧拒绝）；**键没了** → `--allow-drop`
   （先想清楚为什么掉：输入消失？测量坏了？掉条是**信号**，不是麻烦）。
 - **新增事实**：写 `measure()` → 跑 → 渲染 → 提交（复跑命令跟着进台账）。
+- **贵事实**（要构建产物 / 浏览器 / 基准机）：`replay=False` + 挂见证
+  `witness`/`witness_expect`（两者同给，残缺形状 `ledger.fact()` 当场报错）
+  —— 值不复跑，但**来源/上下文**每提交真跑、判据同裸值契约
+  （issue #5）。策略（挂什么见证）留各仓，机制在闸门里。
 - **消费方读台账**（CI job / 其它语言的测试）：`python3 zreflect/facts.py --get KEY`
   —— 只打印裸值；**不要自己解析 `FACTS.json`**（substring 找 `"value"`
   会取到别的键的值，issue #4 ④）。
@@ -83,6 +89,10 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
 - **md_lines 用块排除 awk 模式**（issue #4 ⑥）：机器块就渲染在文档里，
   数进去会让渲染一遍值就过期、复跑恒定失败；`FNR==1{b=0}` 是必需的
   （`find -exec {} +` 会把多个文件喂给同一个 awk 进程）。
+- **witness 是第三档**（issue #5）：与 `replay` 正交，判据同裸值契约；
+  「哪条事实挂什么见证」是策略（留各仓），「便宜来源见证每提交真跑」
+  是机制（在 `check_facts_replay` 里）。零值守卫跟着调：全豁免
+  **且无见证**才算「什么都没查」。
 - **纯函数保持安静**：`problems()` 一类的纯函数不许 print —— 自证输出是给人核对的接口（issue #1 ③）。
 - 自证输出末尾的机器摘要行（`=== N PASS / M FAIL ===`）是 runner/CI 的读接口，
   `gates-selftest.sh` 会校验它在（issue #3 ③）。

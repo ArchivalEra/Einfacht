@@ -71,7 +71,8 @@ def changed_keys(old_facts, new_facts):
     return out
 
 
-def fact(value, cmd, source, note="", replay=True):
+def fact(value, cmd, source, note="", replay=True,
+         witness=None, witness_expect=None):
     """造一条事实：值 + 复跑命令 + 出处（+ 可选备注）。
 
     ⚠️ **`cmd` 的裸值契约（issue #2 ①）**：`check_facts_replay.py` 会**逐字执行**它
@@ -82,16 +83,30 @@ def fact(value, cmd, source, note="", replay=True):
     要起服务 / 要构建产物、在这个环境里根本跑不了的条目：显式写 `replay=False`
     （复跑闸门跳过它，并在「全部条目都豁免」时报警 —— 豁免是有名单的，不静默）。
 
+    **第三档：见证（issue #5）** —— `replay=False` 的贵事实可以挂**便宜见证**：
+    `witness`（便宜、无害、只读的命令）+ `witness_expect`（期望 stdout）。
+    见证与 `replay` **正交**：贵事实的值不逐字复跑，但它的**来源/上下文**
+    （"产出它的工具/输入就是我以为的那个"）**每次提交真跑**，判据同裸值契约
+    （`stdout.strip() == witness_expect`）。两者**必须同时给** —— 只给一个
+    是残缺形状，采集器当场报错（断言残缺比静默缺失好抓）。
+
     `measured_at` 在**采集时刻**自动盖上（issue #3 ②）：它是「何时测的」的记录，
     供渲染「测于」列与测龄用，**不许当成测量输入**（collect.py 原则 2：
     否则 `--check` 永不收敛 —— 它是输出，不是输入）。
     """
+    if (witness is None) != (witness_expect is None):
+        raise SystemExit(
+            "FATAL: fact() 形状契约（issue #5）：`witness` 与 `witness_expect`"
+            " 必须同时给（只给一个 = 残缺见证，断言残缺比静默缺失好抓）")
     d = {"value": value, "cmd": cmd, "source": source,
          "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     if note:
         d["note"] = note
     if not replay:
         d["replay"] = False
+    if witness is not None:
+        d["witness"] = witness
+        d["witness_expect"] = witness_expect
     return d
 
 
@@ -146,6 +161,16 @@ def _cases():
          lambda: 39 < age_days({"measured_at": (datetime.now(timezone.utc)
                                                  - timedelta(days=40)
                                                  ).strftime("%Y-%m-%dT%H:%M:%S%z")}) < 41),
+        # ③ 见证（issue #5）
+        ("fact() 盖 witness 字段（两者同给）",
+         lambda: fact(1, "c", "s", witness="w", witness_expect="e").get("witness") == "w"
+         and fact(1, "c", "s", witness="w", witness_expect="e").get("witness_expect") == "e"),
+        ("fact() 不给 witness ⇒ 无字段",
+         lambda: "witness" not in fact(1, "c", "s")),
+        ("★ witness 形状残缺：只给 witness ⇒ 当场报错",
+         lambda: raises(lambda: fact(1, "c", "s", witness="w"))),
+        ("★ witness 形状残缺：只给 witness_expect ⇒ 当场报错",
+         lambda: raises(lambda: fact(1, "c", "s", witness_expect="e"))),
     ]
 
 

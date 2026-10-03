@@ -19,7 +19,16 @@
     并在输出里明说 —— 判据强度随环境变化这件事，不许静默。
 
 零值守卫三条：台账为空 ⇒ 报；一条都没跑成（全 rc≠0/超时）⇒ 报；全部事实都声明
-`replay: false` ⇒ 报（全豁免不是「通过」，是「这个闸门什么都没查」）。
+`replay: false` **且无见证** ⇒ 报（全豁免不是「通过」，是「这个闸门什么都没查」；
+挂了 witness 的贵事实照样被查 —— issue #5）。
+
+第三档：**见证**（issue #5）—— `replay=False` 的贵事实可挂便宜见证
+（`witness` + `witness_expect`，两者同给，残缺形状由 `ledger.fact()`
+当场报错）。见证与 `replay` **正交**：值本身不逐字复跑，但
+**来源/上下文**（"产出它的工具/输入就是我以为的那个"）**每次提交真跑**，
+判据同裸值契约（`stdout.strip() == witness_expect`）。「贵」恰恰是
+最需要便宜复查的地方：产物没变、但产出它的工具变了，能一路蒙混到
+最贵的端到端回归才炸 —— 见证在提交时就抓住它。
 
 边界（issue #2 ① 明说的，别做过头）：复跑只该覆盖**不需要构建产物**的事实。
 要起服务、要编二进制的那些，写 `fact(值, cmd, 出处, replay=False)` 显式退出 ——
@@ -82,7 +91,8 @@ def replay_all(ledger, runner=None):
     run = runner or run_cmd
     out = []
     f = facts_of(ledger)
-    stats = {"ok": 0, "attempts": 0, "ran": 0, "skipped": 0}
+    stats = {"ok": 0, "attempts": 0, "ran": 0, "skipped": 0,
+             "witness_attempts": 0, "witnessed": 0}
     if not f:
         # 零值守卫：台账空着不是「没有违规」，是「什么都没量」。
         stats["problems"] = ["台账为空 —— 空不是通过（零值守卫）：先查 measure() 是不是坏了"]
@@ -123,9 +133,36 @@ def replay_all(ledger, runner=None):
         out.append("%d 条尝试复跑**一条都没跑成**（全部 rc≠0/超时）—— 环境或 shell "
                    "整体坏了的时候，逐条报错会伪装成「数据都查过了」（零值守卫）"
                    % stats["attempts"])
-    if not stats["attempts"] and stats["skipped"]:
-        out.append("全部 %d 条事实都声明 replay=False ⇒ 本闸门什么都没查 —— "
-                   "至少留一条能复跑的；整仓都不适用就设 REFLECT_REPLAY=off 明说"
+    # 见证档（issue #5）：与 replay 正交 —— 贵事实（replay=False）
+    # 的来源/上下文每次提交真跑，判据同裸值契约。
+    for k in sorted(f):
+        entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
+        wit = str(entry.get("witness") or "").strip()
+        if not wit:
+            continue
+        expect = entry.get("witness_expect")
+        stats["witness_attempts"] += 1
+        rc, stdout = run(wit)
+        if rc is None:
+            out.append("`%s` 见证**超时**（%.0fs）：`%s` —— 见证该便宜，"
+                       "挂贵的见证等于没挂" % (k, t, wit))
+            continue
+        if rc != 0:
+            out.append("`%s` 见证**命令报错**（rc=%s）：`%s` —— 见证命令本身死了"
+                       "（见证要便宜、无害、只读）" % (k, rc, wit))
+            continue
+        got = stdout.strip()
+        want = str(expect) if expect is not None else ""
+        if got != want:
+            out.append("`%s` 见证不符：witness=%s vs 期望=%s —— 来源/上下文"
+                       "漂移（产出它的工具/输入变了），值本身没变也**算事故**"
+                       % (k, _q(got), _q(want)))
+            continue
+        stats["witnessed"] += 1
+    if not stats["attempts"] and stats["skipped"] and not stats["witness_attempts"]:
+        out.append("全部 %d 条事实都声明 replay=False 且无见证 ⇒ 本闸门什么都没查 —— "
+                   "至少留一条能复跑的；贵事实挂 witness（issue #5）让它"
+                   "的来源每提交被核；整仓都不适用就设 REFLECT_REPLAY=off 明说"
                    "（全豁免不是通过）" % stats["skipped"])
     stats["problems"] = out
     return stats
@@ -156,7 +193,9 @@ def run(argv):
         print("复跑闸门：%d 个问题" % len(r["problems"]), file=sys.stderr)
         return 1
     tail = "，%d 条声明 replay=False 未跑" % r["skipped"] if r["skipped"] else ""
-    print("复跑闸门：OK（%d 条事实逐字复跑，stdout 与台账一致%s）" % (r["ok"], tail))
+    wtail = "，见证 %d 条" % r["witnessed"] if r["witnessed"] else ""
+    print("复跑闸门：OK（%d 条事实逐字复跑，stdout 与台账一致%s%s）"
+          % (r["ok"], tail, wtail))
     return 0
 
 
@@ -166,6 +205,10 @@ LED = {"facts": {"n": {"value": 12, "cmd": "c"}}}
 def _cases():
     multi = {"facts": {"a": {"value": 1, "cmd": "ca"},
                        "b": {"value": 2, "cmd": "cb", "replay": False}}}
+    wit = {"facts": {"expensive": {"value": "bench-42", "cmd": "run-bench",
+                                    "replay": False,
+                                    "witness": "echo tool-ok",
+                                    "witness_expect": "tool-ok"}}}
     return [
         # ① 正常不报
         ("stdout 与台账值一致（带尾换行）⇒ 不报",
@@ -202,6 +245,23 @@ def _cases():
          lambda: any("什么都没查" in x for x in replay_all(
              {"facts": {"a": {"value": 1, "cmd": "x", "replay": False}}},
              runner=lambda c: (0, "1"))["problems"])),
+        # ③ 见证档（issue #5）
+        ("贵事实挂见证：见证过 ⇒ 不报",
+         lambda: replay_all(wit, runner=lambda c: (0, "tool-ok"))["problems"] == []),
+        ("贵事实挂见证 ⇒ 计入 witnessed（run() 输出用）",
+         lambda: replay_all(wit, runner=lambda c: (0, "tool-ok"))["witnessed"] == 1),
+        ("★ 见证不符 ⇒ 必须报（来源漂移，值没变也算事故）",
+         lambda: any("见证不符" in x for x in
+                       replay_all(wit, runner=lambda c: (0, "tool-CHANGED"))["problems"])),
+        ("★ 见证命令 rc≠0 ⇒ 必须报（见证命令本身死了）",
+         lambda: any("见证**命令报错" in x for x in
+                       replay_all(wit, runner=lambda c: (1, ""))["problems"])),
+        ("★ 见证超时 ⇒ 必须报（见证该便宜，挂贵的见证等于没挂）",
+         lambda: any("见证**超时" in x for x in
+                       replay_all(wit, runner=lambda c: (None, ""))["problems"])),
+        ("★ 全部 replay=False 但都挂见证 ⇒ 不报「什么都没查」（守卫跟着调）",
+         lambda: not any("什么都没查" in x for x in
+                           replay_all(wit, runner=lambda c: (0, "tool-ok"))["problems"])),
     ]
 
 
