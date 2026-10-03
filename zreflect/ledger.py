@@ -72,7 +72,8 @@ def changed_keys(old_facts, new_facts):
 
 
 def fact(value, cmd, source, note="", replay=True,
-         witness=None, witness_expect=None):
+         witness=None, witness_expect=None,
+         calibrate=None, calibrate_expect=None):
     """造一条事实：值 + 复跑命令 + 出处（+ 可选备注）。
 
     ⚠️ **`cmd` 的裸值契约（issue #2 ①）**：`check_facts_replay.py` 会**逐字执行**它
@@ -87,19 +88,34 @@ def fact(value, cmd, source, note="", replay=True,
     `witness`（便宜、无害、只读的命令）+ `witness_expect`（期望 stdout）。
     见证与 `replay` **正交**：贵事实的值不逐字复跑，但它的**来源/上下文**
     （"产出它的工具/输入就是我以为的那个"）**每次提交真跑**，判据同裸值契约
-    （`stdout.strip() == witness_expect`）。两者**必须同时给** —— 只给一个
+    （`stdout.strip() == witness_expect`）。
+
+    **第四档：仪器校准（issue #6 ①）** —— 复跑契约抓"命令死了"（rc≠0），
+    却抓不到**仪器静默失真**：命令成功、值稳定、复跑永远"通过"，而它量的
+    根本不是想量的（`grep -c X` 在仪器不认 X 时成功退出并返回 0）。
+    声称"产物里有没有 X"的 `cmd` 应配一个**已知含 X 的样本**：
+    `calibrate`（对样本跑的便宜命令）+ `calibrate_expect`（样本的已知输出）。
+    与 `replay` / `witness` 正交，**每次提交真跑**，判据同裸值契约。
+    `witness` / `calibrate` 两对参数各自**必须同时给** —— 只给一个
     是残缺形状，采集器当场报错（断言残缺比静默缺失好抓）。
 
     `measured_at` 在**采集时刻**自动盖上（issue #3 ②）：它是「何时测的」的记录，
     供渲染「测于」列与测龄用，**不许当成测量输入**（collect.py 原则 2：
     否则 `--check` 永不收敛 —— 它是输出，不是输入）。
+    `first_seen`（issue #6 ①）同样在采集时刻盖上：值不变时由
+    `measure()` 沿用旧日期、换值时取今天 —— 恒常检测
+    （"这条 cmd 是在量，还是恒返回同一个数？"）靠它。
     """
-    if (witness is None) != (witness_expect is None):
-        raise SystemExit(
-            "FATAL: fact() 形状契约（issue #5）：`witness` 与 `witness_expect`"
-            " 必须同时给（只给一个 = 残缺见证，断言残缺比静默缺失好抓）")
+    for a, b, name in ((witness, witness_expect, "witness"),
+                       (calibrate, calibrate_expect, "calibrate")):
+        if (a is None) != (b is None):
+            raise SystemExit(
+                "FATAL: fact() 形状契约（issue #5/#6）：`%s` 与 `%s_expect`"
+                " 必须同时给（只给一个 = 残缺断言，断言残缺比静默缺失好抓）"
+                % (name, name))
     d = {"value": value, "cmd": cmd, "source": source,
-         "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+         "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+         "first_seen": time.strftime("%Y-%m-%d")}
     if note:
         d["note"] = note
     if not replay:
@@ -107,6 +123,9 @@ def fact(value, cmd, source, note="", replay=True,
     if witness is not None:
         d["witness"] = witness
         d["witness_expect"] = witness_expect
+    if calibrate is not None:
+        d["calibrate"] = calibrate
+        d["calibrate_expect"] = calibrate_expect
     return d
 
 
@@ -171,6 +190,18 @@ def _cases():
          lambda: raises(lambda: fact(1, "c", "s", witness="w"))),
         ("★ witness 形状残缺：只给 witness_expect ⇒ 当场报错",
          lambda: raises(lambda: fact(1, "c", "s", witness_expect="e"))),
+        # ④ 仪器校准（issue #6 ①）
+        ("fact() 盖 calibrate 字段（两者同给）",
+         lambda: fact(1, "c", "s", calibrate="cal", calibrate_expect="e")
+         .get("calibrate") == "cal"),
+        ("★ calibrate 形状残缺：只给 calibrate ⇒ 当场报错",
+         lambda: raises(lambda: fact(1, "c", "s", calibrate="cal"))),
+        ("★ calibrate 形状残缺：只给 calibrate_expect ⇒ 当场报错",
+         lambda: raises(lambda: fact(1, "c", "s", calibrate_expect="e"))),
+        # ⑤ first_seen（issue #6 ① 恒常检测的状态）
+        ("fact() 盖 first_seen（采集日）",
+         lambda: fact(1, "c", "s").get("first_seen")
+         == time.strftime("%Y-%m-%d")),
     ]
 
 

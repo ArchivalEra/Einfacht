@@ -82,3 +82,14 @@ for g in zreflect/check_*.py; do python3 "$g" || exit 1; done
   每次提交真跑、判据同裸值契约；只给一个是残缺形状，
   `ledger.fact()` 当场报错。策略（哪条事实挂什么见证）留各仓，
   机制（便宜来源见证每提交真跑）在闸门里。
+- **仪器也有生命周期**（issue #6 ①）：复跑契约抓「命令死了」
+  （rc≠0），抓不到**仪器静默失真**（命令成功、值稳定、复跑
+  永远通过，而它量的根本不是想量的 —— 仪器不认 X 时 `grep -c X`
+  成功退出并返回 0）。三件套：`calibrate`/`calibrate_expect`
+  （校准样本，fact() 同给契约，复跑闸门每提交对已知正样本真跑）；
+  `first_seen`（measure() 自动维护：值不变沿用旧日期、换值取
+  今天，恒常检测靠它）；被证伪的**量法**登记进 `instruments.json`
+  （`REFLECT_INSTRUMENTS`，schema `{"methods": [{text, why, fixed_in}]}`
+  —— 坏量法不许留在台账里）。恒常检测（`REFLECT_INSTRUMENT_DAYS`）
+  与量法登记做成**可插拔闸门** `check_instruments.py`：旋钮未配
+  = 明说未启用、退 0，特化机制不焊进核心。
