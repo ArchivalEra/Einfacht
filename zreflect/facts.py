@@ -217,6 +217,15 @@ def measure(argv):
         print("FATAL: 一条事实都没量到。空台账不是通过（零值守卫）。", file=sys.stderr)
         return 2
 
+    # 仪器生命周期（issue #6 ①）：值没变的键沿用旧 first_seen
+    # （换值 / 新键的 first_seen 已由 ledger.fact() 盖今天）——
+    # 恒常检测（可插拔闸门 check_instruments.py）靠它。
+    for k, entry in facts.items():
+        o = old.get(k)
+        fs = o.get("first_seen") if isinstance(o, dict) else None
+        if fs and _value(o) == _value(entry):
+            entry["first_seen"] = fs
+
     import json                                         # noqa: PLC0415
     import time                                         # noqa: PLC0415
     doc = {"schema": 1, "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),

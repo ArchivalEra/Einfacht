@@ -18,15 +18,19 @@
 - **两道守卫生效中**：重测时掉条（键没了）与改口（值换了）都会拒绝写盘，除非显式
   `--allow-drop` / `--accept-changes`（后者支持逐条：`--accept-changes=k1,k2`
   只放行列出的键，其余照旧拒绝）。
-- **六道闸门在线**：`check_facts`（块一致性 / 裸数字 / 坏引用）、`check_facts_replay`
+- **七道闸门在线**：`check_facts`（块一致性 / 裸数字 / 坏引用）、`check_facts_replay`
   （台账 `cmd` 逐字复跑，stdout 必须等于值；贵事实可挂 witness
-  见证来源 —— 每提交真跑，issue #5）、`check_retractions`（翻案重现；
+  见证来源 —— 每提交真跑，issue #5；可挂 calibrate 校准
+  仪器 —— 每提交对已知正样本真跑，issue #6 ①）、
+  `check_instruments`（**可插拔**：恒常检测 `REFLECT_INSTRUMENT_DAYS`
+  + 量法登记位 `REFLECT_INSTRUMENTS`，都未配 = 明说未启用，
+  issue #6 ①）、`check_retractions`（翻案重现；
   扫描面 = `REFLECT_DOCS` 清单）、`check_questions`（悬案必须挂结算件）、
   `check_readme_sync`（三语 README 同批：结构互链 + 推送集必须含全部名单）、
   `check_stale`（sha 出处 / 退役名 / 测龄：`REFLECT_STALE_DAYS` 开启）。
 - **一条悬案**：见 `questions/01-example.md`。
 - **CI 正面执行同一判据**：`gates` workflow 每推跑 `facts.py --check`
-  + 六道闸门（每条 `cmd` 真的逐字复跑）；`readme-sync` 查三语同批。
+  + 七道闸门（每条 `cmd` 真的逐字复跑）；`readme-sync` 查三语同批。
   本地 hook 只约束跑过 install.sh 的机器（issue #4 ②）。
 
 ## 那条示例翻案
@@ -42,10 +46,10 @@
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `md_files` | **8** | 2026-10-03T09:18:07+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `md_lines` | **1376** | 2026-10-03T09:18:07+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
-| `py_files` | **15** | 2026-10-03T09:18:07+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **2049** | 2026-10-03T09:18:07+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **8** | 2026-10-03T20:51:33+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `md_lines` | **1475** | 2026-10-03T20:51:33+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
+| `py_files` | **16** | 2026-10-03T20:51:33+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **2336** | 2026-10-03T20:51:33+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 4 条事实。
 <!-- /AUTO:FACTS -->

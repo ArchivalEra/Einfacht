@@ -19,8 +19,8 @@
     并在输出里明说 —— 判据强度随环境变化这件事，不许静默。
 
 零值守卫三条：台账为空 ⇒ 报；一条都没跑成（全 rc≠0/超时）⇒ 报；全部事实都声明
-`replay: false` **且无见证** ⇒ 报（全豁免不是「通过」，是「这个闸门什么都没查」；
-挂了 witness 的贵事实照样被查 —— issue #5）。
+`replay: false` **且无见证、无校准** ⇒ 报（全豁免不是「通过」，是「这个闸门
+什么都没查」；挂了 witness / calibrate 的贵事实照样被查 —— issue #5/#6）。
 
 第三档：**见证**（issue #5）—— `replay=False` 的贵事实可挂便宜见证
 （`witness` + `witness_expect`，两者同给，残缺形状由 `ledger.fact()`
@@ -29,6 +29,13 @@
 判据同裸值契约（`stdout.strip() == witness_expect`）。「贵」恰恰是
 最需要便宜复查的地方：产物没变、但产出它的工具变了，能一路蒙混到
 最贵的端到端回归才炸 —— 见证在提交时就抓住它。
+
+第四档：**仪器校准**（issue #6 ①）—— 复跑契约抓「命令死了」（rc≠0），
+却抓不到**仪器静默失真**：命令成功、值稳定、复跑永远「通过」，而它量的
+根本不是想量的（`grep -c X` 在仪器不认 X 时成功退出并返回 0）。
+声称「产物里有没有 X」的 `cmd` 配一个**已知含 X 的样本**：
+`calibrate`（对样本跑的便宜命令）+ `calibrate_expect`（样本的已知输出），
+与 `replay` / `witness` 正交，**每次提交真跑**，判据同裸值契约。
 
 边界（issue #2 ① 明说的，别做过头）：复跑只该覆盖**不需要构建产物**的事实。
 要起服务、要编二进制的那些，写 `fact(值, cmd, 出处, replay=False)` 显式退出 ——
@@ -92,7 +99,8 @@ def replay_all(ledger, runner=None):
     out = []
     f = facts_of(ledger)
     stats = {"ok": 0, "attempts": 0, "ran": 0, "skipped": 0,
-             "witness_attempts": 0, "witnessed": 0}
+             "witness_attempts": 0, "witnessed": 0,
+             "calibrate_attempts": 0, "calibrated": 0}
     if not f:
         # 零值守卫：台账空着不是「没有违规」，是「什么都没量」。
         stats["problems"] = ["台账为空 —— 空不是通过（零值守卫）：先查 measure() 是不是坏了"]
@@ -133,34 +141,49 @@ def replay_all(ledger, runner=None):
         out.append("%d 条尝试复跑**一条都没跑成**（全部 rc≠0/超时）—— 环境或 shell "
                    "整体坏了的时候，逐条报错会伪装成「数据都查过了」（零值守卫）"
                    % stats["attempts"])
-    # 见证档（issue #5）：与 replay 正交 —— 贵事实（replay=False）
-    # 的来源/上下文每次提交真跑，判据同裸值契约。
-    for k in sorted(f):
-        entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
-        wit = str(entry.get("witness") or "").strip()
-        if not wit:
-            continue
-        expect = entry.get("witness_expect")
-        stats["witness_attempts"] += 1
-        rc, stdout = run(wit)
-        if rc is None:
-            out.append("`%s` 见证**超时**（%.0fs）：`%s` —— 见证该便宜，"
-                       "挂贵的见证等于没挂" % (k, t, wit))
-            continue
-        if rc != 0:
-            out.append("`%s` 见证**命令报错**（rc=%s）：`%s` —— 见证命令本身死了"
-                       "（见证要便宜、无害、只读）" % (k, rc, wit))
-            continue
-        got = stdout.strip()
-        want = str(expect) if expect is not None else ""
-        if got != want:
-            out.append("`%s` 见证不符：witness=%s vs 期望=%s —— 来源/上下文"
-                       "漂移（产出它的工具/输入变了），值本身没变也**算事故**"
-                       % (k, _q(got), _q(want)))
-            continue
-        stats["witnessed"] += 1
-    if not stats["attempts"] and stats["skipped"] and not stats["witness_attempts"]:
-        out.append("全部 %d 条事实都声明 replay=False 且无见证 ⇒ 本闸门什么都没查 —— "
+    # 探针档（#5 见证 / #6 ① 仪器校准）：与 replay 正交 ——
+    # 贵事实的来源/仪器每提交真跑，判据同裸值契约。
+    for kind, noun, ok_key in (("witness", "见证", "witnessed"),
+                                  ("calibrate", "仪器校准", "calibrated")):
+        for k in sorted(f):
+            entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
+            pc = str(entry.get(kind) or "").strip()
+            if not pc:
+                continue
+            expect = entry.get(kind + "_expect")
+            stats[kind + "_attempts"] += 1
+            rc, stdout = run(pc)
+            if rc is None:
+                out.append("`%s` %s**超时**（%.0fs）：`%s` —— %s"
+                           % (k, noun, t, pc,
+                              "见证该便宜，挂贵的见证等于没挂"
+                              if kind == "witness" else
+                              "校准该便宜，挂贵的校准等于没挂"))
+                continue
+            if rc != 0:
+                out.append("`%s` %s**命令报错**（rc=%s）：`%s` —— %s"
+                           % (k, noun, rc, pc,
+                              "见证命令本身死了（见证要便宜、无害、只读）"
+                              if kind == "witness" else
+                              "校准命令本身死了（校准要便宜、无害、只读）"))
+                continue
+            got = stdout.strip()
+            want = str(expect) if expect is not None else ""
+            if got != want:
+                if kind == "witness":
+                    out.append("`%s` 见证不符：witness=%s vs 期望=%s —— 来源/上下文"
+                               "漂移（产出它的工具/输入变了），值本身没变也**算事故**"
+                               % (k, _q(got), _q(want)))
+                else:
+                    out.append("`%s` 仪器校准不符：calibrate=%s vs 期望=%s —— "
+                               "仪器失真（命令成功、值稳定、复跑永远通过，而它量的"
+                               "可能根本不是想量的；先用已知含 X 的样本证明仪器"
+                               "看得见 X，再计数）" % (k, _q(got), _q(want)))
+                continue
+            stats[ok_key] += 1
+    if not stats["attempts"] and stats["skipped"] and not stats["witness_attempts"] \
+            and not stats["calibrate_attempts"]:
+        out.append("全部 %d 条事实都声明 replay=False 且无见证、无校准 ⇒ 本闸门什么都没查 —— "
                    "至少留一条能复跑的；贵事实挂 witness（issue #5）让它"
                    "的来源每提交被核；整仓都不适用就设 REFLECT_REPLAY=off 明说"
                    "（全豁免不是通过）" % stats["skipped"])
@@ -194,8 +217,9 @@ def run(argv):
         return 1
     tail = "，%d 条声明 replay=False 未跑" % r["skipped"] if r["skipped"] else ""
     wtail = "，见证 %d 条" % r["witnessed"] if r["witnessed"] else ""
-    print("复跑闸门：OK（%d 条事实逐字复跑，stdout 与台账一致%s%s）"
-          % (r["ok"], tail, wtail))
+    ctail = "，校准 %d 条" % r["calibrated"] if r["calibrated"] else ""
+    print("复跑闸门：OK（%d 条事实逐字复跑，stdout 与台账一致%s%s%s）"
+          % (r["ok"], tail, wtail, ctail))
     return 0
 
 
@@ -209,6 +233,10 @@ def _cases():
                                     "replay": False,
                                     "witness": "echo tool-ok",
                                     "witness_expect": "tool-ok"}}}
+    cal = {"facts": {"objcheck": {"value": "fma-present", "cmd": "scan-artifact",
+                                     "replay": False,
+                                     "calibrate": "echo known-positive",
+                                     "calibrate_expect": "known-positive"}}}
     return [
         # ① 正常不报
         ("stdout 与台账值一致（带尾换行）⇒ 不报",
@@ -262,6 +290,23 @@ def _cases():
         ("★ 全部 replay=False 但都挂见证 ⇒ 不报「什么都没查」（守卫跟着调）",
          lambda: not any("什么都没查" in x for x in
                            replay_all(wit, runner=lambda c: (0, "tool-ok"))["problems"])),
+        # ④ 仪器校准档（issue #6 ①）
+        ("贵事实挂校准：校准过 ⇒ 不报",
+         lambda: replay_all(cal, runner=lambda c: (0, "known-positive"))["problems"] == []),
+        ("贵事实挂校准 ⇒ 计入 calibrated（run() 输出用）",
+         lambda: replay_all(cal, runner=lambda c: (0, "known-positive"))["calibrated"] == 1),
+        ("★ 校准不符 ⇒ 必须报（仪器失真：命令成功、值稳定也照报）",
+         lambda: any("仪器校准不符" in x for x in
+                       replay_all(cal, runner=lambda c: (0, "wrong"))["problems"])),
+        ("★ 校准命令 rc≠0 ⇒ 必须报",
+         lambda: any("校准**命令报错" in x for x in
+                       replay_all(cal, runner=lambda c: (1, ""))["problems"])),
+        ("★ 校准超时 ⇒ 必须报（校准该便宜，挂贵的校准等于没挂）",
+         lambda: any("校准**超时" in x for x in
+                       replay_all(cal, runner=lambda c: (None, ""))["problems"])),
+        ("★ 全部 replay=False 但只挂校准 ⇒ 不报「什么都没查」",
+         lambda: not any("什么都没查" in x for x in
+                           replay_all(cal, runner=lambda c: (0, "known-positive"))["problems"])),
     ]
 
 

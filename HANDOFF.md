@@ -6,7 +6,7 @@
 
 ## 0. 一句话：你接手的是什么
 
-一套让「测出来的数字」**只被生产一次**的小系统：`zreflect/` 库 + 6 道闸门 + git hooks + 发现式自证。
+一套让「测出来的数字」**只被生产一次**的小系统：`zreflect/` 库 + 7 道闸门 + git hooks + 发现式自证。
 README 是三语的（英语默认 / 中文 / 德语），三份是同一条断言 —— pre-push 要求每次推送同批更新。
 当前全部绿（接手时的健康判据见 §2，逐条可复跑）。
 
@@ -26,11 +26,15 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   `measured_at` 是采集时刻的**记录**，不是测量输入（拿它当输入 ⇒ `--check`
   永不收敛，issue #3 ②）。
 - **渲染** = `facts.py --render-doc` 把台账写进活状态文档末尾的 AUTO 块（**别手改**，hook 会重算并 `git add`）。
-- **闸门** = 六道：`check_facts`（块一致性 / 正文裸数字（`REFLECT_NAKED_MIN`
+- **闸门** = 七道：`check_facts`（块一致性 / 正文裸数字（`REFLECT_NAKED_MIN`
   可配、代码块内豁免）/ 坏引用）、`check_facts_replay`（台账 `cmd`
   逐字复跑，stdout 必须等于值 —— 裸值契约见 `ledger.fact()`；另有
   第三档**见证**：`replay=False` 的贵事实可挂 `witness`/`witness_expect`
-  （两者同给），来源每提交真跑，issue #5）、`check_retractions`（翻案重现，
+  （两者同给），来源每提交真跑，issue #5；第四档**仪器校准**：
+  `calibrate`/`calibrate_expect`（两者同给），对已知正样本每提交
+  真跑，issue #6 ①）、`check_instruments`（**可插拔模块**：恒常检测
+  `REFLECT_INSTRUMENT_DAYS` + 量法登记位 `REFLECT_INSTRUMENTS`，
+  都未配 = 明说未启用、退 0，issue #6 ①）、`check_retractions`（翻案重现，
   扫描面 = `REFLECT_DOCS`）、`check_questions`（悬案必须挂结算件）、`check_readme_sync`（三语 README
   同批：默认模式查结构互链，`--changed` 模式查推送改动集；pre-push 与 CI 都走后者）、
   `check_stale` + `living.py`（活状态 vs 历史章节的口径；另带测龄报警 `REFLECT_STALE_DAYS`，
@@ -66,6 +70,13 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   `witness`/`witness_expect`（两者同给，残缺形状 `ledger.fact()` 当场报错）
   —— 值不复跑，但**来源/上下文**每提交真跑、判据同裸值契约
   （issue #5）。策略（挂什么见证）留各仓，机制在闸门里。
+- **仪器也要有生命周期**（issue #6 ①）：复跑契约抓「命令死了」（rc≠0），
+  抓不到**仪器静默失真**（命令成功、值稳定、复跑永远通过、量的却是别的）。
+  三件套：`calibrate`/`calibrate_expect`（校准样本，fact() 同给契约、
+  复跑闸门每提交真跑）；`first_seen`（measure() 自动维护：值不变沿用
+  旧日期、换值取今天）；被证伪的**量法**登记进 `instruments.json`
+  （`REFLECT_INSTRUMENTS`）——坏量法不许留在台账里。恒常检测与量法
+  登记是**可插拔闸门** `check_instruments.py`：旋钮未配 = 明说未启用。
 - **消费方读台账**（CI job / 其它语言的测试）：`python3 zreflect/facts.py --get KEY`
   —— 只打印裸值；**不要自己解析 `FACTS.json`**（substring 找 `"value"`
   会取到别的键的值，issue #4 ④）。
@@ -93,6 +104,12 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   「哪条事实挂什么见证」是策略（留各仓），「便宜来源见证每提交真跑」
   是机制（在 `check_facts_replay` 里）。零值守卫跟着调：全豁免
   **且无见证**才算「什么都没查」。
+- **仪器生命周期是可插拔模块**（issue #6 ①）：恒常检测
+  （`REFLECT_INSTRUMENT_DAYS`）与量法登记（`REFLECT_INSTRUMENTS`）
+  都在 `check_instruments.py` —— 特化的东西不焊进核心：两个旋钮
+  都未配 ⇒ 明说未启用、退 0，不需要的仓库零成本（发现式名录
+  照样收编、自证照样证明它能红）。`first_seen` 是状态不是测量输入
+  （同 `measured_at` 的口径：记录何时首次测的，不许反过来当输入）。
 - **纯函数保持安静**：`problems()` 一类的纯函数不许 print —— 自证输出是给人核对的接口（issue #1 ③）。
 - 自证输出末尾的机器摘要行（`=== N PASS / M FAIL ===`）是 runner/CI 的读接口，
   `gates-selftest.sh` 会校验它在（issue #3 ③）。
@@ -102,7 +119,7 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
 ## 5. 接手时的状态快照
 
 - HEAD 以 `git log -1` 为准；origin 已配置。
-- 六道闸门全绿；发现式自证 6/6；跨仓库换名自证 6/6（证明没有硬编码路径）；两道守卫在线。
+- 七道闸门全绿；发现式自证 7/7；跨仓库换名自证 7/7（证明没有硬编码路径）；两道守卫在线。
   三语 README 同批判据：pre-push（本地）+ GitHub Actions（正面）双层执行。
 - **CI 正面执行同一判据**（issue #4 ②）：`gates` workflow 每推跑
   `facts.py --check` + 全闸门（含 `check_facts_replay` —— 每条 `cmd`

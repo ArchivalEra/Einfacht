@@ -44,7 +44,8 @@
 | **闸门平台** | `zreflect/gate.py` | 检查器静默变绿（零值守卫 + 三档自证） |
 | **事实台账** | `zreflect/ledger.py` + `facts.py` | 数字被手抄、被静默覆盖 |
 | **事实闸门** | `zreflect/check_facts.py` | 文档块与台账不一致、正文裸数字、引用不存在的键 |
-| **复跑闸门** | `zreflect/check_facts_replay.py` | 「能复跑」此前是**没有执行者的断言**（issue #2 ①）：现在逐字执行台账每条 `cmd`（stdout 必须等于值；坏命令 / 超时 / 没 cmd 都报；要构建产物的条目写 `replay: false` 显式退出 —— 且仍可挂便宜**见证** `witness` + `witness_expect`，issue #5：来源每提交真跑） |
+| **复跑闸门** | `zreflect/check_facts_replay.py` | 「能复跑」此前是**没有执行者的断言**（issue #2 ①）：现在逐字执行台账每条 `cmd`（stdout 必须等于值；坏命令 / 超时 / 没 cmd 都报；要构建产物的条目写 `replay: false` 显式退出 —— 且仍可挂便宜**见证** `witness` + `witness_expect`，issue #5：来源每提交真跑；或挂**校准样本** `calibrate` + `calibrate_expect`，issue #6 ①：仪器对已知含 X 的样本每提交真跑） |
+| **仪器生命周期**（可插拔） | `zreflect/check_instruments.py` | 复跑契约抓「命令死了」（rc≠0），抓不到**仪器静默失真**：命令成功、值稳定、复跑永远通过，而它量的根本不是想量的（仪器不认 X 时 `grep -c X` 成功退出并返回 0）。可插拔：两个旋钮都未配 ⇒ 明说未启用、退 0。`REFLECT_INSTRUMENT_DAYS=天` 开恒常检测（`first_seen` 超过阈值 ⇒「这条 cmd 是在量，还是恒返回同一个数？」）；`REFLECT_INSTRUMENTS=instruments.json` 登记被证伪的**量法**（`{"methods": [{text, why, fixed_in}]}`）——台账任何 `cmd` 含被证伪片段即报 |
 | **翻案台账** | `zreflect/check_retractions.py` | 被推翻的断言在**声明的活状态文档（`REFLECT_DOCS`）里**重新出现 |
 | **悬案台账** | `zreflect/check_questions.py` | 未结案的问题只活在散文里、没有能跑的结算件 |
 | **三语 README 闸门** | `zreflect/check_readme_sync.py` | 三语 README 是**同一条断言的三份拷贝**：三份必须都在、互链完好，且**每次推送同批更新**（缺一份拒推） |
@@ -128,6 +129,23 @@
 构建（构建脚本残留 `-flto`），过了一切便宜闸门、只在浏览器回归里
 炸 —— 若有一条比对「产物身份证里的 `tool.script_sha256` vs 仓库现役
 脚本 sha」的见证，提交时就能抓住。
+
+**第四档：仪器校准**（issue #6 ①）：复跑契约抓「命令死了」
+（rc≠0），抓不到**仪器静默失真** —— 命令成功、值稳定、复跑永远
+通过，而它量的根本不是想量的（仪器不认 X 时 `grep -c X` 成功
+退出并返回 0）。声称「产物里有没有 X」的 `cmd` 应配一个
+**已知含 X 的样本**：`calibrate`（对样本跑的便宜命令）+
+`calibrate_expect`（样本的已知输出）。与 `witness` 同理：与
+`replay` 正交、**每次提交真跑**、判据同裸值契约；两者必须同给。
+
+**仪器生命周期是可插拔的**（`check_instruments.py`）：恒常检测
+（`first_seen` —— 采集时盖章、值不变时由 `measure()` 沿用）
+超过 `REFLECT_INSTRUMENT_DAYS` 即报「这条 cmd 是在量，还是恒
+返回同一个数？」。被证伪的**量法**有登记位（像
+`retractions.json` 管被推翻的断言）：`REFLECT_INSTRUMENTS=
+instruments.json`（schema `{"methods": [{text, why, fixed_in}]}`），
+台账任何 `cmd` 含被证伪片段即报 —— 坏量法不许留在台账里。
+两个旋钮都未配 ⇒ 闸门明说未启用、退 0；不需要的仓库零成本。
 
 ### 三、翻案台账：推翻也要留痕
 

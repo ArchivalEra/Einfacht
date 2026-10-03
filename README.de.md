@@ -57,7 +57,8 @@ Retraktionsledger.
 | **Gate-Plattform** | `zreflect/gate.py` | still grün werdende Prüfer (Zero-Value-Guard + dreistufiger Selftest) |
 | **Fakten-Ledger** | `zreflect/ledger.py` + `facts.py` | hand-kopierte oder still überschriebene Zahlen |
 | **Fakten-Gate** | `zreflect/check_facts.py` | Doc-Block ungleich Ledger, nackte Zahlen im Text, Zitate nicht existierender Schlüssel |
-| **Replay-Gate** | `zreflect/check_facts_replay.py` | „re-laufbar" war eine Aussage **ohne Vollstrecker** (issue #2 ①): jetzt wird jedes `cmd` im Ledger wörtlich ausgeführt (stdout muss dem Wert gleichen; kaputtes Kommando / Timeout / fehlendes cmd werden gemeldet; Einträge, die Build-Artefakte brauchen, steigen mit `replay: false` explizit aus — und können trotzdem eine billige **Zeugenschaft** tragen, `witness` + `witness_expect`, issue #5: die Herkunft wird bei jedem Commit gefahren) |
+| **Replay-Gate** | `zreflect/check_facts_replay.py` | „re-laufbar" war eine Aussage **ohne Vollstrecker** (issue #2 ①): jetzt wird jedes `cmd` im Ledger wörtlich ausgeführt (stdout muss dem Wert gleichen; kaputtes Kommando / Timeout / fehlendes cmd werden gemeldet; Einträge, die Build-Artefakte brauchen, steigen mit `replay: false` explizit aus — und können trotzdem eine billige **Zeugenschaft** tragen, `witness` + `witness_expect`, issue #5: die Herkunft wird bei jedem Commit gefahren; oder eine **Kalibrierungsprobe**, `calibrate` + `calibrate_expect`, issue #6 ①: das Instrument läuft bei jedem Commit gegen eine bekannt-positive Probe) |
+| **Instrumenten-Lebenszyklus** (einsteckbar) | `zreflect/check_instruments.py` | das Replay-Gate fängt *tote* Kommandos (rc≠0), aber nicht **stille Instrumentenverfälschung**: ein Kommando, das erfolgreich ist, einen stabilen Wert liefert und ewig besteht, während es das Falsche mißt (`grep -c X` erfolgreich mit 0, wenn das Tool die Mnemonic X nicht kennt). Einsteckbar: beide Knäufe ungesetzt ⇒ sagt laut, dass es aus ist, exit 0. `REFLECT_INSTRUMENT_DAYS=N` schaltet die Konstanten-Erkennung (`first_seen` älter als N Tage ⇒ „mißt dieses cmd wirklich, oder liefert es immer dieselbe Zahl?"); `REFLECT_INSTRUMENTS=instruments.json` registriert widerlegte **Meßmethoden** (`{"methods": [{text, why, fixed_in}]}`) — jedes Ledger-`cmd` mit einem solchen Fragment wird gemeldet |
 | **Retraktions-Ledger** | `zreflect/check_retractions.py` | revozierte Aussagen tauchen **in den via `REFLECT_DOCS` erklärten Living-State-Docs** wieder auf |
 | **Fragen-Ledger** | `zreflect/check_questions.py` | offene Fragen, die nur in Prosa leben und keinen ausführbaren Begleicher haben |
 | **Trilingual-README-Gate** | `zreflect/check_readme_sync.py` | eine Sprachversion des README ändern und die anderen driften lassen: das Trio muss existieren, einander verlinken — und **mit jedem Push gemeinsam aktualisiert werden** |
@@ -165,6 +166,31 @@ gedrifteten Werkzeug (`-flto` als Rest in einem Build-Skript), passierte
 alle billigen Gates und explodierte erst in der Browser-Regression —
 ein Zeuge, der die `tool.script_sha256` des Artefakts mit dem sha
 des lebenden Skripts vergleicht, hätte es beim Commit gefasst.
+
+**Die vierte Stufe: Instrumenten-Kalibrierung** (issue #6 ①): das
+Replay-Gate fängt *tote* Kommandos (rc≠0), aber nicht **stille
+Instrumentenverfälschung** — ein Kommando, das erfolgreich ist,
+einen stabilen Wert liefert und ewig besteht, während es das Falsche
+mißt (`grep -c X` erfolgreich mit 0, wenn das Tool die Mnemonic X
+nicht kennt). Jedes `cmd`, das behauptet „das Artefakt enthält X",
+sollte eine **bekannt-positive Probe** tragen: `calibrate` (ein
+billiges Kommando gegen die Probe) + `calibrate_expect` (der
+bekannte Output der Probe). Wie der Zeuge: orthogonal zu `replay`,
+wird **bei jedem Commit gefahren**, mit demselben Bare-Wert-Urteil;
+das Paar muss zusammen gegeben werden.
+
+**Der Instrumenten-Lebenszyklus ist einsteckbar**
+(`check_instruments.py`): Konstanten-Erkennung (`first_seen` —
+beim Sammeln gestempelt, von `measure()` unverändert fortgeführt)
+schlägt ab `REFLECT_INSTRUMENT_DAYS`: „mißt dieses cmd wirklich,
+oder liefert es immer dieselbe Zahl?". Widerlegte
+**Meßmethoden** bekommen ein Register wie `retractions.json`
+(`REFLECT_INSTRUMENTS=instruments.json`, Schema
+`{"methods": [{text, why, fixed_in}]}`): ein Ledger-`cmd` mit
+einer widerlegten Methode wird gemeldet — schlechte Meßmethoden
+bleiben nicht im Ledger. Beide Knäufe ungesetzt ⇒ das Gate sagt
+laut, dass es aus ist, und exit 0; Repos, die es nicht brauchen,
+zahlen nichts.
 
 ### 3. Retraktions-Ledger: Widerlegung hinterlässt eine Spur
 

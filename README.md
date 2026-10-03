@@ -56,7 +56,8 @@ retraction ledger.
 | **Gate platform** | `zreflect/gate.py` | checkers silently turning green (zero-value guards + three-tier selftest) |
 | **Fact ledger** | `zreflect/ledger.py` + `facts.py` | numbers hand-copied or silently overwritten |
 | **Fact gate** | `zreflect/check_facts.py` | doc block out of sync with the ledger, bare numbers in prose, citations of keys that don't exist |
-| **Replay gate** | `zreflect/check_facts_replay.py` | "re-runnable" used to be an assertion **with no executor** (issue #2 ①): now every ledger `cmd` is executed verbatim (stdout must equal the value; broken command / timeout / missing cmd all reported; entries that need build artifacts opt out with `replay: false` — and can still carry a cheap **witness**, `witness` + `witness_expect`, issue #5: its provenance runs every commit) |
+| **Replay gate** | `zreflect/check_facts_replay.py` | "re-runnable" used to be an assertion **with no executor** (issue #2 ①): now every ledger `cmd` is executed verbatim (stdout must equal the value; broken command / timeout / missing cmd all reported; entries that need build artifacts opt out with `replay: false` — and can still carry a cheap **witness**, `witness` + `witness_expect`, issue #5: its provenance runs every commit; or a **calibration sample**, `calibrate` + `calibrate_expect`, issue #6 ①: the instrument runs against a known-positive sample every commit) |
+| **Instrument lifecycle** (pluggable) | `zreflect/check_instruments.py` | the re-run contract catches *dead* commands (rc≠0), not **silent instrument distortion**: a command that succeeds, returns a stable value, and passes replay forever while measuring the wrong thing (`grep -c X` exits 0 successfully when the tool doesn't know mnemonic X). Pluggable: both knobs unset ⇒ says out loud it is off, exit 0. `REFLECT_INSTRUMENT_DAYS=N` enables constant-value detection (`first_seen` older than N days ⇒ "is this cmd really measuring, or always returning the same number?"); `REFLECT_INSTRUMENTS=instruments.json` registers falsified **measurement methods** (`{"methods": [{text, why, fixed_in}]}`) — any ledger `cmd` containing one is reported |
 | **Retraction ledger** | `zreflect/check_retractions.py` | retracted claims **reappearing inside the living-state docs declared by `REFLECT_DOCS`** |
 | **Question ledger** | `zreflect/check_questions.py` | open questions living only in prose, with no executable settler |
 | **Trilingual README gate** | `zreflect/check_readme_sync.py` | editing one language README while the others drift: the trio must exist, cross-link each other, and **move together in every push** |
@@ -158,6 +159,28 @@ artifact built by a drifted tool (`-flto` left in a build script) passed
 every cheap gate and only blew up in the browser regression — a witness
 comparing the artifact's recorded `tool.script_sha256` against the live
 script would have caught it at commit time.
+
+**Fourth tier: instrument calibration** (issue #6 ①): the re-run
+contract catches *dead* commands (rc≠0), not **silently distorted
+instruments** — a command that succeeds, returns a stable value, and
+passes replay forever while measuring the wrong thing (`grep -c X`
+exits 0 successfully when the tool doesn't know mnemonic X). Any
+`cmd` claiming "does the artifact contain X" should carry a
+**known-positive sample**: `calibrate` (a cheap command run against
+the sample) + `calibrate_expect` (the sample's known output). Like
+`witness`, orthogonal to `replay`, run **every commit**, judged by
+the same bare-value contract; the pair must be given together.
+
+**Instrument lifecycle is pluggable** (`check_instruments.py`):
+constant-value detection (`first_seen` — stamped at collection,
+carried over by `measure()` while a value is unchanged) fires past
+`REFLECT_INSTRUMENT_DAYS`: "is this cmd really measuring, or always
+returning the same number?". Falsified **measurement methods** get a
+registry like `retractions.json` (`REFLECT_INSTRUMENTS=instruments.json`,
+schema `{"methods": [{text, why, fixed_in}]}`): a ledger `cmd`
+containing a falsified method is reported — bad methods don't stay in
+the ledger. Both knobs unset ⇒ the gate says out loud it is off and
+exits 0; repos that don't need it pay nothing.
 
 ### 3. Retraction ledger: overturning leaves a trace
 
