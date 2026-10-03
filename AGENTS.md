@@ -93,3 +93,12 @@ for g in zreflect/check_*.py; do python3 "$g" || exit 1; done
   —— 坏量法不许留在台账里）。恒常检测（`REFLECT_INSTRUMENT_DAYS`）
   与量法登记做成**可插拔闸门** `check_instruments.py`：旋钮未配
   = 明说未启用、退 0，特化机制不焊进核心。
+- **声明式不变量是可插拔闸门**（issue #7）：「仓库文件必须/不得
+  含某片段」做成数据（`REFLECT_INVARIANTS=<json>`，schema
+  `{"checks": [{path, must_contain?, must_not_contain?, why}]}`，
+  `why` 必填 —— 没理由的检查项没人敢删，会变成僵尸）。
+  未配 ⇒ 明说未启用、退 0。与 `calibrate` 正交别混：一个守
+  量测仪器，一个守仓库文件本身。**grep 级边界**：分不清
+  注释与代码（片段在注释里也算存在）—— 声明式检查的强度
+  上限 = 它匹配的文本形态；要更强保证用 `calibrate`（对产物）
+  或 `witness`（对来源）。

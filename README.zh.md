@@ -46,6 +46,7 @@
 | **事实闸门** | `zreflect/check_facts.py` | 文档块与台账不一致、正文裸数字、引用不存在的键 |
 | **复跑闸门** | `zreflect/check_facts_replay.py` | 「能复跑」此前是**没有执行者的断言**（issue #2 ①）：现在逐字执行台账每条 `cmd`（stdout 必须等于值；坏命令 / 超时 / 没 cmd 都报；要构建产物的条目写 `replay: false` 显式退出 —— 且仍可挂便宜**见证** `witness` + `witness_expect`，issue #5：来源每提交真跑；或挂**校准样本** `calibrate` + `calibrate_expect`，issue #6 ①：仪器对已知含 X 的样本每提交真跑） |
 | **仪器生命周期**（可插拔） | `zreflect/check_instruments.py` | 复跑契约抓「命令死了」（rc≠0），抓不到**仪器静默失真**：命令成功、值稳定、复跑永远通过，而它量的根本不是想量的（仪器不认 X 时 `grep -c X` 成功退出并返回 0）。可插拔：两个旋钮都未配 ⇒ 明说未启用、退 0。`REFLECT_INSTRUMENT_DAYS=天` 开恒常检测（`first_seen` 超过阈值 ⇒「这条 cmd 是在量，还是恒返回同一个数？」）；`REFLECT_INSTRUMENTS=instruments.json` 登记被证伪的**量法**（`{"methods": [{text, why, fixed_in}]}`）——台账任何 `cmd` 含被证伪片段即报 |
+| **声明式不变量**（可插拔） | `zreflect/check_invariants.py` | 「仓库文件必须/不得含某片段」做成**数据**而非代码（`REFLECT_INVARIANTS=invariants.json`，规格 `{"checks": [{path, must_contain?, must_not_contain?, why}]}`）—— 引擎通用、只读、不构建不跑网络 ⇒ 能进 pre-commit；`why` 必填（没理由的检查项没人敢删，会变成僵尸）。可插拔：未配 ⇒ 明说未启用、退 0。**grep 级**：片段出现在注释里也算「存在」—— 它证明的是「这段文字还在」，不是「代码里真在用」；声明式检查的强度上限 = 它匹配的文本形态。更强的保证是 `calibrate`（对产物量）或 `witness`（对来源量）的活 —— 两者正交别混：`calibrate` 守**量测仪器**，不变量守**仓库文件本身** |
 | **翻案台账** | `zreflect/check_retractions.py` | 被推翻的断言在**声明的活状态文档（`REFLECT_DOCS`）里**重新出现 |
 | **悬案台账** | `zreflect/check_questions.py` | 未结案的问题只活在散文里、没有能跑的结算件 |
 | **三语 README 闸门** | `zreflect/check_readme_sync.py` | 三语 README 是**同一条断言的三份拷贝**：三份必须都在、互链完好，且**每次推送同批更新**（缺一份拒推） |
@@ -146,6 +147,20 @@
 instruments.json`（schema `{"methods": [{text, why, fixed_in}]}`），
 台账任何 `cmd` 含被证伪片段即报 —— 坏量法不许留在台账里。
 两个旋钮都未配 ⇒ 闸门明说未启用、退 0；不需要的仓库零成本。
+
+**声明式不变量也是可插拔的**（`check_invariants.py`，
+issue #7）：「仓库文件必须/不得含某片段」做成**数据**
+—— JSON 规格，不是代码：`REFLECT_INVARIANTS=invariants.json`
+（`{"checks": [{path, must_contain?, must_not_contain?, why}]}`）。
+引擎通用、只读；`why` 必填（没理由的检查项是没人敢删的
+僵尸）。这是 `collect.py` 原则 5 落点的可查实例：不变量
+文件 = 输入落点，不变量闸门 = 该落点的便宜来源不变式。
+与 `calibrate` 正交、别混：`calibrate` 守**量测仪器**，
+不变量守**仓库文件本身**（配方/源码该长什么样）。边界
+明说：这是 **grep 级** —— 片段出现在注释里也算「存在」，
+它证明的是「这段文字还在」，不是「代码里真在用」；
+声明式检查的强度上限 = 它匹配的文本形态，更强的保证
+是 `calibrate`（对产物）或 `witness`（对来源）的活。
 
 ### 三、翻案台账：推翻也要留痕
 

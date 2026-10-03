@@ -58,6 +58,7 @@ retraction ledger.
 | **Fact gate** | `zreflect/check_facts.py` | doc block out of sync with the ledger, bare numbers in prose, citations of keys that don't exist |
 | **Replay gate** | `zreflect/check_facts_replay.py` | "re-runnable" used to be an assertion **with no executor** (issue #2 ①): now every ledger `cmd` is executed verbatim (stdout must equal the value; broken command / timeout / missing cmd all reported; entries that need build artifacts opt out with `replay: false` — and can still carry a cheap **witness**, `witness` + `witness_expect`, issue #5: its provenance runs every commit; or a **calibration sample**, `calibrate` + `calibrate_expect`, issue #6 ①: the instrument runs against a known-positive sample every commit) |
 | **Instrument lifecycle** (pluggable) | `zreflect/check_instruments.py` | the re-run contract catches *dead* commands (rc≠0), not **silent instrument distortion**: a command that succeeds, returns a stable value, and passes replay forever while measuring the wrong thing (`grep -c X` exits 0 successfully when the tool doesn't know mnemonic X). Pluggable: both knobs unset ⇒ says out loud it is off, exit 0. `REFLECT_INSTRUMENT_DAYS=N` enables constant-value detection (`first_seen` older than N days ⇒ "is this cmd really measuring, or always returning the same number?"); `REFLECT_INSTRUMENTS=instruments.json` registers falsified **measurement methods** (`{"methods": [{text, why, fixed_in}]}`) — any ledger `cmd` containing one is reported |
+| **Declarative invariants** (pluggable) | `zreflect/check_invariants.py` | "file X must/must not contain fragment Y" as **data**, not code (`REFLECT_INVARIANTS=invariants.json`, spec `{"checks": [{path, must_contain?, must_not_contain?, why}]}`) — generic read-only engine, no build/network ⇒ pre-commit-safe; `why` is mandatory (a check nobody dares delete becomes a zombie). Pluggable: unset ⇒ says out loud it is off, exit 0. **Grep-level**: a fragment inside a comment passes too — it proves "this text is still here", not "the code really uses it"; a declarative check's strength is bounded by the text form it matches. Stronger guarantees are `calibrate`'s (on the artifact) or `witness`'s (on the source) job — orthogonal, don't mix: `calibrate` guards the *measuring tool*, invariants guard the *repo files themselves* |
 | **Retraction ledger** | `zreflect/check_retractions.py` | retracted claims **reappearing inside the living-state docs declared by `REFLECT_DOCS`** |
 | **Question ledger** | `zreflect/check_questions.py` | open questions living only in prose, with no executable settler |
 | **Trilingual README gate** | `zreflect/check_readme_sync.py` | editing one language README while the others drift: the trio must exist, cross-link each other, and **move together in every push** |
@@ -181,6 +182,23 @@ schema `{"methods": [{text, why, fixed_in}]}`): a ledger `cmd`
 containing a falsified method is reported — bad methods don't stay in
 the ledger. Both knobs unset ⇒ the gate says out loud it is off and
 exits 0; repos that don't need it pay nothing.
+
+**Declarative invariants are pluggable too** (`check_invariants.py`,
+issue #7): "this repo file must/must not contain this fragment"
+as **data** — a JSON spec, not code:
+`REFLECT_INVARIANTS=invariants.json`
+(`{"checks": [{path, must_contain?, must_not_contain?, why}]}`).
+The engine is generic and read-only; `why` is mandatory (a check
+without a reason is a zombie nobody dares delete). This is the
+`collect.py` principle-5 landing spot made checkable: the
+invariants file *is* the input record, the gate *is* its cheap
+source invariant. Orthogonal to `calibrate`, don't mix: `calibrate`
+guards the *measuring tool*, invariants guard the *repo files
+themselves*. Boundary, stated out loud: it is **grep-level** — a
+fragment in a comment passes too, so it proves "this text is still
+here", not "the code really uses it". A declarative check's
+strength is bounded by the text form it matches; anything stronger
+is `calibrate` (on the artifact) or `witness` (on the source).
 
 ### 3. Retraction ledger: overturning leaves a trace
 
