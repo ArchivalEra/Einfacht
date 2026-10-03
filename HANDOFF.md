@@ -6,7 +6,7 @@
 
 ## 0. 一句话：你接手的是什么
 
-一套让「测出来的数字」**只被生产一次**的小系统：`zreflect/` 库 + 7 道闸门 + git hooks + 发现式自证。
+一套让「测出来的数字」**只被生产一次**的小系统：`zreflect/` 库 + 8 道闸门 + git hooks + 发现式自证。
 README 是三语的（英语默认 / 中文 / 德语），三份是同一条断言 —— pre-push 要求每次推送同批更新。
 当前全部绿（接手时的健康判据见 §2，逐条可复跑）。
 
@@ -34,7 +34,11 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   `calibrate`/`calibrate_expect`（两者同给），对已知正样本每提交
   真跑，issue #6 ①）、`check_instruments`（**可插拔模块**：恒常检测
   `REFLECT_INSTRUMENT_DAYS` + 量法登记位 `REFLECT_INSTRUMENTS`，
-  都未配 = 明说未启用、退 0，issue #6 ①）、`check_retractions`（翻案重现，
+  都未配 = 明说未启用、退 0，issue #6 ①）、`check_invariants`
+  （**可插拔模块**：声明式不变量 —— 仓库文件必须/不得含
+  某片段做成数据 `REFLECT_INVARIANTS=<json>`，未配 =
+  明说未启用、退 0；grep 级边界见 §4，issue #7）、
+  `check_retractions`（翻案重现，
   扫描面 = `REFLECT_DOCS`）、`check_questions`（悬案必须挂结算件）、`check_readme_sync`（三语 README
   同批：默认模式查结构互链，`--changed` 模式查推送改动集；pre-push 与 CI 都走后者）、
   `check_stale` + `living.py`（活状态 vs 历史章节的口径；另带测龄报警 `REFLECT_STALE_DAYS`，
@@ -77,6 +81,13 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   旧日期、换值取今天）；被证伪的**量法**登记进 `instruments.json`
   （`REFLECT_INSTRUMENTS`）——坏量法不许留在台账里。恒常检测与量法
   登记是**可插拔闸门** `check_instruments.py`：旋钮未配 = 明说未启用。
+- **声明式不变量**（issue #7）：「仓库文件必须/不得含某片段」
+  做成数据（`REFLECT_INVARIANTS=<json>`，规格
+  `{"checks": [{path, must_contain?, must_not_contain?, why}]}`，
+  `why` 必填 —— 没理由的检查项会变成僵尸）。不变量文件 =
+  输入落点（collect.py 原则 5），不变量闸门 = 该落点的
+  便宜来源不变式。与 `calibrate` 正交别混：一个守量测
+  仪器，一个守仓库文件本身。
 - **消费方读台账**（CI job / 其它语言的测试）：`python3 zreflect/facts.py --get KEY`
   —— 只打印裸值；**不要自己解析 `FACTS.json`**（substring 找 `"value"`
   会取到别的键的值，issue #4 ④）。
@@ -110,6 +121,11 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   都未配 ⇒ 明说未启用、退 0，不需要的仓库零成本（发现式名录
   照样收编、自证照样证明它能红）。`first_seen` 是状态不是测量输入
   （同 `measured_at` 的口径：记录何时首次测的，不许反过来当输入）。
+- **声明式检查的强度上限 = 它匹配的文本形态**（issue #7）：
+  grep 型不变量分不清注释与代码（片段在注释里也算「存在」），
+  它证明的是「这段文字还在」而不是「代码里真在用」。要更强
+  保证的，别用 grep —— 那是 `calibrate`（对**产物**量）
+  或 `witness`（对**来源**量）的活。
 - **纯函数保持安静**：`problems()` 一类的纯函数不许 print —— 自证输出是给人核对的接口（issue #1 ③）。
 - 自证输出末尾的机器摘要行（`=== N PASS / M FAIL ===`）是 runner/CI 的读接口，
   `gates-selftest.sh` 会校验它在（issue #3 ③）。
@@ -119,7 +135,7 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
 ## 5. 接手时的状态快照
 
 - HEAD 以 `git log -1` 为准；origin 已配置。
-- 七道闸门全绿；发现式自证 7/7；跨仓库换名自证 7/7（证明没有硬编码路径）；两道守卫在线。
+- 八道闸门全绿；发现式自证 8/8；跨仓库换名自证 8/8（证明没有硬编码路径）；两道守卫在线。
   三语 README 同批判据：pre-push（本地）+ GitHub Actions（正面）双层执行。
 - **CI 正面执行同一判据**（issue #4 ②）：`gates` workflow 每推跑
   `facts.py --check` + 全闸门（含 `check_facts_replay` —— 每条 `cmd`

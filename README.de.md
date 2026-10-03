@@ -59,6 +59,7 @@ Retraktionsledger.
 | **Fakten-Gate** | `zreflect/check_facts.py` | Doc-Block ungleich Ledger, nackte Zahlen im Text, Zitate nicht existierender Schlüssel |
 | **Replay-Gate** | `zreflect/check_facts_replay.py` | „re-laufbar" war eine Aussage **ohne Vollstrecker** (issue #2 ①): jetzt wird jedes `cmd` im Ledger wörtlich ausgeführt (stdout muss dem Wert gleichen; kaputtes Kommando / Timeout / fehlendes cmd werden gemeldet; Einträge, die Build-Artefakte brauchen, steigen mit `replay: false` explizit aus — und können trotzdem eine billige **Zeugenschaft** tragen, `witness` + `witness_expect`, issue #5: die Herkunft wird bei jedem Commit gefahren; oder eine **Kalibrierungsprobe**, `calibrate` + `calibrate_expect`, issue #6 ①: das Instrument läuft bei jedem Commit gegen eine bekannt-positive Probe) |
 | **Instrumenten-Lebenszyklus** (einsteckbar) | `zreflect/check_instruments.py` | das Replay-Gate fängt *tote* Kommandos (rc≠0), aber nicht **stille Instrumentenverfälschung**: ein Kommando, das erfolgreich ist, einen stabilen Wert liefert und ewig besteht, während es das Falsche mißt (`grep -c X` erfolgreich mit 0, wenn das Tool die Mnemonic X nicht kennt). Einsteckbar: beide Knäufe ungesetzt ⇒ sagt laut, dass es aus ist, exit 0. `REFLECT_INSTRUMENT_DAYS=N` schaltet die Konstanten-Erkennung (`first_seen` älter als N Tage ⇒ „mißt dieses cmd wirklich, oder liefert es immer dieselbe Zahl?"); `REFLECT_INSTRUMENTS=instruments.json` registriert widerlegte **Meßmethoden** (`{"methods": [{text, why, fixed_in}]}`) — jedes Ledger-`cmd` mit einem solchen Fragment wird gemeldet |
+| **Deklarative Invarianten** (einsteckbar) | `zreflect/check_invariants.py` | „Datei X muß/ darf Fragment Y nicht enthalten" als **Daten**, nicht Code (`REFLECT_INVARIANTS=invariants.json`, Schema `{"checks": [{path, must_contain?, must_not_contain?, why}]}`) — generische, nur-lesende Engine, kein Build/Netz ⇒ pre-commit-tauglich; `why` ist Pflicht (eine Prüfung, die keiner zu löschen wagt, wird zum Zombie). Einsteckbar: ungesetzt ⇒ sagt laut, dass es aus ist, exit 0. **Grep-Stufe**: ein Fragment im Kommentar zählt auch als „vorhanden" — es beweist „dieser Text ist noch da", nicht „der Code benutzt es wirklich"; die Stärke einer deklarativen Prüfung ist durch die Textform begrenzt, die sie matcht. Stärkere Garantien sind `calibrate` (am Artefakt) oder `witness` (an der Quelle) — orthogonal, nicht mischen: `calibrate` hütet das *Meßinstrument*, Invarianten die **Repository-Dateien selbst** |
 | **Retraktions-Ledger** | `zreflect/check_retractions.py` | revozierte Aussagen tauchen **in den via `REFLECT_DOCS` erklärten Living-State-Docs** wieder auf |
 | **Fragen-Ledger** | `zreflect/check_questions.py` | offene Fragen, die nur in Prosa leben und keinen ausführbaren Begleicher haben |
 | **Trilingual-README-Gate** | `zreflect/check_readme_sync.py` | eine Sprachversion des README ändern und die anderen driften lassen: das Trio muss existieren, einander verlinken — und **mit jedem Push gemeinsam aktualisiert werden** |
@@ -191,6 +192,24 @@ einer widerlegten Methode wird gemeldet — schlechte Meßmethoden
 bleiben nicht im Ledger. Beide Knäufe ungesetzt ⇒ das Gate sagt
 laut, dass es aus ist, und exit 0; Repos, die es nicht brauchen,
 zahlen nichts.
+
+**Auch deklarative Invarianten sind einsteckbar**
+(`check_invariants.py`, issue #7): „diese Repo-Datei muß /
+darf dieses Fragment nicht enthalten" als **Daten** — ein
+JSON-Schema, kein Code: `REFLECT_INVARIANTS=invariants.json`
+(`{"checks": [{path, must_contain?, must_not_contain?, why}]}`).
+Die Engine ist generisch und nur lesend; `why` ist Pflicht
+(eine Prüfung ohne Grund ist ein Zombie, den keiner zu löschen
+wagt). Das ist die prüfbare Instanz des `collect.py`-Prinzips 5:
+die Invarianten-Datei *ist* die Eingabe-Aufzeichnung, das Gate
+*ist* ihre billige Quellen-Invariante. Orthogonal zu `calibrate`,
+nicht mischen: `calibrate` hütet das *Meßinstrument*, Invarianten
+die **Repository-Dateien selbst**. Grenze, laut gesagt: es ist
+**Grep-Stufe** — ein Fragment im Kommentar besteht auch, also
+beweist es „dieser Text ist noch da", nicht „der Code benutzt es
+wirklich". Die Stärke einer deklarativen Prüfung ist durch die
+Textform begrenzt, die sie matcht; alles Stärkere ist `calibrate`
+(am Artefakt) oder `witness` (an der Quelle).
 
 ### 3. Retraktions-Ledger: Widerlegung hinterlässt eine Spur
 
