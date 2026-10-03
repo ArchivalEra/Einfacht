@@ -44,7 +44,7 @@
 | **闸门平台** | `zreflect/gate.py` | 检查器静默变绿（零值守卫 + 三档自证） |
 | **事实台账** | `zreflect/ledger.py` + `facts.py` | 数字被手抄、被静默覆盖 |
 | **事实闸门** | `zreflect/check_facts.py` | 文档块与台账不一致、正文裸数字、引用不存在的键 |
-| **复跑闸门** | `zreflect/check_facts_replay.py` | 「能复跑」此前是**没有执行者的断言**（issue #2 ①）：现在逐字执行台账每条 `cmd`（stdout 必须等于值；坏命令 / 超时 / 没 cmd 都报；要构建产物的条目写 `replay: false` 显式退出） |
+| **复跑闸门** | `zreflect/check_facts_replay.py` | 「能复跑」此前是**没有执行者的断言**（issue #2 ①）：现在逐字执行台账每条 `cmd`（stdout 必须等于值；坏命令 / 超时 / 没 cmd 都报；要构建产物的条目写 `replay: false` 显式退出 —— 且仍可挂便宜**见证** `witness` + `witness_expect`，issue #5：来源每提交真跑） |
 | **翻案台账** | `zreflect/check_retractions.py` | 被推翻的断言在**声明的活状态文档（`REFLECT_DOCS`）里**重新出现 |
 | **悬案台账** | `zreflect/check_questions.py` | 未结案的问题只活在散文里、没有能跑的结算件 |
 | **三语 README 闸门** | `zreflect/check_readme_sync.py` | 三语 README 是**同一条断言的三份拷贝**：三份必须都在、互链完好，且**每次推送同批更新**（缺一份拒推） |
@@ -118,6 +118,16 @@
 墙上时钟算「几天前」会让 `--check` 永不收敛）。`check_stale` 可按配置的天数报警：
 `REFLECT_STALE_DAYS`（不配 = 该规则**明说未启用**）。这个戳只记录「何时测的」、
 **绝不当测量输入** —— 拿它当输入正是让 `--check` 永不收敛的做法。
+
+**第三档：见证**（issue #5）：`replay: false` 过去等于**永不复查** ——
+而贵事实恰恰最需要便宜复查。跑 5 分钟的基准进不了 pre-commit，但它的
+**来源**可以挂见证：`fact(值, cmd, 出处, replay=False, witness="<便宜只读命令>", witness_expect="<期望 stdout>")`。
+见证**每次提交真跑**（与 `replay` 正交），判据同裸值契约
+（`stdout.strip() == witness_expect`）；两者必须同给 —— 只给一个是
+残缺断言，`ledger.fact()` 当场报错。事故原型：产物由漂移过的工具
+构建（构建脚本残留 `-flto`），过了一切便宜闸门、只在浏览器回归里
+炸 —— 若有一条比对「产物身份证里的 `tool.script_sha256` vs 仓库现役
+脚本 sha」的见证，提交时就能抓住。
 
 ### 三、翻案台账：推翻也要留痕
 

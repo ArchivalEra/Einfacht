@@ -19,7 +19,8 @@
   `--allow-drop` / `--accept-changes`（后者支持逐条：`--accept-changes=k1,k2`
   只放行列出的键，其余照旧拒绝）。
 - **六道闸门在线**：`check_facts`（块一致性 / 裸数字 / 坏引用）、`check_facts_replay`
-  （台账 `cmd` 逐字复跑，stdout 必须等于值）、`check_retractions`（翻案重现；
+  （台账 `cmd` 逐字复跑，stdout 必须等于值；贵事实可挂 witness
+  见证来源 —— 每提交真跑，issue #5）、`check_retractions`（翻案重现；
   扫描面 = `REFLECT_DOCS` 清单）、`check_questions`（悬案必须挂结算件）、
   `check_readme_sync`（三语 README 同批：结构互链 + 推送集必须含全部名单）、
   `check_stale`（sha 出处 / 退役名 / 测龄：`REFLECT_STALE_DAYS` 开启）。
@@ -41,10 +42,10 @@
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `md_files` | **8** | 2026-10-02T08:44:30+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `md_lines` | **1320** | 2026-10-02T08:44:30+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
-| `py_files` | **15** | 2026-10-02T08:44:30+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **1959** | 2026-10-02T08:44:30+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **8** | 2026-10-03T09:18:07+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `md_lines` | **1376** | 2026-10-03T09:18:07+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
+| `py_files` | **15** | 2026-10-03T09:18:07+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **2049** | 2026-10-03T09:18:07+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 4 条事实。
 <!-- /AUTO:FACTS -->

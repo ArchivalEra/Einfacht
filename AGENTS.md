@@ -76,3 +76,9 @@ for g in zreflect/check_*.py; do python3 "$g" || exit 1; done
 - **消费方读台账走 `--get KEY`**（issue #4 ④）：只打印裸值；
   **不要自己解析 `FACTS.json`**（substring 找 `"value"` 会取到
   别的键的值）。
+- **贵事实挂便宜见证**（issue #5）：`replay=False` 不等于永不复查 ——
+  `fact(…, replay=False, witness=…, witness_expect=…)` 两者同给；
+  见证（来源/上下文：「产出它的工具/输入就是我以为的那个」）
+  每次提交真跑、判据同裸值契约；只给一个是残缺形状，
+  `ledger.fact()` 当场报错。策略（哪条事实挂什么见证）留各仓，
+  机制（便宜来源见证每提交真跑）在闸门里。

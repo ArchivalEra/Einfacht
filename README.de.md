@@ -57,7 +57,7 @@ Retraktionsledger.
 | **Gate-Plattform** | `zreflect/gate.py` | still grün werdende Prüfer (Zero-Value-Guard + dreistufiger Selftest) |
 | **Fakten-Ledger** | `zreflect/ledger.py` + `facts.py` | hand-kopierte oder still überschriebene Zahlen |
 | **Fakten-Gate** | `zreflect/check_facts.py` | Doc-Block ungleich Ledger, nackte Zahlen im Text, Zitate nicht existierender Schlüssel |
-| **Replay-Gate** | `zreflect/check_facts_replay.py` | „re-laufbar" war eine Aussage **ohne Vollstrecker** (issue #2 ①): jetzt wird jedes `cmd` im Ledger wörtlich ausgeführt (stdout muss dem Wert gleichen; kaputtes Kommando / Timeout / fehlendes cmd werden gemeldet; Einträge, die Build-Artefakte brauchen, steigen mit `replay: false` explizit aus) |
+| **Replay-Gate** | `zreflect/check_facts_replay.py` | „re-laufbar" war eine Aussage **ohne Vollstrecker** (issue #2 ①): jetzt wird jedes `cmd` im Ledger wörtlich ausgeführt (stdout muss dem Wert gleichen; kaputtes Kommando / Timeout / fehlendes cmd werden gemeldet; Einträge, die Build-Artefakte brauchen, steigen mit `replay: false` explizit aus — und können trotzdem eine billige **Zeugenschaft** tragen, `witness` + `witness_expect`, issue #5: die Herkunft wird bei jedem Commit gefahren) |
 | **Retraktions-Ledger** | `zreflect/check_retractions.py` | revozierte Aussagen tauchen **in den via `REFLECT_DOCS` erklärten Living-State-Docs** wieder auf |
 | **Fragen-Ledger** | `zreflect/check_questions.py` | offene Fragen, die nur in Prosa leben und keinen ausführbaren Begleicher haben |
 | **Trilingual-README-Gate** | `zreflect/check_readme_sync.py` | eine Sprachversion des README ändern und die anderen driften lassen: das Trio muss existieren, einander verlinken — und **mit jedem Push gemeinsam aktualisiert werden** |
@@ -150,6 +150,21 @@ konvergieren). `check_stale` kann ab konfigurierten Tagen warnen: `REFLECT_STALE
 (leer = diese Regel **sagt laut, dass sie aus ist**). Der Stempel zeichnet das *Wann*
 auf und ist nie ein Mess-Eingang — ihn als solchen zu füttern, ist genau das, was
 `--check` nie konvergieren ließe.
+
+**Die dritte Stufe: Zeugenschaft** (issue #5): `replay: false` hieß
+bisher *nie wieder geprüft* — dabei sind teure Fakten die, die eine
+billige Nachprüfung am meisten brauchen. Ein 5-Minuten-Benchmark passt
+nicht in den pre-commit, aber seine **Herkunft** kann Zeuge sein:
+`fact(Wert, cmd, Quelle, replay=False, witness="<billiger, nur-lesender cmd>", witness_expect="<erwarteter stdout>")`.
+Der Zeuge wird **bei jedem Commit gefahren** (orthogonal zu `replay`),
+mit demselben Bare-Wert-Urteil (`stdout.strip() == witness_expect`);
+das Paar muss zusammen gegeben werden — ein halber Zeuge ist eine
+kaputte Behauptung, und `ledger.fact()` verweigert sie an Ort und
+Stelle. Der Unfall dahinter: ein Artefakt, gebaut von einem
+gedrifteten Werkzeug (`-flto` als Rest in einem Build-Skript), passierte
+alle billigen Gates und explodierte erst in der Browser-Regression —
+ein Zeuge, der die `tool.script_sha256` des Artefakts mit dem sha
+des lebenden Skripts vergleicht, hätte es beim Commit gefasst.
 
 ### 3. Retraktions-Ledger: Widerlegung hinterlässt eine Spur
 

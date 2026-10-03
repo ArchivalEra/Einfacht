@@ -56,7 +56,7 @@ retraction ledger.
 | **Gate platform** | `zreflect/gate.py` | checkers silently turning green (zero-value guards + three-tier selftest) |
 | **Fact ledger** | `zreflect/ledger.py` + `facts.py` | numbers hand-copied or silently overwritten |
 | **Fact gate** | `zreflect/check_facts.py` | doc block out of sync with the ledger, bare numbers in prose, citations of keys that don't exist |
-| **Replay gate** | `zreflect/check_facts_replay.py` | "re-runnable" used to be an assertion **with no executor** (issue #2 ①): now every ledger `cmd` is executed verbatim (stdout must equal the value; broken command / timeout / missing cmd all reported; entries that need build artifacts opt out with `replay: false`) |
+| **Replay gate** | `zreflect/check_facts_replay.py` | "re-runnable" used to be an assertion **with no executor** (issue #2 ①): now every ledger `cmd` is executed verbatim (stdout must equal the value; broken command / timeout / missing cmd all reported; entries that need build artifacts opt out with `replay: false` — and can still carry a cheap **witness**, `witness` + `witness_expect`, issue #5: its provenance runs every commit) |
 | **Retraction ledger** | `zreflect/check_retractions.py` | retracted claims **reappearing inside the living-state docs declared by `REFLECT_DOCS`** |
 | **Question ledger** | `zreflect/check_questions.py` | open questions living only in prose, with no executable settler |
 | **Trilingual README gate** | `zreflect/check_readme_sync.py` | editing one language README while the others drift: the trio must exist, cross-link each other, and **move together in every push** |
@@ -144,6 +144,20 @@ from the wall clock would never converge under `--check`). `check_stale` can war
 configured age: `REFLECT_STALE_DAYS` (unset = that rule **says out loud it is off**).
 The stamp records *when*, and is never a measurement input — feeding it back as one is
 exactly what would make `--check` never converge.
+
+**The third tier: witnesses** (issue #5): `replay: false` used to mean
+*never re-checked* — but expensive facts are the ones that most need a
+cheap re-check. A 5-minute benchmark can't enter pre-commit, but its
+**provenance** can still be witnessed:
+`fact(value, cmd, source, replay=False, witness="<cheap read-only cmd>", witness_expect="<expected stdout>")`.
+The witness runs **every commit** (orthogonal to `replay`), judged by the
+same bare-value contract (`stdout.strip() == witness_expect`). The pair
+must be given together — a half-given witness is a broken assertion, and
+`ledger.fact()` refuses it on the spot. The incident behind this: an
+artifact built by a drifted tool (`-flto` left in a build script) passed
+every cheap gate and only blew up in the browser regression — a witness
+comparing the artifact's recorded `tool.script_sha256` against the live
+script would have caught it at commit time.
 
 ### 3. Retraction ledger: overturning leaves a trace
 
