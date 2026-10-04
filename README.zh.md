@@ -47,6 +47,7 @@
 | **复跑闸门** | `zreflect/check_facts_replay.py` | 「能复跑」此前是**没有执行者的断言**（issue #2 ①）：现在逐字执行台账每条 `cmd`（stdout 必须等于值；坏命令 / 超时 / 没 cmd 都报；要构建产物的条目写 `replay: false` 显式退出 —— 且仍可挂便宜**见证** `witness` + `witness_expect`，issue #5：来源每提交真跑；或挂**校准样本** `calibrate` + `calibrate_expect`，issue #6 ①：仪器对已知含 X 的样本每提交真跑） |
 | **仪器生命周期**（可插拔） | `zreflect/check_instruments.py` | 复跑契约抓「命令死了」（rc≠0），抓不到**仪器静默失真**：命令成功、值稳定、复跑永远通过，而它量的根本不是想量的（仪器不认 X 时 `grep -c X` 成功退出并返回 0）。可插拔：两个旋钮都未配 ⇒ 明说未启用、退 0。`REFLECT_INSTRUMENT_DAYS=天` 开恒常检测（`first_seen` 超过阈值 ⇒「这条 cmd 是在量，还是恒返回同一个数？」）；`REFLECT_INSTRUMENTS=instruments.json` 登记被证伪的**量法**（`{"methods": [{text, why, fixed_in}]}`）——台账任何 `cmd` 含被证伪片段即报 |
 | **声明式不变量**（可插拔） | `zreflect/check_invariants.py` | 「仓库文件必须/不得含某片段」做成**数据**而非代码（`REFLECT_INVARIANTS=invariants.json`，规格 `{"checks": [{path, must_contain?, must_not_contain?, why}]}`）—— 引擎通用、只读、不构建不跑网络 ⇒ 能进 pre-commit；`why` 必填（没理由的检查项没人敢删，会变成僵尸）。可插拔：未配 ⇒ 明说未启用、退 0。**grep 级**：片段出现在注释里也算「存在」—— 它证明的是「这段文字还在」，不是「代码里真在用」；声明式检查的强度上限 = 它匹配的文本形态。更强的保证是 `calibrate`（对产物量）或 `witness`（对来源量）的活 —— 两者正交别混：`calibrate` 守**量测仪器**，不变量守**仓库文件本身** |
+| **env 文件载体**（可插拔） | `zreflect/check_envfile.py` + `reflect-hooks/einfacht-env.sh` | 钩子的 `REFLECT_*` 来源**静默坏掉**：旋钮名打错一位 ⇒ 被所有程序静默忽略（值永远到不了钩子，其余一切照常跑）；文件旋钮指向不存在的文件 ⇒ 钩子的 `[ -f ]` 守卫静默跳过；值为空 / 文件只剩注释 ⇒ 看起来配了、其实什么都没加载；`sh` 语法坏 ⇒ 钩子要到提交时刻才响亮地死、报错还指向不明。旋钮名册**发现式**（扫 `zreflect/*.py` 的 `REFLECT_*` 记号 —— 手写名录一样会漂，同款病）。可插拔：没有 `Einfacht.env` ⇒ 明说未启用、退 0 |
 | **翻案台账** | `zreflect/check_retractions.py` | 被推翻的断言在**声明的活状态文档（`REFLECT_DOCS`）里**重新出现 |
 | **悬案台账** | `zreflect/check_questions.py` | 未结案的问题只活在散文里、没有能跑的结算件 |
 | **三语 README 闸门** | `zreflect/check_readme_sync.py` | 三语 README 是**同一条断言的三份拷贝**：三份必须都在、互链完好，且**每次推送同批更新**（缺一份拒推） |
@@ -61,7 +62,7 @@
 | **活状态抽取** | `zreflect/living.py` | 闸门分不清「现在如此」和「当时如此」。历史章节、行内历史标记、**带明确出处的记录**三种出口，加上「默认从严」（无编号章节也是活状态）的判定，全在这一份；各检查器共用，词表只生产一次 |
 | **陈旧断言闸门** | `zreflect/check_stale.py` | 活状态里**没有出处**的 sha 断言、退役组件名悄悄回来 —— 那边实测过：换了构建，头部还挂着旧 sha 没人发现 |
 | **采集器契约** | `zreflect/collect.py` | `measure()` 写成"会自己变的输入"（墙上时钟 / HEAD sha ⇒ `--check` 永不收敛）、读不到就编个 0、贵的测量不做缓存 —— 四条原则 + 机器块回收帮手 |
-| **git hooks** | `reflect-hooks/` | 闸门躺在仓库里**从未被执行**：pre-commit 重算机器块并跑全部闸门，pre-push 拒推不新鲜的块（**不自动改文件、不动历史**）。两者在一切之前先 source 仓库本地的 `reflect.env`（issue #8）—— git 不把自定义环境变量传给 hooks，`REFLECT_*` 旋钮靠这个文件到达钩子（形状见 `reflect.env.example`） |
+| **git hooks** | `reflect-hooks/` | 闸门躺在仓库里**从未被执行**：pre-commit 重算机器块并跑全部闸门，pre-push 拒推不新鲜的块（**不自动改文件、不动历史**）。两者在一切之前先经**可拔插件** `einfacht-env.sh` 加载仓库本地的 `Einfacht.env`（issue #8）—— git 不把自定义环境变量传给 hooks，而「谁记得 export」换机器 / 换 CI / 换人就没了；文件才是钩子可复现的来源（形状见 `Einfacht.env.example`；钩子目录优先、仓库根次之；删掉插件 ⇒ 带守卫的 source 行跳过，钩子回落纯环境变量 + 默认名） |
 
 新旋钮：`REFLECT_HISTORY_SECS`（声明哪些编号章节是 append-only 历史，如 `5,9,10`）·
 `REFLECT_RETIRED`（退役组件名名单；不配 = 该规则**明说未启用**，不假装查过）。
@@ -162,6 +163,22 @@ issue #7）：「仓库文件必须/不得含某片段」做成**数据**
 声明式检查的强度上限 = 它匹配的文本形态，更强的保证
 是 `calibrate`（对产物）或 `witness`（对来源）的活。
 
+**env 文件载体也是可插拔的**（`check_envfile.py`，
+issue #8）：钩子经可拔插件 `reflect-hooks/
+einfacht-env.sh`（钩子目录优先、仓库根次之；
+`REFLECT_ENV_FILE` 可换文件名）读取仓库本地的
+`Einfacht.env` 里的 `REFLECT_*` 旋钮。插件是
+**机制不是焊死的步骤**：删掉它，钩子一行都不用
+改 —— 带守卫的 source 行跳过，回落纯环境变量。
+闸门守的是这份文件的**静默**坏法（见上表该行）。
+它的旋钮名册是**发现式**的（扫 `zreflect/*.py`
+的 `REFLECT_*` 记号）—— 手写名录一样会漂；
+这也解释了为什么闸门自己的源码里从不字面写错
+的旋钮名：自证里的 typo 样例用拼接构造，否则
+扫描器会把守卫要抓的 typo 本身收进名册。两个
+位置都没有 `Einfacht.env` ⇒ 闸门明说未启用、
+退 0。
+
 ### 三、翻案台账：推翻也要留痕
 
 `retractions.json` 存**已被推翻**的断言：特征片段 `text`、为什么错 `why`、复跑方式 `evidence`、
@@ -217,6 +234,13 @@ Settling: <可执行的路径或命令> —— rc=0 ⇒ 结论A；rc=7 ⇒ 结�
 issue #3 ③）—— runner / CI 不论检查器叫什么都能 grep 同一个固定格式；
 `gates-selftest.sh` 发现自证缺这行即红。
 
+**插件**的自证也接在同一个 runner 里：
+`reflect-hooks/einfacht-env.sh --selftest`
+（六种情形，含「删掉插件 ⇒ 钩子回落」的可证伪
+证明）。插件不是 `check_*.py` 闸门，发现式名录
+扫不到它 —— 它在 runner 里被点名一次，插件
+缺失或自证红都会让整轮变红。
+
 ### 六、三语 README：三份一起动，缺一份拒推
 
 本仓的门面 README 有三份语言拷贝：`README.md`（英语，默认）、`README.zh.md`（简体中文）、
@@ -248,7 +272,7 @@ python3 zreflect/facts.py --get 键名             # 只打印一条事实的裸
 # 2. 挂进 pre-commit / pre-push（重算机器块 + 全部闸门；pre-push 还要求三语 README 同批更新）
 sh reflect-hooks/install.sh
 # 2b.（可选）给 hooks 一个持久的旋钮载体（issue #8）：
-#     cp reflect-hooks/reflect.env.example reflect-hooks/reflect.env
+#     cp reflect-hooks/Einfacht.env.example reflect-hooks/Einfacht.env
 #     —— git 不把自定义环境变量传给 hooks，钩子要读的 REFLECT_* 值住在这个
 #     文件里（没有文件 ⇒ 全部旋钮回落默认名）
 # 3. 手动复验（也是 hooks 会跑的那几条）
@@ -315,11 +339,13 @@ install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
 换仓库只改环境变量，不改代码：
 
 这些变量靠仓库本地的 env 文件到达 **hooks**（issue #8）：`reflect-hooks/pre-commit`
-与 `reflect-hooks/pre-push` 在一切之前先 source `reflect-hooks/reflect.env`
-（没有时回落仓库根的 `reflect.env`）—— 因为 git 不把调用方的自定义环境传给
-hooks，只在某个 shell 里 `export` 过的旋钮，钩子永远看不见。没有文件 ⇒ 全部
-旋钮回落默认名（守卫：缺文件不是错误）。文件里的 `export` 覆盖环境里的同名值
-—— 对钩子来说，文件才是可复现的来源。形状：`reflect-hooks/reflect.env.example`。
+与 `reflect-hooks/pre-push` 在一切之前先经可拔插件 `einfacht-env.sh` 加载
+`reflect-hooks/Einfacht.env`（没有时回落仓库根的 `Einfacht.env`）—— 因为 git
+不把调用方的自定义环境传给 hooks，只在某个 shell 里 `export` 过的旋钮，钩子
+永远看不见。没有文件 ⇒ 全部旋钮回落默认名（守卫：缺文件不是错误）。文件里的
+`export` 覆盖环境里的同名值 —— 对钩子来说，文件才是可复现的来源。
+形状：`reflect-hooks/Einfacht.env.example`。删掉插件 ⇒ 带守卫的 source 行
+跳过，钩子回落纯环境变量 + 默认名（机制按设计可拔）。
 
 | 变量 | 默认 | 作用 |
 |---|---|---|

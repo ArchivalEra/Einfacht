@@ -59,6 +59,7 @@ retraction ledger.
 | **Replay gate** | `zreflect/check_facts_replay.py` | "re-runnable" used to be an assertion **with no executor** (issue #2 ①): now every ledger `cmd` is executed verbatim (stdout must equal the value; broken command / timeout / missing cmd all reported; entries that need build artifacts opt out with `replay: false` — and can still carry a cheap **witness**, `witness` + `witness_expect`, issue #5: its provenance runs every commit; or a **calibration sample**, `calibrate` + `calibrate_expect`, issue #6 ①: the instrument runs against a known-positive sample every commit) |
 | **Instrument lifecycle** (pluggable) | `zreflect/check_instruments.py` | the re-run contract catches *dead* commands (rc≠0), not **silent instrument distortion**: a command that succeeds, returns a stable value, and passes replay forever while measuring the wrong thing (`grep -c X` exits 0 successfully when the tool doesn't know mnemonic X). Pluggable: both knobs unset ⇒ says out loud it is off, exit 0. `REFLECT_INSTRUMENT_DAYS=N` enables constant-value detection (`first_seen` older than N days ⇒ "is this cmd really measuring, or always returning the same number?"); `REFLECT_INSTRUMENTS=instruments.json` registers falsified **measurement methods** (`{"methods": [{text, why, fixed_in}]}`) — any ledger `cmd` containing one is reported |
 | **Declarative invariants** (pluggable) | `zreflect/check_invariants.py` | "file X must/must not contain fragment Y" as **data**, not code (`REFLECT_INVARIANTS=invariants.json`, spec `{"checks": [{path, must_contain?, must_not_contain?, why}]}`) — generic read-only engine, no build/network ⇒ pre-commit-safe; `why` is mandatory (a check nobody dares delete becomes a zombie). Pluggable: unset ⇒ says out loud it is off, exit 0. **Grep-level**: a fragment inside a comment passes too — it proves "this text is still here", not "the code really uses it"; a declarative check's strength is bounded by the text form it matches. Stronger guarantees are `calibrate`'s (on the artifact) or `witness`'s (on the source) job — orthogonal, don't mix: `calibrate` guards the *measuring tool*, invariants guard the *repo files themselves* |
+| **Env-file carrier** (pluggable) | `zreflect/check_envfile.py` + `reflect-hooks/einfacht-env.sh` | the hooks' `REFLECT_*` source dying **silently**: a knob name misspelled by one letter is ignored by every program (the value never reaches the hooks — everything else keeps running); a file knob pointing at a missing file makes the hook's `[ -f ]` guard silently skip; an empty value or a comments-only file looks configured while loading nothing; broken `sh` syntax kills the hook at commit time with a misleading error. The knob registry is **discovered** (scans `zreflect/*.py` for `REFLECT_*` tokens — a hand-written list would drift, the same disease). Pluggable: no `Einfacht.env` ⇒ says out loud it is off, exit 0 |
 | **Retraction ledger** | `zreflect/check_retractions.py` | retracted claims **reappearing inside the living-state docs declared by `REFLECT_DOCS`** |
 | **Question ledger** | `zreflect/check_questions.py` | open questions living only in prose, with no executable settler |
 | **Trilingual README gate** | `zreflect/check_readme_sync.py` | editing one language README while the others drift: the trio must exist, cross-link each other, and **move together in every push** |
@@ -74,7 +75,7 @@ Only the mechanisms were kept; all project data was stripped:
 | **Living-state extraction** | `zreflect/living.py` | gates failing to tell "how things are" from "how things were". Three exits — declared history sections, inline history marks, records with an **explicit source** — plus "strict by default" (unnumbered sections are living state too), all in one file shared by every checker; the word list is produced exactly once |
 | **Stale-assertion gate** | `zreflect/check_stale.py` | sha claims **without a source** in living state; retired component names sneaking back — measured over there: the build changed and the header still showed the old sha, unnoticed |
 | **Collector contract** | `zreflect/collect.py` | `measure()` reading inputs **that change by themselves** (wall-clock / HEAD sha ⇒ `--check` never converges), inventing a 0 when a read fails, expensive measurements without caching — four principles + a block-recycling helper |
-| **git hooks** | `reflect-hooks/` | gates lying in the repo **never executed**: pre-commit recomputes the machine block and runs every gate; pre-push refuses stale blocks (**it never edits files or rewrites history**). Both source a repo-local `reflect.env` first (issue #8) — git does not export custom env to hooks, so the `REFLECT_*` knobs reach them through that file (shape: `reflect.env.example`) |
+| **git hooks** | `reflect-hooks/` | gates lying in the repo **never executed**: pre-commit recomputes the machine block and runs every gate; pre-push refuses stale blocks (**it never edits files or rewrites history**). Both load a repo-local `Einfacht.env` through the **removable plugin** `einfacht-env.sh` (issue #8) — git does not export custom env to hooks, and "who remembered to `export`" doesn't survive a machine, CI, or personnel change; a file is the hooks' reproducible source (shape: `Einfacht.env.example`; hooks dir first, repo root second; delete the plugin ⇒ the guarded source line skips it and the hooks fall back to plain env vars + default names) |
 
 New knobs: `REFLECT_HISTORY_SECS` (which numbered sections are append-only history, e.g. `5,9,10`) ·
 `REFLECT_RETIRED` (retired-component names; unset = that rule **says out loud that it is off**
@@ -200,6 +201,25 @@ here", not "the code really uses it". A declarative check's
 strength is bounded by the text form it matches; anything stronger
 is `calibrate` (on the artifact) or `witness` (on the source).
 
+**The env-file carrier is pluggable too** (`check_envfile.py`,
+issue #8): hooks read their `REFLECT_*` knobs from a
+repo-local `Einfacht.env`, loaded by the removable plugin
+`reflect-hooks/einfacht-env.sh` (hooks dir first, repo root
+second; `REFLECT_ENV_FILE` renames the file). The plugin is
+a **mechanism, not a welded step**: deleting it changes
+nothing in the hooks — the guarded source line skips and
+they fall back to plain environment variables. The gate
+guards the file's *silent* failure modes (see the table
+row above). Its knob registry is **discovered** — scanning
+`zreflect/*.py` for `REFLECT_*` tokens — because a
+hand-written list would drift like any other; that is also
+why the gate's own source never spells a wrong knob name
+literally: its selftest's typo sample is built by
+concatenation, or the scanner would whitelist the very
+typo the guard exists to catch. No `Einfacht.env` in
+either location ⇒ the gate says out loud it is off and
+exits 0.
+
 ### 3. Retraction ledger: overturning leaves a trace
 
 `retractions.json` stores **refuted** claims: a distinctive fragment `text`, why it was wrong `why`,
@@ -265,6 +285,13 @@ Every `--selftest` ends with a machine-readable summary line, `=== N PASS / M FA
 regardless of the checker's name, and `gates-selftest.sh` turns red when a selftest
 lacks it.
 
+The **plugin's** selftest is wired into the same runner:
+`reflect-hooks/einfacht-env.sh --selftest` (six scenarios,
+including the falsifiable "delete the plugin ⇒ the hooks
+fall back" proof). A plugin is not a `check_*.py` gate,
+so discovery can't see it — it is named once in the
+runner, and a missing or red plugin turns the run red.
+
 ### 6. Trilingual README: the trio moves as one — or the push is refused
 
 This repo's face exists in three languages: `README.md` (English, default), `README.zh.md`,
@@ -303,7 +330,7 @@ python3 zreflect/facts.py --get py_lines         # bare value of one fact (for s
 #    pre-push additionally refuses pushes that don't update the README trio together)
 sh reflect-hooks/install.sh
 # 2b. (optional) give the hooks a durable knob carrier (issue #8):
-#     cp reflect-hooks/reflect.env.example reflect-hooks/reflect.env
+#     cp reflect-hooks/Einfacht.env.example reflect-hooks/Einfacht.env
 #     — git does not export custom env to hooks, so REFLECT_* values the
 #     hooks read live in that file (absent ⇒ every knob falls back to default)
 # 3. Manual re-verification (the same commands the hooks run)
@@ -376,13 +403,16 @@ defaults are simply the names this repo uses for itself; port to another repo by
 variables, never by editing code:
 
 Those variables reach the **hooks** through a repo-local env file (issue #8):
-`reflect-hooks/pre-commit` and `reflect-hooks/pre-push` source
-`reflect-hooks/reflect.env` — falling back to a repo-root `reflect.env` — before
+`reflect-hooks/pre-commit` and `reflect-hooks/pre-push` load
+`reflect-hooks/Einfacht.env` through the removable plugin
+`einfacht-env.sh` — falling back to a repo-root `Einfacht.env` — before
 anything else, because git does not pass the caller's custom environment to hooks;
 a knob set only via `export` in some shell is a knob the hooks never see.
 No file ⇒ every knob falls back to its default (the guard: a missing file is not
 an error). The file's `export`s override ambient same-name values — for a hook,
-the file is the reproducible source. Shape: `reflect-hooks/reflect.env.example`.
+the file is the reproducible source. Shape: `reflect-hooks/Einfacht.env.example`.
+Delete the plugin ⇒ the guarded source line skips it and the hooks fall back
+to plain env vars + default names (the mechanism is removable by design).
 
 | Variable | Default | What it does |
 |---|---|---|

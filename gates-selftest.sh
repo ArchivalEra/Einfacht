@@ -111,12 +111,29 @@ EOF
   return 1
 }
 
-if [ "${1:-}" = "--selftest" ]; then
-  selftest
-else
-  echo "闸门自证（发现式名录）："
-  run_gates "$HERE"
-fi
+plugin_selftest() {
+  # 可拔插件（issue #8）不是 zreflect/check_*.py，发现式名录
+  # 扫不到 —— 但它也是「没人盯着就漂移」的东西，所以这里
+  # 单独点名（它不扫名录，因为插件是机制不是闸门）。
+  p="$HERE/reflect-hooks/einfacht-env.sh"
+  if [ ! -f "$p" ]; then
+    echo "  ❌ reflect-hooks/einfacht-env.sh 不存在 —— 钩子的"
+    echo "      Einfacht.env 载体没了（能拔，但没人拔过它）"
+    return 1
+  fi
+  out=$(sh "$p" --selftest 2>&1)
+  if [ $? -ne 0 ]; then
+    echo "  ❌ einfacht-env.sh"
+    printf '%s\n' "$out" | tail -3 | sed 's/^/      /'
+    return 1
+  fi
+  if ! printf '%s\n' "$out" | grep -qE '^=== [0-9]+ PASS / [0-9]+ FAIL ===$'; then
+    echo "  ❌ 插件自证缺机器摘要行（=== N PASS / M FAIL ===，issue #3 ③）"
+    return 1
+  fi
+  echo "  ✅ reflect-hooks/einfacht-env.sh  $(printf '%s\n' "$out" | tail -1)"
+  return 0
+}
 
 # ── 跨仓库可配置性自证（**没有硬编码**的可证伪证据）────────────────────────────
 # 做法：搭一个**临时夹具仓库**，把三个名字全换掉（REFLECT_FACTS/REFLECT_DOC/DOCS），
@@ -174,6 +191,18 @@ configurable_selftest() {
   echo "  ✅ 五个名字全换（LEDGER.json/NOTES.md/RETRACT.json/cases/R1-R3.md）$ok/$n 全绿；默认名字下 [$red_need] 全红 ⇒ 没有硬编码"
   return 0
 }
-echo "── 跨仓库可配置性 ──"
-configurable_selftest || bad=$((bad + 1))
 
+
+# —— 主流程（所有函数定义之后）——————————————————————————————
+rc=0
+if [ "${1:-}" = "--selftest" ]; then
+  selftest || rc=1
+else
+  echo "闸门自证（发现式名录）："
+  run_gates "$HERE" || rc=1
+  echo "── 可拔插件 ──"
+  plugin_selftest || rc=1
+  echo "── 跨仓库可配置性 ──"
+  configurable_selftest || rc=1
+fi
+exit "$rc"
