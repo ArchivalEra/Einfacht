@@ -6,6 +6,8 @@
 
 > Status & Richtung: [maintaince.md](maintaince.md) — nur die Landkarte; gemessene Fakten leben im Maschinenblock von `STATE.md`, die Benutzung in diesem Trio.
 
+> **Für KI-Agenten:** beginne mit [maintaince.md](maintaince.md) — dort steht, wo die Wahrheit liegt und was vor Arbeitsbeginn zu laufen hat; harte Regeln in [AGENTS.md](AGENTS.md).
+
 > ehemals `zcode-reflect`
 
 Ein **Antihalluzinations-Faktsystem** für agent-getriebene Repos. Es trainiert keine Modelle,
