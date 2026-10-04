@@ -6,6 +6,8 @@
 
 > 现状与方向：[maintaince.md](maintaince.md) —— 只是地图；测出来的事实住 `STATE.md` 的机器块，用法在本 trio。
 
+> **给 AI agent：** 从 [maintaince.md](maintaince.md) 读起 —— 它写明真值在哪里、开工要跑什么；硬规矩在 [AGENTS.md](AGENTS.md)。
+
 一个给 agent 驱动型仓库用的**反幻觉事实系统**。它不训练模型、不做检索、不存 embedding——
 它只做一件事：让"现在如此"这句话**必须能被一条命令证明**，并且**在被推翻时能被自动抓到**。
 
