@@ -142,7 +142,8 @@ def selftest():
              {"pairs": [{"name": "x", "a": "nope-a.json", "b": "nope-b.json", "why": "w"}]}, d)[1])),
         ("★ key 指向非 dict ⇒ 必须报", lambda: any(
              "不是 dict" in x for x in check(
-             {"pairs": [{"name": "x", "a": "nokey.json", "b": "nokey.json", "why": "w"}]}, d)[0])),
+             {"pairs": [{"name": "x", "a": "nokey.json", "b": "nokey.json",
+                         "key": "declared", "why": "w"}]}, d)[0])),
         ("★ pairs 为空 ⇒ 必须报（零值守卫）", lambda: check(empty, d)[0] != []),
     ]
 
@@ -155,3 +156,9 @@ def selftest():
     shutil.rmtree(d, ignore_errors=True)
     print("=== %d PASS / %d FAIL ===" % (len(cases) - bad, bad))
     return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    if "--selftest" in sys.argv:
+        sys.exit(selftest())
+    sys.exit(main(sys.argv[1:]))
