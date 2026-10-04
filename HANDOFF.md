@@ -26,7 +26,7 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   `measured_at` 是采集时刻的**记录**，不是测量输入（拿它当输入 ⇒ `--check`
   永不收敛，issue #3 ②）。
 - **渲染** = `facts.py --render-doc` 把台账写进活状态文档末尾的 AUTO 块（**别手改**，hook 会重算并 `git add`）。
-- **闸门** = 八道：`check_facts`（块一致性 / 正文裸数字（`REFLECT_NAKED_MIN`
+- **闸门** = 九道：`check_facts`（块一致性 / 正文裸数字（`REFLECT_NAKED_MIN`
   可配、代码块内豁免）/ 坏引用）、`check_facts_replay`（台账 `cmd`
   逐字复跑，stdout 必须等于值 —— 裸值契约见 `ledger.fact()`；另有
   第三档**见证**：`replay=False` 的贵事实可挂 `witness`/`witness_expect`
@@ -38,6 +38,11 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   （**可插拔模块**：声明式不变量 —— 仓库文件必须/不得含
   某片段做成数据 `REFLECT_INVARIANTS=<json>`，未配 =
   明说未启用、退 0；grep 级边界见 §4，issue #7）、
+  `check_envfile`（**可插拔模块**：守钩子的 `REFLECT_*` 载体
+  `Einfacht.env` —— 旋钮名 typo / 文件旋钮指向缺失 /
+  空值 / 只剩注释 / sh 语法坏都会报；旋钮名册发现式扫
+  `zreflect/*.py`；无 Einfacht.env = 明说未启用、退 0，
+  issue #8）、
   `check_retractions`（翻案重现，
   扫描面 = `REFLECT_DOCS`）、`check_questions`（悬案必须挂结算件）、`check_readme_sync`（三语 README
   同批：默认模式查结构互链（单条目名单 ⇒ 互链判据退化、明说
@@ -51,8 +56,10 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
 ## 2. 接手当天（30 分钟，逐条可复跑）
 
 1. `sh reflect-hooks/install.sh` —— 把 pre-commit / pre-push 装上（它们会自动重算机器块 + 跑全部闸门）。
-   换仓移植时：`REFLECT_*` 旋钮住进 `reflect-hooks/reflect.env`（形状见
-   `reflect.env.example`）—— git 不把自定义环境传给 hooks，
+   换仓移植时：`REFLECT_*` 旋钮住进 `reflect-hooks/Einfacht.env`
+   （形状见 `Einfacht.env.example`；经可拔插件
+   `einfacht-env.sh` 加载，钩子目录优先、仓库根次之）——
+   git 不把自定义环境传给 hooks，
    只在 shell 里 export 的值钩子看不见（issue #8）。
 2. 手动复验（hooks 会跑的那几条），**全绿才继续**：
 
@@ -61,7 +68,7 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
    for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # 发现式名录，别列清单
    ```
 
-3. `sh gates-selftest.sh` —— 应输出「发现 6 个闸门，全部能红」，另有跨仓库换名自证 6/6。
+3. `sh gates-selftest.sh` —— 应输出「发现 9 个闸门，全部能红」+ 插件自证 6/6，另有跨仓库换名自证 9/9。
 4. **故意弄红一次再恢复**（练手感，10 分钟）：在 `STATE.md` 正文写一句含 ≥100 裸数字的话 →
    `check_facts` 应红（裸数字）→ 删掉恢复变绿。再试：把 `FACTS.json` 某键的值改掉 →
    `facts.py` 应拒绝写盘并提示 `--accept-changes`。
@@ -140,7 +147,7 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
 ## 5. 接手时的状态快照
 
 - HEAD 以 `git log -1` 为准；origin 已配置。
-- 八道闸门全绿；发现式自证 8/8；跨仓库换名自证 8/8（证明没有硬编码路径）；两道守卫在线。
+- 九道闸门全绿；发现式自证 9/9；插件自证 6/6；跨仓库换名自证 9/9（证明没有硬编码路径）；两道守卫在线。
   三语 README 同批判据：pre-push（本地）+ GitHub Actions（正面）双层执行。
 - **CI 正面执行同一判据**（issue #4 ②）：`gates` workflow 每推跑
   `facts.py --check` + 全闸门（含 `check_facts_replay` —— 每条 `cmd`

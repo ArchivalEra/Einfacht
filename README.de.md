@@ -60,6 +60,7 @@ Retraktionsledger.
 | **Replay-Gate** | `zreflect/check_facts_replay.py` | „re-laufbar" war eine Aussage **ohne Vollstrecker** (issue #2 ①): jetzt wird jedes `cmd` im Ledger wörtlich ausgeführt (stdout muss dem Wert gleichen; kaputtes Kommando / Timeout / fehlendes cmd werden gemeldet; Einträge, die Build-Artefakte brauchen, steigen mit `replay: false` explizit aus — und können trotzdem eine billige **Zeugenschaft** tragen, `witness` + `witness_expect`, issue #5: die Herkunft wird bei jedem Commit gefahren; oder eine **Kalibrierungsprobe**, `calibrate` + `calibrate_expect`, issue #6 ①: das Instrument läuft bei jedem Commit gegen eine bekannt-positive Probe) |
 | **Instrumenten-Lebenszyklus** (einsteckbar) | `zreflect/check_instruments.py` | das Replay-Gate fängt *tote* Kommandos (rc≠0), aber nicht **stille Instrumentenverfälschung**: ein Kommando, das erfolgreich ist, einen stabilen Wert liefert und ewig besteht, während es das Falsche mißt (`grep -c X` erfolgreich mit 0, wenn das Tool die Mnemonic X nicht kennt). Einsteckbar: beide Knäufe ungesetzt ⇒ sagt laut, dass es aus ist, exit 0. `REFLECT_INSTRUMENT_DAYS=N` schaltet die Konstanten-Erkennung (`first_seen` älter als N Tage ⇒ „mißt dieses cmd wirklich, oder liefert es immer dieselbe Zahl?"); `REFLECT_INSTRUMENTS=instruments.json` registriert widerlegte **Meßmethoden** (`{"methods": [{text, why, fixed_in}]}`) — jedes Ledger-`cmd` mit einem solchen Fragment wird gemeldet |
 | **Deklarative Invarianten** (einsteckbar) | `zreflect/check_invariants.py` | „Datei X muß/ darf Fragment Y nicht enthalten" als **Daten**, nicht Code (`REFLECT_INVARIANTS=invariants.json`, Schema `{"checks": [{path, must_contain?, must_not_contain?, why}]}`) — generische, nur-lesende Engine, kein Build/Netz ⇒ pre-commit-tauglich; `why` ist Pflicht (eine Prüfung, die keiner zu löschen wagt, wird zum Zombie). Einsteckbar: ungesetzt ⇒ sagt laut, dass es aus ist, exit 0. **Grep-Stufe**: ein Fragment im Kommentar zählt auch als „vorhanden" — es beweist „dieser Text ist noch da", nicht „der Code benutzt es wirklich"; die Stärke einer deklarativen Prüfung ist durch die Textform begrenzt, die sie matcht. Stärkere Garantien sind `calibrate` (am Artefakt) oder `witness` (an der Quelle) — orthogonal, nicht mischen: `calibrate` hütet das *Meßinstrument*, Invarianten die **Repository-Dateien selbst** |
+| **Env-Datei-Träger** (einsteckbar) | `zreflect/check_envfile.py` + `reflect-hooks/einfacht-env.sh` | die `REFLECT_*`-Quelle der Hooks stirbt **still** — ein um einen Buchstaben falsch geschriebener Knopfname wird von jedem Programm ignoriert (der Wert erreicht die Hooks nie — alles andere läuft weiter); ein Datei-Knopf, der auf eine fehlende Datei zeigt, lässt den `[ -f ]`-Wächter des Hooks still springen; ein leerer Wert oder eine nur-Kommentar-Datei sieht konfiguriert aus, lädt aber nichts; defekte `sh`-Syntax tötet den Hook erst beim Commit mit einer irreführenden Meldung. Das Knopfregister ist **entdeckt** (scannt `zreflect/*.py` nach `REFLECT_*`-Marken — eine handgeschriebene Liste würde driften, dieselbe Krankheit). Einsteckbar: kein `Einfacht.env` ⇒ sagt laut, dass es aus ist, exit 0 |
 | **Retraktions-Ledger** | `zreflect/check_retractions.py` | revozierte Aussagen tauchen **in den via `REFLECT_DOCS` erklärten Living-State-Docs** wieder auf |
 | **Fragen-Ledger** | `zreflect/check_questions.py` | offene Fragen, die nur in Prosa leben und keinen ausführbaren Begleicher haben |
 | **Trilingual-README-Gate** | `zreflect/check_readme_sync.py` | eine Sprachversion des README ändern und die anderen driften lassen: das Trio muss existieren, einander verlinken — und **mit jedem Push gemeinsam aktualisiert werden** |
@@ -75,7 +76,7 @@ Behalten wurden nur die Mechanismen; alle Projektdaten wurden abgestreift:
 | **Living-State-Extraktion** | `zreflect/living.py` | Gates, die „jetzt so" nicht von „damals so" unterscheiden. Drei Auswege — deklarierte Geschichtsabschnitte, inline Geschichtsmarker, Einträge mit **expliziter Quelle** — plus „strict by default" (auch unnummerierte Abschnitte sind Living State), alles in einer Datei, von allen Prüfern geteilt; die Wortliste wird genau einmal produziert |
 | **Stale-Assertion-Gate** | `zreflect/check_stale.py` | sha-Aussagen **ohne Quelle** im Living State; zurückgeschlichene Namen pensionierter Komponenten — dort gemessen: der Build wechselte, der Header zeigte weiter den alten sha, niemandem aufgefallen |
 | **Collector-Vertrag** | `zreflect/collect.py` | `measure()` mit **selbständernden Eingängen** (Wanduhr / HEAD-sha ⇒ `--check` konvergiert nie), erfundenen 0en bei fehlendem Lesetritt, teuren Messungen ohne Cache — vier Prinzipien + Helfer zum Wiederverwerten des Maschinenblocks |
-| **git hooks** | `reflect-hooks/` | im Repo liegende, **nie ausgeführte** Gates: pre-commit rechnet den Maschinenblock und fährt alle Gates; pre-push weist blöde frische Blöcke ab (**es editiert keine Files und schreibt keine Historie um**). Beide sourcen zuerst ein repo-lokales `reflect.env` (Issue #8) — git exportiert keine Custom-Env an Hooks, die `REFLECT_*`-Knöpfe erreichen sie über diese Datei (Form: `reflect.env.example`) |
+| **git hooks** | `reflect-hooks/` | im Repo liegende, **nie ausgeführte** Gates: pre-commit rechnet den Maschinenblock und fährt alle Gates; pre-push weist blöde frische Blöcke ab (**es editiert keine Files und schreibt keine Historie um**). Beide laden ein repo-lokales `Einfacht.env` über das **aussteckbare** Plugin `einfacht-env.sh` (Issue #8) — git exportiert keine Custom-Env an Hooks, und „wer sich an `export` erinnert hat" überlebt keinen Maschinen-, CI- oder Personalwechsel; eine Datei ist die reproduzierbare Quelle der Hooks (Form: `Einfacht.env.example`; Hook-Verzeichnis zuerst, Repo-Wurzel danach; Plugin löschen ⇒ die bewachte Source-Zeile springt sie und die Hooks fallen auf reine Env-Variablen + Defaults zurück) |
 
 Neue Knöpfe: `REFLECT_HISTORY_SECS` (welche nummerierten Abschnitte append-only Geschichte sind,
 z. B. `5,9,10`) · `REFLECT_RETIRED` (pensionierte Komponentennamen; leer = diese Regel **sagt laut,
@@ -211,6 +212,31 @@ wirklich". Die Stärke einer deklarativen Prüfung ist durch die
 Textform begrenzt, die sie matcht; alles Stärkere ist `calibrate`
 (am Artefakt) oder `witness` (an der Quelle).
 
+**Auch der Env-Datei-Träger ist einsteckbar**
+(`check_envfile.py`, Issue #8): die Hooks lesen
+ihre `REFLECT_*`-Knöpfe aus einem repo-lokalen
+`Einfacht.env`, geladen über das aussteckbare
+Plugin `reflect-hooks/einfacht-env.sh`
+(Hook-Verzeichnis zuerst, Repo-Wurzel danach;
+`REFLECT_ENV_FILE` benennt die Datei um). Das
+Plugin ist **Mechanismus, kein angeschweißter
+Schritt**: es löschen ändert nichts an den
+Hooks — die bewachte Source-Zeile springt, sie
+fallen auf reine Umgebungsvariablen zurück.
+Das Gate hütet die *stillen* Fehlermodi der
+Datei (siehe die Tabellenzeile oben). Sein
+Knopfregister ist **entdeckt** — es scannt
+`zreflect/*.py` nach `REFLECT_*`-Marken —
+weil eine handgeschriebene Liste wie jede
+andere driften würde; darum schreibt das Gate
+selbst nie einen falschen Knopfnamen wörtlich:
+seine Typo-Stichprobe baut die Selbstprüfung
+durch Konkatenation, sonst würde der Scanner
+gerade den Typo ins Register aufnehmen, den
+der Wächter fangen soll. Kein `Einfacht.env`
+an beiden Orten ⇒ das Gate sagt laut, dass es
+aus ist, und exit 0.
+
 ### 3. Retraktions-Ledger: Widerlegung hinterlässt eine Spur
 
 `retractions.json` speichert **widerlegte** Aussagen: ein charakteristisches Fragment `text`,
@@ -282,6 +308,16 @@ Jedes `--selftest` endet mit einer maschinenlesbaren Zusammenfassungszeile,
 greifen ein festes Format, unabhängig vom Namen des Prüfers; `gates-selftest.sh`
 wird rot, wenn eine Selbstprüfung sie fehlt.
 
+Die **Plugin**-Selbstprüfung hängt am selben Runner:
+`reflect-hooks/einfacht-env.sh --selftest`
+(sechs Szenarien, darunter der widerlegbare
+„Plugin löschen ⇒ Hooks fallen zurück"-Beweis).
+Ein Plugin ist kein `check_*.py`-Gate, also
+sieht das Entdeckungsregister es nicht — es
+wird im Runner einmal beim Namen genannt,
+und ein fehlendes oder rotes Plugin macht
+den Lauf rot.
+
 ### 6. Trilinguales README: das Trio bewegt als Ganzes — sonst wird der Push abgewiesen
 
 Das Gesicht dieses Repos existiert in drei Sprachen: `README.md` (Englisch, Standard),
@@ -322,7 +358,7 @@ python3 zreflect/facts.py --get py_lines          # Bare-Wert eines Fakts (für 
 #    pre-push weist außerdem Pushes ab, die das README-Trio nicht gemeinsam aktualisieren)
 sh reflect-hooks/install.sh
 # 2b. (optional) den Hooks einen dauerhaften Knopf-Träger geben (Issue #8):
-#     cp reflect-hooks/reflect.env.example reflect-hooks/reflect.env
+#     cp reflect-hooks/Einfacht.env.example reflect-hooks/Einfacht.env
 #     — git exportiert keine Custom-Env an Hooks, REFLECT_* -Werte,
 #     die die Hooks lesen, wohnen in dieser Datei (fehlt sie ⇒ alle
 #     Knöpfe fallen auf ihre Defaults zurück)
@@ -402,15 +438,19 @@ Repos passiert über Variablen, niemals über Code-Edits:
 
 Diese Variablen erreichen die **Hooks** über eine repo-lokale Env-Datei
 (Issue #8): `reflect-hooks/pre-commit` und `reflect-hooks/pre-push`
-sourcen `reflect-hooks/reflect.env` — mit Rückfall auf ein
-Repo-Wurzel-`reflect.env` — vor allem anderen, denn git reicht die
-Custom-Umgebung des Aufrufers nicht an Hooks weiter; ein Knopf, der nur
+laden — vor allem anderen, denn git reicht die
+Custom-Umgebung des Aufrufers nicht an Hooks weiter — über das
+aussteckbare Plugin `einfacht-env.sh` ein
+`reflect-hooks/Einfacht.env` (mit Rückfall auf ein
+Repo-Wurzel-`Einfacht.env`); ein Knopf, der nur
 per `export` in irgendeiner Shell gesetzt ist, ist ein Knopf, den die
 Hooks nie sehen. Keine Datei ⇒ jeder Knopf fällt auf sein Default zurück
 (der Wächter: eine fehlende Datei ist kein Fehler). Die `export`s der
 Datei überschreiben gleichnamige Umgebungsvariablen — für einen Hook
 ist die Datei die reproduzierbare Quelle. Form:
-`reflect-hooks/reflect.env.example`.
+`reflect-hooks/Einfacht.env.example`. Plugin löschen ⇒ die bewachte
+Source-Zeile springt, die Hooks fallen auf reine Env-Variablen +
+Defaults zurück (der Mechanismus ist nach Bauart aussteckbar).
 
 | Variable | Default | Wirkung |
 |---|---|---|
