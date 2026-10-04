@@ -6,6 +6,8 @@
 
 > Status & direction: [maintaince.md](maintaince.md) — the map only; measured facts live in `STATE.md`'s machine block, usage in this trio.
 
+> **For AI agents:** start from [maintaince.md](maintaince.md) — it names where truth lives and what to run before starting work; hard rules are in [AGENTS.md](AGENTS.md).
+
 > Formerly `zcode-reflect`.
 
 A **fact system against hallucination**, built for agent-driven repos. It does not train models,
@@ -205,6 +207,9 @@ strength is bounded by the text form it matches; anything stronger
 is `calibrate` (on the artifact) or `witness` (on the source).
 
 **The env-file carrier is pluggable too** (`check_envfile.py`,
+| **Derived-copy pin** (pluggable) | `zreflect/check_pins.py` | a submodule/fork pointer bumps while a provisioned copy (container tree, deploy dir) still serves the old content — drift invisible to git. The provisioner writes a stamp (`name branch commit dirty`); the gate re-reads it every commit: commit match / copy clean / version string match. Spec `{"pins": [{name, kind: tree\|version, worktree, stamp_read?, version_read?, expect_version?, why}]}`; unreadable ⇒ `SKIP:` out loud; empty pins ⇒ zero-value guard |
+| **Lock manifest** (pluggable) | `zreflect/check_locks.py` | upstreams without a git-able home (netlib/freedesktop/sourceforge lineages) pinned as URL + sha256; file-form entries require the hash (missing/mismatch ⇒ report), dir-form checks existence, `optional` entries SKIP out loud |
+| **A/B same-flag** (pluggable) | `zreflect/check_ab.py` | comparing two artifacts' declared surfaces: any key differing outside the tested axis is a confounder ⇒ the A/B verdict is void (real case: allocator A/B first reported −39% with a `--diag`-polluted baseline; same-flags re-measure = −27%). Spec `{"pairs": [{name, a, b, key?, allow[], why}]}`; missing artifact ⇒ `SKIP:` out loud; empty pairs ⇒ zero-value guard |
 issue #8): hooks read their `REFLECT_*` knobs from a
 repo-local `Einfacht.env`, loaded by the removable plugin
 `reflect-hooks/einfacht-env.sh` (hooks dir first, repo root
