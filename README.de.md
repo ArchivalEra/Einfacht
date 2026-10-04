@@ -75,7 +75,7 @@ Behalten wurden nur die Mechanismen; alle Projektdaten wurden abgestreift:
 | **Living-State-Extraktion** | `zreflect/living.py` | Gates, die „jetzt so" nicht von „damals so" unterscheiden. Drei Auswege — deklarierte Geschichtsabschnitte, inline Geschichtsmarker, Einträge mit **expliziter Quelle** — plus „strict by default" (auch unnummerierte Abschnitte sind Living State), alles in einer Datei, von allen Prüfern geteilt; die Wortliste wird genau einmal produziert |
 | **Stale-Assertion-Gate** | `zreflect/check_stale.py` | sha-Aussagen **ohne Quelle** im Living State; zurückgeschlichene Namen pensionierter Komponenten — dort gemessen: der Build wechselte, der Header zeigte weiter den alten sha, niemandem aufgefallen |
 | **Collector-Vertrag** | `zreflect/collect.py` | `measure()` mit **selbständernden Eingängen** (Wanduhr / HEAD-sha ⇒ `--check` konvergiert nie), erfundenen 0en bei fehlendem Lesetritt, teuren Messungen ohne Cache — vier Prinzipien + Helfer zum Wiederverwerten des Maschinenblocks |
-| **git hooks** | `reflect-hooks/` | im Repo liegende, **nie ausgeführte** Gates: pre-commit rechnet den Maschinenblock und fährt alle Gates; pre-push weist blöde frische Blöcke ab (**es editiert keine Files und schreibt keine Historie um**) |
+| **git hooks** | `reflect-hooks/` | im Repo liegende, **nie ausgeführte** Gates: pre-commit rechnet den Maschinenblock und fährt alle Gates; pre-push weist blöde frische Blöcke ab (**es editiert keine Files und schreibt keine Historie um**). Beide sourcen zuerst ein repo-lokales `reflect.env` (Issue #8) — git exportiert keine Custom-Env an Hooks, die `REFLECT_*`-Knöpfe erreichen sie über diese Datei (Form: `reflect.env.example`) |
 
 Neue Knöpfe: `REFLECT_HISTORY_SECS` (welche nummerierten Abschnitte append-only Geschichte sind,
 z. B. `5,9,10`) · `REFLECT_RETIRED` (pensionierte Komponentennamen; leer = diese Regel **sagt laut,
@@ -300,6 +300,13 @@ drei gemeinsam aktualisieren.**
   ist, ist genau das „nie ausgeführte Gate", dessenwegen dieses Repo existiert.
 - Andere Sprachen, andere Namen: `REFLECT_READMES=a.md,b.md,c.md` — Hook, Gate und CI lesen
   denselben Knopf.
+- Einzelneintrag-Liste: `REFLECT_READMES=maintaince.md` (eine Disziplin-Datei, kein Trio) ⇒
+  die **Querverlinkungs-Regel der Strukturaudit ist vakant** — „der Sprachumschalter muss
+  jede Sprache verlinken" gilt automatisch, wenn es nur eine Sprache gibt; das Gate **sagt
+  laut, dass es nicht anwendbar ist** (derselbe Stil wie jedes andere Gate, das seinen
+  Aus-Zustand ankündigt), während Existenz- / Nichtleer-Prüfung in Kraft bleiben. Das
+  Push-Kriterium ist **nicht** vakant: „jeder Push muss es aktualisieren" bleibt ein
+  echtes Urteil (Issue #8).
 
 ## Benutzung
 
@@ -314,6 +321,11 @@ python3 zreflect/facts.py --get py_lines          # Bare-Wert eines Fakts (für 
 # 2. pre-commit / pre-push einhängen (Block neu rechnen + alle Gates;
 #    pre-push weist außerdem Pushes ab, die das README-Trio nicht gemeinsam aktualisieren)
 sh reflect-hooks/install.sh
+# 2b. (optional) den Hooks einen dauerhaften Knopf-Träger geben (Issue #8):
+#     cp reflect-hooks/reflect.env.example reflect-hooks/reflect.env
+#     — git exportiert keine Custom-Env an Hooks, REFLECT_* -Werte,
+#     die die Hooks lesen, wohnen in dieser Datei (fehlt sie ⇒ alle
+#     Knöpfe fallen auf ihre Defaults zurück)
 # 3. manuelle Nachprüfung (dieselben Befehle, die die Hooks fahren)
 sh gates-selftest.sh                             # jedes Gate muss erst beweisen, dass es rot kann
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # Entdeckungsregister — keine handgeschriebenen Listen, nicht mal hier
@@ -387,6 +399,18 @@ Drei Formen sind tragend:
 Umgebungsvariablen trennen „wie die Dinge heißen" von „wie der Mechanismus arbeitet" — die
 Defaults sind einfach die Namen, die dieses Repo für sich selbst benutzt; Portierung auf andere
 Repos passiert über Variablen, niemals über Code-Edits:
+
+Diese Variablen erreichen die **Hooks** über eine repo-lokale Env-Datei
+(Issue #8): `reflect-hooks/pre-commit` und `reflect-hooks/pre-push`
+sourcen `reflect-hooks/reflect.env` — mit Rückfall auf ein
+Repo-Wurzel-`reflect.env` — vor allem anderen, denn git reicht die
+Custom-Umgebung des Aufrufers nicht an Hooks weiter; ein Knopf, der nur
+per `export` in irgendeiner Shell gesetzt ist, ist ein Knopf, den die
+Hooks nie sehen. Keine Datei ⇒ jeder Knopf fällt auf sein Default zurück
+(der Wächter: eine fehlende Datei ist kein Fehler). Die `export`s der
+Datei überschreiben gleichnamige Umgebungsvariablen — für einen Hook
+ist die Datei die reproduzierbare Quelle. Form:
+`reflect-hooks/reflect.env.example`.
 
 | Variable | Default | Wirkung |
 |---|---|---|

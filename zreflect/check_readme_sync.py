@@ -8,10 +8,15 @@
 
   · 默认模式（pre-commit / 手动 / gates-selftest 跑的是它）：**结构判据** ——
     `REFLECT_READMES` 声明的每份 README 必须存在、非空、且含 trio 全部文件名
-    （语言切换器必须指全所有语言：切换器断 = 入口断）；
+    （语言切换器必须指全所有语言：切换器断 = 入口断）。
+    单条目清单（`REFLECT_READMES=maintaince.md`）⇒ 互链判据**退化**：
+    只有一份语言时「必须指全全部语言」自动成立，自引用是退化要求
+    （issue #8）—— 此时互链不查，由 run() 明说「不适用」（与其他
+    闸门声明 off 状态的同款）；存在 / 非空判据照常；
   · `--changed <文件|->`：**推送集判据** —— 从文件（或 `-` = stdin）读本次推送
     改动的文件路径（一行一个），**每份 README 都必须在改动集里**，缺一份报一份。
     改动集为空 ⇒ 必须报（空不是通过）。pre-push 与 CI 走这个模式。
+    ⚠️ 推送集判据**不退化**：单条目时「每次推送必须更新它」仍是实打实的判据。
 
 零值守卫：`REFLECT_READMES` 为空 ⇒ 报（拿空清单判"README 组"是空话）；推送模式收到
 空改动集 ⇒ 报。
@@ -41,6 +46,10 @@ def problems_structure(files, langs):
     if not langs:
         # 零值守卫：清单为空 ⇒ 「README 组都齐」是一句无法判定的话。
         return ["REFLECT_READMES 是空的 —— 拿空清单判「README 组」是空话（零值守卫）"]
+    # 单条目 ⇒ 互链判据退化（issue #8）：只有一份语言时「切换器必须
+    # 指全全部语言」自动成立，自引用是退化要求。存在 / 非空判据照常，
+    # 互链不查（退化判据由 run() 明说不适用 —— 不许假装查过）。
+    switcher_applies = len(langs) > 1
     for name in langs:
         if name not in files:
             out.append("缺 README：%s —— 三语是同一条断言的三份拷贝，缺一份 = 断言散了架" % name)
@@ -48,6 +57,8 @@ def problems_structure(files, langs):
         body = files[name] or ""
         if not body.strip():
             out.append("%s 存在但为空 —— 空文件不是一门语言" % name)
+        if not switcher_applies:
+            continue
         for other in langs:
             if other not in body:
                 out.append("%s 里没有对 %s 的引用 —— 语言切换器必须指全全部语言，"
@@ -96,13 +107,23 @@ def run(argv):
         p = repo(name)
         if os.path.exists(p):
             files[name] = open(p, encoding="utf-8", errors="replace").read()
+    if len(langs) == 1:
+        # 退化的互链判据要说出口（issue #8）—— 与其他闸门声明
+        # 「未启用」同款：单条目时互链自动成立，不许假装查过。
+        print("三语 README 闸门：REFLECT_READMES 只有一份（%s）⇒ 切换器互链"
+              "判据不适用（单条目时「必须指全全部语言」自动成立，自引用是"
+              "退化要求）；存在 / 非空判据照常" % langs[0], file=sys.stderr)
     probs = problems_structure(files, langs)
     for x in probs:
         print("  · %s" % x, file=sys.stderr)
     if probs:
         print("三语 README 闸门：%d 个问题" % len(probs), file=sys.stderr)
         return 1
-    print("三语 README 闸门：OK（%d 份 README 都在、非空、切换器互链完好）" % len(langs))
+    if len(langs) == 1:
+        print("三语 README 闸门：OK（%s 存在且非空；切换器互链判据不适用）"
+              % langs[0])
+    else:
+        print("三语 README 闸门：OK（%d 份 README 都在、非空、切换器互链完好）" % len(langs))
     return 0
 
 
@@ -119,6 +140,12 @@ def _cases():
         ("三份齐全且互链 ⇒ 不报", lambda: problems_structure(_trio(), LANGS) == []),
         ("推送改动集含全部三份 ⇒ 不报",
          lambda: problems_push(set(LANGS) | {"code.py"}, LANGS) == []),
+        # ① 正常不报（单条目：互链判据退化，issue #8）
+        ("单条目且无自引用 ⇒ 不报（互链 vacuous，issue #8）",
+         lambda: problems_structure({"maintaince.md": "# 纪律\n\n正文里没有任何链接。"},
+                                    ("maintaince.md",)) == []),
+        ("单条目推送改动集含它 ⇒ 不报",
+         lambda: problems_push({"maintaince.md", "a.py"}, ("maintaince.md",)) == []),
         # ② 该报的必须报
         ("★ 少一份 README ⇒ 必须报（缺的那份点名）",
          lambda: any("README.de.md" in x for x in problems_structure(
@@ -133,6 +160,16 @@ def _cases():
         ("★ 推送改动集缺一份 ⇒ 必须报（苛刻是有意的）",
          lambda: any("README.de.md" in x for x in problems_push(
              {"README.md", "README.zh.md", "zreflect/facts.py"}, LANGS))),
+        # ② 该报的必须报（单条目：存在 / 非空 / 同批 三判据都不退化，issue #8）
+        ("★ 单条目但文件缺失 ⇒ 必须报（存在判据不退化）",
+         lambda: any("缺 README" in x and "maintaince.md" in x
+                     for x in problems_structure({}, ("maintaince.md",)))),
+        ("★ 单条目但为空 ⇒ 必须报（非空判据不退化）",
+         lambda: any("为空" in x for x in problems_structure(
+             {"maintaince.md": "  \n"}, ("maintaince.md",)))),
+        ("★ 单条目推送集不含它 ⇒ 必须报（同批判据不退化）",
+         lambda: any("maintaince.md" in x for x in problems_push(
+             {"other.md"}, ("maintaince.md",)))),
         # ③ 空输入必须报
         ("★ 空清单（REFLECT_READMES=空）⇒ 结构判据必须报（零值守卫）",
          lambda: problems_structure(_trio(), ()) != []),

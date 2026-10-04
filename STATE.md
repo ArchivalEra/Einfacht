@@ -29,8 +29,14 @@
   某片段做成数据；未配 = 明说未启用，issue #7）、
   `check_retractions`（翻案重现；
   扫描面 = `REFLECT_DOCS` 清单）、`check_questions`（悬案必须挂结算件）、
-  `check_readme_sync`（三语 README 同批：结构互链 + 推送集必须含全部名单）、
+  `check_readme_sync`（三语 README 同批：结构互链 + 推送集必须含全部名单；
+  单条目名单 ⇒ 互链判据退化、闸门明说「不适用」，issue #8）、
   `check_stale`（sha 出处 / 退役名 / 测龄：`REFLECT_STALE_DAYS` 开启）。
+- **钩子有持久的旋钮载体**（issue #8）：pre-commit / pre-push 在一切
+  之前 source `reflect-hooks/reflect.env`（没有时回落仓库根的
+  `reflect.env`；都没有 ⇒ 全部回落默认名）—— git 不把自定义环境
+  变量传给 hooks，只在 shell 里 `export` 的 `REFLECT_*` 钩子看不见。
+  形状：`reflect-hooks/reflect.env.example`。
 - **一条悬案**：见 `questions/01-example.md`。
 - **CI 正面执行同一判据**：`gates` workflow 每推跑 `facts.py --check`
   + 八道闸门（每条 `cmd` 真的逐字复跑）；`readme-sync` 查三语同批。
@@ -49,10 +55,10 @@
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `md_files` | **8** | 2026-10-03T21:56:07+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `md_lines` | **1555** | 2026-10-03T21:56:07+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
-| `py_files` | **17** | 2026-10-03T21:56:07+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **2546** | 2026-10-03T21:56:07+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **8** | 2026-10-04T15:31:20+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `md_lines` | **1624** | 2026-10-04T15:31:20+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
+| `py_files` | **17** | 2026-10-04T15:31:20+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **2583** | 2026-10-04T15:31:20+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 4 条事实。
 <!-- /AUTO:FACTS -->
