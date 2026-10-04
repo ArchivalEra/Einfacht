@@ -74,7 +74,7 @@ Only the mechanisms were kept; all project data was stripped:
 | **Living-state extraction** | `zreflect/living.py` | gates failing to tell "how things are" from "how things were". Three exits — declared history sections, inline history marks, records with an **explicit source** — plus "strict by default" (unnumbered sections are living state too), all in one file shared by every checker; the word list is produced exactly once |
 | **Stale-assertion gate** | `zreflect/check_stale.py` | sha claims **without a source** in living state; retired component names sneaking back — measured over there: the build changed and the header still showed the old sha, unnoticed |
 | **Collector contract** | `zreflect/collect.py` | `measure()` reading inputs **that change by themselves** (wall-clock / HEAD sha ⇒ `--check` never converges), inventing a 0 when a read fails, expensive measurements without caching — four principles + a block-recycling helper |
-| **git hooks** | `reflect-hooks/` | gates lying in the repo **never executed**: pre-commit recomputes the machine block and runs every gate; pre-push refuses stale blocks (**it never edits files or rewrites history**) |
+| **git hooks** | `reflect-hooks/` | gates lying in the repo **never executed**: pre-commit recomputes the machine block and runs every gate; pre-push refuses stale blocks (**it never edits files or rewrites history**). Both source a repo-local `reflect.env` first (issue #8) — git does not export custom env to hooks, so the `REFLECT_*` knobs reach them through that file (shape: `reflect.env.example`) |
 
 New knobs: `REFLECT_HISTORY_SECS` (which numbered sections are append-only history, e.g. `5,9,10`) ·
 `REFLECT_RETIRED` (retired-component names; unset = that rule **says out loud that it is off**
@@ -282,6 +282,12 @@ deliberately brutal: **every push must update all three together.**
   "gate that never executed" this repo exists to kill.
 - Different languages, different file names: `REFLECT_READMES=a.md,b.md,c.md` — the hook, the gate
   and CI all read the same knob.
+- Single-entry list: `REFLECT_READMES=maintaince.md` (a discipline file, not a trio) ⇒ the
+  structure check's **cross-link rule is vacuous** — "the switcher must link every language"
+  holds automatically when there is only one language, so the gate **says out loud that it
+  does not apply** (same style as every other gate announcing its off state) while the
+  existence / non-empty checks stay in force. The push criterion is **not** vacuous:
+  "every push must update it" is still a real judgment (issue #8).
 
 ## Usage
 
@@ -296,6 +302,10 @@ python3 zreflect/facts.py --get py_lines         # bare value of one fact (for s
 # 2. Install pre-commit / pre-push (recompute block + run all gates;
 #    pre-push additionally refuses pushes that don't update the README trio together)
 sh reflect-hooks/install.sh
+# 2b. (optional) give the hooks a durable knob carrier (issue #8):
+#     cp reflect-hooks/reflect.env.example reflect-hooks/reflect.env
+#     — git does not export custom env to hooks, so REFLECT_* values the
+#     hooks read live in that file (absent ⇒ every knob falls back to default)
 # 3. Manual re-verification (the same commands the hooks run)
 sh gates-selftest.sh                            # every gate must first prove it can turn red
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # discovered registry — no hand-written lists, not even here
@@ -364,6 +374,15 @@ Three shapes are load-bearing:
 Environment variables separate "what things are called" from "how the mechanism works" — the
 defaults are simply the names this repo uses for itself; port to another repo by setting
 variables, never by editing code:
+
+Those variables reach the **hooks** through a repo-local env file (issue #8):
+`reflect-hooks/pre-commit` and `reflect-hooks/pre-push` source
+`reflect-hooks/reflect.env` — falling back to a repo-root `reflect.env` — before
+anything else, because git does not pass the caller's custom environment to hooks;
+a knob set only via `export` in some shell is a knob the hooks never see.
+No file ⇒ every knob falls back to its default (the guard: a missing file is not
+an error). The file's `export`s override ambient same-name values — for a hook,
+the file is the reproducible source. Shape: `reflect-hooks/reflect.env.example`.
 
 | Variable | Default | What it does |
 |---|---|---|

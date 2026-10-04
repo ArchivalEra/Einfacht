@@ -61,7 +61,7 @@
 | **活状态抽取** | `zreflect/living.py` | 闸门分不清「现在如此」和「当时如此」。历史章节、行内历史标记、**带明确出处的记录**三种出口，加上「默认从严」（无编号章节也是活状态）的判定，全在这一份；各检查器共用，词表只生产一次 |
 | **陈旧断言闸门** | `zreflect/check_stale.py` | 活状态里**没有出处**的 sha 断言、退役组件名悄悄回来 —— 那边实测过：换了构建，头部还挂着旧 sha 没人发现 |
 | **采集器契约** | `zreflect/collect.py` | `measure()` 写成"会自己变的输入"（墙上时钟 / HEAD sha ⇒ `--check` 永不收敛）、读不到就编个 0、贵的测量不做缓存 —— 四条原则 + 机器块回收帮手 |
-| **git hooks** | `reflect-hooks/` | 闸门躺在仓库里**从未被执行**：pre-commit 重算机器块并跑全部闸门，pre-push 拒推不新鲜的块（**不自动改文件、不动历史**） |
+| **git hooks** | `reflect-hooks/` | 闸门躺在仓库里**从未被执行**：pre-commit 重算机器块并跑全部闸门，pre-push 拒推不新鲜的块（**不自动改文件、不动历史**）。两者在一切之前先 source 仓库本地的 `reflect.env`（issue #8）—— git 不把自定义环境变量传给 hooks，`REFLECT_*` 旋钮靠这个文件到达钩子（形状见 `reflect.env.example`） |
 
 新旋钮：`REFLECT_HISTORY_SECS`（声明哪些编号章节是 append-only 历史，如 `5,9,10`）·
 `REFLECT_RETIRED`（退役组件名名单；不配 = 该规则**明说未启用**，不假装查过）。
@@ -230,6 +230,10 @@ issue #3 ③）—— runner / CI 不论检查器叫什么都能 grep 同一个�
 - CI（`.github/workflows/readme-sync.yml`）跑**同一条判据** —— 本地 hook 拦不住
   `git push --no-verify`；只在自己方便时生效的承诺，正是本仓为消灭它而生的那种"从未跑过的闸门"。
 - 换语言、换名字：`REFLECT_READMES=a.md,b.md,c.md` —— hook、闸门、CI 读同一个旋钮。
+- 单条目名单：`REFLECT_READMES=maintaince.md`（一份纪律文件，不是 trio）⇒ 结构检查里的
+  **互链判据退化** —— 只有一份语言时「切换器必须指全全部语言」自动成立，闸门会**明说
+  「不适用」**（与其他闸门声明未启用同款），存在 / 非空判据照常。推送判据**不**退化：
+  「每次推送必须更新它」仍是实打实的判据（issue #8）。
 
 ## 用法
 
@@ -243,6 +247,10 @@ python3 zreflect/facts.py --render-doc STATE.md # 把机器块写进文档
 python3 zreflect/facts.py --get 键名             # 只打印一条事实的裸值（脚本 / 其它语言用）
 # 2. 挂进 pre-commit / pre-push（重算机器块 + 全部闸门；pre-push 还要求三语 README 同批更新）
 sh reflect-hooks/install.sh
+# 2b.（可选）给 hooks 一个持久的旋钮载体（issue #8）：
+#     cp reflect-hooks/reflect.env.example reflect-hooks/reflect.env
+#     —— git 不把自定义环境变量传给 hooks，钩子要读的 REFLECT_* 值住在这个
+#     文件里（没有文件 ⇒ 全部旋钮回落默认名）
 # 3. 手动复验（也是 hooks 会跑的那几条）
 sh gates-selftest.sh                           # 每个闸门先证明自己会红
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # 发现式名录 —— README 也不手写闸门清单
@@ -305,6 +313,13 @@ install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
 
 本仓用环境变量把"叫什么"与"机制"分开 —— 默认值就是本仓自用的名字，
 换仓库只改环境变量，不改代码：
+
+这些变量靠仓库本地的 env 文件到达 **hooks**（issue #8）：`reflect-hooks/pre-commit`
+与 `reflect-hooks/pre-push` 在一切之前先 source `reflect-hooks/reflect.env`
+（没有时回落仓库根的 `reflect.env`）—— 因为 git 不把调用方的自定义环境传给
+hooks，只在某个 shell 里 `export` 过的旋钮，钩子永远看不见。没有文件 ⇒ 全部
+旋钮回落默认名（守卫：缺文件不是错误）。文件里的 `export` 覆盖环境里的同名值
+—— 对钩子来说，文件才是可复现的来源。形状：`reflect-hooks/reflect.env.example`。
 
 | 变量 | 默认 | 作用 |
 |---|---|---|

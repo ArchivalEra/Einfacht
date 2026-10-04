@@ -26,7 +26,7 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   `measured_at` 是采集时刻的**记录**，不是测量输入（拿它当输入 ⇒ `--check`
   永不收敛，issue #3 ②）。
 - **渲染** = `facts.py --render-doc` 把台账写进活状态文档末尾的 AUTO 块（**别手改**，hook 会重算并 `git add`）。
-- **闸门** = 七道：`check_facts`（块一致性 / 正文裸数字（`REFLECT_NAKED_MIN`
+- **闸门** = 八道：`check_facts`（块一致性 / 正文裸数字（`REFLECT_NAKED_MIN`
   可配、代码块内豁免）/ 坏引用）、`check_facts_replay`（台账 `cmd`
   逐字复跑，stdout 必须等于值 —— 裸值契约见 `ledger.fact()`；另有
   第三档**见证**：`replay=False` 的贵事实可挂 `witness`/`witness_expect`
@@ -40,7 +40,9 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   明说未启用、退 0；grep 级边界见 §4，issue #7）、
   `check_retractions`（翻案重现，
   扫描面 = `REFLECT_DOCS`）、`check_questions`（悬案必须挂结算件）、`check_readme_sync`（三语 README
-  同批：默认模式查结构互链，`--changed` 模式查推送改动集；pre-push 与 CI 都走后者）、
+  同批：默认模式查结构互链（单条目名单 ⇒ 互链判据退化、明说
+  「不适用」，issue #8），`--changed` 模式查推送改动集（不退化）；
+  pre-push 与 CI 都走后者）、
   `check_stale` + `living.py`（活状态 vs 历史章节的口径；另带测龄报警 `REFLECT_STALE_DAYS`，
   不配 = 明说未启用）。
 - **守卫** = `facts.py` 写盘前的两道闸：**掉条**拒绝（`--allow-drop` 显式放行）、**改口**拒绝
@@ -49,6 +51,9 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
 ## 2. 接手当天（30 分钟，逐条可复跑）
 
 1. `sh reflect-hooks/install.sh` —— 把 pre-commit / pre-push 装上（它们会自动重算机器块 + 跑全部闸门）。
+   换仓移植时：`REFLECT_*` 旋钮住进 `reflect-hooks/reflect.env`（形状见
+   `reflect.env.example`）—— git 不把自定义环境传给 hooks，
+   只在 shell 里 export 的值钩子看不见（issue #8）。
 2. 手动复验（hooks 会跑的那几条），**全绿才继续**：
 
    ```sh
