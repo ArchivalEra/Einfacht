@@ -135,6 +135,31 @@ plugin_selftest() {
   return 0
 }
 
+doctor_selftest() {
+  # 开工预检（issue #10）也不是 zreflect/check_*.py
+  # —— 故意不进发现式名录：它查的是会死的东西，
+  # 挂 pre-commit 频率错（issue 明说）。但自证
+  # 同样没人跑就会漂，所以这里点名一次。
+  d="$HERE/zreflect/doctor.py"
+  if [ ! -f "$d" ]; then
+    echo "  ❌ zreflect/doctor.py 不存在 —— 开工预检"
+    echo "      的引擎没了（issue #10 的反哺机制）"
+    return 1
+  fi
+  out=$(python3 "$d" --selftest 2>&1)
+  if [ $? -ne 0 ]; then
+    echo "  ❌ zreflect/doctor.py"
+    printf '%s\n' "$out" | tail -3 | sed 's/^/      /'
+    return 1
+  fi
+  if ! printf '%s\n' "$out" | grep -qE '^=== [0-9]+ PASS / [0-9]+ FAIL ===$'; then
+    echo "  ❌ doctor 自证缺机器摘要行（=== N PASS / M FAIL ===，issue #3 ③）"
+    return 1
+  fi
+  echo "  ✅ zreflect/doctor.py  $(printf '%s\n' "$out" | tail -1)"
+  return 0
+}
+
 # ── 跨仓库可配置性自证（**没有硬编码**的可证伪证据）────────────────────────────
 # 做法：搭一个**临时夹具仓库**，把三个名字全换掉（REFLECT_FACTS/REFLECT_DOC/DOCS），
 #       三个闸门必须仍全绿；再用**默认名字**跑同一夹具 —— **必须红**
@@ -202,6 +227,8 @@ else
   run_gates "$HERE" || rc=1
   echo "── 可拔插件 ──"
   plugin_selftest || rc=1
+  echo "── 开工预检（不挂 pre-commit：查的是会死的东西）──"
+  doctor_selftest || rc=1
   echo "── 跨仓库可配置性 ──"
   configurable_selftest || rc=1
 fi

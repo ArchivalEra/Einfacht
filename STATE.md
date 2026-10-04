@@ -44,6 +44,16 @@
   变量传给 hooks，只在 shell 里 `export` 的 `REFLECT_*` 钩子看不见。
   删掉插件 ⇒ 带守卫的 source 行跳过，钩子回落纯环境变量（机制可拔）。
   形状：`reflect-hooks/Einfacht.env.example`。
+- **开工预检 doctor**（issue #10，**小插件、不是闸门**）：
+  「文件不变量全绿」≠「环境还活着」—— 声明式活性预检
+  `zreflect/doctor.py`（规格 `doctor.json`，旋钮
+  `REFLECT_DOCTOR`；`{"checks": [{kind: http / docker /
+  port-free, …, why}]}`，「必须活着」与「必须空着」两类
+  断言；stdout 裸值契约 `ok` / `DOWN: <哪条>`；每条探测
+  带超时 `REFLECT_DOCTOR_TIMEOUT` 默认 2 秒）。**故意
+  不进发现式名录**：查的是会死的东西，挂 pre-commit
+  频率错 —— 开工前手动跑（`gates-selftest.sh` 点名一次
+  证明它能红）。活性是瞬时事实 ⇒ 不进台账 replay。
 - **一条悬案**：见 `questions/01-example.md`。
 - **CI 正面执行同一判据**：`gates` workflow 每推跑 `facts.py --check`
   + 九道闸门（每条 `cmd` 真的逐字复跑）；`readme-sync` 查三语同批。
@@ -62,10 +72,10 @@
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `md_files` | **7** | 2026-10-04T16:06:29+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `md_lines` | **1729** | 2026-10-04T16:06:29+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
-| `py_files` | **18** | 2026-10-04T16:06:29+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **2872** | 2026-10-04T16:06:29+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **7** | 2026-10-04T16:40:58+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `md_lines` | **1942** | 2026-10-04T16:40:58+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
+| `py_files` | **19** | 2026-10-04T16:40:58+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **3267** | 2026-10-04T16:40:58+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 4 条事实。
 <!-- /AUTO:FACTS -->

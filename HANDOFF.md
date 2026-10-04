@@ -52,6 +52,17 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
   不配 = 明说未启用）。
 - **守卫** = `facts.py` 写盘前的两道闸：**掉条**拒绝（`--allow-drop` 显式放行）、**改口**拒绝
   （`--accept-changes`；`--accept-changes=k1,k2` 只放行列出的键，其余照旧拒绝，issue #3 ①）。
+- **开工预检** = `zreflect/doctor.py`（**小插件，不是闸门**，issue #10）：
+  声明式活性预检 —— 「文件不变量全绿」≠「环境还活着」。
+  规格 `doctor.json`（旋钮 `REFLECT_DOCTOR`）：
+  `{"checks": [{kind: http/docker/port-free, …, why}]}`，
+  「必须活着」与「必须空着」两类断言；stdout 裸值契约
+  `ok` / `DOWN: <哪条>`；每条探测带超时
+  （`REFLECT_DOCTOR_TIMEOUT`，默认 2 秒）。**故意不进
+  发现式名录**：查的是会死的东西，挂 pre-commit 频率错
+  —— 开工前手动跑；`gates-selftest.sh` 点名一次证明它能红
+  （同 einfacht-env.sh 插件体例）。活性是瞬时事实 ⇒
+  不进台账 replay，每次开工真跑。
 
 ## 2. 接手当天（30 分钟，逐条可复跑）
 
@@ -76,6 +87,10 @@ README 是三语的（英语默认 / 中文 / 德语），三份是同一条断�
 
 ## 3. 日常操作（每条一个入口）
 
+- **开工前**（要跑套件 / 基准时）：`python3 zreflect/doctor.py`
+  —— 活性预检（issue #10）：stdout `ok` / `DOWN: <哪条>`，
+  有 DOWN 就别开跑（环境死了，文件层全绿也没用）。
+  未配规格 ⇒ 明说未启用、退 0。
 - **重测**：`python3 zreflect/facts.py`（无参 = 重测 + 渲染 + 写盘；结尾打印每条事实
   的测龄，如「3 天前测的」）。
 - **值变了** → `--accept-changes`（先确认是真实测出来的，不是输入坏了；只确认其中

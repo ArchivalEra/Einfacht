@@ -48,6 +48,7 @@
 | **仪器生命周期**（可插拔） | `zreflect/check_instruments.py` | 复跑契约抓「命令死了」（rc≠0），抓不到**仪器静默失真**：命令成功、值稳定、复跑永远通过，而它量的根本不是想量的（仪器不认 X 时 `grep -c X` 成功退出并返回 0）。可插拔：两个旋钮都未配 ⇒ 明说未启用、退 0。`REFLECT_INSTRUMENT_DAYS=天` 开恒常检测（`first_seen` 超过阈值 ⇒「这条 cmd 是在量，还是恒返回同一个数？」）；`REFLECT_INSTRUMENTS=instruments.json` 登记被证伪的**量法**（`{"methods": [{text, why, fixed_in}]}`）——台账任何 `cmd` 含被证伪片段即报 |
 | **声明式不变量**（可插拔） | `zreflect/check_invariants.py` | 「仓库文件必须/不得含某片段」做成**数据**而非代码（`REFLECT_INVARIANTS=invariants.json`，规格 `{"checks": [{path, must_contain?, must_not_contain?, why}]}`）—— 引擎通用、只读、不构建不跑网络 ⇒ 能进 pre-commit；`why` 必填（没理由的检查项没人敢删，会变成僵尸）。可插拔：未配 ⇒ 明说未启用、退 0。**grep 级**：片段出现在注释里也算「存在」—— 它证明的是「这段文字还在」，不是「代码里真在用」；声明式检查的强度上限 = 它匹配的文本形态。更强的保证是 `calibrate`（对产物量）或 `witness`（对来源量）的活 —— 两者正交别混：`calibrate` 守**量测仪器**，不变量守**仓库文件本身** |
 | **env 文件载体**（可插拔） | `zreflect/check_envfile.py` + `reflect-hooks/einfacht-env.sh` | 钩子的 `REFLECT_*` 来源**静默坏掉**：旋钮名打错一位 ⇒ 被所有程序静默忽略（值永远到不了钩子，其余一切照常跑）；文件旋钮指向不存在的文件 ⇒ 钩子的 `[ -f ]` 守卫静默跳过；值为空 / 文件只剩注释 ⇒ 看起来配了、其实什么都没加载；`sh` 语法坏 ⇒ 钩子要到提交时刻才响亮地死、报错还指向不明。旋钮名册**发现式**（扫 `zreflect/*.py` 的 `REFLECT_*` 记号 —— 手写名录一样会漂，同款病）。可插拔：没有 `Einfacht.env` ⇒ 明说未启用、退 0 |
+| **开工预检**（小插件，非闸门） | `zreflect/doctor.py` | 「文件不变量全绿」≠「环境还活着」—— 两起真实事故（Octave-Full-Wasm HISTORY §5.86/§5.83）：重启杀掉验收站点与构建容器时一切文件不变量为真，首征兆是基准跑到一半才炸；另一仓的 dev server 占着实验端口，探针读到的别人的页面 ⇒ 误判「新产物起不来」。声明式**活性**预检（同不变量的数据体例）：`{"checks": [{kind: http/docker/port-free, …, why}]}` ——「必须活着」（http GET / `docker inspect`）与「必须空着」（connect 探测）两类断言都要。stdout 裸值契约：`ok` / `DOWN: <哪条>`。**每条探测带超时**（`REFLECT_DOCTOR_TIMEOUT`，默认 2 秒 —— 对死端口 connect 否则等到天荒地老，探针必须与被探测物解耦）。**故意不进发现式名录**：它查的是**会死的东西**，挂 pre-commit 频率错、还拖慢每次提交 ⇒ 开工前手动跑。可插拔：无规格 ⇒ 明说未启用、退 0 |
 | **翻案台账** | `zreflect/check_retractions.py` | 被推翻的断言在**声明的活状态文档（`REFLECT_DOCS`）里**重新出现 |
 | **悬案台账** | `zreflect/check_questions.py` | 未结案的问题只活在散文里、没有能跑的结算件 |
 | **三语 README 闸门** | `zreflect/check_readme_sync.py` | 三语 README 是**同一条断言的三份拷贝**：三份必须都在、互链完好，且**每次推送同批更新**（缺一份拒推） |
@@ -179,6 +180,49 @@ einfacht-env.sh`（钩子目录优先、仓库根次之；
 位置都没有 `Einfacht.env` ⇒ 闸门明说未启用、
 退 0。
 
+**开工预检是小插件，不是闸门**（`doctor.py`，
+issue #10）：「文件不变量全绿」≠「环境还
+活着」。两起真实事故（Octave-Full-Wasm
+HISTORY §5.86/§5.83）：重启杀掉验收站点与
+构建容器时一切文件不变量为真，首征兆是基准
+跑到一半才炸；另一仓的 dev server 占着实验
+端口，探针读到的别人的页面 ⇒ 误判「新产物
+起不来」。git、闸门、witness 管的全是**文件
+与产物**；进程、容器、端口状态不向任何机制
+负责。doctor 是声明式**活性**预检（同不变量
+的数据体例）：
+
+```json
+{ "checks": [
+  { "kind": "http", "url": "http://127.0.0.1:8761/",
+    "expect_status": 200,
+    "expect_headers": {"Cross-Origin-Opener-Policy": "same-origin"},
+    "why": "验收底线：必须活着且带 COI 头" },
+  { "kind": "docker", "container": "o113",
+    "state": "running", "why": "构建车道" },
+  { "kind": "port-free", "port": 8868,
+    "why": "实验独占端口——被占 ⇒ 探针误判" } ] }
+```
+
+两类断言都要：**必须活着**（http GET /
+`docker inspect`）与**必须空着**（connect
+探测）。stdout 裸值契约：`ok` / `DOWN: <哪条>`。
+**每条探测带超时**（`REFLECT_DOCTOR_TIMEOUT`，
+默认 2 秒）：对死端口 connect 否则等到天荒地老
+—— 探针必须与被探测物解耦（同「探测不进开机
+路径」的教训）。全部探测只读无害。它**故意
+不进发现式名录**：查的是**会死的东西**，挂
+pre-commit 频率错、还拖慢每次提交（所以文件名
+是 `doctor.py` 而不是 `check_doctor.py` ——
+`for g in zreflect/check_*.py` 扫不到它；
+`gates-selftest.sh` 点名一次证明它能红，与
+env 插件同体例）。活性是瞬时事实 ⇒ **不进台账
+replay**，每次开工真跑即可。边界明说：doctor
+只探**活性**，内容校验归既有闸门 / 验收；
+哪台服务必须活着、哪些端口必须独占是**策略**，
+各仓自配（规格是数据）。零值守卫：清单空 /
+缺 kind / 缺 why / 未知 kind 都会报。
+
 ### 三、翻案台账：推翻也要留痕
 
 `retractions.json` 存**已被推翻**的断言：特征片段 `text`、为什么错 `why`、复跑方式 `evidence`、
@@ -275,6 +319,11 @@ sh reflect-hooks/install.sh
 #     cp reflect-hooks/Einfacht.env.example reflect-hooks/Einfacht.env
 #     —— git 不把自定义环境变量传给 hooks，钩子要读的 REFLECT_* 值住在这个
 #     文件里（没有文件 ⇒ 全部旋钮回落默认名）
+# 2c. （可选）开工前活性预检（issue #10）：
+#     cp zreflect/doctor.json.example doctor.json   # 改：什么必须活着 /
+#     哪些端口必须独占 —— 然后跑任何套件 / 基准前
+#     python3 zreflect/doctor.py
+#     （不挂 pre-commit：查的是会死的东西，那里频率错）
 # 3. 手动复验（也是 hooks 会跑的那几条）
 sh gates-selftest.sh                           # 每个闸门先证明自己会红
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # 发现式名录 —— README 也不手写闸门清单
@@ -359,6 +408,8 @@ install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
 | `REFLECT_REPLAY` | 空（在线） | 设 `off` ⇒ 复跑闸门**明说未启用**。个别要构建产物才跑得动的条目用台账字段 `"replay": false` 逐个退出（全豁免会被复跑闸门自己报红），别关整道闸 |
 | `REFLECT_REPLAY_TIMEOUT` | `10` | 复跑单条 `cmd` 的秒数上限；超时 ⇒ 报（等不出来的量法应写 `replay: false`，不该当数据） |
 | `REFLECT_READMES` | `README.md,README.zh.md,README.de.md` | 三语 README 名单（逗号分隔）：结构检查 + 「每次推送必须全量出现在改动集里」判据的输入；hook / 闸门 / CI 共用 |
+| `REFLECT_DOCTOR` | `doctor.json`（不在 ⇒ 未启用） | 开工预检的活性规格（issue #10）：`{"checks": [{kind: http/docker/port-free, …, why}]}`；stdout 契约 `ok` / `DOWN: <哪条>`；**不是 pre-commit 闸门**（查的是会死的东西 —— 开工前手动跑；`gates-selftest.sh` 点名一次） |
+| `REFLECT_DOCTOR_TIMEOUT` | `2` | 每条 doctor 探测的秒数；解耦绳 —— 对死端口 connect 否则等到天荒地老。必须为正数（坏值 FATAL，不许静默回落） |
 
 `GATE_REPO`（`zreflect/gate.py`）指向**被检查的仓库根** —— 自证靠它在夹具树上跑，
 不碰真仓库。

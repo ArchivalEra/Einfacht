@@ -60,6 +60,7 @@ retraction ledger.
 | **Instrument lifecycle** (pluggable) | `zreflect/check_instruments.py` | the re-run contract catches *dead* commands (rc≠0), not **silent instrument distortion**: a command that succeeds, returns a stable value, and passes replay forever while measuring the wrong thing (`grep -c X` exits 0 successfully when the tool doesn't know mnemonic X). Pluggable: both knobs unset ⇒ says out loud it is off, exit 0. `REFLECT_INSTRUMENT_DAYS=N` enables constant-value detection (`first_seen` older than N days ⇒ "is this cmd really measuring, or always returning the same number?"); `REFLECT_INSTRUMENTS=instruments.json` registers falsified **measurement methods** (`{"methods": [{text, why, fixed_in}]}`) — any ledger `cmd` containing one is reported |
 | **Declarative invariants** (pluggable) | `zreflect/check_invariants.py` | "file X must/must not contain fragment Y" as **data**, not code (`REFLECT_INVARIANTS=invariants.json`, spec `{"checks": [{path, must_contain?, must_not_contain?, why}]}`) — generic read-only engine, no build/network ⇒ pre-commit-safe; `why` is mandatory (a check nobody dares delete becomes a zombie). Pluggable: unset ⇒ says out loud it is off, exit 0. **Grep-level**: a fragment inside a comment passes too — it proves "this text is still here", not "the code really uses it"; a declarative check's strength is bounded by the text form it matches. Stronger guarantees are `calibrate`'s (on the artifact) or `witness`'s (on the source) job — orthogonal, don't mix: `calibrate` guards the *measuring tool*, invariants guard the *repo files themselves* |
 | **Env-file carrier** (pluggable) | `zreflect/check_envfile.py` + `reflect-hooks/einfacht-env.sh` | the hooks' `REFLECT_*` source dying **silently**: a knob name misspelled by one letter is ignored by every program (the value never reaches the hooks — everything else keeps running); a file knob pointing at a missing file makes the hook's `[ -f ]` guard silently skip; an empty value or a comments-only file looks configured while loading nothing; broken `sh` syntax kills the hook at commit time with a misleading error. The knob registry is **discovered** (scans `zreflect/*.py` for `REFLECT_*` tokens — a hand-written list would drift, the same disease). Pluggable: no `Einfacht.env` ⇒ says out loud it is off, exit 0 |
+| **Start-of-work doctor** (small plugin, not a gate) | `zreflect/doctor.py` | "every file invariant is green" ≠ "the environment is alive" (two real incidents, Octave-Full-Wasm HISTORY §5.86/§5.83: a reboot killed the acceptance site and build container while every file invariant held; another repo's dev server squatted the experiment port and the probe read someone else's page). Declarative **liveness** pre-flight, same data-not-code style as invariants: `{"checks": [{kind: http/docker/port-free, …, why}]}` — "must be alive" (http GET / `docker inspect`) **and** "must be free" (connect probe). Stdout bare-value contract: `ok` / `DOWN: <which>`. **Every probe carries a timeout** (`REFLECT_DOCTOR_TIMEOUT`, default 2s — a connect to a dead port otherwise waits forever: the probe must be decoupled from the probed thing). **Not in the discovered registry on purpose**: it checks things that *die*, so it runs **at start of work, not in pre-commit** (wrong frequency there, and it would slow every commit). Pluggable: no spec ⇒ says out loud it is off, exit 0 |
 | **Retraction ledger** | `zreflect/check_retractions.py` | retracted claims **reappearing inside the living-state docs declared by `REFLECT_DOCS`** |
 | **Question ledger** | `zreflect/check_questions.py` | open questions living only in prose, with no executable settler |
 | **Trilingual README gate** | `zreflect/check_readme_sync.py` | editing one language README while the others drift: the trio must exist, cross-link each other, and **move together in every push** |
@@ -220,6 +221,60 @@ typo the guard exists to catch. No `Einfacht.env` in
 either location ⇒ the gate says out loud it is off and
 exits 0.
 
+**A start-of-work doctor is a small plugin, not a gate**
+(`zreflect/doctor.py`, issue #10): "every file
+invariant is green" ≠ "the environment is alive".
+Two real incidents (Octave-Full-Wasm HISTORY
+§5.86/§5.83): a reboot killed the acceptance site and
+build container while every file invariant held —
+the first symptom was a benchmark round failing
+halfway through; and another repo's dev server
+squatted the experiment port, so the probe read
+someone else's page and the verdict was "the new
+artifact won't start". git, the gates and witnesses
+all govern **files and artifacts**; process,
+container and port states answer to no mechanism.
+The doctor is a declarative **liveness** pre-flight
+(same data-not-code style as invariants):
+
+```json
+{ "checks": [
+  { "kind": "http", "url": "http://127.0.0.1:8761/",
+    "expect_status": 200,
+    "expect_headers": {"Cross-Origin-Opener-Policy": "same-origin"},
+    "why": "acceptance bar: the site must be up and send COI headers" },
+  { "kind": "docker", "container": "o113",
+    "state": "running", "why": "build lane" },
+  { "kind": "port-free", "port": 8868,
+    "why": "experiment's exclusive port — squatted ⇒ probes misread" } ] }
+```
+
+Both assertion kinds exist: **must be alive**
+(http GET / `docker inspect`) and **must be free**
+(connect probe). Stdout bare-value contract:
+`ok` / `DOWN: <which>`. **Every probe carries a
+timeout** (`REFLECT_DOCTOR_TIMEOUT`, default 2
+seconds): a connect to a dead port otherwise waits
+forever — the probe must be decoupled from the
+probed thing (same lesson as "probes don't join the
+boot path"). All probes are read-only and harmless.
+It is **not in the discovered registry on purpose**:
+it checks things that *die*, so it runs **at start
+of work, not in pre-commit** — wrong frequency
+there, and it would slow every commit. (So it is
+`doctor.py`, not `check_doctor.py`: the discovery
+loop `for g in zreflect/check_*.py` never sees it;
+`gates-selftest.sh` names it once to prove it can
+turn red, same as the env plugin.) Liveness is an
+instantaneous fact ⇒ **not in ledger replay** — it
+runs for real at every start of work. Boundary,
+stated out loud: the doctor probes *liveness* only;
+content is the existing gates'/acceptance's job;
+which services must live and which ports must be
+exclusive is **policy**, configured per repo (the
+spec is data). Zero-value guards: empty list /
+missing kind / missing why / unknown kind all report.
+
 ### 3. Retraction ledger: overturning leaves a trace
 
 `retractions.json` stores **refuted** claims: a distinctive fragment `text`, why it was wrong `why`,
@@ -333,6 +388,11 @@ sh reflect-hooks/install.sh
 #     cp reflect-hooks/Einfacht.env.example reflect-hooks/Einfacht.env
 #     — git does not export custom env to hooks, so REFLECT_* values the
 #     hooks read live in that file (absent ⇒ every knob falls back to default)
+# 2c. (optional) start-of-work liveness pre-flight (issue #10):
+#     cp zreflect/doctor.json.example doctor.json   # edit: what must be
+#     alive / which ports must be exclusive — then run
+#     python3 zreflect/doctor.py before any suite / benchmark
+#     (NOT in pre-commit: it checks things that die; wrong frequency there)
 # 3. Manual re-verification (the same commands the hooks run)
 sh gates-selftest.sh                            # every gate must first prove it can turn red
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # discovered registry — no hand-written lists, not even here
@@ -426,6 +486,8 @@ to plain env vars + default names (the mechanism is removable by design).
 | `REFLECT_REPLAY` | empty (on) | `off` ⇒ the replay gate **says out loud it is off**. Individual entries that need build artifacts should opt out one by one with the ledger field `"replay": false` (a fully-exempt ledger turns the replay gate red itself) — don't switch the whole gate off |
 | `REFLECT_REPLAY_TIMEOUT` | `10` | seconds allowed per replayed `cmd`; timeout ⇒ reported (a measurement that never finishes belongs in `replay: false`, not in the data) |
 | `REFLECT_READMES` | `README.md,README.zh.md,README.de.md` | the README trio: input to the structure check **and** to "every push must update all of them"; the hook, the gate and CI all read this knob |
+| `REFLECT_DOCTOR` | `doctor.json` (absent ⇒ off) | start-of-work liveness pre-flight spec (issue #10): `{"checks": [{kind: http/docker/port-free, …, why}]}`; stdout contract `ok` / `DOWN: <which>`; **not a pre-commit gate** (checks things that die — runs at start of work; `gates-selftest.sh` names it once) |
+| `REFLECT_DOCTOR_TIMEOUT` | `2` | seconds per doctor probe; the decoupling rope — a connect to a dead port otherwise waits forever. Must be a positive number (a broken value is FATAL, not a silent default) |
 
 `GATE_REPO` (`zreflect/gate.py`) points at **the repo being checked** — selftests run against
 fixture trees through it and never touch the real repo.
