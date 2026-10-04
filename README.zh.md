@@ -171,7 +171,7 @@ issue #7）：「仓库文件必须/不得含某片段」做成**数据**
 **env 文件载体也是可插拔的**（`check_envfile.py`，
 | **派生副本 pin**（可插拔） | `zreflect/check_pins.py` | submodule/fork 指针 bump 了、派生副本（容器树/部署目录）还在用旧内容——git 视图看不见的漂移。供给方写 stamp（`name branch commit dirty`），闸门每提交对读：commit 一致 / 副本干净 / 版本串匹配。规格 `{"pins": [{name, kind: tree\|version, worktree, stamp_read?, version_read?, expect_version?, why}]}`；读不到 ⇒ `SKIP:` 明说；空 pins ⇒ 零值守卫 |
 | **锁定源清单**（可插拔） | `zreflect/check_locks.py` | 没有可 git 化官方仓的上游（netlib/freedesktop/sourceforge 系）以 URL + sha256 钉版；文件形态 sha256 必填必核（缺失/不符都报），目录形态查存在，`optional` 条目缺席 ⇒ SKIP 明说 |
-| **A/B 同旗标**（可插拔） | `zreflect/check_ab.py` | 对比两工件的声明面：被测轴之外任何键不同 = 混淆变量 ⇒ A/B 结论作废（实例：分配器 A/B 首报 −39%，基线混入 `--diag` 断言；同旗标重测 −27%）。规格 `{"pairs": [{name, a, b, key?, allow[], why}]}`；工件缺席 ⇒ `SKIP:` 明说；空 pairs ⇒ 零值守卫 |
+| **A/B 同旗标**（可插拔） | `zreflect/check_ab.py` | 对比两工件的声明面：被测轴之外任何键不同 = 混淆变量 ⇒ A/B 结论作废（实例：分配器 A/B 首报 −39%，基线混入 `--diag` 断言；同旗标重测 −27%）。规格 `{"pairs": [{name, a, b, key?, allow[], why}]}`；工件缺席 ⇒ `SKIP:` 明说；空 pairs ⇒ 零值守卫；`why` 必填 |
 issue #8）：钩子经可拔插件 `reflect-hooks/
 einfacht-env.sh`（钩子目录优先、仓库根次之；
 `REFLECT_ENV_FILE` 可换文件名）读取仓库本地的
