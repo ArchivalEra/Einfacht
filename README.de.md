@@ -219,6 +219,9 @@ Textform begrenzt, die sie matcht; alles Stärkere ist `calibrate`
 
 **Auch der Env-Datei-Träger ist einsteckbar**
 (`check_envfile.py`, Issue #8): die Hooks lesen
+| **Ableitungs-Kopie Pin** (plug-in) | `zreflect/check_pins.py` | ein submodule/fork-Zeiger wird gebumpt, während eine abgeleitete Kopie (Container-Baum, Deploy-Verzeichnis) noch den alten Inhalt ausliefert — Drift, die git nicht sieht. Der Provider schreibt einen Stempel (`name branch commit dirty`); das Gate liest ihn bei jedem Commit neu: Commit stimmt / Kopie sauber / Version passt. Spez `{"pins": [{name, kind: tree\|version, worktree, stamp_read?, version_read?, expect_version?, why}]}`; unlesbar ⇒ `SKIP:`; leere pins ⇒ Nullwert-Wache |
+| **Lock-Manifest** (plug-in) | `zreflect/check_locks.py` | Upstreams ohne git-fähiges Zuhause (netlib/freedesktop/sourceforge) als URL + sha256 gepinnt; Dateiform verlangt den Hash (fehlt/abweichend ⇒ Meldung), Verzeichnisform prüft Existenz, `optional` ⇒ SKIP |
+| **A/B gleiche Flags** (plug-in) | `zreflect/check_ab.py` | Vergleich zweier Artefakt-Deklarationen: jeder Schlüsselunterschied außer der getesteten Achse ist ein Störfaktor ⇒ A/B-Ergebnis ungültig (realer Fall: Allocator-A/B meldete zuerst −39% mit `--diag`-verunreinigter Basis; gleiche Flags = −27%). Spez `{"pairs": [{name, a, b, key?, allow[], why}]}`; fehlend ⇒ `SKIP:`; leere pairs ⇒ Nullwert-Wache; `why` Pflicht |
 ihre `REFLECT_*`-Knöpfe aus einem repo-lokalen
 `Einfacht.env`, geladen über das aussteckbare
 Plugin `reflect-hooks/einfacht-env.sh`
