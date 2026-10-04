@@ -6,6 +6,8 @@
 
 > Status & direction: [maintaince.md](maintaince.md) — the map only; measured facts live in `STATE.md`'s machine block, usage in this trio.
 
+> **For AI agents:** start from [maintaince.md](maintaince.md) — it names where truth lives and what to run before starting work; hard rules are in [AGENTS.md](AGENTS.md).
+
 > Formerly `zcode-reflect`.
 
 A **fact system against hallucination**, built for agent-driven repos. It does not train models,
