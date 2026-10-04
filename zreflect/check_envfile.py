@@ -62,6 +62,7 @@ FILE_KNOBS = {
     "REFLECT_RETRACTIONS": "翻案台账",
     "REFLECT_INVARIANTS": "不变量规格",
     "REFLECT_INSTRUMENTS": "量法登记",
+    "REFLECT_DOCTOR": "doctor 规格（开工预检）",
 }
 LIST_FILE_KNOBS = {
     "REFLECT_DOCS": "活状态文档清单",

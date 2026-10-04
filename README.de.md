@@ -61,6 +61,7 @@ Retraktionsledger.
 | **Instrumenten-Lebenszyklus** (einsteckbar) | `zreflect/check_instruments.py` | das Replay-Gate fängt *tote* Kommandos (rc≠0), aber nicht **stille Instrumentenverfälschung**: ein Kommando, das erfolgreich ist, einen stabilen Wert liefert und ewig besteht, während es das Falsche mißt (`grep -c X` erfolgreich mit 0, wenn das Tool die Mnemonic X nicht kennt). Einsteckbar: beide Knäufe ungesetzt ⇒ sagt laut, dass es aus ist, exit 0. `REFLECT_INSTRUMENT_DAYS=N` schaltet die Konstanten-Erkennung (`first_seen` älter als N Tage ⇒ „mißt dieses cmd wirklich, oder liefert es immer dieselbe Zahl?"); `REFLECT_INSTRUMENTS=instruments.json` registriert widerlegte **Meßmethoden** (`{"methods": [{text, why, fixed_in}]}`) — jedes Ledger-`cmd` mit einem solchen Fragment wird gemeldet |
 | **Deklarative Invarianten** (einsteckbar) | `zreflect/check_invariants.py` | „Datei X muß/ darf Fragment Y nicht enthalten" als **Daten**, nicht Code (`REFLECT_INVARIANTS=invariants.json`, Schema `{"checks": [{path, must_contain?, must_not_contain?, why}]}`) — generische, nur-lesende Engine, kein Build/Netz ⇒ pre-commit-tauglich; `why` ist Pflicht (eine Prüfung, die keiner zu löschen wagt, wird zum Zombie). Einsteckbar: ungesetzt ⇒ sagt laut, dass es aus ist, exit 0. **Grep-Stufe**: ein Fragment im Kommentar zählt auch als „vorhanden" — es beweist „dieser Text ist noch da", nicht „der Code benutzt es wirklich"; die Stärke einer deklarativen Prüfung ist durch die Textform begrenzt, die sie matcht. Stärkere Garantien sind `calibrate` (am Artefakt) oder `witness` (an der Quelle) — orthogonal, nicht mischen: `calibrate` hütet das *Meßinstrument*, Invarianten die **Repository-Dateien selbst** |
 | **Env-Datei-Träger** (einsteckbar) | `zreflect/check_envfile.py` + `reflect-hooks/einfacht-env.sh` | die `REFLECT_*`-Quelle der Hooks stirbt **still** — ein um einen Buchstaben falsch geschriebener Knopfname wird von jedem Programm ignoriert (der Wert erreicht die Hooks nie — alles andere läuft weiter); ein Datei-Knopf, der auf eine fehlende Datei zeigt, lässt den `[ -f ]`-Wächter des Hooks still springen; ein leerer Wert oder eine nur-Kommentar-Datei sieht konfiguriert aus, lädt aber nichts; defekte `sh`-Syntax tötet den Hook erst beim Commit mit einer irreführenden Meldung. Das Knopfregister ist **entdeckt** (scannt `zreflect/*.py` nach `REFLECT_*`-Marken — eine handgeschriebene Liste würde driften, dieselbe Krankheit). Einsteckbar: kein `Einfacht.env` ⇒ sagt laut, dass es aus ist, exit 0 |
+| **Arbeitsbeginn-Doctor** (kleines Plugin, kein Gate) | `zreflect/doctor.py` | „alle Datei-Invarianten grün" ≠ „die Umgebung lebt" — zwei echte Vorfälle (Octave-Full-Wasm HISTORY §5.86/§5.83): ein Neustart tötete die Abnahme-Seite und den Build-Container, während jede Datei-Invariante gilt; der Dev-Server eines anderen Repos besetzte den Experiment-Port, also las die Sonde eine fremde Seite und urteilte „das neue Artefakt startet nicht". Deklarative **Liveness**-Vorbedingung (dieselbe Daten-Stil wie Invarianten): `{"checks": [{kind: http/docker/port-free, …, why}]}` — „muss leben" (http GET / `docker inspect`) und „muss frei sein" (Connect-Sonde). Stdout-Bare-Wert-Vertrag: `ok` / `DOWN: <welche>`. **Jede Sonde trägt einen Timeout** (`REFLECT_DOCTOR_TIMEOUT`, Default 2s — ein Connect auf einen toten Port sonst bis ans Ende aller Zeiten wartet: die Sonde muss vom Geprüften entkoppelt sein). **Absichtlich nicht im Entdeckungsregister**: sie prüft Dinge, die *sterben* — läuft also beim **Arbeitsbeginn, nicht in pre-commit** (falsche Frequenz dort, und sie würde jeden Commit verlangsamen). Einsteckbar: keine Spec ⇒ sagt laut, dass es aus ist, exit 0 |
 | **Retraktions-Ledger** | `zreflect/check_retractions.py` | revozierte Aussagen tauchen **in den via `REFLECT_DOCS` erklärten Living-State-Docs** wieder auf |
 | **Fragen-Ledger** | `zreflect/check_questions.py` | offene Fragen, die nur in Prosa leben und keinen ausführbaren Begleicher haben |
 | **Trilingual-README-Gate** | `zreflect/check_readme_sync.py` | eine Sprachversion des README ändern und die anderen driften lassen: das Trio muss existieren, einander verlinken — und **mit jedem Push gemeinsam aktualisiert werden** |
@@ -237,6 +238,71 @@ der Wächter fangen soll. Kein `Einfacht.env`
 an beiden Orten ⇒ das Gate sagt laut, dass es
 aus ist, und exit 0.
 
+**Ein Arbeitsbeginn-Doctor ist ein kleines
+Plugin, kein Gate** (`zreflect/doctor.py`,
+Issue #10): „alle Datei-Invarianten grün" ≠
+„die Umgebung lebt". Zwei echte Vorfälle
+(Octave-Full-Wasm HISTORY §5.86/§5.83):
+ein Neustart tötete die Abnahme-Seite und den
+Build-Container, während jede Datei-Invariante
+gilt — erstes Symptom war eine Benchmark-Runde,
+die auf halbem Weg scheiterte; und der
+Dev-Server eines anderen Repos besetzte den
+Experiment-Port, also las die Sonde eine
+fremde Seite und urteilte „das neue Artefakt
+startet nicht". Git, die Gates und Witnesses
+regieren **Files und Artefakte**; Prozess-,
+Container- und Port-Zustände antworten vor
+keiner Mechanik. Der Doctor ist eine
+deklarative **Liveness**-Vorbedingung (derselbe
+Daten-Stil wie Invarianten):
+
+```json
+{ "checks": [
+  { "kind": "http", "url": "http://127.0.0.1:8761/",
+    "expect_status": 200,
+    "expect_headers": {"Cross-Origin-Opener-Policy": "same-origin"},
+    "why": "Abnahmestange: die Seite muss leben und COI-Header senden" },
+  { "kind": "docker", "container": "o113",
+    "state": "running", "why": "Build-Spur" },
+  { "kind": "port-free", "port": 8868,
+    "why": "Experiment-Exklusivport — besetzt ⇒ Sonden lesen falsch" } ] }
+```
+
+Beide Assertionsarten existieren: **muss
+leben** (http GET / `docker inspect`) und
+**muss frei sein** (Connect-Sonde).
+Stdout-Bare-Wert-Vertrag: `ok` /
+`DOWN: <welche>`. **Jede Sonde trägt einen
+Timeout** (`REFLECT_DOCTOR_TIMEOUT`, Default
+2 Sekunden): ein Connect auf einen toten Port
+sonst bis ans Ende aller Zeiten wartet — die
+Sonde muss vom Geprüften entkoppelt sein
+(dieselbe Lektion wie „Sonden treten nicht
+dem Boot-Pfad bei"). Alle Sonden sind
+nur-lesend und harmlos. Es ist **absichtlich
+nicht im Entdeckungsregister**: es prüft
+Dinge, die *sterben* — läuft also beim
+**Arbeitsbeginn, nicht in pre-commit**
+(falsche Frequenz dort, und es würde jeden
+Commit verlangsamen). (Also heißt die Datei
+`doctor.py`, nicht `check_doctor.py`: die
+Discovery-Schleife `for g in zreflect/
+check_*.py` sieht sie nie; `gates-selftest.sh`
+nennt sie einmal beim Namen, um Rot-Fähigkeit
+zu beweisen, dieselbe Behandlung wie das
+Env-Plugin.) Liveness ist eine augenblickliche
+Tatsache ⇒ **nicht im Ledger-Replay** — sie
+läuft bei jedem Arbeitsbeginn echt. Grenze, laut
+gesagt: der Doctor prüft nur **Liveness**;
+Inhalt ist Job der bestehenden Gates / der
+Abnahme; welche Dienste leben und welche
+Ports exklusiv sein müssen, ist **Politik**,
+per Repo konfiguriert (die Spec ist Daten).
+Nullwert-Wächter: leere Liste / fehlende
+kind / fehlendes why / unbekannte kind —
+alle melden.
+
 ### 3. Retraktions-Ledger: Widerlegung hinterlässt eine Spur
 
 `retractions.json` speichert **widerlegte** Aussagen: ein charakteristisches Fragment `text`,
@@ -362,6 +428,13 @@ sh reflect-hooks/install.sh
 #     — git exportiert keine Custom-Env an Hooks, REFLECT_* -Werte,
 #     die die Hooks lesen, wohnen in dieser Datei (fehlt sie ⇒ alle
 #     Knöpfe fallen auf ihre Defaults zurück)
+# 2c. (optional) Liveness-Vorbedingung beim Arbeitsbeginn (Issue #10):
+#     cp zreflect/doctor.json.example doctor.json   # bearbeiten: was
+#     leben muß / welche Ports exklusiv sein müssen — dann vor jeder
+#     Suite / jedem Benchmark
+#     python3 zreflect/doctor.py
+#     (NICHT in pre-commit: sie prüft Dinge, die sterben; falsche
+#     Frequenz dort)
 # 3. manuelle Nachprüfung (dieselben Befehle, die die Hooks fahren)
 sh gates-selftest.sh                             # jedes Gate muss erst beweisen, dass es rot kann
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # Entdeckungsregister — keine handgeschriebenen Listen, nicht mal hier
@@ -464,6 +537,8 @@ Defaults zurück (der Mechanismus ist nach Bauart aussteckbar).
 | `REFLECT_REPLAY` | leer (an) | `off` ⇒ das Replay-Gate **sagt laut, dass es aus ist**. Einzelne Einträge, die Build-Artefakte brauchen, steigen per Ledger-Feld `"replay": false` einzeln aus (ein komplett freigestelltes Ledger macht das Replay-Gate selbst rot) — nicht gleich das ganze Gate abschalten |
 | `REFLECT_REPLAY_TIMEOUT` | `10` | Sekunden pro wiederausgeführtem `cmd`; Timeout ⇒ gemeldet (eine Messung, die nie fertig wird, gehört in `replay: false`, nicht in die Daten) |
 | `REFLECT_READMES` | `README.md,README.zh.md,README.de.md` | das README-Trio: Eingang für die Strukturaudit **und** für „jeder Push muss alle im Änderungssatz haben"; Hook, Gate und CI lesen denselben Knopf |
+| `REFLECT_DOCTOR` | `doctor.json` (fehlt ⇒ aus) | Liveness-Spec der Arbeitsbeginn-Vorbedingung (Issue #10): `{"checks": [{kind: http/docker/port-free, …, why}]}`; Stdout-Vertrag `ok` / `DOWN: <welche>`; **kein pre-commit-Gate** (prüft Dinge, die sterben — läuft beim Arbeitsbeginn; `gates-selftest.sh` nennt es einmal) |
+| `REFLECT_DOCTOR_TIMEOUT` | `2` | Sekunden pro Doctor-Sonde; das Entkopplungsseil — ein Connect auf einen toten Port sonst bis ans Ende aller Zeiten. Muss eine positive Zahl sein (ein defekter Wert ist FATAL, kein stilles Default) |
 
 `GATE_REPO` (`zreflect/gate.py`) zeigt auf **die Wurzel des geprüften Repos** — Selftests laufen
 über es gegen Fixture-Bäume und fassen das echte Repo nie an.
