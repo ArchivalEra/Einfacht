@@ -4,6 +4,8 @@
 
 **Languages:** **English** (this file, default) · [简体中文](README.zh.md) · [Deutsch](README.de.md)
 
+> Status & direction: [maintaince.md](maintaince.md) — the map only; measured facts live in `STATE.md`'s machine block, usage in this trio.
+
 > Formerly `zcode-reflect`.
 
 A **fact system against hallucination**, built for agent-driven repos. It does not train models,

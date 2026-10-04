@@ -4,6 +4,8 @@
 
 **Sprachen:** [English](README.md) (Standard) · [简体中文](README.zh.md) · **Deutsch** (diese Datei)
 
+> Status & Richtung: [maintaince.md](maintaince.md) — nur die Landkarte; gemessene Fakten leben im Maschinenblock von `STATE.md`, die Benutzung in diesem Trio.
+
 > ehemals `zcode-reflect`
 
 Ein **Antihalluzinations-Faktsystem** für agent-getriebene Repos. Es trainiert keine Modelle,
