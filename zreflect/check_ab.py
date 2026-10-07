@@ -21,7 +21,8 @@
   （缺失语义由产出方管）；
 - 工件读不到 ⇒ `SKIP:` 明说（跨机器现实，不是通过）；
 - `pairs` 为空 / 条目缺 why ⇒ 报（零值守卫）；
-- `REFLECT_AB` 未配 ⇒ 明说未启用退 0。
+- `REFLECT_AB` 未配 ⇒ 明说未启用退 0；显式指定（--spec / 旋钮）而文件
+  不在 ⇒ FATAL 退 2。
 
 用法（cwd=仓库根）：python3 zreflect/check_ab.py [--spec ab.json]
 （规格名解析：--spec 显式 > `REFLECT_AB` 旋钮 > 默认 `ab.json`）
@@ -33,7 +34,11 @@ import json
 import os
 import sys
 
-REPO = os.environ.get("GATE_REPO") or os.getcwd()
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
+from gate import repo                                     # noqa: E402
+
 DEFAULT_SPEC = "ab.json"
 
 
@@ -108,33 +113,30 @@ def _join(root, path):
 
 def main(argv):
     spec_path, explicit = resolve_spec(argv, os.environ.get("REFLECT_AB", ""))
-    path = spec_path if os.path.isabs(spec_path) else os.path.join(REPO, spec_path)
+    path = spec_path if os.path.isabs(spec_path) else repo(spec_path)
     if not os.path.isfile(path):
         if explicit:
-            print("FATAL: 显式指定的规格 %s 不存在（--spec / REFLECT_AB）—— "
-                  "先写规格（或撤掉指定）" % spec_path, file=sys.stderr)
-            return 2
-        print("未启用（%s 不存在 ⇒ 明说未启用退 0，可插拔）" % spec_path)
-        return 0
-    try:
-        spec = json.load(open(path, encoding="utf-8"))
-    except (OSError, ValueError) as e:
-        print("配置坏：读不了 %s：%s" % (spec_path, e))
-        return 2
-    problems, skips = check(spec, REPO)
+            return fatal("显式指定的规格 %s 不存在（--spec / REFLECT_AB）—— "
+                         "先写规格（或撤掉指定）" % spec_path)
+        return off("未启用（%s 不存在 ⇒ 明说未启用退 0，可插拔）" % spec_path)
+    spec, err = load_spec(path)
+    if err:
+        return fatal("规格 %s 坏：%s" % (spec_path, err))
+    problems, skips = check(spec, repo())
     for x in skips:
-        print("SKIP: %s" % x)
-    if problems:
-        for x in problems:
-            print("PROBLEM: %s" % x)
-        return 1
-    print("ok（%d 组 A/B 无混淆变量）" % len(spec.get("pairs") or []))
-    return 0
+        print("SKIP: %s" % x, file=sys.stderr)
+    return finish("A/B 闸门", problems,
+                  "A/B 闸门：OK（%d 组对比无混淆变量）"
+                  % len(spec.get("pairs") or []))
 
 
-def selftest():
-    import tempfile
+def _cases():
+    import atexit                                        # noqa: PLC0415
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
     d = tempfile.mkdtemp()
+    atexit.register(shutil.rmtree, d, True)
+
     def wf(rel, obj):
         p = os.path.join(d, rel)
         os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -152,13 +154,15 @@ def selftest():
     empty = {"pairs": []}
     confound_spec = {"pairs": [{"name": "m", "a": "mut-a.json", "b": "mut-b.json",
                                 "key": "declared", "allow": ["malloc"], "why": "w"}]}
-    cases = [
+    return [
         ("规格名解析：--spec > 旋钮 > 默认名（显式带回 True）",
          lambda: resolve_spec(["--spec", "x.json"], "K.json") == ("x.json", True)
          and resolve_spec([], "K.json") == ("K.json", True)
          and resolve_spec([], "") == ("ab.json", False)
          and resolve_spec([], "  ") == ("ab.json", False)),
+        # ① 正常不报
         ("仅 allow 轴不同 ⇒ 不报（A/B 该有的形状）", lambda: check(spec, d)[0] == []),
+        # ② 该报的必须报
         ("★ 非 allow 轴不同 ⇒ 必须报（混淆变量）",
          lambda: any("混淆变量" in x for x in check(confound_spec, d)[0])),
         ("★ 工件读不到 ⇒ SKIP 明说", lambda: any(
@@ -171,18 +175,9 @@ def selftest():
         ("★ pairs 为空 ⇒ 必须报（零值守卫）", lambda: check(empty, d)[0] != []),
     ]
 
-    bad = 0
-    for name, fn in cases:
-        ok = bool(fn())
-        print("%s | %s" % ("PASS" if ok else "fail", name))
-        bad += 0 if ok else 1
-    import shutil
-    shutil.rmtree(d, ignore_errors=True)
-    print("=== %d PASS / %d FAIL ===" % (len(cases) - bad, bad))
-    return 1 if bad else 0
 
+GATE = meta("A/B 闸门", "A/B 同旗标不变式（非 allow 轴差异 = 混淆变量，A/B 作废）",
+            knobs=("REFLECT_AB",))
 
 if __name__ == "__main__":
-    if "--selftest" in sys.argv:
-        sys.exit(selftest())
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_ab（A/B 同旗标不变式）", _cases, main))
