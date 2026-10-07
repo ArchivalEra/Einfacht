@@ -23,9 +23,9 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import GATE_REPO, main_selftest_or, repo, selftest  # noqa: E402
-from ledger import (age_days, changed_keys, dropped_keys,  # noqa: E402
-                    fact, facts_of, load, short_value, value_of)
+from ledger import age_days, fact, facts_of, load, value_of  # noqa: E402
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
+import guard                                             # noqa: E402
 import registry                                          # noqa: E402
 
 LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
@@ -178,30 +178,6 @@ def check_doc(path_rel, ledger):
     return 0
 
 
-def _accepted_keys(argv):
-    """解析 `--accept-changes[=k1,k2]`（issue #3 ①）：裸旗 ⇒ None（全收）；
-    列键 ⇒ 集合（空串 ⇒ 空集 = 一个都不收）；没传 ⇒ False（全拒，同旧行为）。"""
-    for a in argv:
-        if a == "--accept-changes":
-            return None
-        if a.startswith("--accept-changes="):
-            raw = a.split("=", 1)[1].strip()
-            return {k.strip() for k in raw.split(",") if k.strip()}
-    return False
-
-
-def filter_accepted(changed, accepted):
-    """改口清单里**还没被接受**的部分（纯函数：自证要用）。
-
-    `accepted=None` ⇒ 全收；`False` ⇒ 全拒；集合 ⇒ 只留未列出的键。
-    """
-    if accepted is None:
-        return []
-    if accepted is False:
-        return list(changed or [])
-    return [c for c in (changed or []) if c[0] not in accepted]
-
-
 def _age_human(entry):
     """`measured_at` 的人话（issue #3 ②）：今天 / N 天前 / 未记录。"""
     d = age_days(entry)
@@ -218,49 +194,23 @@ def measure(argv):
     ⚠️ 这里踩过：`measure()` 曾经没有 `argv` 参数，而守卫里写着 `not in argv`。
     因为 `and` 短路，**只在真的掉条时**才走到那句 ⇒ 报的不是「掉了哪几条」而是一段
     NameError traceback；`--allow-drop` 从未生效过。写盘被拦住只是**顺带**（异常早于写盘），
-    那不叫守卫，那叫故障。所以本文件把 argv 显式传进来，并且守卫自己也吃一条反向断言。
+    那不叫守卫，那叫故障。所以本文件把 argv 显式传进来；守卫的**决策**在
+    `zreflect/guard.py`（decide()，接线有自证），本函数只执行它。
     """
     facts = measure_example()
 
     old = facts_of(load(OUT)) if os.path.exists(OUT) else {}
 
-    # 守卫一：掉条（键没了）
-    dropped = dropped_keys(old, facts)
-    if dropped and "--allow-drop" not in argv:
-        print("FATAL: 本次会从台账里**掉掉 %d 条事实**（输入不在？）：%s"
-              % (len(dropped), ", ".join(dropped)), file=sys.stderr)
-        print("       台账不写。要么把输入准备好，要么显式 `--allow-drop`"
-              "（并把掉掉的键记进 HISTORY）。", file=sys.stderr)
-        return 2
-    if dropped:
-        print("⚠ --allow-drop：本次掉掉 %d 条：%s" % (len(dropped), ", ".join(dropped)),
-              file=sys.stderr)
-
-    # 守卫二：改口（值换了）。`--accept-changes[=k1,k2]`：裸旗全收；列键只收列出的，
-    # 其余照旧拒绝 —— 全收会把"真坏了的测量"一起洗白（issue #3 ①）。
-    changed = changed_keys(old, facts)
-    accepted = _accepted_keys(argv)
-    remaining = filter_accepted(changed, accepted)
-    if remaining:
-        print("FATAL: 本次重测会**改掉 %d 条事实的值**（未经接受的改口）：" % len(remaining),
-              file=sys.stderr)
-        for k, o, n in remaining:
-            print("       %-24s %s → %s" % (k, short_value(o), short_value(n)), file=sys.stderr)
-        if accepted:
-            print("       已按 --accept-changes 接受 %d 条：%s —— 其余仍拒绝。"
-                  % (len(changed) - len(remaining), ", ".join(sorted(accepted))),
-                  file=sys.stderr)
-        print("       台账不写。逐条确认这些变化**是实测出来的**（不是输入不在/量错了）之后，"
-              "再显式 `--accept-changes`（或 `--accept-changes=k1,k2` 逐条放行）。",
-              file=sys.stderr)
-        return 2
-    if changed:
-        print("⚠ --accept-changes：本次接受 %d 条改口：" % len(changed))
-        for k, o, n in changed:
-            print("       %-24s %s → %s" % (k, short_value(o), short_value(n)))
-
-    if not facts:
-        print("FATAL: 一条事实都没量到。空台账不是通过（零值守卫）。", file=sys.stderr)
+    verdict, problems, notes = guard.decide(old, facts,
+                                            accepted=guard.accepted_keys(argv),
+                                            allow_drop="--allow-drop" in argv)
+    for x in notes["err"]:
+        print(x, file=sys.stderr)
+    for x in notes["out"]:
+        print(x)
+    if verdict == "refuse":
+        for x in problems:
+            print("FATAL: %s" % x, file=sys.stderr)
         return 2
 
     # 仪器生命周期（issue #6 ①）：值没变的键沿用旧 first_seen
@@ -355,33 +305,28 @@ def main(argv):
     return measure(argv)
 
 
+def _tmp_doc(content, name="doc.md"):
+    """自证用的临时文档（tempfile + atexit 清理 —— 此前写固定的 /tmp
+    路径，非 pid 唯一，并行跑两份自证会互相踩）。"""
+    import atexit                                        # noqa: PLC0415
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    atexit.register(shutil.rmtree, d, True)
+    p = os.path.join(d, name)
+    open(p, "w").write(content)
+    return p
+
+
 CASES = [
-    # ① 正常不报
-    ("不掉条 ⇒ 守卫不报", lambda: dropped_keys({"a": 1}, {"a": 1, "b": 2}) == []),
-    ("值没变 ⇒ 改口守卫不报", lambda: changed_keys({"a": {"value": 1}},
-                                                   {"a": {"value": 1}}) == []),
-    # ② 该报的必须报
-    ("★ 掉条 ⇒ 守卫报出来", lambda: dropped_keys({"a": 1, "b": 2}, {"a": 1}) == ["b"]),
-    ("★ 改口 ⇒ 守卫报出来且带旧值→新值",
-     lambda: changed_keys({"a": {"value": 1}}, {"a": {"value": 2}}) == [("a", 1, 2)]),
-    # ③ 空输入必须报
+    # ③ 空输入必须报（守卫的决策接线在 zreflect/guard.py 的自证里；
+    #    掉条 / 改口的纯函数在 ledger.py 的自证里 —— 各归各）
     ("★ 空文档（没有块标记）⇒ check_doc 必须报，不许算通过",
-     lambda: (lambda: (open("/tmp/_zr_empty.md", "w").write("空空如也\n"),
-                       check_doc("/tmp/_zr_empty.md", {"facts": {"a": 1}}))[1])() == 2),
+     lambda: check_doc(_tmp_doc("空空如也\n"), {"facts": {"a": 1}}) == 2),
     ("★ 文档文件不存在 ⇒ check_doc 必须报（不许因为找不到就算通过）",
-     lambda: check_doc("/tmp/_zr_no_such_file_%d.md" % os.getpid(), {"facts": {"a": 1}}) == 2),
-    # ① 逐条接受（issue #3 ①）
-    ("解析：裸旗 --accept-changes ⇒ 全收", lambda: _accepted_keys(["--accept-changes"]) is None),
-    ("解析：--accept-changes=k1,k2 ⇒ 键集",
-     lambda: _accepted_keys(["--accept-changes=a,b"]) == {"a", "b"}),
-    ("解析：没传旗 ⇒ 全拒（同旧行为）", lambda: _accepted_keys([]) is False),
-    ("逐条接受：列出的键被滤掉，其余留下",
-     lambda: filter_accepted([("a", 1, 2), ("b", 3, 4)], {"a"}) == [("b", 3, 4)]),
-    ("裸旗 ⇒ 改口全被接受", lambda: filter_accepted([("a", 1, 2)], None) == []),
-    ("★ 逐条接受：未列出的键必须仍算改口（该报的必须报）",
-     lambda: filter_accepted([("a", 1, 2)], {"zzz"}) == [("a", 1, 2)]),
-    ("★ 空接受集 ⇒ 一条都不收（空输入不是通过）",
-     lambda: filter_accepted([("a", 1, 2)], set()) != []),
+     lambda: check_doc(os.path.join(_tmp_doc("", "x.md"), "..",
+                                    "no_such_%d.md" % os.getpid()),
+                       {"facts": {"a": 1}}) == 2),
     # ② 测龄人话（issue #3 ②）
     ("年龄：缺失 measured_at ⇒ 明说未记录",
      lambda: _age_human({"value": 1}) == "未记录测量时间"),
