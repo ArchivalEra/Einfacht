@@ -51,42 +51,13 @@
 台账是仓库自己生产、自己审查的文件；改台账 = 改构建脚本级别的承诺，不是运行时输入。
 """
 import os
-import shutil
-import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import GATE_REPO, repo, selftest               # noqa: E402
-from ledger import _value, facts_of, load                # noqa: E402
-
-
-def _timeout():
-    try:
-        return float(os.environ.get("REFLECT_REPLAY_TIMEOUT", "10"))
-    except ValueError:
-        return 10.0                     # 配了个非数 ⇒ 用默认值，但 run() 会明说（见下）
-
-
-def _q(s, n=60):
-    """把一段输出缩成可引用的 repr（复现事故时别把 1 MiB stdout 糊进终端）。"""
-    t = s if len(s) <= n else s[:n] + "…"
-    return repr(t)
-
-
-def run_cmd(cmd, timeout=None):
-    """逐字跑一条 `cmd`（cwd=仓库根），返回 (返回码, stdout)。超时 ⇒ 返回码 None。"""
-    t = _timeout() if timeout is None else timeout
-    bash = shutil.which("bash")
-    argv = [bash, "-o", "pipefail", "-c", cmd] if bash else ["/bin/sh", "-c", cmd]
-    try:
-        p = subprocess.run(argv, cwd=GATE_REPO, capture_output=True, text=True,
-                           timeout=t)
-    except subprocess.TimeoutExpired:
-        return None, ""
-    except OSError as e:                # 连 shell 起不来 —— 报成失败，不许算通过
-        return 127, "FATAL: %s" % e
-    return p.returncode, p.stdout
+from gate import fatal, finish, main_selftest_or, meta, off, repo, selftest  # noqa: E402
+from ledger import facts_of, load, value_of              # noqa: E402
+from runner import default_timeout, quote, run_cmd       # noqa: E402
 
 
 def replay_all(ledger, runner=None):
@@ -105,7 +76,7 @@ def replay_all(ledger, runner=None):
         # 零值守卫：台账空着不是「没有违规」，是「什么都没量」。
         stats["problems"] = ["台账为空 —— 空不是通过（零值守卫）：先查 measure() 是不是坏了"]
         return stats
-    t = _timeout()
+    t = default_timeout()
     for k in sorted(f):
         entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
         cmd = str(entry.get("cmd") or "").strip()
@@ -128,13 +99,13 @@ def replay_all(ledger, runner=None):
             continue
         stats["ran"] += 1      # 「跑成」= 命令本身成功（rc=0）；值不符是数据问题，另一条判据
         got = stdout.strip()
-        want = str(_value(entry))
+        want = str(value_of(entry))
         if got != want:
             out.append("`%s` 复跑输出与台账不符：stdout=%s vs 台账=%s —— 修法是"
                        "**重测**：python3 zreflect/facts.py，改口逐条"
                        " `--accept-changes=k1,k2` 放行；重测后仍不符，才是"
                        "cmd 违反裸值契约（stdout 只能打值本身）"
-                       % (k, _q(got), _q(want)))
+                       % (k, quote(got), quote(want)))
             continue
         stats["ok"] += 1
     if stats["attempts"] and stats["ran"] == 0:
@@ -173,12 +144,12 @@ def replay_all(ledger, runner=None):
                 if kind == "witness":
                     out.append("`%s` 见证不符：witness=%s vs 期望=%s —— 来源/上下文"
                                "漂移（产出它的工具/输入变了），值本身没变也**算事故**"
-                               % (k, _q(got), _q(want)))
+                               % (k, quote(got), quote(want)))
                 else:
                     out.append("`%s` 仪器校准不符：calibrate=%s vs 期望=%s —— "
                                "仪器失真（命令成功、值稳定、复跑永远通过，而它量的"
                                "可能根本不是想量的；先用已知含 X 的样本证明仪器"
-                               "看得见 X，再计数）" % (k, _q(got), _q(want)))
+                               "看得见 X，再计数）" % (k, quote(got), quote(want)))
                 continue
             stats[ok_key] += 1
     if not stats["attempts"] and stats["skipped"] and not stats["witness_attempts"] \
@@ -193,11 +164,9 @@ def replay_all(ledger, runner=None):
 
 def run(argv):
     if os.environ.get("REFLECT_REPLAY", "").strip().lower() == "off":
-        print("复跑闸门：REFLECT_REPLAY=off ⇒ 本闸门未启用（明说，不假装查过 —— "
-              "个别要构建产物的条目请用 replay=False 逐个退出，别关整道闸）",
-              file=sys.stderr)
-        return 0
-    t = _timeout()
+        return off("复跑闸门：REFLECT_REPLAY=off ⇒ 本闸门未启用（明说，不假装查过 —— "
+                   "个别要构建产物的条目请用 replay=False 逐个退出，别关整道闸）")
+    t = default_timeout()
     try:
         float(os.environ.get("REFLECT_REPLAY_TIMEOUT", "10"))
     except ValueError:
@@ -206,21 +175,14 @@ def run(argv):
     name = os.environ.get("REFLECT_FACTS", "FACTS.json")
     p = repo(name)
     if not os.path.exists(p):
-        print("FATAL: 缺事实台账（%s）。先跑 python3 zreflect/facts.py 量一遍。" % name,
-              file=sys.stderr)
-        return 2
+        return fatal("缺事实台账（%s）。先跑 python3 zreflect/facts.py 量一遍。" % name)
     r = replay_all(load(p))
-    for x in r["problems"]:
-        print("  · %s" % x, file=sys.stderr)
-    if r["problems"]:
-        print("复跑闸门：%d 个问题" % len(r["problems"]), file=sys.stderr)
-        return 1
     tail = "，%d 条声明 replay=False 未跑" % r["skipped"] if r["skipped"] else ""
     wtail = "，见证 %d 条" % r["witnessed"] if r["witnessed"] else ""
     ctail = "，校准 %d 条" % r["calibrated"] if r["calibrated"] else ""
-    print("复跑闸门：OK（%d 条事实逐字复跑，stdout 与台账一致%s%s%s）"
-          % (r["ok"], tail, wtail, ctail))
-    return 0
+    return finish("复跑闸门", r["problems"],
+                  "复跑闸门：OK（%d 条事实逐字复跑，stdout 与台账一致%s%s%s）"
+                  % (r["ok"], tail, wtail, ctail))
 
 
 LED = {"facts": {"n": {"value": 12, "cmd": "c"}}}
@@ -310,6 +272,10 @@ def _cases():
     ]
 
 
+GATE = meta("复跑闸门", "台账 cmd 逐字复跑（裸值契约：stdout 必须等于值）",
+            knobs=("REFLECT_FACTS", "REFLECT_REPLAY", "REFLECT_REPLAY_TIMEOUT"))
+
 if __name__ == "__main__":
-    sys.exit(selftest("check_facts_replay（台账 cmd 逐字复跑：stdout 必须等于值）", _cases())
-             if "--selftest" in sys.argv else run(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:],
+                              "check_facts_replay（台账 cmd 逐字复跑：stdout 必须等于值）",
+                              _cases, run))

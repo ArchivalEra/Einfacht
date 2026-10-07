@@ -16,7 +16,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import GATE_REPO, repo, selftest               # noqa: E402
-from ledger import _value, facts_of, load                # noqa: E402
+from ledger import facts_of, load, value_of              # noqa: E402
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
 
 # 正文引用数字的写法：`[[键名]]`。刻意选一个不可能是自然语言的形状 ——
@@ -86,7 +86,7 @@ def problems(ledger, doc_text, bare_min=None):
 
     nlines = _number_lines(doc_text)
     for k, entry in sorted(f.items()):
-        v = _value(entry)
+        v = value_of(entry)
         if isinstance(v, bool) or not isinstance(v, int) or v < bm:
             continue
         for i, line in nlines:

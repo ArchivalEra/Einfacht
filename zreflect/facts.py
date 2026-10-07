@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import GATE_REPO, repo, selftest             # noqa: E402
 from ledger import (age_days, changed_keys, dropped_keys,  # noqa: E402
-                    fact, facts_of, load, _short, _value)
+                    fact, facts_of, load, short_value, value_of)
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
 
 LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
@@ -199,7 +199,7 @@ def measure(argv):
         print("FATAL: 本次重测会**改掉 %d 条事实的值**（未经接受的改口）：" % len(remaining),
               file=sys.stderr)
         for k, o, n in remaining:
-            print("       %-24s %s → %s" % (k, _short(o), _short(n)), file=sys.stderr)
+            print("       %-24s %s → %s" % (k, short_value(o), short_value(n)), file=sys.stderr)
         if accepted:
             print("       已按 --accept-changes 接受 %d 条：%s —— 其余仍拒绝。"
                   % (len(changed) - len(remaining), ", ".join(sorted(accepted))),
@@ -211,7 +211,7 @@ def measure(argv):
     if changed:
         print("⚠ --accept-changes：本次接受 %d 条改口：" % len(changed))
         for k, o, n in changed:
-            print("       %-24s %s → %s" % (k, _short(o), _short(n)))
+            print("       %-24s %s → %s" % (k, short_value(o), short_value(n)))
 
     if not facts:
         print("FATAL: 一条事实都没量到。空台账不是通过（零值守卫）。", file=sys.stderr)
@@ -223,7 +223,7 @@ def measure(argv):
     for k, entry in facts.items():
         o = old.get(k)
         fs = o.get("first_seen") if isinstance(o, dict) else None
-        if fs and _value(o) == _value(entry):
+        if fs and value_of(o) == value_of(entry):
             entry["first_seen"] = fs
 
     import json                                         # noqa: PLC0415
@@ -254,7 +254,7 @@ def get_value(ledger, key):
     if key not in f:
         return False, "台账里没有键 `%s`（现有：%s）" % (
             key, ", ".join(sorted(f)) or "空")
-    return True, _value(f[key])
+    return True, value_of(f[key])
 
 
 def _load_or_die():
