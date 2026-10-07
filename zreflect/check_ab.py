@@ -24,7 +24,8 @@
 - `REFLECT_AB` 未配 ⇒ 明说未启用退 0。
 
 用法（cwd=仓库根）：python3 zreflect/check_ab.py [--spec ab.json]
-退出码：0=绿或未启用 / 1=混淆或配置坏。自证：--selftest（夹具注入）。
+（规格名解析：--spec 显式 > `REFLECT_AB` 旋钮 > 默认 `ab.json`）
+退出码：0=绿或未启用 / 1=发现问题 / 2=配置坏。自证：--selftest（夹具注入）。
 """
 from __future__ import annotations
 
@@ -34,6 +35,23 @@ import sys
 
 REPO = os.environ.get("GATE_REPO") or os.getcwd()
 DEFAULT_SPEC = "ab.json"
+
+
+def resolve_spec(argv, knob=""):
+    """规格名解析：--spec 显式 > REFLECT_AB 旋钮 > 默认名（纯函数，自证要用）。
+
+    返回 (规格名, 是否显式指定)。显式指定（argv / 旋钮）而文件不在 ⇒ 调用方
+    必须 FATAL（配置了却不存在的规格是「部署了 ≠ 在跑」家族，静默当「未启用」
+    会掩盖坏配置）；默认名不在 ⇒ 未启用退 0。docstring 承诺过的旋钮必须
+    真实现：只写在文档里、代码不读的旋钮是幻影，配了静默无效，比没有更坏。
+    """
+    for i, a in enumerate(argv):
+        if a == "--spec":
+            return argv[i + 1], True
+    k = (knob or "").strip()
+    if k:
+        return k, True
+    return DEFAULT_SPEC, False
 
 
 def _load(path):
@@ -89,12 +107,13 @@ def _join(root, path):
 
 
 def main(argv):
-    spec_path = DEFAULT_SPEC
-    for i, a in enumerate(argv):
-        if a == "--spec":
-            spec_path = argv[i + 1]
+    spec_path, explicit = resolve_spec(argv, os.environ.get("REFLECT_AB", ""))
     path = spec_path if os.path.isabs(spec_path) else os.path.join(REPO, spec_path)
     if not os.path.isfile(path):
+        if explicit:
+            print("FATAL: 显式指定的规格 %s 不存在（--spec / REFLECT_AB）—— "
+                  "先写规格（或撤掉指定）" % spec_path, file=sys.stderr)
+            return 2
         print("未启用（%s 不存在 ⇒ 明说未启用退 0，可插拔）" % spec_path)
         return 0
     try:
@@ -134,6 +153,11 @@ def selftest():
     confound_spec = {"pairs": [{"name": "m", "a": "mut-a.json", "b": "mut-b.json",
                                 "key": "declared", "allow": ["malloc"], "why": "w"}]}
     cases = [
+        ("规格名解析：--spec > 旋钮 > 默认名（显式带回 True）",
+         lambda: resolve_spec(["--spec", "x.json"], "K.json") == ("x.json", True)
+         and resolve_spec([], "K.json") == ("K.json", True)
+         and resolve_spec([], "") == ("ab.json", False)
+         and resolve_spec([], "  ") == ("ab.json", False)),
         ("仅 allow 轴不同 ⇒ 不报（A/B 该有的形状）", lambda: check(spec, d)[0] == []),
         ("★ 非 allow 轴不同 ⇒ 必须报（混淆变量）",
          lambda: any("混淆变量" in x for x in check(confound_spec, d)[0])),
