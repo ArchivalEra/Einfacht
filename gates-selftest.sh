@@ -114,52 +114,39 @@ EOF
 }
 
 plugin_selftest() {
-  # 可拔插件（issue #8）不是 zreflect/check_*.py，发现式名录
-  # 扫不到 —— 但它也是「没人盯着就漂移」的东西，所以这里
-  # 单独点名（它不扫名录，因为插件是机制不是闸门）。
-  p="$HERE/reflect-hooks/einfacht-env.sh"
-  if [ ! -f "$p" ]; then
-    echo "  ❌ reflect-hooks/einfacht-env.sh 不存在 —— 钩子的"
-    echo "      Einfacht.env 载体没了（能拔，但没人拔过它）"
-    return 1
-  fi
-  out=$(sh "$p" --selftest 2>&1)
-  if [ $? -ne 0 ]; then
-    echo "  ❌ einfacht-env.sh"
-    printf '%s\n' "$out" | tail -3 | sed 's/^/      /'
-    return 1
-  fi
-  if ! printf '%s\n' "$out" | grep -qE '^=== [0-9]+ PASS / [0-9]+ FAIL ===$'; then
-    echo "  ❌ 插件自证缺机器摘要行（=== N PASS / M FAIL ===，issue #3 ③）"
-    return 1
-  fi
-  echo "  ✅ reflect-hooks/einfacht-env.sh  $(printf '%s\n' "$out" | tail -1)"
-  return 0
-}
-
-doctor_selftest() {
-  # 开工预检（issue #10）也不是 zreflect/check_*.py
-  # —— 故意不进发现式名录：它查的是会死的东西，
-  # 挂 pre-commit 频率错（issue 明说）。但自证
-  # 同样没人跑就会漂，所以这里点名一次。
-  d="$HERE/zreflect/doctor.py"
-  if [ ! -f "$d" ]; then
-    echo "  ❌ zreflect/doctor.py 不存在 —— 开工预检"
-    echo "      的引擎没了（issue #10 的反哺机制）"
-    return 1
-  fi
-  out=$(python3 "$d" --selftest 2>&1)
-  if [ $? -ne 0 ]; then
-    echo "  ❌ zreflect/doctor.py"
-    printf '%s\n' "$out" | tail -3 | sed 's/^/      /'
-    return 1
-  fi
-  if ! printf '%s\n' "$out" | grep -qE '^=== [0-9]+ PASS / [0-9]+ FAIL ===$'; then
-    echo "  ❌ doctor 自证缺机器摘要行（=== N PASS / M FAIL ===，issue #3 ③）"
-    return 1
-  fi
-  echo "  ✅ zreflect/doctor.py  $(printf '%s\n' "$out" | tail -1)"
-  return 0
+  # 自证点名的插件清单从 registry 派生（Phase 3）：reflect-hooks/*.sh
+  # 带自证标记的（发现式收编）+ 点名特殊件（doctor.py —— 「查会死的东西，
+  # 故意不进发现式名录」的理由住在 registry.SPECIAL_PLUGINS 数据旁）。
+  # 此前 plugin / doctor 各手写一段 —— 新插件忘了点名就静默没人盯。
+  bad=0
+  for p in $(python3 "$HERE/zreflect/registry.py" --plugins); do
+    f="$HERE/$p"
+    if [ ! -f "$f" ]; then
+      echo "  ❌ $p 不存在（registry 点了名，文件却不在）"
+      bad=$((bad + 1))
+      continue
+    fi
+    case "$p" in
+      *.sh) cmd="sh" ;;
+      *)    cmd="python3" ;;
+    esac
+    out=$("$cmd" "$f" --selftest 2>&1)
+    if [ $? -ne 0 ]; then
+      echo "  ❌ $p"
+      printf '%s\n' "$out" | tail -3 | sed 's/^/      /'
+      bad=$((bad + 1))
+      continue
+    fi
+    if ! printf '%s\n' "$out" | grep -qE '^=== [0-9]+ PASS / [0-9]+ FAIL ===$'; then
+      echo "  ❌ $p 自证缺机器摘要行（=== N PASS / M FAIL ===，issue #3 ③）"
+      bad=$((bad + 1))
+      continue
+    fi
+    echo "  ✅ $p  $(printf '%s\n' "$out" | tail -1)"
+  done
+  [ "$(python3 "$HERE/zreflect/registry.py" --plugins | wc -l)" -ge 1 ] || {
+    echo "  ❌ 插件名单为空 —— 零值守卫：einfacht-env.sh / doctor 至少要在册"; bad=$((bad + 1)); }
+  return "$bad"
 }
 
 # ── 跨仓库可配置性自证（**没有硬编码**的可证伪证据）────────────────────────────
@@ -169,8 +156,9 @@ doctor_selftest() {
 configurable_selftest() {
   tmp=$(mktemp -d)
   printf 'x = 1\n' > "$tmp/a.py"
-  # 机器块标记要**先手工放一次**（工具自己的约定：找不到块 ≠ 块是对的）
-  printf '# 标题\n\n正文引用 [[py_files]] 与 [[md_files]]（引用键，不手抄数字）。\n\n<!-- AUTO:FACTS -->\n<!-- /AUTO:FACTS -->\n' > "$tmp/NOTES.md"
+  # 机器块标记要**先手工放一次**（工具自己的约定：找不到块 ≠ 块是对的）。
+  # Phase 3 起文档有两个机器块（事实 + 闸门名录），标记都要先放。
+  printf '# 标题\n\n正文引用 [[py_files]] 与 [[md_files]]（引用键，不手抄数字）。\n\n<!-- AUTO:FACTS -->\n<!-- /AUTO:FACTS -->\n\n<!-- AUTO:GATES -->\n<!-- /AUTO:GATES -->\n' > "$tmp/NOTES.md"
   printf '# AGENTS\n' > "$tmp/AGENTS.md"
   printf '{"schema":1,"retractions":[]}\n' > "$tmp/RETRACT.json"        # 换名：REFLECT_RETRACTIONS
   mkdir -p "$tmp/cases"                                                  # 换名：REFLECT_QUESTIONS
@@ -202,8 +190,11 @@ configurable_selftest() {
   # 反向：用**默认名字**跑同一夹具 ⇒ **每一个依赖改名输入的闸门都必须红**。
   # ⚠️ 这一段的判据第一版只数了个数（`red>0`）—— 分辨力不足：夹具当时没换
   #    retractions.json/questions 的名字，那两个闸门绿着却被算作"证明过了"
-  #    （issue #1 ② 的原话）。现在逐个点名，缺一个红就失败。
-  red_need="check_facts.py check_readme_sync.py check_retractions.py check_questions.py"
+  #    （issue #1 ② 的原话）。随后改成手写名单 —— 也漂了：默认名下实际红的
+  #    六道里名单只写了四道。现在红名单从 registry 的 name_dependent 声明
+  #    派生（登记被两头拦：problems 要求真消费改名默认名，这里要求真红）。
+  red_need=$(python3 "$HERE/zreflect/registry.py" --red-need)
+  [ -n "$red_need" ] || { echo "  ❌ 红名单为空 —— 零值守卫：没有它这一节什么都没证明"; rm -rf "$tmp"; return 1; }
   red=""
   for g in "$HERE"/zreflect/check_*.py; do
     b=$(basename "$g")
@@ -227,10 +218,8 @@ if [ "${1:-}" = "--selftest" ]; then
 else
   echo "闸门自证（发现式名录）："
   run_gates "$HERE" || rc=1
-  echo "── 可拔插件 ──"
+  echo "── 可拔插件与点名自证（名单从 registry 派生）──"
   plugin_selftest || rc=1
-  echo "── 开工预检（不挂 pre-commit：查的是会死的东西）──"
-  doctor_selftest || rc=1
   echo "── 跨仓库可配置性 ──"
   configurable_selftest || rc=1
 fi

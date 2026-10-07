@@ -1,13 +1,13 @@
 {
  "schema": 1,
- "generated": "2026-10-07T23:03:31+0800",
+ "generated": "2026-10-07T23:21:49+0800",
  "_why": "事实台账：每条 = 一个**测出来**的值 + 复跑命令 + 出处。别手改，跑 zreflect/facts.py。",
  "facts": {
   "py_files": {
-   "value": 25,
+   "value": 26,
    "cmd": "find . -name '*.py' -not -path './.git/*' | wc -l",
    "source": "repo",
-   "measured_at": "2026-10-07T23:03:31+0800",
+   "measured_at": "2026-10-07T23:21:49+0800",
    "first_seen": "2026-10-07",
    "note": "示例事实：换掉 measure_example()"
   },
@@ -15,22 +15,22 @@
    "value": 7,
    "cmd": "find . -name '*.md' -not -path './.git/*' | wc -l",
    "source": "repo",
-   "measured_at": "2026-10-07T23:03:31+0800",
+   "measured_at": "2026-10-07T23:21:49+0800",
    "first_seen": "2026-10-04"
   },
   "py_lines": {
-   "value": 4401,
+   "value": 4727,
    "cmd": "find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l",
    "source": "repo",
-   "measured_at": "2026-10-07T23:03:31+0800",
+   "measured_at": "2026-10-07T23:21:49+0800",
    "first_seen": "2026-10-07",
    "note": "刻意 ≥100，用来示范裸数字判据"
   },
   "md_lines": {
-   "value": 2101,
+   "value": 2072,
    "cmd": "find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l",
    "source": "repo",
-   "measured_at": "2026-10-07T23:03:31+0800",
+   "measured_at": "2026-10-07T23:21:49+0800",
    "first_seen": "2026-10-07",
    "note": "不含机器块：块就渲染在文档里，数进去会让渲染一遍值就过期"
   }

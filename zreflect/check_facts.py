@@ -153,7 +153,7 @@ def _cases():
 
 
 GATE = meta("事实闸门", "块一致性 / 裸数字 / 坏引用",
-            knobs=("REFLECT_FACTS", "REFLECT_DOC", "REFLECT_NAKED_MIN"))
+            knobs=("REFLECT_FACTS", "REFLECT_DOC", "REFLECT_NAKED_MIN"), name_dependent=True)
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_facts（块一致性 / 裸数字 / 坏引用）",
