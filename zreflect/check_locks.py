@@ -38,6 +38,18 @@ REPO = os.environ.get("GATE_REPO") or os.getcwd()
 DEFAULT_SPEC = "upstream-lock.json"
 
 
+def resolve_spec(argv):
+    """规格名解析：--spec 显式 > 默认名。返回 (规格名, 是否显式指定)。
+
+    显式指定而文件不在 ⇒ 调用方必须 FATAL（配置了却不存在的规格是
+    「部署了 ≠ 在跑」家族）；默认名不在 ⇒ 未启用退 0。
+    """
+    for i, a in enumerate(argv):
+        if a == "--spec":
+            return argv[i + 1], True
+    return DEFAULT_SPEC, False
+
+
 def _sha(path):
     h = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -82,12 +94,13 @@ def check(spec, hasher=_sha):
 
 
 def main(argv):
-    spec_path = DEFAULT_SPEC
-    for i, a in enumerate(argv):
-        if a == "--spec":
-            spec_path = argv[i + 1]
+    spec_path, explicit = resolve_spec(argv)
     path = spec_path if os.path.isabs(spec_path) else os.path.join(REPO, spec_path)
     if not os.path.isfile(path):
+        if explicit:
+            print("FATAL: 显式指定的规格 %s 不存在（--spec）—— 先写规格（或撤掉指定）"
+                  % spec_path, file=sys.stderr)
+            return 2
         print("未启用（%s 不存在 ⇒ 明说未启用退 0，可插拔）" % spec_path)
         return 0
     try:
@@ -128,6 +141,9 @@ def selftest():
     no_sha = {"locked": [{"name": "glpk", "version": "5.0", "url": "u", "file": g}]}
     empty = {"locked": []}
     cases = [
+        ("规格名解析：--spec > 默认名（显式带回 True）",
+         lambda: resolve_spec(["--spec", "x.json"]) == ("x.json", True)
+         and resolve_spec([]) == ("upstream-lock.json", False)),
         ("锁定一致/目录形态/optional 缺席 ⇒ 不报", lambda: check(spec)[0] == [] and check(spec)[1] != []),
         ("★ sha256 不符 ⇒ 必须报（字节漂了）",
          lambda: any("sha256 不符" in x for x in check(bad_hash)[0])),
