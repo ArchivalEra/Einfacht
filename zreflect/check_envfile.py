@@ -16,19 +16,22 @@
   · sh 语法坏 ⇒ 钩子要到提交时刻才响亮地死
     （set -e），报错还指向不明。
 
+**名册是登记式的**（2026-10-07 起，Phase 2）：判据数据
+= `zreflect/knobs.py` 的 REGISTRY（名字 → kind / 默认值 /
+语义），本文件的手写 FILE_KNOBS 名单退役。对账双向：
+
+  · export 的名字不在登记表 ⇒ typo / 幻影（配了
+    静默无效）；
+  · zreflect/*.py 扫描面里出现、登记表里**没有**的
+    REFLECT_* 记号 ⇒ 幻影旋钮 / typo（docstring 提名
+    不算数，登记才算数 —— REFLECT_AB/REFLECT_PINS
+    幻影事故的 structural 修复）；
+  · 三语 README（REFLECT_READMES 名单）里出现的
+    REFLECT_* 名字 ⊆ 登记（文档侧幻影防御，自证跑）。
+
 可插拔：Einfacht.env 不存在（钩子目录与仓库根都
 没有）⇒ 明说未启用、退 0（钩子回落纯环境变量
 + 默认名）。
-
-旋钮名册是**发现式**的：扫 zreflect/*.py 里出现的
-REFLECT_* 记号（所有旋钮都经 os.environ.get 读）
-—— 名册不手写（手写名录一定会漂，issue #1 ② 同款）。
-⚠️ 因此本文件的任何字符串里都不得出现**假的**
-REFLECT_ 旋钮名（自证里的 typo 样例用拼接构造）——
-否则扫描会把 typo 收进名册，守卫就废了。
-文件旋钮名单（哪些旋钮的值是路径）是本闸门的判据
-数据，新旋钮若取值是路径必须登记在 FILE_KNOBS /
-LIST_FILE_KNOBS / DIR_KNOBS。
 
 诚实边界：存在性只查**相对仓库根**的路径；
 core.hooksPath 改过布局的仓库，钩子目录按
@@ -48,42 +51,22 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import fatal, finish, main_selftest_or, meta, off, repo, selftest  # noqa: E402
+from knobs import KINDS, REGISTRY                         # noqa: E402
 
 ENV_FILE = (os.environ.get("REFLECT_ENV_FILE", "Einfacht.env")
             .strip() or "Einfacht.env")
 
-# 文件旋钮：本闸门的判据数据（不是发现式名册 ——
-# 「哪个旋钮的值是路径」是语义，代码里推不出来）。
-# 新旋钮若取值是相对仓库根的文件 / 目录 / 逗号
-# 分隔清单，登记在这里。
-FILE_KNOBS = {
-    "REFLECT_FACTS": "台账文件",
-    "REFLECT_DOC": "活状态文档",
-    "REFLECT_RETRACTIONS": "翻案台账",
-    "REFLECT_INVARIANTS": "不变量规格",
-    "REFLECT_INSTRUMENTS": "量法登记",
-    "REFLECT_DOCTOR": "doctor 规格（开工预检）",
-    "REFLECT_WORLD": "world 声明（验证对象清单，issue #13）",
-}
-LIST_FILE_KNOBS = {
-    "REFLECT_DOCS": "活状态文档清单",
-    "REFLECT_READMES": "README 名单",
-}
-DIR_KNOBS = {
-    "REFLECT_QUESTIONS": "悬案目录",
-}
-
 _EXPORT_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
-_QUOTES = re.compile(r'^["\']|["\']$')
+_QUOTES_RE = re.compile(r'^["\']|["\']$')
+_TOKEN_RE = re.compile(r"REFLECT_[A-Z0-9_]+")
 
 
 def known_knobs(py_dir=None):
-    """发现式名册：zreflect/*.py 里出现的 REFLECT_* 记号全集。
+    """发现式扫描：zreflect/*.py 里出现的 REFLECT_* 记号全集。
 
-    所有旋钮都经 os.environ.get 读 ⇒ 代码中出现的
-    REFLECT_* 记号 = 已知旋钮集（文档字符串里的提及
-    也算 —— 无妨：typo 守卫要的是真名全集，多收录
-    真名不算错）。`py_dir` 可注入（自证用假源码树）。
+    对账用（不是名册本身 —— 名册是 knobs.REGISTRY）：扫描面里出现而
+    登记表里没有的记号 = 幻影 / typo，本闸门报。`py_dir` 可注入
+    （自证用假源码树 —— 真文件进了自证，自证就依赖机器了）。
     """
     d = py_dir if py_dir is not None else repo("zreflect")
     knobs = set()
@@ -100,7 +83,7 @@ def known_knobs(py_dir=None):
                 text = fh.read()
         except OSError:
             continue
-        knobs.update(re.findall(r"REFLECT_[A-Z0-9_]+", text))
+        knobs.update(_TOKEN_RE.findall(text))
     return knobs
 
 
@@ -117,23 +100,33 @@ def parse_exports(text):
         m = _EXPORT_RE.match(line)
         if not m:
             continue
-        out[m.group(1)] = _QUOTES.sub("", m.group(2).strip())
+        out[m.group(1)] = _QUOTES_RE.sub("", m.group(2).strip())
     return out
 
 
-def problems(exports, known, file_exists, dir_exists, syntax_ok=None):
+def problems(exports, registry, file_exists, dir_exists, syntax_ok=None,
+             scanned=()):
     """纯函数：返回问题清单（空 = 绿）。自证期间不许 print。
 
-    `exports` = parse_exports 的结果；`known` = 已知
-    旋钮名册；`file_exists` / `dir_exists` = 存在性
-    探针（自证注入假文件系统）；`syntax_ok` = sh -n
-    的结论（True / False；None = 仪器本身跑不了）。
+    `registry` = knobs.REGISTRY（名字 → (kind, 默认, 语义)）；
+    `scanned` = known_knobs() 的扫描面（对账幻影 / typo）；
+    `file_exists` / `dir_exists` = 存在性探针（自证注入假文件系统）；
+    `syntax_ok` = sh -n 的结论（True / False；None = 仪器本身跑不了）。
     """
     out = []
     if not exports:
         return ["%s 里没有任何生效的 export（空文件或只剩注释）"
                 " —— 看起来配了、其实什么都没加载"
                 "（「部署了 ≠ 在跑」家族）" % ENV_FILE]
+    # 幻影 / typo 对账：扫描面里出现、登记表里没有的 REFLECT_* 记号。
+    # （typo 样例必须由调用方拼接构造 —— 本文件在扫描面内，字面量写死
+    # 会把 typo 收进扫描面，守卫就废了。）
+    for tok in sorted(scanned):
+        if tok not in registry:
+            out.append("记号 `%s` 出现在 zreflect/*.py 里但不在旋钮登记表"
+                       "（zreflect/knobs.py）—— 要么是 typo（会被所有程序"
+                       "静默忽略），要么是幻影旋钮（文档承诺了、代码不读，"
+                       "配了静默无效）。登记才算数" % tok)
     for name in sorted(exports):
         if not name.startswith("REFLECT_"):
             continue                    # 非旋钮 export 不是本闸门的活
@@ -142,30 +135,28 @@ def problems(exports, known, file_exists, dir_exists, syntax_ok=None):
             out.append("`%s` 的值是空的 —— 空值会让钩子的"
                        " [ -f ] 守卫静默跳过（空不是通过）" % name)
             continue
-        if name not in known:
-            out.append("旋钮名 `%s` 不在已知旋钮名册里 —— 打错"
-                       "一位会被所有程序静默忽略，值永远到不了"
-                       "钩子（已知：%s）"
-                       % (name, ", ".join(sorted(known)) or "（名册为空）"))
+        kind = registry.get(name, (None,))[0]
+        if kind is None:
+            out.append("旋钮名 `%s` 不在登记表（zreflect/knobs.py）—— 打错"
+                       "一位会被所有程序静默忽略，值永远到不了钩子"
+                       % name)
             continue
-        if name in FILE_KNOBS:
+        if kind == "file":
             targets, is_dir = [value], False
-        elif name in LIST_FILE_KNOBS:
+        elif kind == "list":
             targets = [t.strip() for t in value.split(",") if t.strip()]
             is_dir = False
-        elif name in DIR_KNOBS:
+        elif kind == "dir":
             targets, is_dir = [value], True
         else:
-            continue                    # 非文件旋钮（数字 / 枚举）不查存在性
+            continue                    # number / flag / value 不查存在性
         for t in targets:
             hit = dir_exists(t) if is_dir else file_exists(t)
             if not hit:
-                out.append("文件旋钮 `%s`（%s）指向的%s不存在：%s"
+                out.append("旋钮 `%s`（%s）指向的%s不存在：%s"
                            " —— 钩子的 [ -f ] 守卫会静默跳过"
                            "（路径相对仓库根）"
-                           % (name, FILE_KNOBS.get(name)
-                              or LIST_FILE_KNOBS.get(name)
-                              or DIR_KNOBS.get(name),
+                           % (name, registry.get(name, ("", "", "?"))[2],
                               "目录" if is_dir else "文件", t))
     if syntax_ok is False:
         out.append("%s 过不了 sh -n（语法坏）⇒ 钩子要到提交"
@@ -173,6 +164,30 @@ def problems(exports, known, file_exists, dir_exists, syntax_ok=None):
     if syntax_ok is None:
         out.append("sh -n 跑不了（sh 不在？）—— 语法检查这个"
                    "仪器本身坏了，先修检查器，不许静默跳过")
+    return out
+
+
+def readme_knob_problems(files=None):
+    """三语 README（REFLECT_READMES 名单）里出现、登记表里没有的
+    REFLECT_* 名字（文档侧幻影防御；`files` 可注入假文件系统）。"""
+    out = []
+    names = [s.strip() for s in os.environ.get(
+        "REFLECT_READMES",
+        "README.md,README.zh.md,README.de.md").split(",") if s.strip()]
+    for name in names:
+        if files is not None:
+            if name not in files:
+                continue
+            text = files[name]
+        else:
+            p = repo(name)
+            if not os.path.exists(p):
+                continue
+            text = open(p, encoding="utf-8", errors="replace").read()
+        for tok in sorted(set(_TOKEN_RE.findall(text))):
+            if tok not in REGISTRY:
+                out.append("%s 提到未登记旋钮 `%s` —— 幻影 or typo；"
+                           "登记进 zreflect/knobs.py 才算数" % (name, tok))
     return out
 
 
@@ -199,10 +214,10 @@ def run(argv=None):
             text = fh.read()
     except OSError as e:
         return fatal("%s 读不了：%s" % (p, e))
-    known = known_knobs()
-    if not known:
-        return fatal("在 %s 里没发现任何 REFLECT_* 旋钮 —— 名册"
-                     "发现失败（zreflect/ 不在？），本闸门的仪器坏了"
+    scanned = known_knobs()
+    if not scanned:
+        return fatal("在 %s 里没发现任何 REFLECT_* 记号 —— 对账扫描"
+                     "失败（zreflect/ 不在？），本闸门的仪器坏了"
                      % repo("zreflect"))
     # 语法检查（仪器）：sh -n 只解析不执行。语法错 ⇒ 是要报
     # 的问题；跑不了 ⇒ 仪器坏了（syntax_ok=None，如实报）。
@@ -213,13 +228,14 @@ def run(argv=None):
     except OSError:
         syntax = None
     exports = parse_exports(text)
-    probs = problems(exports, known,
+    probs = problems(exports, REGISTRY,
                      lambda t: os.path.exists(repo(t)),
                      lambda t: os.path.isdir(repo(t)),
-                     syntax_ok=syntax)
+                     syntax_ok=syntax, scanned=scanned)
+    probs += readme_knob_problems()
     return finish("env 文件闸门", probs,
-                  "env 文件闸门：OK（%s：%d 条生效 export，旋钮名全在"
-                  "名册、文件旋钮指向都在）"
+                  "env 文件闸门：OK（%s：%d 条生效 export，名字全在登记表、"
+                  "文件旋钮指向都在）"
                   % (os.path.relpath(p, repo()), len(exports)))
 
 
@@ -229,50 +245,73 @@ def _cases():
                   "RETRACT.json", "invariants.json")
     fe = lambda t: t in good_files                     # noqa: E731
     de = lambda t: t in ("questions", "cases")         # noqa: E731
-    known = {"REFLECT_DOC", "REFLECT_READMES", "REFLECT_DOCS",
-             "REFLECT_QUESTIONS", "REFLECT_FACTS",
-             "REFLECT_NAKED_MIN", "REFLECT_ENV_FILE"}
+    registry = {k: REGISTRY[k] for k in
+                ("REFLECT_DOC", "REFLECT_READMES", "REFLECT_QUESTIONS",
+                 "REFLECT_FACTS", "REFLECT_NAKED_MIN", "REFLECT_ENV_FILE")}
     good_env = {"REFLECT_DOC": "STATE.md",
                 "REFLECT_READMES": "README.md,README.zh.md,README.de.md",
                 "REFLECT_QUESTIONS": "questions",
                 "REFLECT_NAKED_MIN": "100"}
-    # typo 样例用拼接构造：本文件在 zreflect/ 里，会被
-    # known_knobs() 扫到 —— 字面量写死会把 typo 收进名册。
+    # typo 样例用拼接构造：本文件在扫描面里，会被 known_knobs() 扫到 ——
+    # 字面量写死会把 typo 收进扫描面，守卫就废了。
     typo = "REFLECT_" + "DOCSS"
     return [
         # ① 正常不报
         ("生效 export 全合法（含数字旋钮）⇒ 不报",
-         lambda: problems(good_env, known, fe, de, syntax_ok=True) == []),
+         lambda: problems(good_env, registry, fe, de, syntax_ok=True,
+                          scanned=registry.keys()) == []),
         ("非 REFLECT_ 前缀的 export ⇒ 不报（不是本闸门的活）",
-         lambda: problems({"PATH": "/usr/bin"}, known, fe, de,
-                          syntax_ok=True) == []),
+         lambda: problems({"PATH": "/usr/bin"}, registry, fe, de,
+                          syntax_ok=True, scanned=registry.keys()) == []),
+        ("扫描面对账干净（全在登记表）⇒ 不报",
+         lambda: problems(good_env, registry, fe, de, syntax_ok=True,
+                          scanned=set(registry) | {"REFLECT_FACTS"}) == []),
+        ("三语 README 的旋钮提名 ⊆ 登记 ⇒ 不报",
+         lambda: readme_knob_problems(files={
+             "README.md": "用 REFLECT_DOC 与 REFLECT_READMES。",
+             "README.zh.md": "x", "README.de.md": "x"}) == []),
         # ② 该报的必须报
+        ("★ 扫描面出现未登记记号 ⇒ 必须报（幻影 / typo，登记才算数）",
+         lambda: any("不在旋钮登记表" in x for x in problems(
+             good_env, registry, fe, de, syntax_ok=True,
+             scanned=set(registry) | {typo}))),
         ("★ 旋钮名打错一位 ⇒ 必须报（静默忽略家族）",
-         lambda: any("不在已知旋钮名册" in x for x in problems(
-             {typo: "STATE.md"}, known, fe, de, syntax_ok=True))),
+         lambda: any("不在登记表" in x for x in problems(
+             {typo: "STATE.md"}, registry, fe, de, syntax_ok=True,
+             scanned=registry.keys()))),
         ("★ 文件旋钮指向缺失文件 ⇒ 必须报（[ -f ] 静默跳过家族）",
          lambda: any("不存在" in x and "REFLECT_DOC" in x for x in problems(
-             {"REFLECT_DOC": "MYSTATE.md"}, known, fe, de, syntax_ok=True))),
+             {"REFLECT_DOC": "MYSTATE.md"}, registry, fe, de,
+             syntax_ok=True, scanned=registry.keys()))),
         ("★ 清单旋钮有一份缺失 ⇒ 必须报（点名缺失的那份）",
          lambda: any("README.missing.md" in x for x in problems(
              {"REFLECT_READMES": "README.md,README.missing.md"},
-             known, fe, de, syntax_ok=True))),
+             registry, fe, de, syntax_ok=True, scanned=registry.keys()))),
         ("★ 目录旋钮指向文件 ⇒ 必须报（目录探针不命中）",
          lambda: any("目录" in x for x in problems(
-             {"REFLECT_QUESTIONS": "STATE.md"}, known, fe, de,
-             syntax_ok=True))),
+             {"REFLECT_QUESTIONS": "STATE.md"}, registry, fe, de,
+             syntax_ok=True, scanned=registry.keys()))),
         ("★ 值为空 ⇒ 必须报（空值让守卫静默跳过）",
          lambda: any("值是空的" in x for x in problems(
-             {"REFLECT_DOC": ""}, known, fe, de, syntax_ok=True))),
+             {"REFLECT_DOC": ""}, registry, fe, de, syntax_ok=True,
+             scanned=registry.keys()))),
         ("★ sh -n 不过 ⇒ 必须报",
          lambda: any("sh -n" in x for x in problems(
-             good_env, known, fe, de, syntax_ok=False))),
+             good_env, registry, fe, de, syntax_ok=False,
+             scanned=registry.keys()))),
         ("★ sh -n 跑不了 ⇒ 必须报（仪器坏了不许静默跳过）",
          lambda: any("跑不了" in x for x in problems(
-             good_env, known, fe, de, syntax_ok=None))),
+             good_env, registry, fe, de, syntax_ok=None,
+             scanned=registry.keys()))),
+        ("★ README 提到未登记旋钮 ⇒ 必须报（文档侧幻影）",
+         lambda: any("未登记旋钮" in x and "README.zh.md" in x
+                     for x in readme_knob_problems(files={
+                         "README.md": "x", "README.zh.md": "见 " + typo + "。",
+                         "README.de.md": "x"}))),
         # ③ 空输入必须报
         ("★ 空 export 集（空文件 / 只剩注释）⇒ 必须报",
-         lambda: problems({}, known, fe, de, syntax_ok=True) != []),
+         lambda: problems({}, registry, fe, de, syntax_ok=True,
+                          scanned=registry.keys()) != []),
     ]
 
 
