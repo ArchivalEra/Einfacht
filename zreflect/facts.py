@@ -22,7 +22,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import GATE_REPO, repo, selftest             # noqa: E402
+from gate import GATE_REPO, main_selftest_or, repo, selftest  # noqa: E402
 from ledger import (age_days, changed_keys, dropped_keys,  # noqa: E402
                     fact, facts_of, load, short_value, value_of)
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
@@ -352,5 +352,5 @@ CASES = [
 
 
 if __name__ == "__main__":
-    sys.exit(selftest("facts.py（两道守卫 + 文档一致性）", CASES)
-             if "--selftest" in sys.argv else main(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:], "facts.py（两道守卫 + 文档一致性）",
+                              CASES, main))

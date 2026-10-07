@@ -40,8 +40,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
 from gate import repo, selftest                            # noqa: E402
-from ledger import load                                    # noqa: E402
 
 INVARIANTS_RAW = os.environ.get("REFLECT_INVARIANTS", "").strip()
 
@@ -106,35 +106,22 @@ def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     name = INVARIANTS_RAW
     if not name:
-        print("不变量闸门：REFLECT_INVARIANTS 未配置 ⇒ 本闸门未启用"
-              "（可插拔模块；要启用：REFLECT_INVARIANTS=invariants.json，"
-              "规格 = {\"checks\": [{path, must_contain?, "
-              "must_not_contain?, why}]}）", file=sys.stderr)
-        return 0
+        return off("不变量闸门：REFLECT_INVARIANTS 未配置 ⇒ 本闸门未启用"
+                   "（可插拔模块；要启用：REFLECT_INVARIANTS=invariants.json，"
+                   "规格 = {\"checks\": [{path, must_contain?, "
+                   "must_not_contain?, why}]}）")
     spec_path = repo(name)
     if not os.path.exists(spec_path):
-        print("FATAL: REFLECT_INVARIANTS=%s 已配置但规格文件不在 —— "
-              "先写规格（或撤掉该旋钮）" % name, file=sys.stderr)
-        return 2
-    try:
-        spec = load(spec_path)
-    except ValueError as e:
-        print("FATAL: 规格文件 %s 不是合法 JSON：%s" % (spec_path, e),
-              file=sys.stderr)
-        return 2
+        return fatal("REFLECT_INVARIANTS=%s 已配置但规格文件不在 —— "
+                     "先写规格（或撤掉该旋钮）" % name)
+    spec, err = load_spec(spec_path)
+    if err:
+        return fatal(err)
     checks = spec.get("checks") if isinstance(spec, dict) else None
     if not isinstance(checks, list):
-        print("FATAL: 规格文件 %s 形状坏：需要 {\"checks\": [...]}"
-              % spec_path, file=sys.stderr)
-        return 2
-    probs = problems(checks)
-    if probs:
-        print("不变量闸门：%d 个问题" % len(probs), file=sys.stderr)
-        for p in probs:
-            print("  · " + p, file=sys.stderr)
-        return 1
-    print("不变量闸门：OK（%d 条不变量）" % len(checks))
-    return 0
+        return fatal("规格文件 %s 形状坏：需要 {\"checks\": [...]}" % spec_path)
+    return finish("不变量闸门", problems(checks),
+                  "不变量闸门：OK（%d 条不变量）" % len(checks))
 
 
 def _cases():
@@ -198,7 +185,10 @@ def _cases():
     ]
 
 
+GATE = meta("不变量闸门", "声明式不变量：仓库文件必须/不得含某片段（grep 级）",
+            knobs=("REFLECT_INVARIANTS",))
+
 if __name__ == "__main__":
-    sys.exit(selftest("不变量闸门（声明式：仓库文件必须/不得含某片段）",
-                      _cases())
-             if "--selftest" in sys.argv else run(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:],
+                              "不变量闸门（声明式：仓库文件必须/不得含某片段）",
+                              _cases(), run))

@@ -47,7 +47,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import repo, selftest                            # noqa: E402
+from gate import fatal, finish, main_selftest_or, meta, off, repo, selftest  # noqa: E402
 
 ENV_FILE = (os.environ.get("REFLECT_ENV_FILE", "Einfacht.env")
             .strip() or "Einfacht.env")
@@ -189,24 +189,21 @@ def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     p = _find_env_file()
     if p is None:
-        print("env 文件闸门：%s 不存在（钩子目录与仓库根都没有）"
-              " ⇒ 本闸门未启用（可插拔模块；钩子回落纯环境变量"
-              " + 默认名。要启用：cp reflect-hooks/"
-              "Einfacht.env.example reflect-hooks/%s）"
-              % (ENV_FILE, ENV_FILE), file=sys.stderr)
-        return 0
+        return off("env 文件闸门：%s 不存在（钩子目录与仓库根都没有）"
+                   " ⇒ 本闸门未启用（可插拔模块；钩子回落纯环境变量"
+                   " + 默认名。要启用：cp reflect-hooks/"
+                   "Einfacht.env.example reflect-hooks/%s）"
+                   % (ENV_FILE, ENV_FILE))
     try:
         with open(p, encoding="utf-8", errors="replace") as fh:
             text = fh.read()
     except OSError as e:
-        print("FATAL: %s 读不了：%s" % (p, e), file=sys.stderr)
-        return 2
+        return fatal("%s 读不了：%s" % (p, e))
     known = known_knobs()
     if not known:
-        print("FATAL: 在 %s 里没发现任何 REFLECT_* 旋钮 —— 名册"
-              "发现失败（zreflect/ 不在？），本闸门的仪器坏了"
-              % repo("zreflect"), file=sys.stderr)
-        return 2
+        return fatal("在 %s 里没发现任何 REFLECT_* 旋钮 —— 名册"
+                     "发现失败（zreflect/ 不在？），本闸门的仪器坏了"
+                     % repo("zreflect"))
     # 语法检查（仪器）：sh -n 只解析不执行。语法错 ⇒ 是要报
     # 的问题；跑不了 ⇒ 仪器坏了（syntax_ok=None，如实报）。
     syntax = None
@@ -220,16 +217,10 @@ def run(argv=None):
                      lambda t: os.path.exists(repo(t)),
                      lambda t: os.path.isdir(repo(t)),
                      syntax_ok=syntax)
-    if probs:
-        print("env 文件闸门：%d 个问题（%s）" % (len(probs), p),
-              file=sys.stderr)
-        for x in probs:
-            print("  · " + x, file=sys.stderr)
-        return 1
-    print("env 文件闸门：OK（%s：%d 条生效 export，旋钮名全在"
-          "名册、文件旋钮指向都在）"
-          % (os.path.relpath(p, repo()), len(exports)))
-    return 0
+    return finish("env 文件闸门", probs,
+                  "env 文件闸门：OK（%s：%d 条生效 export，旋钮名全在"
+                  "名册、文件旋钮指向都在）"
+                  % (os.path.relpath(p, repo()), len(exports)))
 
 
 def _cases():
@@ -285,7 +276,10 @@ def _cases():
     ]
 
 
+GATE = meta("env 文件闸门", "守钩子的 REFLECT_* 载体（旋钮 typo / 指向缺失 / 空值）",
+            knobs=("REFLECT_ENV_FILE",))
+
 if __name__ == "__main__":
-    sys.exit(selftest("env 文件闸门（可插拔：守钩子的 REFLECT_* 载体）",
-                      _cases())
-             if "--selftest" in sys.argv else run(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:],
+                              "env 文件闸门（可插拔：守钩子的 REFLECT_* 载体）",
+                              _cases(), run))
