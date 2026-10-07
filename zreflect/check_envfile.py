@@ -63,6 +63,7 @@ FILE_KNOBS = {
     "REFLECT_INVARIANTS": "不变量规格",
     "REFLECT_INSTRUMENTS": "量法登记",
     "REFLECT_DOCTOR": "doctor 规格（开工预检）",
+    "REFLECT_WORLD": "world 声明（验证对象清单，issue #13）",
 }
 LIST_FILE_KNOBS = {
     "REFLECT_DOCS": "活状态文档清单",

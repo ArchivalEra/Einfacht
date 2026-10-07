@@ -53,6 +53,7 @@
 | **声明式不变量**（可插拔） | `zreflect/check_invariants.py` | 「仓库文件必须/不得含某片段」做成**数据**而非代码（`REFLECT_INVARIANTS=invariants.json`，规格 `{"checks": [{path, must_contain?, must_not_contain?, why}]}`）—— 引擎通用、只读、不构建不跑网络 ⇒ 能进 pre-commit；`why` 必填（没理由的检查项没人敢删，会变成僵尸）。可插拔：未配 ⇒ 明说未启用、退 0。**grep 级**：片段出现在注释里也算「存在」—— 它证明的是「这段文字还在」，不是「代码里真在用」；声明式检查的强度上限 = 它匹配的文本形态。更强的保证是 `calibrate`（对产物量）或 `witness`（对来源量）的活 —— 两者正交别混：`calibrate` 守**量测仪器**，不变量守**仓库文件本身** |
 | **env 文件载体**（可插拔） | `zreflect/check_envfile.py` + `reflect-hooks/einfacht-env.sh` | 钩子的 `REFLECT_*` 来源**静默坏掉**：旋钮名打错一位 ⇒ 被所有程序静默忽略（值永远到不了钩子，其余一切照常跑）；文件旋钮指向不存在的文件 ⇒ 钩子的 `[ -f ]` 守卫静默跳过；值为空 / 文件只剩注释 ⇒ 看起来配了、其实什么都没加载；`sh` 语法坏 ⇒ 钩子要到提交时刻才响亮地死、报错还指向不明。旋钮名册**发现式**（扫 `zreflect/*.py` 的 `REFLECT_*` 记号 —— 手写名录一样会漂，同款病）。可插拔：没有 `Einfacht.env` ⇒ 明说未启用、退 0 |
 | **开工预检**（小插件，非闸门） | `zreflect/doctor.py` | 「文件不变量全绿」≠「环境还活着」—— 两起真实事故（Octave-Full-Wasm HISTORY §5.86/§5.83）：重启杀掉验收站点与构建容器时一切文件不变量为真，首征兆是基准跑到一半才炸；另一仓的 dev server 占着实验端口，探针读到的别人的页面 ⇒ 误判「新产物起不来」。声明式**活性**预检（同不变量的数据体例）：`{"checks": [{kind: http/docker/port-free, …, why}]}` ——「必须活着」（http GET / `docker inspect`）与「必须空着」（connect 探测）两类断言都要。stdout 裸值契约：`ok` / `DOWN: <哪条>`。**每条探测带超时**（`REFLECT_DOCTOR_TIMEOUT`，默认 2 秒 —— 对死端口 connect 否则等到天荒地老，探针必须与被探测物解耦）。**故意不进发现式名录**：它查的是**会死的东西**，挂 pre-commit 频率错、还拖慢每次提交 ⇒ 开工前手动跑。可插拔：无规格 ⇒ 明说未启用、退 0 |
+| **反射世界**（可插拔闸门） | `zreflect/check_world.py` | 多线仓库共享同一个验证环境时，闸门验的是「**恰好部署的那个世界**」—— 三起真实事故（Octave-Full-Wasm，2026-10-07）：`wasm64-NEXT` 上的提交红，因为验收站点还属于 `IllegalPerformance`；master 上同形状；再是 NEXT 重编的产物混入共享容器的 `rust_sort`。世界是**数据**而非代码：`{"lines": {<名字>: {site, artifacts, container, fork_pin_ref, …}}, "active": <名字>, "stamps": {<名字>: {"value", "cmd"}}}`。统一 interface `resolve_line()`（env 覆盖 > 分支是线 > `active`）替代名字不同 / 默认不同 / 覆盖面不同的四个 ambient 旋钮；分支是清单里的线却 ≠ active ⇒ 报（换线脚本没跑）；每枚印章的 `cmd` 逐字复跑 —— **同复跑闸门的裸值契约**（`run_cmd` 直接嫁接），stdout 必须等于 `value`（「环境被别的线污染」那起）。换线 = 跑一个做完三步后**写出声明 + 印章**的脚本，提交时刻由闸门核对声明 vs 环境。挂 pre-commit（与 doctor 相反：声明是稳定的文件，三起事故都是提交时刻红）。可插拔：无 `world.json` ⇒ 明说未启用、退 0（单线仓库不受影响 —— 一个世界 = 现状行为） |
 | **翻案台账** | `zreflect/check_retractions.py` | 被推翻的断言在**声明的活状态文档（`REFLECT_DOCS`）里**重新出现 |
 | **悬案台账** | `zreflect/check_questions.py` | 未结案的问题只活在散文里、没有能跑的结算件 |
 | **三语 README 闸门** | `zreflect/check_readme_sync.py` | 三语 README 是**同一条断言的三份拷贝**：三份必须都在、互链完好，且**每次推送同批更新**（缺一份拒推） |
@@ -230,6 +231,69 @@ replay**，每次开工真跑即可。边界明说：doctor
 各仓自配（规格是数据）。零值守卫：清单空 /
 缺 kind / 缺 why / 未知 kind 都会报。
 
+**多线仓库的反射世界**（`zreflect/
+check_world.py`，issue #13）：若干条独立
+维护的产线共享同一套闸门与同一个验证环境
+时，闸门验的是「**恰好部署的那个世界**」——
+三起真实事故（Octave-Full-Wasm，
+2026-10-07）：拣选到 `wasm64-NEXT` 的提交
+红，因为验收站点还属于 `IllegalPerformance`
+的部署；master 上同形状（master 的验证对象
+是仓库自带的 `site/`，不是共享部署站点）；
+NEXT 重编的产物混入共享容器的 `rust_sort`
+（容器里跑的是另一条线的构建脚本）。seam
+存在，但它是**四条平行的半缝** —— 名字不同、
+默认值不同、覆盖面不同，换线时没有任何东西
+强迫闸门与「本线世界」对齐。
+
+世界同样是**声明式数据**（同不变量体例）：
+
+```json
+{ "lines": {
+    "wasm64-NEXT": { "site": "/…/next-base/site",
+                      "artifacts": "/…/next-base/w64-artifacts",
+                      "container": "o113",
+                      "fork_pin_ref": "upstream/octave" } },
+  "active": "wasm64-NEXT",
+  "stamps": {
+    "container": { "value": "sha256:…",
+                    "cmd": "docker inspect --format '{{.Image}}' o113" },
+    "site":     { "value": "sha256:…",
+                    "cmd": "find /…/site -type f | sort | xargs sha256sum | sha256sum" },
+    "scripts":  { "value": "sha256:…",
+                    "cmd": "sha256sum relink.sh link-web.sh | sha256sum" } } }
+```
+
+三件事：**解析当前线**（`REFLECT_WORLD_LINE`
+覆盖给 CI / 特殊跑法 > 分支名是清单里的线 >
+`active` —— 人的决定；其他闸门经
+`resolve_line()` 拿验证对象，替代四个
+ambient 旋钮）；**分支对账**（分支是清单里的
+线却 ≠ `active` ⇒ 报 —— 换线脚本没跑或
+`active` 忘了改）；**印章对账**（每枚印章的
+`cmd` 逐字复跑，stdout 必须等于 `value` ——
+同复跑闸门的裸值契约，`run_cmd` 直接嫁接）。
+**换线 = 跑一个做完三步（submodule update +
+重供给 + cp 脚本）后写出声明（active +
+印章）的脚本**，提交时刻由闸门核对声明 vs
+环境 —— 「换线三步」从口头纪律变成有证人的
+动作。
+
+它挂 **pre-commit**（与 doctor 相反：世界
+声明是稳定的文件，三起事故都是提交时刻红）。
+可插拔：无 `world.json` / 旋钮未配 ⇒ 明说
+未启用、退 0 —— **单线仓库不受影响**（一个
+世界 = 现状行为；这咬的是「多条独立维护线
+共享一个验证环境」的形状）。边界明说：
+**不自动选线**（哪条线算当前是人的决定，
+`active` 字段）；跨引擎可复现性
+（relaxed_madd 让 BLAS 末位结果可变 —— IEEE
+合规但不可复现）是另一议题，与本条正交；
+印章的 `cmd` 是仓库自己写的 —— 信任边界同
+复跑闸门。零值守卫：清单空 / 缺 active /
+active 不在清单 / 线缺字段 / 印章清单空 /
+印章缺 `value` 或 `cmd` 都会报。
+
 ### 三、翻案台账：推翻也要留痕
 
 `retractions.json` 存**已被推翻**的断言：特征片段 `text`、为什么错 `why`、复跑方式 `evidence`、
@@ -331,6 +395,10 @@ sh reflect-hooks/install.sh
 #     哪些端口必须独占 —— 然后跑任何套件 / 基准前
 #     python3 zreflect/doctor.py
 #     （不挂 pre-commit：查的是会死的东西，那里频率错）
+# 2d. （可选）声明验证世界（issue #13）：
+#     cp zreflect/world.json.example world.json   # 改：lines、
+#     active、stamps —— 多条独立维护线共享同一个验证
+#     环境的仓库用；单线仓库不用建（闸门明说未启用）
 # 3. 手动复验（也是 hooks 会跑的那几条）
 sh gates-selftest.sh                           # 每个闸门先证明自己会红
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # 发现式名录 —— README 也不手写闸门清单
@@ -417,6 +485,8 @@ install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
 | `REFLECT_READMES` | `README.md,README.zh.md,README.de.md` | 三语 README 名单（逗号分隔）：结构检查 + 「每次推送必须全量出现在改动集里」判据的输入；hook / 闸门 / CI 共用 |
 | `REFLECT_DOCTOR` | `doctor.json`（不在 ⇒ 未启用） | 开工预检的活性规格（issue #10）：`{"checks": [{kind: http/docker/port-free, …, why}]}`；stdout 契约 `ok` / `DOWN: <哪条>`；**不是 pre-commit 闸门**（查的是会死的东西 —— 开工前手动跑；`gates-selftest.sh` 点名一次） |
 | `REFLECT_DOCTOR_TIMEOUT` | `2` | 每条 doctor 探测的秒数；解耦绳 —— 对死端口 connect 否则等到天荒地老。必须为正数（坏值 FATAL，不许静默回落） |
+| `REFLECT_WORLD` | `world.json`（不在 ⇒ 未启用） | 反射世界声明（issue #13）：`{"lines": {…}, "active": …, "stamps": {…}}` —— 多线仓库共享同一个验证环境；每枚印章按同复跑闸门的裸值契约复跑（`run_cmd` 嫁接） |
+| `REFLECT_WORLD_LINE` | 空 | 线覆盖，给 CI / 特殊跑法（必须指清单里有的线 —— 指空会报）；未配 ⇒ 解析顺序为「分支是线 > `active`」 |
 
 `GATE_REPO`（`zreflect/gate.py`）指向**被检查的仓库根** —— 自证靠它在夹具树上跑，
 不碰真仓库。

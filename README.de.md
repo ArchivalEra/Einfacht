@@ -66,6 +66,7 @@ Retraktionsledger.
 | **Deklarative Invarianten** (einsteckbar) | `zreflect/check_invariants.py` | „Datei X muß/ darf Fragment Y nicht enthalten" als **Daten**, nicht Code (`REFLECT_INVARIANTS=invariants.json`, Schema `{"checks": [{path, must_contain?, must_not_contain?, why}]}`) — generische, nur-lesende Engine, kein Build/Netz ⇒ pre-commit-tauglich; `why` ist Pflicht (eine Prüfung, die keiner zu löschen wagt, wird zum Zombie). Einsteckbar: ungesetzt ⇒ sagt laut, dass es aus ist, exit 0. **Grep-Stufe**: ein Fragment im Kommentar zählt auch als „vorhanden" — es beweist „dieser Text ist noch da", nicht „der Code benutzt es wirklich"; die Stärke einer deklarativen Prüfung ist durch die Textform begrenzt, die sie matcht. Stärkere Garantien sind `calibrate` (am Artefakt) oder `witness` (an der Quelle) — orthogonal, nicht mischen: `calibrate` hütet das *Meßinstrument*, Invarianten die **Repository-Dateien selbst** |
 | **Env-Datei-Träger** (einsteckbar) | `zreflect/check_envfile.py` + `reflect-hooks/einfacht-env.sh` | die `REFLECT_*`-Quelle der Hooks stirbt **still** — ein um einen Buchstaben falsch geschriebener Knopfname wird von jedem Programm ignoriert (der Wert erreicht die Hooks nie — alles andere läuft weiter); ein Datei-Knopf, der auf eine fehlende Datei zeigt, lässt den `[ -f ]`-Wächter des Hooks still springen; ein leerer Wert oder eine nur-Kommentar-Datei sieht konfiguriert aus, lädt aber nichts; defekte `sh`-Syntax tötet den Hook erst beim Commit mit einer irreführenden Meldung. Das Knopfregister ist **entdeckt** (scannt `zreflect/*.py` nach `REFLECT_*`-Marken — eine handgeschriebene Liste würde driften, dieselbe Krankheit). Einsteckbar: kein `Einfacht.env` ⇒ sagt laut, dass es aus ist, exit 0 |
 | **Arbeitsbeginn-Doctor** (kleines Plugin, kein Gate) | `zreflect/doctor.py` | „alle Datei-Invarianten grün" ≠ „die Umgebung lebt" — zwei echte Vorfälle (Octave-Full-Wasm HISTORY §5.86/§5.83): ein Neustart tötete die Abnahme-Seite und den Build-Container, während jede Datei-Invariante gilt; der Dev-Server eines anderen Repos besetzte den Experiment-Port, also las die Sonde eine fremde Seite und urteilte „das neue Artefakt startet nicht". Deklarative **Liveness**-Vorbedingung (dieselbe Daten-Stil wie Invarianten): `{"checks": [{kind: http/docker/port-free, …, why}]}` — „muss leben" (http GET / `docker inspect`) und „muss frei sein" (Connect-Sonde). Stdout-Bare-Wert-Vertrag: `ok` / `DOWN: <welche>`. **Jede Sonde trägt einen Timeout** (`REFLECT_DOCTOR_TIMEOUT`, Default 2s — ein Connect auf einen toten Port sonst bis ans Ende aller Zeiten wartet: die Sonde muss vom Geprüften entkoppelt sein). **Absichtlich nicht im Entdeckungsregister**: sie prüft Dinge, die *sterben* — läuft also beim **Arbeitsbeginn, nicht in pre-commit** (falsche Frequenz dort, und sie würde jeden Commit verlangsamen). Einsteckbar: keine Spec ⇒ sagt laut, dass es aus ist, exit 0 |
+| **Reflexionswelt** (einsteckbar) | `zreflect/check_world.py` | Repos mit mehreren unabhängig gepflegten Linien, die sich eine Verifikationsumgebung teilen: die Gates prüfen **welche Welt gerade zufällig deployt ist** (drei echte Vorfälle, Octave-Full-Wasm 2026-10-07: ein Commit auf `wasm64-NEXT` wurde rot, weil die Umgebung noch die Site von `IllegalPerformance` hielt; dieselbe Form auf `master`; NEXT-neu kompilierte Artefakte sickerten in `rust_sort` eines geteilten Containers). Die Welt ist **Daten**, nicht Code: `{"lines": {<name>: {site, artifacts, container, fork_pin_ref, …}}, "active": <name>, "stamps": {<name>: {"value", "cmd"}}}`. Ein einheitliches Interface `resolve_line()` (Env-Override > Branch-ist-Linie > `active`) ersetzt vier ambiente Knöpfe mit verschiedenen Namen / Defaults / Abdeckung; Branch-ist-Linie-aber-≠active ⇒ rot (das Linienwechsel-Skript lief nicht); jeder Stempel-`cmd` replayt wörtlich — **derselbe Bare-Wert-Vertrag wie das Replay-Gate** (`run_cmd` eingepfropft), stdout muß dem `value` gleichen (der „Umgebung von einer anderen Linie verschmutzt"-Vorfall). Linienwechsel = ein Skript fahren, das die drei Schritte tut und **Deklaration + Stempel schreibt**; das Commit-Gate zertifiziert dann Deklaration vs Umgebung. Läuft in pre-commit (anders als der Doctor: die Deklaration ist eine stabile Datei, die Vorfälle waren Commit-Zeit-rot). Einsteckbar: kein `world.json` ⇒ sagt laut, dass es aus ist, exit 0 (Ein-Linien-Repos unbetroffen — eine Welt = Status quo) |
 | **Retraktions-Ledger** | `zreflect/check_retractions.py` | revozierte Aussagen tauchen **in den via `REFLECT_DOCS` erklärten Living-State-Docs** wieder auf |
 | **Fragen-Ledger** | `zreflect/check_questions.py` | offene Fragen, die nur in Prosa leben und keinen ausführbaren Begleicher haben |
 | **Trilingual-README-Gate** | `zreflect/check_readme_sync.py` | eine Sprachversion des README ändern und die anderen driften lassen: das Trio muss existieren, einander verlinken — und **mit jedem Push gemeinsam aktualisiert werden** |
@@ -310,6 +311,93 @@ Nullwert-Wächter: leere Liste / fehlende
 kind / fehlendes why / unbekannte kind —
 alle melden.
 
+**Eine Reflexionswelt für Multi-Linien-Repos**
+(`zreflect/check_world.py`, Issue #13): in
+einem Repo mit mehreren unabhängig gepflegten
+Linien, die sich eine Verifikationsumgebung
+teilen, prüfen die Gates **welche Welt gerade
+zufällig deployt ist** — drei echte Vorfälle
+(Octave-Full-Wasm, 2026-10-07): ein Commit
+auf `wasm64-NEXT` wurde rot, weil die
+Abnahme-Seite noch `IllegalPerformance`
+gehörte; dieselbe Form auf `master` (dessen
+Verifikationsobjekt ist das Repo-eigene
+`site/`, nicht die geteilte Deployment-Stätte);
+und NEXT-neu kompilierte Artefakte sickerten
+in `rust_sort` eines geteilten Containers (der
+Container fuhr das Build-Skript einer anderen
+Linie). Die Nahtstelle existierte, aber sie
+war **vier parallele Halbnähte**: verschiedene
+Namen, verschiedene Defaults, verschiedene
+Abdeckung — nichts zwang die Gates, beim
+Linienwechsel mit der Welt dieser Linie
+auszurichten.
+
+Die Welt ist **deklarative Daten**, derselbe
+Stil wie Invarianten:
+
+```json
+{ "lines": {
+    "wasm64-NEXT": { "site": "/…/next-base/site",
+                      "artifacts": "/…/next-base/w64-artifacts",
+                      "container": "o113",
+                      "fork_pin_ref": "upstream/octave" } },
+  "active": "wasm64-NEXT",
+  "stamps": {
+    "container": { "value": "sha256:…",
+                    "cmd": "docker inspect --format '{{.Image}}' o113" },
+    "site":     { "value": "sha256:…",
+                    "cmd": "find /…/site -type f | sort | xargs sha256sum | sha256sum" },
+    "scripts":  { "value": "sha256:…",
+                    "cmd": "sha256sum relink.sh link-web.sh | sha256sum" } } }
+```
+
+Drei Jobs: **aktuelle Linie auflösen**
+(`REFLECT_WORLD_LINE`-Override für CI /
+Sonderläufe > Branch-Name, wenn er eine
+gelistete Linie ist > `active` — die
+menschliche Entscheidung; andere Gates
+konsumieren Verifikationsobjekte über
+`resolve_line()`, was die vier ambienten
+Knöpfe ersetzt); **Branch-Abgleich** (Branch
+ist eine gelistete Linie, aber ≠ `active` ⇒
+rot — das Linienwechsel-Skript lief nicht,
+oder `active` wurde nicht aktualisiert);
+**Stempel-Abgleich** (jeder Stempel-`cmd`
+replayt wörtlich, stdout muß dem `value`
+gleichen — derselbe Bare-Wert-Vertrag wie
+das Replay-Gate, `run_cmd` direkt
+eingepfropft). **Linienwechsel = ein Skript
+fahren, das die drei Schritte tut und dann
+die Deklaration (active + Stempel) schreibt**;
+das Commit-Gate zertifiziert Deklaration vs
+Umgebung — der „Drei-Schritte-Wechsel" wird
+vom gesprochenen Zucht zur beglaubigten
+Handlung.
+
+Es läuft in **pre-commit** (anders als der
+Doctor: die Welt-Deklaration ist eine stabile
+Datei, und alle drei Vorfälle waren rot in
+Commit-Zeit). Einsteckbar: kein `world.json` /
+Knopf ungesetzt ⇒ sagt laut, dass es aus ist,
+exit 0 — **Ein-Linien-Repos sind unbetroffen**
+(eine Welt = Status quo; das beißt die Form
+„mehrere Linien teilen sich eine
+Verifikationsumgebung"). Grenzen, laut gesagt:
+**keine automatische Linienwahl** (welche
+Linie aktuell ist, ist eine menschliche
+Entscheidung, `active`); Cross-Engine-
+Reproduzierbarkeit (relaxed_madd macht
+BLAS-Endergebnisse letzte Stelle variabel —
+IEEE-konform aber nicht reproduzierbar) ist
+ein separates, orthogonales Thema; die
+Stempel-`cmd`s sind Repo-geschrieben — dieselbe
+Vertrauensgrenze wie Replay.
+Nullwert-Wächter: leere Linien / fehlendes
+active / active nicht in Linien / Linie mit
+fehlenden Feldern / leere Stempel / Stempel
+ohne `value` oder `cmd` — alle melden.
+
 ### 3. Retraktions-Ledger: Widerlegung hinterlässt eine Spur
 
 `retractions.json` speichert **widerlegte** Aussagen: ein charakteristisches Fragment `text`,
@@ -442,6 +530,12 @@ sh reflect-hooks/install.sh
 #     python3 zreflect/doctor.py
 #     (NICHT in pre-commit: sie prüft Dinge, die sterben; falsche
 #     Frequenz dort)
+# 2d. (optional) die Verifikationswelt deklarieren (Issue #13):
+#     cp zreflect/world.json.example world.json   # bearbeiten:
+#     lines, active, stamps — für Repos mit mehreren
+#     unabhängig gepflegten Linien, die sich eine
+#     Verifikationsumgebung teilen; Ein-Linien-Repos
+#     lassen sie weg (das Gate sagt laut, es ist aus)
 # 3. manuelle Nachprüfung (dieselben Befehle, die die Hooks fahren)
 sh gates-selftest.sh                             # jedes Gate muss erst beweisen, dass es rot kann
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # Entdeckungsregister — keine handgeschriebenen Listen, nicht mal hier
@@ -546,6 +640,8 @@ Defaults zurück (der Mechanismus ist nach Bauart aussteckbar).
 | `REFLECT_READMES` | `README.md,README.zh.md,README.de.md` | das README-Trio: Eingang für die Strukturaudit **und** für „jeder Push muss alle im Änderungssatz haben"; Hook, Gate und CI lesen denselben Knopf |
 | `REFLECT_DOCTOR` | `doctor.json` (fehlt ⇒ aus) | Liveness-Spec der Arbeitsbeginn-Vorbedingung (Issue #10): `{"checks": [{kind: http/docker/port-free, …, why}]}`; Stdout-Vertrag `ok` / `DOWN: <welche>`; **kein pre-commit-Gate** (prüft Dinge, die sterben — läuft beim Arbeitsbeginn; `gates-selftest.sh` nennt es einmal) |
 | `REFLECT_DOCTOR_TIMEOUT` | `2` | Sekunden pro Doctor-Sonde; das Entkopplungsseil — ein Connect auf einen toten Port sonst bis ans Ende aller Zeiten. Muss eine positive Zahl sein (ein defekter Wert ist FATAL, kein stilles Default) |
+| `REFLECT_WORLD` | `world.json` (fehlt ⇒ aus) | Reflexionswelt-Deklaration (Issue #13): `{"lines": {…}, "active": …, "stamps": {…}}` — Repos mit mehreren Linien, die sich eine Verifikationsumgebung teilen; jeder Stempel replayt mit demselben Bare-Wert-Vertrag wie das Ledger (`run_cmd` eingepfropft) |
+| `REFLECT_WORLD_LINE` | leer | Linien-Override für CI / Sonderläufe (muss eine gelistete Linie sein — ein freier Override wird gemeldet); ungesetzt ⇒ Auflösung: Branch-ist-Linie > `active` |
 
 `GATE_REPO` (`zreflect/gate.py`) zeigt auf **die Wurzel des geprüften Repos** — Selftests laufen
 über es gegen Fixture-Bäume und fassen das echte Repo nie an.

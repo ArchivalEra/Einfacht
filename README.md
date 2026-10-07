@@ -65,6 +65,7 @@ retraction ledger.
 | **Declarative invariants** (pluggable) | `zreflect/check_invariants.py` | "file X must/must not contain fragment Y" as **data**, not code (`REFLECT_INVARIANTS=invariants.json`, spec `{"checks": [{path, must_contain?, must_not_contain?, why}]}`) — generic read-only engine, no build/network ⇒ pre-commit-safe; `why` is mandatory (a check nobody dares delete becomes a zombie). Pluggable: unset ⇒ says out loud it is off, exit 0. **Grep-level**: a fragment inside a comment passes too — it proves "this text is still here", not "the code really uses it"; a declarative check's strength is bounded by the text form it matches. Stronger guarantees are `calibrate`'s (on the artifact) or `witness`'s (on the source) job — orthogonal, don't mix: `calibrate` guards the *measuring tool*, invariants guard the *repo files themselves* |
 | **Env-file carrier** (pluggable) | `zreflect/check_envfile.py` + `reflect-hooks/einfacht-env.sh` | the hooks' `REFLECT_*` source dying **silently**: a knob name misspelled by one letter is ignored by every program (the value never reaches the hooks — everything else keeps running); a file knob pointing at a missing file makes the hook's `[ -f ]` guard silently skip; an empty value or a comments-only file looks configured while loading nothing; broken `sh` syntax kills the hook at commit time with a misleading error. The knob registry is **discovered** (scans `zreflect/*.py` for `REFLECT_*` tokens — a hand-written list would drift, the same disease). Pluggable: no `Einfacht.env` ⇒ says out loud it is off, exit 0 |
 | **Start-of-work doctor** (small plugin, not a gate) | `zreflect/doctor.py` | "every file invariant is green" ≠ "the environment is alive" (two real incidents, Octave-Full-Wasm HISTORY §5.86/§5.83: a reboot killed the acceptance site and build container while every file invariant held; another repo's dev server squatted the experiment port and the probe read someone else's page). Declarative **liveness** pre-flight, same data-not-code style as invariants: `{"checks": [{kind: http/docker/port-free, …, why}]}` — "must be alive" (http GET / `docker inspect`) **and** "must be free" (connect probe). Stdout bare-value contract: `ok` / `DOWN: <which>`. **Every probe carries a timeout** (`REFLECT_DOCTOR_TIMEOUT`, default 2s — a connect to a dead port otherwise waits forever: the probe must be decoupled from the probed thing). **Not in the discovered registry on purpose**: it checks things that *die*, so it runs **at start of work, not in pre-commit** (wrong frequency there, and it would slow every commit). Pluggable: no spec ⇒ says out loud it is off, exit 0 |
+| **Reflection world** (pluggable gate) | `zreflect/check_world.py` | multi-line repos sharing one verification environment: the gates verify **whichever world happens to be deployed** (three real incidents, Octave-Full-Wasm 2026-10-07: a commit on `wasm64-NEXT` went red because the environment still held `IllegalPerformance`'s site; the same shape on `master`; NEXT-rebuilt artifacts leaked into a shared container's `rust_sort`). The world is **data**, not code: `{"lines": {<name>: {site, artifacts, container, fork_pin_ref, …}}, "active": <name>, "stamps": {<name>: {"value", "cmd"}}}`. One interface `resolve_line()` (env override > branch-if-a-line > `active`) replaces four ambient knobs with different names / defaults / coverage; branch-is-a-line-but-≠active ⇒ red (the switch-line script wasn't run); every stamp's `cmd` replays verbatim — **the same bare-value contract as the replay gate** (`run_cmd` grafted), stdout must equal `value` (the "environment polluted by another line" incident). Switching lines = running a script that does the three steps and **writes the declaration + stamps**; the commit gate then certifies declaration vs environment. Runs in pre-commit (unlike the doctor: the declaration is a stable file and the accidents were commit-time reds). Pluggable: no `world.json` ⇒ says out loud it is off, exit 0 (single-line repos unaffected — one world = current behavior) |
 | **Retraction ledger** | `zreflect/check_retractions.py` | retracted claims **reappearing inside the living-state docs declared by `REFLECT_DOCS`** |
 | **Question ledger** | `zreflect/check_questions.py` | open questions living only in prose, with no executable settler |
 | **Trilingual README gate** | `zreflect/check_readme_sync.py` | editing one language README while the others drift: the trio must exist, cross-link each other, and **move together in every push** |
@@ -282,6 +283,85 @@ exclusive is **policy**, configured per repo (the
 spec is data). Zero-value guards: empty list /
 missing kind / missing why / unknown kind all report.
 
+**A reflection world for multi-line repos**
+(`zreflect/check_world.py`, issue #13): in a
+repo with several independently maintained
+lines sharing one verification environment, the
+gates verify **whichever world happens to be
+deployed** — three real incidents
+(Octave-Full-Wasm, 2026-10-07): a commit on
+`wasm64-NEXT` went red because the acceptance
+site still belonged to `IllegalPerformance`; the
+same shape on `master` (whose verification
+object is the repo's own `site/`, not the shared
+deployment); and NEXT-rebuilt artifacts leaking
+into a shared container's `rust_sort` (the
+container ran another line's build script). The
+seam existed, but it was **four parallel
+half-seams**: different names, different
+defaults, different coverage — nothing forced
+the gates to align with the line's world when a
+line switched.
+
+The world is **declarative data**, same style as
+invariants:
+
+```json
+{ "lines": {
+    "wasm64-NEXT": { "site": "/…/next-base/site",
+                      "artifacts": "/…/next-base/w64-artifacts",
+                      "container": "o113",
+                      "fork_pin_ref": "upstream/octave" } },
+  "active": "wasm64-NEXT",
+  "stamps": {
+    "container": { "value": "sha256:…",
+                    "cmd": "docker inspect --format '{{.Image}}' o113" },
+    "site":     { "value": "sha256:…",
+                    "cmd": "find /…/site -type f | sort | xargs sha256sum | sha256sum" },
+    "scripts":  { "value": "sha256:…",
+                    "cmd": "sha256sum relink.sh link-web.sh | sha256sum" } } }
+```
+
+Three jobs: **resolve the current line**
+(`REFLECT_WORLD_LINE` override for CI / special
+runs > the branch name if it is a listed line >
+`active` — the human's decision; other gates
+consume verification objects through
+`resolve_line()`, replacing the four ambient
+knobs); **branch reconciliation** (branch is a
+listed line but ≠ `active` ⇒ red — the
+switch-line script wasn't run, or `active`
+wasn't updated); **stamp reconciliation**
+(every stamp's `cmd` replays verbatim, stdout
+must equal `value` — the same bare-value
+contract as the replay gate, `run_cmd` grafted
+directly). **Switching lines = running a script
+that does the three steps and then writes the
+declaration (active + stamps)**; the commit gate
+certifies declaration vs environment — the
+"three-step switch" becomes an attested action
+instead of spoken discipline.
+
+It runs in **pre-commit** (unlike the doctor:
+the world declaration is a stable file, and all
+three accidents were red at commit time).
+Pluggable: no `world.json` / knob unset ⇒ says
+out loud it is off, exit 0 — **single-line repos
+are unaffected** (one world = current behavior;
+this bites the "several lines share one
+verification environment" shape). Boundaries,
+stated out loud: **no automatic line selection**
+(which line is current is a human decision,
+`active`); cross-engine reproducibility
+(relaxed_madd makes BLAS last-digit results
+vary — IEEE-compliant but not reproducible) is a
+separate, orthogonal issue; stamps' `cmd`s are
+repo-written — the same trust boundary as
+replay. Zero-value guards: empty lines / missing
+active / active not in lines / line missing
+fields / empty stamps / stamp missing `value` or
+`cmd` all report.
+
 ### 3. Retraction ledger: overturning leaves a trace
 
 `retractions.json` stores **refuted** claims: a distinctive fragment `text`, why it was wrong `why`,
@@ -400,6 +480,11 @@ sh reflect-hooks/install.sh
 #     alive / which ports must be exclusive — then run
 #     python3 zreflect/doctor.py before any suite / benchmark
 #     (NOT in pre-commit: it checks things that die; wrong frequency there)
+# 2d. (optional) declare the verification world (issue #13):
+#     cp zreflect/world.json.example world.json   # edit: lines,
+#     active, stamps — for multi-line repos sharing one
+#     verification environment; single-line repos leave
+#     it absent (the gate says out loud it is off)
 # 3. Manual re-verification (the same commands the hooks run)
 sh gates-selftest.sh                            # every gate must first prove it can turn red
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # discovered registry — no hand-written lists, not even here
@@ -495,6 +580,8 @@ to plain env vars + default names (the mechanism is removable by design).
 | `REFLECT_READMES` | `README.md,README.zh.md,README.de.md` | the README trio: input to the structure check **and** to "every push must update all of them"; the hook, the gate and CI all read this knob |
 | `REFLECT_DOCTOR` | `doctor.json` (absent ⇒ off) | start-of-work liveness pre-flight spec (issue #10): `{"checks": [{kind: http/docker/port-free, …, why}]}`; stdout contract `ok` / `DOWN: <which>`; **not a pre-commit gate** (checks things that die — runs at start of work; `gates-selftest.sh` names it once) |
 | `REFLECT_DOCTOR_TIMEOUT` | `2` | seconds per doctor probe; the decoupling rope — a connect to a dead port otherwise waits forever. Must be a positive number (a broken value is FATAL, not a silent default) |
+| `REFLECT_WORLD` | `world.json` (absent ⇒ off) | reflection-world declaration (issue #13): `{"lines": {…}, "active": …, "stamps": {…}}` — multi-line repos sharing one verification environment; each stamp replays with the same bare-value contract as the ledger (`run_cmd` grafted) |
+| `REFLECT_WORLD_LINE` | empty | line override for CI / special runs (must name a listed line — a dangling override is reported); unset ⇒ resolution order is branch-if-a-line > `active` |
 
 `GATE_REPO` (`zreflect/gate.py`) points at **the repo being checked** — selftests run against
 fixture trees through it and never touch the real repo.
