@@ -60,7 +60,6 @@ server 占了实验端口，探针连上别人的页面 ⇒ 误判
 """
 from __future__ import annotations
 
-import json
 import os
 import socket
 import subprocess
@@ -69,7 +68,7 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import repo, selftest                            # noqa: E402
+from gate import fatal, load_spec, main_selftest_or, off, repo, selftest  # noqa: E402
 
 DEFAULT_SPEC = "doctor.json"
 DEFAULT_TIMEOUT = 2.0
@@ -261,29 +260,20 @@ def run(argv=None):
             if float(raw_timeout) <= 0:
                 raise ValueError
         except ValueError:
-            print("FATAL: REFLECT_DOCTOR_TIMEOUT=%r 不是正数"
-                  "秒 —— 超时是探针的解耦绳，不许坏"
-                  % raw_timeout, file=sys.stderr)
-            return 2
+            return fatal("REFLECT_DOCTOR_TIMEOUT=%r 不是正数"
+                         "秒 —— 超时是探针的解耦绳，不许坏" % raw_timeout)
     p = _spec_path()
     if p is None:
-        print("doctor 预检：未配置（REFLECT_DOCTOR 未配且默认 "
-              "%s 不在）⇒ 本预检未启用（小插件；要启用："
-              "cp zreflect/%s.example %s）"
-              % (DEFAULT_SPEC, DEFAULT_SPEC, DEFAULT_SPEC),
-              file=sys.stderr)
-        return 0
+        return off("doctor 预检：未配置（REFLECT_DOCTOR 未配且默认 "
+                   "%s 不在）⇒ 本预检未启用（小插件；要启用："
+                   "cp zreflect/%s.example %s）"
+                   % (DEFAULT_SPEC, DEFAULT_SPEC, DEFAULT_SPEC))
     if not os.path.exists(p):
-        print("FATAL: REFLECT_DOCTOR 已配置但规格文件不在 —— "
-              "先写规格（或撤掉该旋钮）", file=sys.stderr)
-        return 2
-    try:
-        with open(p, encoding="utf-8") as fh:
-            spec = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("FATAL: 规格文件 %s 读不了 / 不是合法 JSON：%s"
-              % (p, e), file=sys.stderr)
-        return 2
+        return fatal("REFLECT_DOCTOR 已配置但规格文件不在 —— "
+                     "先写规格（或撤掉该旋钮）")
+    spec, err = load_spec(p)
+    if err:
+        return fatal(err)
     checks = spec.get("checks") if isinstance(spec, dict) else None
     probs = spec_problems(checks)
     if probs:
@@ -389,6 +379,6 @@ def _cases():
 
 
 if __name__ == "__main__":
-    sys.exit(selftest("开工预检 doctor（进程/端口活性）",
-                      _cases())
-             if "--selftest" in sys.argv else run(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:],
+                              "开工预检 doctor（进程/端口活性）",
+                              _cases(), run))

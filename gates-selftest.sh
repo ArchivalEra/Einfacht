@@ -20,7 +20,9 @@ run_gates() {
     [ -f "$g" ] || continue
     n=$((n + 1))
     rel=${g#"$d"/}
-    if ! grep -q -- '--selftest' "$g"; then
+    # 自证的广告标记：平台尾巴 main_selftest_or（--selftest 的路由在
+    # gate.py），或老式字面量。两者都没有 = 没人盯着的闸门。
+    if ! grep -qE '(main_selftest_or|--selftest)' "$g"; then
       echo "  ❌ $rel 没有 --selftest（未登记的闸门 = 没人盯着的闸门）"
       bad=$((bad + 1))
       continue
