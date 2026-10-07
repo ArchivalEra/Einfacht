@@ -39,12 +39,16 @@ def dropped_keys(old_facts, new_facts):
     return sorted(set(old_facts or {}) - set(new_facts or {}))
 
 
-def _value(entry):
-    """一条事实的**值**。容忍 dict 形状与裸值形状。"""
+def value_of(entry):
+    """一条事实的**值**。容忍 dict 形状与裸值形状。
+
+    （原名 `_value`：被 check_facts / check_facts_replay / check_stale 三处
+    当 interface 用 —— 下划线私有名存实亡，2026-10-07 起转正。）
+    """
     return entry.get("value") if isinstance(entry, dict) else entry
 
 
-def _short(v, n=24):
+def short_value(v, n=24):
     """把值缩到一行（64 位 sha 只留前 16 位），给「改口」提示用。"""
     s = v if isinstance(v, str) else str(v)
     if len(s) == 64:
@@ -65,9 +69,9 @@ def changed_keys(old_facts, new_facts):
     for k, nv in sorted((new_facts or {}).items()):
         if k not in olds:
             continue
-        ov = _value(olds[k])
-        if ov != _value(nv):
-            out.append((k, ov, _value(nv)))
+        ov = value_of(olds[k])
+        if ov != value_of(nv):
+            out.append((k, ov, value_of(nv)))
     return out
 
 
@@ -166,7 +170,7 @@ def _cases():
         # 附：形状
         ("facts_of 容忍两种形状", lambda: facts_of({"facts": {"a": 1}}) == {"a": 1}
          and facts_of({"a": 1}) == {"a": 1}),
-        ("sha 型长值在提示里被截断", lambda: _short("a" * 64) == "a" * 16 + "…"),
+        ("sha 型长值在提示里被截断", lambda: short_value("a" * 64) == "a" * 16 + "…"),
         ("raises 能识别「确实报了」", lambda: raises(lambda: (_ for _ in ()).throw(SystemExit(2)))),
         # ② 测龄（issue #3 ②）
         ("fact() 盖采集时刻戳", lambda: isinstance(fact(1, "c", "s").get("measured_at"), str)),

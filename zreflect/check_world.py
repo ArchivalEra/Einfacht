@@ -80,14 +80,14 @@
 """
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
 from gate import repo, selftest                            # noqa: E402
-from check_facts_replay import _q, run_cmd                 # noqa: E402
+from runner import quote, run_cmd                          # noqa: E402
 
 WORLD_RAW = os.environ.get("REFLECT_WORLD", "").strip()
 LINE_OVERRIDE = os.environ.get("REFLECT_WORLD_LINE", "").strip()
@@ -222,7 +222,7 @@ def stamp_problems(spec, runner=None):
             out.append("印章 `%s` 对账不符：环境=%s vs 声明=%s"
                        " —— 声明与环境不一致（换线后环境没"
                        "跟上，或环境被别的线污染）；修法是"
-                       "重跑换线脚本" % (name, _q(got), _q(value)))
+                       "重跑换线脚本" % (name, quote(got), quote(value)))
     return out
 
 
@@ -240,37 +240,28 @@ def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     p = _spec_path()
     if p is None:
-        print("world 闸门：未配置（REFLECT_WORLD 未配且默认 "
-              "world.json 不在）⇒ 本闸门未启用（可插拔模块；"
-              "单线仓库不受益也不受损 —— 一个世界 = 现状"
-              "行为。要启用：cp zreflect/world.json.example "
-              "world.json）", file=sys.stderr)
-        return 0
+        return off("world 闸门：未配置（REFLECT_WORLD 未配且默认 "
+                   "world.json 不在）⇒ 本闸门未启用（可插拔模块；"
+                   "单线仓库不受益也不受损 —— 一个世界 = 现状"
+                   "行为。要启用：cp zreflect/world.json.example "
+                   "world.json）")
     if not os.path.exists(p):
-        print("FATAL: REFLECT_WORLD 已配置但声明文件不在 —— "
-              "先写声明（或撤掉该旋钮）", file=sys.stderr)
-        return 2
-    try:
-        with open(p, encoding="utf-8") as fh:
-            spec = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("FATAL: world 声明 %s 读不了 / 不是合法 JSON：%s"
-              % (p, e), file=sys.stderr)
-        return 2
+        return fatal("REFLECT_WORLD 已配置但声明文件不在 —— "
+                     "先写声明（或撤掉该旋钮）")
+    spec, err = load_spec(p)
+    if err:
+        return fatal(err)
+    if not isinstance(spec, dict):
+        return fatal("world 声明 %s 形状坏：需要 {lines, active, stamps} 对象" % p)
     branch = current_branch()
     probs = spec_problems(spec, branch, LINE_OVERRIDE)
     probs += stamp_problems(spec)
-    if probs:
-        print("world 闸门：%d 个问题" % len(probs), file=sys.stderr)
-        for x in probs:
-            print("  · " + x, file=sys.stderr)
-        return 1
     line, world = resolve_line(spec, branch, LINE_OVERRIDE)
-    print("world 闸门：OK（线 `%s`：容器 `%s`、站点 `%s`，"
-          "%d 枚印章对账一致）"
-          % (line, world.get("container"), world.get("site"),
-             len(spec.get("stamps") or {})))
-    return 0
+    return finish("world 闸门", probs,
+                  "world 闸门：OK（线 `%s`：容器 `%s`、站点 `%s`，"
+                  "%d 枚印章对账一致）"
+                  % (line, world.get("container"), world.get("site"),
+                     len(spec.get("stamps") or {})))
 
 
 def _cases():
@@ -368,7 +359,10 @@ def _cases():
     ]
 
 
+GATE = meta("world 闸门", "声明式验证对象：多线仓库共享验证环境的世界对账",
+            knobs=("REFLECT_WORLD", "REFLECT_WORLD_LINE"))
+
 if __name__ == "__main__":
-    sys.exit(selftest("world 闸门（声明式验证对象：多线仓库的"
-                      "世界对账）", _cases())
-             if "--selftest" in sys.argv else run(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:],
+                              "world 闸门（声明式验证对象：多线仓库的"
+                              "世界对账）", _cases(), run))

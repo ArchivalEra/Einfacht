@@ -35,7 +35,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import repo, require_nonempty, selftest        # noqa: E402
-from ledger import _value, age_days, facts_of, load       # noqa: E402
+from ledger import age_days, facts_of, load, value_of     # noqa: E402
 from living import DATED_RECORD, HIST_MARK, living_lines  # noqa: E402
 
 DOCS = tuple(d for d in os.environ.get(
@@ -67,7 +67,7 @@ def _sha_facts(f):
     """台账里的 sha 类事实值（64 位串就是 sha；别的长度的串不猜）。"""
     out = set()
     for entry in (f or {}).values():
-        v = _value(entry)
+        v = value_of(entry)
         if isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v or ""):
             out.add(v)
     return out
