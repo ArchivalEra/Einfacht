@@ -171,7 +171,7 @@ def _cases():
 
 
 GATE = meta("三语 README 闸门", "语言版本是同一条断言的三份拷贝：结构互链 + 每次推送同批",
-            knobs=("REFLECT_READMES",))
+            knobs=("REFLECT_READMES",), name_dependent=True)
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],

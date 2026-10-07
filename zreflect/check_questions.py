@@ -145,7 +145,7 @@ def _cases():
 
 
 GATE = meta("悬案闸门", "未结案的问题必须挂一个能跑的结算件",
-            knobs=("REFLECT_QUESTIONS",))
+            knobs=("REFLECT_QUESTIONS",), name_dependent=True)
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_questions（悬案必须挂结算件）",

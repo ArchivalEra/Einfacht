@@ -224,7 +224,8 @@ def _cases():
 
 GATE = meta("陈旧断言检测", "sha 出处 / 退役名 / 测龄",
             knobs=("REFLECT_DOCS", "REFLECT_FACTS", "REFLECT_HISTORY_SECS",
-                   "REFLECT_RETIRED", "REFLECT_STALE_DAYS"))
+                   "REFLECT_RETIRED", "REFLECT_STALE_DAYS"),
+            name_dependent=True)
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_stale（陈旧断言：sha 出处 + 退役名）",

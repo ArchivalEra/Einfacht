@@ -18,42 +18,12 @@
 - **两道守卫生效中**：重测时掉条（键没了）与改口（值换了）都会拒绝写盘，除非显式
   `--allow-drop` / `--accept-changes`（后者支持逐条：`--accept-changes=k1,k2`
   只放行列出的键，其余照旧拒绝）。
-- **十三道闸门在线**：`check_facts`（块一致性 / 裸数字 / 坏引用）、`check_facts_replay`
-  （台账 `cmd` 逐字复跑，stdout 必须等于值；贵事实可挂 witness
-  见证来源 —— 每提交真跑，issue #5；可挂 calibrate 校准
-  仪器 —— 每提交对已知正样本真跑，issue #6 ①）、
-  `check_instruments`（**可插拔**：恒常检测 `REFLECT_INSTRUMENT_DAYS`
-  + 量法登记位 `REFLECT_INSTRUMENTS`，都未配 = 明说未启用，
-  issue #6 ①）、`check_invariants`（**可插拔**：声明式不变量
-  `REFLECT_INVARIANTS=<json>` —— 仓库文件必须/不得含
-  某片段做成数据；未配 = 明说未启用，issue #7）、
-  `check_envfile`（**可插拔**：守钩子的 `REFLECT_*` 载体
-  `Einfacht.env` —— 旋钮名 typo / 文件旋钮指向缺失 /
-  空值 / 只剩注释 / sh 语法坏；旋钮名册发现式扫
-  `zreflect/*.py`；无 Einfacht.env = 明说未启用，
-  issue #8）、
-  `check_world`（**可插拔**：声明式验证对象 —— 多线仓库
-  共享同一验证环境时闸门验的是「恰好部署的那个世界」；
-  规格 `world.json`，旋钮 `REFLECT_WORLD`：`{"lines":
-  {…四件套 site/artifacts/container/fork_pin_ref…},
-  "active": …, "stamps": {…{"value","cmd"}…}}`；
-  统一 interface `resolve_line()`（env 覆盖 > 分支是线
-  > active）替代四个 ambient 旋钮；分支是线却 ≠
-  active ⇒ 报（换线脚本没跑）；印章 `cmd` 逐字复跑
-  —— 同复跑闸门的裸值契约（`run_cmd` 嫁接）；
-  无 world.json = 明说未启用，单线仓库不受影响，
-  issue #13）、
-  `check_ab`（**可插拔**：A/B 同旗标不变式，规格 `ab.json` / `REFLECT_AB` ——
-  除被测轴 `allow` 外任何键不同 = 混淆变量，A/B 作废）、
-  `check_locks`（**可插拔**：锁定源清单 `upstream-lock.json` —— 文件形态
-  sha256 必须匹配，字节漂了即报；目录形态只查存在）、
-  `check_pins`（**可插拔**：派生树 pin 一致性 `pins.json` / `REFLECT_PINS` ——
-  stamp commit ≠ worktree HEAD / 派生树 dirty 都报，版本类钉版本串）、
-  `check_retractions`（翻案重现；
-  扫描面 = `REFLECT_DOCS` 清单）、`check_questions`（悬案必须挂结算件）、
-  `check_readme_sync`（三语 README 同批：结构互链 + 推送集必须含全部名单；
-  单条目名单 ⇒ 互链判据退化、闸门明说「不适用」，issue #8）、
-  `check_stale`（sha 出处 / 退役名 / 测龄：`REFLECT_STALE_DAYS` 开启）。
+- **闸门在线**：清单见文末的闸门名录机器块（发现式名录从各闸门的声明行渲染
+  —— 手写清单已退役：手写的那份实测漂过，ab/locks/pins 并入的当天清单就少了
+  三道、道数也数错了，且没有任何闸门拦得住；叙述现在从声明行派生，加闸门 =
+  落一个声明行，机器块自动长出来）。复跑闸门每条 `cmd` 逐字复跑（stdout 必须
+  等于值；贵事实可挂 witness 见证来源 —— 每提交真跑，issue #5；可挂 calibrate
+  校准仪器 —— 每提交对已知正样本真跑，issue #6 ①）。
 - **钩子有持久的旋钮载体**（issue #8）：pre-commit / pre-push 在一切
   之前经**可拔插件** `reflect-hooks/einfacht-env.sh` 加载
   `reflect-hooks/Einfacht.env`（没有时回落仓库根的
@@ -73,7 +43,8 @@
   证明它能红）。活性是瞬时事实 ⇒ 不进台账 replay。
 - **一条悬案**：见 `questions/01-example.md`。
 - **CI 正面执行同一判据**：`gates` workflow 每推跑 `facts.py --check`
-  + 十三道闸门（每条 `cmd` 真的逐字复跑）；`readme-sync` 查三语同批。
+  + 发现式名录里的全部闸门（每条 `cmd` 真的逐字复跑）；`readme-sync`
+  查三语同批。闸门清单以文末机器块为准 —— 这里不写数字，手写数字一定会漂。
   本地 hook 只约束跑过 install.sh 的机器（issue #4 ②）。
 
 ## 那条示例翻案
@@ -89,10 +60,32 @@
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `md_files` | **7** | 2026-10-07T23:03:31+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `md_lines` | **2101** | 2026-10-07T23:03:31+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
-| `py_files` | **25** | 2026-10-07T23:03:31+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **4401** | 2026-10-07T23:03:31+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **7** | 2026-10-07T23:21:49+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `md_lines` | **2072** | 2026-10-07T23:21:49+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
+| `py_files` | **26** | 2026-10-07T23:21:49+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **4727** | 2026-10-07T23:21:49+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 4 条事实。
 <!-- /AUTO:FACTS -->
+
+<!-- AUTO:GATES -->
+> 本区块由 `zreflect/facts.py --render-doc` 从发现式名录（zreflect/registry.py 的声明行）渲染，**不要手改**。
+
+| 闸门 | 它挡住什么 | 消费的旋钮 |
+|---|---|---|
+| `check_ab.py`（A/B 闸门） | A/B 同旗标不变式（非 allow 轴差异 = 混淆变量，A/B 作废） | `REFLECT_AB` |
+| `check_envfile.py`（env 文件闸门） | 守钩子的 REFLECT_* 载体（旋钮 typo / 指向缺失 / 空值） | `REFLECT_ENV_FILE` |
+| `check_facts.py`（事实闸门） | 块一致性 / 裸数字 / 坏引用 | `REFLECT_FACTS`, `REFLECT_DOC`, `REFLECT_NAKED_MIN` |
+| `check_facts_replay.py`（复跑闸门） | 台账 cmd 逐字复跑（裸值契约：stdout 必须等于值） | `REFLECT_FACTS`, `REFLECT_REPLAY`, `REFLECT_REPLAY_TIMEOUT` |
+| `check_instruments.py`（仪器生命周期闸门） | 恒常检测（first_seen）+ 被证伪量法登记 | `REFLECT_INSTRUMENTS`, `REFLECT_INSTRUMENT_DAYS`, `REFLECT_FACTS` |
+| `check_invariants.py`（不变量闸门） | 声明式不变量：仓库文件必须/不得含某片段（grep 级） | `REFLECT_INVARIANTS` |
+| `check_locks.py`（锁定源闸门） | 锁定源清单（URL + 文件 + sha256 的内容指纹） | — |
+| `check_pins.py`（pin 闸门） | 派生树 pin 一致性（stamp commit / dirty / 版本串对读） | `REFLECT_PINS` |
+| `check_questions.py`（悬案闸门） | 未结案的问题必须挂一个能跑的结算件 | `REFLECT_QUESTIONS` |
+| `check_readme_sync.py`（三语 README 闸门） | 语言版本是同一条断言的三份拷贝：结构互链 + 每次推送同批 | `REFLECT_READMES` |
+| `check_retractions.py`（翻案重现检测） | 被推翻的断言不许悄悄回来当现状 | `REFLECT_RETRACTIONS`, `REFLECT_DOCS`, `REFLECT_HISTORY_SECS` |
+| `check_stale.py`（陈旧断言检测） | sha 出处 / 退役名 / 测龄 | `REFLECT_DOCS`, `REFLECT_FACTS`, `REFLECT_HISTORY_SECS`, `REFLECT_RETIRED`, `REFLECT_STALE_DAYS` |
+| `check_world.py`（world 闸门） | 声明式验证对象：多线仓库共享验证环境的世界对账 | `REFLECT_WORLD`, `REFLECT_WORLD_LINE` |
+
+13 道闸门（发现式名录派生 —— 手写清单会漂，加闸门 = 落一个声明行，这里自动长出来）。
+<!-- /AUTO:GATES -->

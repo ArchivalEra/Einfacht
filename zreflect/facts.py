@@ -26,6 +26,7 @@ from gate import GATE_REPO, main_selftest_or, repo, selftest  # noqa: E402
 from ledger import (age_days, changed_keys, dropped_keys,  # noqa: E402
                     fact, facts_of, load, short_value, value_of)
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
+import registry                                          # noqa: E402
 
 LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
 OUT = repo(LEDGER_NAME)
@@ -92,27 +93,63 @@ def measure_example():
 
 
 # ══ 以下不用改 ════════════════════════════════════════════════════════════════
+def _machine_blocks(ledger):
+    """文档里要维护的两个机器块（Phase 3 起）：
+
+      · 事实块（AUTO:FACTS）—— 台账渲染，**数字的唯一产地**；
+      · 闸门名录块（AUTO:GATES）—— 发现式名录渲染，**闸门叙述的唯一产地**
+        （手写的「N 道闸门」清单漂过：ab/locks/pins 并入当天清单就少了
+        三道 —— 叙述从声明行派生，手写退役）。
+
+    返回 (blocks, 错误句)。名录收不齐（某道闸门没落声明行）⇒ 拒绝渲染。
+    """
+    gs, missing = registry.gates()
+    if missing:
+        return None, ("以下闸门没有 GATE = gate.meta(…) 声明行 —— 名录不收"
+                      "无名之辈：%s" % ", ".join(missing))
+    return ((BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
+            (registry.GATES_BEGIN, registry.GATES_END,
+             registry.render_gates(gs))), None
+
+
 def write_doc(path_rel, ledger):
-    """把块写进文档（就地替换）。没有标记就报错，**不悄悄追加** ——
+    """把机器块写进文档（就地替换）。没有标记就报错，**不悄悄追加** ——
     悄悄追加会让「块过期」变成「有两份块」，那是更难查的坏法。"""
     p = path_rel if os.path.isabs(path_rel) else repo(path_rel)
     if not os.path.exists(p):
-        print("FATAL: %s 不存在。先手工放一次 %s / %s 两个标记。" % (p, BLOCK_BEGIN, BLOCK_END),
+        print("FATAL: %s 不存在。先手工放一次机器块标记。" % p,
               file=sys.stderr)
         return 2
-    text = open(p, encoding="utf-8").read()
-    if BLOCK_BEGIN not in text or BLOCK_END not in text:
-        print("FATAL: %s 缺 %s / %s 标记（第一次落地时要手工放一次）"
-              % (p, BLOCK_BEGIN, BLOCK_END), file=sys.stderr)
+    blocks, err = _machine_blocks(ledger)
+    if err:
+        print("FATAL: %s" % err, file=sys.stderr)
         return 2
-    pre, _, rest = text.partition(BLOCK_BEGIN)
-    _, _, post = rest.partition(BLOCK_END)
-    new = pre + render_block(ledger) + post
+    text = open(p, encoding="utf-8").read()
+    new = text
+    for begin, end, body in blocks:
+        if begin not in new or end not in new:
+            print("FATAL: %s 缺 %s / %s 标记（第一次落地时要手工放一次）"
+                  % (path_rel, begin, end), file=sys.stderr)
+            return 2
+        pre, _, rest = new.partition(begin)
+        _, _, post = rest.partition(end)
+        new = pre + body + post
+    # 写盘前的完整性守卫：替换必须保得住**全部**块的标记。标记字面量若被
+    # 写进正文（哪怕在行内代码里），首现替换会把两块之间的内容整个吞掉、
+    # 让别的块消失 —— 实测踩过：bullet 里写了标记字面量，渲染一次丢掉整个
+    # 事实块。歧义 ⇒ 拒绝写盘，人先修文档（块内 cmd 引用 begin 字面量是
+    # 合法嵌套 —— md_lines 的 awk 判据 —— 故不做替换前的计数断言）。
+    for begin, end, _ in blocks:
+        if begin not in new or end not in new:
+            print("FATAL: %s 的标记字面量混进了正文（%s）—— 渲染会吞块，"
+                  "拒绝写盘；标记只许出现在机器块首尾"
+                  % (path_rel, begin), file=sys.stderr)
+            return 2
     if new != text:
         open(p, "w", encoding="utf-8").write(new)
-        print("已刷新 %s 的事实块" % path_rel)
+        print("已刷新 %s 的机器块" % path_rel)
     else:
-        print("%s 的事实块无变化" % path_rel)
+        print("%s 的机器块无变化" % path_rel)
     return 0
 
 
@@ -121,14 +158,23 @@ def check_doc(path_rel, ledger):
     if not os.path.exists(p):
         print("FATAL: 文档 %s 不存在（--check 不能因为找不到文件就算通过）" % p, file=sys.stderr)
         return 2
-    text = open(p, encoding="utf-8").read()
-    if BLOCK_BEGIN not in text or BLOCK_END not in text:
-        print("FATAL: %s 缺事实块标记" % path_rel, file=sys.stderr)
+    blocks, err = _machine_blocks(ledger)
+    if err:
+        print("FATAL: %s" % err, file=sys.stderr)
         return 2
-    if body_of(text) != body_of(render_block(ledger)):
-        print("FATAL: %s 的事实块与 FACTS.json 不一致 ⇒ 跑 --render-doc" % path_rel, file=sys.stderr)
-        return 1
-    print("%s 的事实块与台账一致" % path_rel)
+    text = open(p, encoding="utf-8").read()
+    for begin, end, body in blocks:
+        if begin not in text or end not in text:
+            print("FATAL: %s 缺 %s / %s 标记" % (path_rel, begin, end),
+                  file=sys.stderr)
+            return 2
+        cur = text.split(begin, 1)[1].split(end, 1)[0]
+        fresh = body.split(begin, 1)[1].split(end, 1)[0]
+        if cur != fresh:
+            print("FATAL: %s 的 %s 块与现算不一致 ⇒ 跑 --render-doc"
+                  % (path_rel, begin), file=sys.stderr)
+            return 1
+    print("%s 的机器块与现算一致" % path_rel)
     return 0
 
 

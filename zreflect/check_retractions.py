@@ -110,7 +110,7 @@ def _cases():
 
 
 GATE = meta("翻案重现检测", "被推翻的断言不许悄悄回来当现状",
-            knobs=("REFLECT_RETRACTIONS", "REFLECT_DOCS", "REFLECT_HISTORY_SECS"))
+            knobs=("REFLECT_RETRACTIONS", "REFLECT_DOCS", "REFLECT_HISTORY_SECS"), name_dependent=True)
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_retractions（翻案重现检测）",

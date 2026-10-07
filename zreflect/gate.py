@@ -98,13 +98,17 @@ def finish(name, problems, ok):
     return 0
 
 
-def meta(name, desc, knobs=()):
+def meta(name, desc, knobs=(), name_dependent=False):
     """闸门声明行（registry 的 ast 提取目标）：名字 + 一句话 + 消费的旋钮。
 
-    声明即登记 —— 手写名录会漂，这里只许写事实；registry（Phase 3）从这里
-    派生闸门清单与「默认名承担载荷」的红名单，STATE.md 的机器块同源渲染。
+    声明即登记 —— 手写名录会漂，这里只许写事实。`name_dependent=True`
+    标给「默认输入被换名自证改名」的闸门（gates-selftest 的跨仓库节里
+    必须红的那批）：标了会被两头拦 —— 夹具要求它真红，registry.problems
+    要求它真消费改名的默认名。registry（Phase 3）从这里派生闸门清单、
+    红名单与 STATE.md 的 AUTO:GATES 机器块。
     """
-    return {"name": name, "desc": desc, "knobs": tuple(knobs)}
+    return {"name": name, "desc": desc, "knobs": tuple(knobs),
+            "name_dependent": bool(name_dependent)}
 
 
 def raises(fn):
