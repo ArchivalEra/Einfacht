@@ -8,7 +8,7 @@ sourceforge 的 qrupdate…）。对它们，"钉版"只能退而求其次：**U
     { "locked": [
         { "name": "glpk", "version": "5.0",
           "url": "https://ftp.gnu.org/gnu/glpk/glpk-5.0.tar.gz",
-          "file": "third_party/glpk-5.0.tar.gz",      # 相对 GATE_REPO 或绝对
+          "file": "third_party/glpk-5.0.tar.gz",      # 相对仓库根或绝对
           "sha256": "…" },                             # 文件形态必填；目录形态可省
         { "name": "lapack", "version": "3.4.2", "file": "…/lapack-3.4.2",
           "form": "dir", "optional": true } ] }
@@ -25,6 +25,7 @@ sourceforge 的 qrupdate…）。对它们，"钉版"只能退而求其次：**U
 URL 与版本的对应关系是清单作者的主张，闸门不做网络验证（重取是 build 脚本的事）。
 
 用法（cwd=仓库根）：python3 zreflect/check_locks.py [--spec upstream-lock.json]
+（规格名解析：--spec 显式 > 默认 `upstream-lock.json`；显式指定而文件不在 ⇒ FATAL 2）
 退出码：0=绿或未启用 / 1=问题 / 2=配置坏。自证：--selftest。
 """
 from __future__ import annotations
@@ -34,7 +35,11 @@ import json
 import os
 import sys
 
-REPO = os.environ.get("GATE_REPO") or os.getcwd()
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
+from gate import repo                                     # noqa: E402
+
 DEFAULT_SPEC = "upstream-lock.json"
 
 
@@ -58,8 +63,12 @@ def _sha(path):
     return h.hexdigest()
 
 
-def check(spec, hasher=_sha):
-    """纯逻辑（自证注入 hasher）。返回 (problems, skips)。"""
+def check(spec, hasher=_sha, root=None):
+    """纯逻辑（自证注入 hasher）。返回 (problems, skips)。
+
+    `root` = 相对 file 路径的锚（默认被检查仓库根；自证传夹具目录）。
+    """
+    root = repo() if root is None else root
     problems, skips = [], []
     locked = spec.get("locked") or spec.get("sources") or []
     if not locked:
@@ -73,7 +82,7 @@ def check(spec, hasher=_sha):
             continue
         path = s["file"]
         if not os.path.isabs(path):
-            path = os.path.join(REPO, path)
+            path = os.path.join(root, path)
         if not os.path.exists(path):
             if s.get("optional"):
                 skips.append("%s: 本机缺席（optional ⇒ 明说，不是通过）" % s["name"])
@@ -95,38 +104,34 @@ def check(spec, hasher=_sha):
 
 def main(argv):
     spec_path, explicit = resolve_spec(argv)
-    path = spec_path if os.path.isabs(spec_path) else os.path.join(REPO, spec_path)
+    path = spec_path if os.path.isabs(spec_path) else repo(spec_path)
     if not os.path.isfile(path):
         if explicit:
-            print("FATAL: 显式指定的规格 %s 不存在（--spec）—— 先写规格（或撤掉指定）"
-                  % spec_path, file=sys.stderr)
-            return 2
-        print("未启用（%s 不存在 ⇒ 明说未启用退 0，可插拔）" % spec_path)
-        return 0
-    try:
-        spec = json.load(open(path, encoding="utf-8"))
-    except (OSError, ValueError) as e:
-        print("配置坏：读不了 %s：%s" % (spec_path, e))
-        return 2
+            return fatal("显式指定的规格 %s 不存在（--spec）—— 先写规格（或撤掉指定）"
+                         % spec_path)
+        return off("未启用（%s 不存在 ⇒ 明说未启用退 0，可插拔）" % spec_path)
+    spec, err = load_spec(path)
+    if err:
+        return fatal("规格 %s 坏：%s" % (spec_path, err))
     problems, skips = check(spec)
     for x in skips:
-        print("SKIP: %s" % x)
-    if problems:
-        for x in problems:
-            print("PROBLEM: %s" % x)
-        return 1
-    print("ok（%d 个锁定源全部一致）" % len(spec.get("locked") or spec.get("sources") or []))
-    return 0
+        print("SKIP: %s" % x, file=sys.stderr)
+    return finish("锁定源闸门", problems,
+                  "锁定源闸门：OK（%d 个锁定源全部一致）"
+                  % len(spec.get("locked") or spec.get("sources") or []))
 
 
-def selftest():
-    import tempfile
+def _cases():
+    import atexit                                        # noqa: PLC0415
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
     d = tempfile.mkdtemp()
+    atexit.register(shutil.rmtree, d, True)
     payload = b"UPSTREAM-FIXTURE"
     good = hashlib.sha256(payload).hexdigest()
     open(os.path.join(d, "glpk.tar.gz"), "wb").write(payload)
     os.makedirs(os.path.join(d, "lapack-3.4.2"))
-    # 夹具用**绝对路径**（引擎按 GATE_REPO 解析相对路径；夹具树在临时目录）
+    # 夹具用**绝对路径**（引擎按仓库根解析相对路径；夹具树在临时目录）
     g = os.path.join(d, "glpk.tar.gz")
     lp = os.path.join(d, "lapack-3.4.2")
     spec = {"locked": [
@@ -140,31 +145,27 @@ def selftest():
                            "sha256": good}]}
     no_sha = {"locked": [{"name": "glpk", "version": "5.0", "url": "u", "file": g}]}
     empty = {"locked": []}
-    cases = [
+    return [
         ("规格名解析：--spec > 默认名（显式带回 True）",
          lambda: resolve_spec(["--spec", "x.json"]) == ("x.json", True)
          and resolve_spec([]) == ("upstream-lock.json", False)),
-        ("锁定一致/目录形态/optional 缺席 ⇒ 不报", lambda: check(spec)[0] == [] and check(spec)[1] != []),
+        # ① 正常不报
+        ("锁定一致/目录形态/optional 缺席 ⇒ 不报",
+         lambda: check(spec, root=d)[0] == [] and check(spec, root=d)[1] != []),
+        # ② 该报的必须报
         ("★ sha256 不符 ⇒ 必须报（字节漂了）",
-         lambda: any("sha256 不符" in x for x in check(bad_hash)[0])),
+         lambda: any("sha256 不符" in x for x in check(bad_hash, root=d)[0])),
         ("★ 锁定文件缺席（非 optional）⇒ 必须报",
-         lambda: any("不存在" in x for x in check(missing)[0])),
+         lambda: any("不存在" in x for x in check(missing, root=d)[0])),
         ("★ 文件形态没有 sha256 ⇒ 必须报（那不叫钉版）",
-         lambda: any("没有 sha256" in x for x in check(no_sha)[0])),
-        ("★ locked 为空 ⇒ 必须报（零值守卫）", lambda: check(empty)[0] != []),
+         lambda: any("没有 sha256" in x for x in check(no_sha, root=d)[0])),
+        # ③ 空输入必须报
+        ("★ locked 为空 ⇒ 必须报（零值守卫）", lambda: check(empty, root=d)[0] != []),
     ]
-    bad = 0
-    for name, fn in cases:
-        ok = bool(fn())
-        print("%s | %s" % ("PASS" if ok else "fail", name))
-        bad += 0 if ok else 1
-    import shutil
-    shutil.rmtree(d, ignore_errors=True)
-    print("=== %d PASS / %d FAIL ===" % (len(cases) - bad, bad))
-    return 1 if bad else 0
 
+
+GATE = meta("锁定源闸门", "锁定源清单（URL + 文件 + sha256 的内容指纹）",
+            knobs=())
 
 if __name__ == "__main__":
-    if "--selftest" in sys.argv:
-        sys.exit(selftest())
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_locks（锁定源清单）", _cases, main))

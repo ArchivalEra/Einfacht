@@ -23,7 +23,8 @@
 - `version`：命令输出首行必须含 `expect_version`（portable 工具链那种无法整树
   入 git 的上游，钉版本串）。
 - 读不到命令输出 ⇒ `SKIP:`（明说未核对，不是通过——换了机器不是错）；
-  空 pins ⇒ 报（零值守卫）；`REFLECT_PINS` 未配 ⇒ 明说未启用退 0。
+  空 pins ⇒ 报（零值守卫）；`REFLECT_PINS` 未配 ⇒ 明说未启用退 0；
+  显式指定（--spec / 旋钮）而文件不在 ⇒ FATAL 退 2。
 
 与 `check_invariants`（#7）正交：那边守**仓库文件文本**，这边守**派生副本的活性身份**。
 与 `doctor`（#10）正交：doctor 问「活着吗」，本闸门问「是钉住的那个吗」。
@@ -39,7 +40,11 @@ import os
 import subprocess
 import sys
 
-REPO = os.environ.get("GATE_REPO") or os.getcwd()
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
+from gate import repo                                     # noqa: E402
+
 DEFAULT_SPEC = "pins.json"
 
 
@@ -68,8 +73,12 @@ def _run(cmd):
         return -1, str(e)
 
 
-def check(spec, run=_run):
-    """纯逻辑（自证注入 run）。返回 (problems, skips)。"""
+def check(spec, run=_run, root=None):
+    """纯逻辑（自证注入 run）。返回 (problems, skips)。
+
+    `root` = 相对 worktree 的锚（默认被检查仓库根；自证传夹具目录）。
+    """
+    root = repo() if root is None else root
     problems, skips = [], []
     pins = spec.get("pins") or []
     if not pins:
@@ -79,7 +88,7 @@ def check(spec, run=_run):
         for f in ("name", "worktree"):
             if not p.get(f):
                 problems.append("pin 缺字段 %s: %r（why/name 必填的家族规矩）" % (f, p))
-        wt = os.path.join(REPO, p["worktree"]) if not os.path.isabs(p["worktree"]) else p["worktree"]
+        wt = os.path.join(root, p["worktree"]) if not os.path.isabs(p["worktree"]) else p["worktree"]
         head = ""
         if os.path.isdir(wt):
             rc, head = run("git -C %s rev-parse HEAD" % wt)
@@ -119,34 +128,30 @@ def check(spec, run=_run):
 
 def main(argv):
     spec_path, explicit = resolve_spec(argv, os.environ.get("REFLECT_PINS", ""))
-    path = os.path.join(REPO, spec_path) if not os.path.isabs(spec_path) else spec_path
+    path = spec_path if os.path.isabs(spec_path) else repo(spec_path)
     if not os.path.isfile(path):
         if explicit:
-            print("FATAL: 显式指定的规格 %s 不存在（--spec / REFLECT_PINS）—— "
-                  "先写规格（或撤掉指定）" % spec_path, file=sys.stderr)
-            return 2
-        print("未启用（%s 不存在 ⇒ 明说未启用退 0，可插拔）" % spec_path)
-        return 0
-    try:
-        spec = json.load(open(path, encoding="utf-8"))
-    except (OSError, ValueError) as e:
-        print("配置坏：读不了 %s：%s" % (spec_path, e))
-        return 2
+            return fatal("显式指定的规格 %s 不存在（--spec / REFLECT_PINS）—— "
+                         "先写规格（或撤掉指定）" % spec_path)
+        return off("未启用（%s 不存在 ⇒ 明说未启用退 0，可插拔）" % spec_path)
+    spec, err = load_spec(path)
+    if err:
+        return fatal("规格 %s 坏：%s" % (spec_path, err))
     problems, skips = check(spec)
     for x in skips:
-        print("SKIP: %s" % x)
-    if problems:
-        for x in problems:
-            print("PROBLEM: %s" % x)
-        return 1
-    print("ok（%d 个 pin 全部一致）" % len(spec.get("pins") or []))
-    return 0
+        print("SKIP: %s" % x, file=sys.stderr)
+    return finish("pin 闸门", problems,
+                  "pin 闸门：OK（%d 个 pin 全部一致）" % len(spec.get("pins") or []))
 
 
-def selftest():
-    import tempfile
+def _cases():
+    import atexit                                        # noqa: PLC0415
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
     d = tempfile.mkdtemp()
+    atexit.register(shutil.rmtree, d, True)
     os.makedirs(os.path.join(d, "wt"))
+
     def _git(*a):
         subprocess.run(["git", "init", "-q", os.path.join(d, "wt")], check=True)
         open(os.path.join(d, "wt", "f"), "w").write("x")
@@ -156,7 +161,7 @@ def selftest():
         return subprocess.run(["git", "-C", os.path.join(d, "wt"), "rev-parse", "HEAD"],
                               capture_output=True, text=True).stdout.strip()
     head = _git()
-    # worktree 用**绝对路径**（引擎按 GATE_REPO/abs 解析；夹具树在临时目录）
+    # worktree 用**绝对路径**（引擎按仓库根/abs 解析；夹具树在临时目录）
     wt = os.path.join(d, "wt")
     spec = {"pins": [
         {"name": "octave", "kind": "tree", "worktree": wt,
@@ -172,37 +177,31 @@ def selftest():
     skip_spec = {"pins": [{"name": "octave", "kind": "tree", "worktree": wt,
                            "stamp_read": "false"}]}
     nopin_spec = {"pins": []}
-    cases = [
+    return [
         ("规格名解析：--spec > 旋钮 > 默认名（显式带回 True）",
          lambda: resolve_spec(["--spec", "x.json"], "K.json") == ("x.json", True)
          and resolve_spec([], "K.json") == ("K.json", True)
          and resolve_spec([], "") == ("pins.json", False)),
-        ("stamp/版本全一致 ⇒ 不报", lambda: check(spec, run=_run) == ([], [])),
+        # ① 正常不报
+        ("stamp/版本全一致 ⇒ 不报", lambda: check(spec, run=_run, root=d) == ([], [])),
+        # ② 该报的必须报
         ("★ 派生副本 commit ≠ HEAD ⇒ 必须报（供给后指针 bump）",
-         lambda: any("≠" in x for x in check(bad_spec, run=_run)[0])),
+         lambda: any("≠" in x for x in check(bad_spec, run=_run, root=d)[0])),
         ("★ 派生副本 dirty ⇒ 必须报（手改派生树）",
-         lambda: any("dirty" in x for x in check(dirty_spec, run=_run)[0])),
-        ("★ 版本漂移 ⇒ 必须报", lambda: any("版本漂移" in x for x in check(ver_spec, run=_run)[0])),
+         lambda: any("dirty" in x for x in check(dirty_spec, run=_run, root=d)[0])),
+        ("★ 版本漂移 ⇒ 必须报", lambda: any("版本漂移" in x for x in check(ver_spec, run=_run, root=d)[0])),
         ("★ stamp 读不到 ⇒ SKIP（明说，不是通过）",
-         lambda: any("SKIP" in x or "读不到" in x for x in check(skip_spec, run=_run)[1])),
-        ("★ pins 为空 ⇒ 必须报（零值守卫）", lambda: check(nopin_spec)[0] != []),
+         lambda: any("SKIP" in x or "读不到" in x for x in check(skip_spec, run=_run, root=d)[1])),
+        ("★ pins 为空 ⇒ 必须报（零值守卫）", lambda: check(nopin_spec, root=d)[0] != []),
         ("★ worktree 不存在 ⇒ 必须报（指针在、树不在）",
          lambda: any("不存在" in x for x in check(
              {"pins": [{"name": "x", "kind": "tree", "worktree": "nope",
-                        "stamp_read": "true"}]}, run=_run)[0])),
+                        "stamp_read": "true"}]}, run=_run, root=d)[0])),
     ]
-    import shutil
-    bad = 0
-    for name, fn in cases:
-        ok = bool(fn())
-        print("%s | %s" % ("PASS" if ok else "fail", name))
-        bad += 0 if ok else 1
-    shutil.rmtree(d, ignore_errors=True)
-    print("=== %d PASS / %d FAIL ===" % (len(cases) - bad, bad))
-    return 1 if bad else 0
 
+
+GATE = meta("pin 闸门", "派生树 pin 一致性（stamp commit / dirty / 版本串对读）",
+            knobs=("REFLECT_PINS",))
 
 if __name__ == "__main__":
-    if "--selftest" in sys.argv:
-        sys.exit(selftest())
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_pins（派生树 pin 一致性）", _cases, main))
