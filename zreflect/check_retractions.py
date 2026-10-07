@@ -13,7 +13,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import repo, require_nonempty, selftest        # noqa: E402
+from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
+from gate import selftest                                 # noqa: E402
 from ledger import load                                  # noqa: E402
 from living import HIST_MARK, living_lines               # noqa: E402
 
@@ -62,27 +63,20 @@ def run(argv):
     # 名字可配（issue #1 ②）：不写死，换仓库只改环境变量
     rp = repo(os.environ.get("REFLECT_RETRACTIONS", "retractions.json"))
     if not os.path.exists(rp):
-        print("FATAL: 缺 %s" % rp, file=sys.stderr)
-        return 2
+        return fatal("缺 %s" % rp)
     docs = {}
     for name in (argv or DOCS):
         p = repo(name)
         if os.path.exists(p):
             docs[name] = open(p, encoding="utf-8", errors="replace").read()
-    try:
-        require_nonempty("check_retractions", docs, "被扫描的活状态文档")
-    except SystemExit as e:
-        print("%s" % e, file=sys.stderr)
-        return 2
-    probs = problems(load(rp), docs)
-    for x in probs:
-        print("  · %s" % x, file=sys.stderr)
-    if probs:
-        print("翻案重现检测：%d 个问题" % len(probs), file=sys.stderr)
-        return 1
-    n = len(load(rp).get("retractions") or [])
-    print("翻案重现检测：OK（%d 条翻案，扫了 %d 份文档）" % (n, len(docs)))
-    return 0
+    rc = guard_nonempty("check_retractions", docs, "被扫描的活状态文档")
+    if rc:
+        return rc
+    led = load(rp)
+    probs = problems(led, docs)
+    n = len(led.get("retractions") or [])
+    return finish("翻案重现检测", probs,
+                  "翻案重现检测：OK（%d 条翻案，扫了 %d 份文档）" % (n, len(docs)))
 
 
 def _cases():
@@ -115,6 +109,9 @@ def _cases():
     ]
 
 
+GATE = meta("翻案重现检测", "被推翻的断言不许悄悄回来当现状",
+            knobs=("REFLECT_RETRACTIONS", "REFLECT_DOCS", "REFLECT_HISTORY_SECS"))
+
 if __name__ == "__main__":
-    sys.exit(selftest("check_retractions（翻案重现检测）", _cases())
-             if "--selftest" in sys.argv else run(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_retractions（翻案重现检测）",
+                              _cases, run))

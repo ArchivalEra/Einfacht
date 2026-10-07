@@ -34,7 +34,8 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import repo, require_nonempty, selftest        # noqa: E402
+from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
+from gate import selftest                                 # noqa: E402
 from ledger import age_days, facts_of, load, value_of     # noqa: E402
 from living import DATED_RECORD, HIST_MARK, living_lines  # noqa: E402
 
@@ -140,34 +141,27 @@ def run(argv):
         p = repo(name)
         if os.path.exists(p):
             docs[name] = open(p, encoding="utf-8", errors="replace").read()
-    try:
-        require_nonempty("check_stale", docs, "被扫描的活状态文档")
-    except SystemExit as e:
-        print("%s" % e, file=sys.stderr)
-        return 2
+    rc = guard_nonempty("check_stale", docs, "被扫描的活状态文档")
+    if rc:
+        return rc
     facts_name = os.environ.get("REFLECT_FACTS", "FACTS.json")
     if not os.path.exists(repo(facts_name)):
-        print("FATAL: 缺事实台账（%s）。先跑 python3 zreflect/facts.py 量一遍。"
-              % facts_name, file=sys.stderr)
-        return 2
+        return fatal("缺事实台账（%s）。先跑 python3 zreflect/facts.py 量一遍。"
+                     % facts_name)
     probs = problems(load(repo(facts_name)), docs)
-    for x in probs:
-        print("  · %s" % x, file=sys.stderr)
-    if probs:
-        print("陈旧断言检测：%d 个问题" % len(probs), file=sys.stderr)
-        return 0 if "--list" in argv else 1
-    if not RETIRED:
-        print("R2（退役名）：REFLECT_RETIRED 未配置 ⇒ 本条规则未启用（要启用："
-              "REFLECT_RETIRED=名1,名2）", file=sys.stderr)
-    if _stale_days() is None:
-        print("测龄：REFLECT_STALE_DAYS 未配置 ⇒ 本条规则未启用（要启用："
-              "REFLECT_STALE_DAYS=天）", file=sys.stderr)
-    elif STALE_DAYS_RAW and _stale_days() is None:
-        print("⚠ REFLECT_STALE_DAYS=%r 不是数 ⇒ 测龄规则未启用" % STALE_DAYS_RAW,
-              file=sys.stderr)
-    print("陈旧断言检测：OK（扫了 %d 份文档；退役名 %s）"
-          % (len(docs), "未配置" if not RETIRED else "%d 个" % len(RETIRED)))
-    return 0
+    if not probs:
+        if not RETIRED:
+            print("R2（退役名）：REFLECT_RETIRED 未配置 ⇒ 本条规则未启用（要启用："
+                  "REFLECT_RETIRED=名1,名2）", file=sys.stderr)
+        if _stale_days() is None:
+            print("测龄：REFLECT_STALE_DAYS 未配置 ⇒ 本条规则未启用（要启用："
+                  "REFLECT_STALE_DAYS=天）", file=sys.stderr)
+    rc = finish("陈旧断言检测", probs,
+                "陈旧断言检测：OK（扫了 %d 份文档；退役名 %s）"
+                % (len(docs), "未配置" if not RETIRED else "%d 个" % len(RETIRED)))
+    if rc == 1 and "--list" in argv:
+        return 0                      # --list 只列不改、永远 0（人工巡检模式）
+    return rc
 
 
 def _cases():
@@ -228,6 +222,10 @@ def _cases():
     ]
 
 
+GATE = meta("陈旧断言检测", "sha 出处 / 退役名 / 测龄",
+            knobs=("REFLECT_DOCS", "REFLECT_FACTS", "REFLECT_HISTORY_SECS",
+                   "REFLECT_RETIRED", "REFLECT_STALE_DAYS"))
+
 if __name__ == "__main__":
-    sys.exit(selftest("check_stale（陈旧断言：sha 出处 + 退役名）", _cases())
-             if "--selftest" in sys.argv else run(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_stale（陈旧断言：sha 出处 + 退役名）",
+                              _cases, run))

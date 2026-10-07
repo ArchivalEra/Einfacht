@@ -15,7 +15,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import GATE_REPO, repo, selftest               # noqa: E402
+from gate import fatal, finish, main_selftest_or, meta, repo, selftest  # noqa: E402
 from ledger import facts_of, load, value_of              # noqa: E402
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
 
@@ -99,17 +99,15 @@ def run(argv):
     doc = argv[0] if argv else os.environ.get("REFLECT_DOC", "STATE.md")
     p = doc if os.path.isabs(doc) else repo(doc)
     if not os.path.exists(p):
-        print("FATAL: 文档不存在：%s —— 找不到文件不许算通过（零值守卫）" % p, file=sys.stderr)
-        return 2
-    led = load(repo(os.environ.get("REFLECT_FACTS", "FACTS.json")))
+        return fatal("文档不存在：%s —— 找不到文件不许算通过（零值守卫）" % p)
+    facts_name = os.environ.get("REFLECT_FACTS", "FACTS.json")
+    led_path = repo(facts_name)
+    if not os.path.exists(led_path):
+        return fatal("缺事实台账（%s）。先跑 python3 zreflect/facts.py 量一遍。" % facts_name)
+    led = load(led_path)
     probs = problems(led, open(p, encoding="utf-8").read())
-    for x in probs:
-        print("  · %s" % x, file=sys.stderr)
-    if probs:
-        print("事实闸门：%d 个问题" % len(probs), file=sys.stderr)
-        return 1
-    print("事实闸门：OK（%d 条事实，块一致、无裸数字、无坏引用）" % len(facts_of(led)))
-    return 0
+    return finish("事实闸门", probs,
+                  "事实闸门：OK（%d 条事实，块一致、无裸数字、无坏引用）" % len(facts_of(led)))
 
 
 LED = {"facts": {"count": {"value": 4752, "cmd": "c"}}}
@@ -154,6 +152,9 @@ def _cases():
     ]
 
 
+GATE = meta("事实闸门", "块一致性 / 裸数字 / 坏引用",
+            knobs=("REFLECT_FACTS", "REFLECT_DOC", "REFLECT_NAKED_MIN"))
+
 if __name__ == "__main__":
-    sys.exit(selftest("check_facts（块一致性 / 裸数字 / 坏引用）", _cases())
-             if "--selftest" in sys.argv else run(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_facts（块一致性 / 裸数字 / 坏引用）",
+                              _cases, run))

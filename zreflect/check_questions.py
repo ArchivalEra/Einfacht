@@ -22,7 +22,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import GATE_REPO, repo, require_nonempty, selftest   # noqa: E402
+from gate import GATE_REPO, finish, guard_nonempty, main_selftest_or, meta  # noqa: E402
+from gate import repo, selftest                           # noqa: E402
 
 VALID_STATUS = ("needs-triage", "needs-info", "ready-for-agent",
                 "ready-for-human", "wontfix", "resolved")
@@ -94,20 +95,13 @@ def collect(d=None):
 
 def run(argv):
     files = collect(argv[0] if argv else None)
-    try:
-        require_nonempty("check_questions", files, "悬案文件（questions/*.md）")
-    except SystemExit as e:
-        print("%s" % e, file=sys.stderr)
-        return 2
+    rc = guard_nonempty("check_questions", files, "悬案文件（questions/*.md）")
+    if rc:
+        return rc
     probs = problems(files)
-    for x in probs:
-        print("  · %s" % x, file=sys.stderr)
-    if probs:
-        print("悬案闸门：%d 个问题" % len(probs), file=sys.stderr)
-        return 1
     n_open = sum(1 for t in files.values() if (field(t, "Status") or "") != "resolved")
-    print("悬案闸门：OK（%d 条悬案，其中未结案 %d）" % (len(files), n_open))
-    return 0
+    return finish("悬案闸门", probs,
+                  "悬案闸门：OK（%d 条悬案，其中未结案 %d）" % (len(files), n_open))
 
 
 def _q(status="ready-for-agent", settling="zreflect/facts.py —— rc=0 ⇒ 生效；rc=2 ⇒ 没拦住"):
@@ -150,6 +144,9 @@ def _cases():
     ]
 
 
+GATE = meta("悬案闸门", "未结案的问题必须挂一个能跑的结算件",
+            knobs=("REFLECT_QUESTIONS",))
+
 if __name__ == "__main__":
-    sys.exit(selftest("check_questions（悬案必须挂结算件）", _cases())
-             if "--selftest" in sys.argv else run(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_questions（悬案必须挂结算件）",
+                              _cases, run))

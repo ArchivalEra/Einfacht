@@ -30,7 +30,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import repo, selftest                          # noqa: E402
+from gate import finish, main_selftest_or, meta, repo, selftest  # noqa: E402
 
 READMES = "README.md,README.zh.md,README.de.md"
 
@@ -95,13 +95,8 @@ def run(argv):
             lines = open(src, encoding="utf-8", errors="replace").read().splitlines()
         changed = {l.strip().strip('"') for l in lines if l.strip()}
         probs = problems_push(changed, langs)
-        for x in probs:
-            print("  · %s" % x, file=sys.stderr)
-        if probs:
-            print("三语 README 闸门：%d 个问题" % len(probs), file=sys.stderr)
-            return 1
-        print("三语 README 闸门：OK（推送改动集含全部 %d 份 README）" % len(langs))
-        return 0
+        return finish("三语 README 闸门", probs,
+                      "三语 README 闸门：OK（推送改动集含全部 %d 份 README）" % len(langs))
     files = {}
     for name in langs:
         p = repo(name)
@@ -114,17 +109,13 @@ def run(argv):
               "判据不适用（单条目时「必须指全全部语言」自动成立，自引用是"
               "退化要求）；存在 / 非空判据照常" % langs[0], file=sys.stderr)
     probs = problems_structure(files, langs)
-    for x in probs:
-        print("  · %s" % x, file=sys.stderr)
-    if probs:
-        print("三语 README 闸门：%d 个问题" % len(probs), file=sys.stderr)
-        return 1
     if len(langs) == 1:
-        print("三语 README 闸门：OK（%s 存在且非空；切换器互链判据不适用）"
-              % langs[0])
-    else:
-        print("三语 README 闸门：OK（%d 份 README 都在、非空、切换器互链完好）" % len(langs))
-    return 0
+        return finish("三语 README 闸门", probs,
+                      "三语 README 闸门：OK（%s 存在且非空；切换器互链判据不适用）"
+                      % langs[0])
+    return finish("三语 README 闸门", probs,
+                  "三语 README 闸门：OK（%d 份 README 都在、非空、切换器互链完好）"
+                  % len(langs))
 
 
 LANGS = ("README.md", "README.zh.md", "README.de.md")
@@ -179,7 +170,10 @@ def _cases():
     ]
 
 
+GATE = meta("三语 README 闸门", "语言版本是同一条断言的三份拷贝：结构互链 + 每次推送同批",
+            knobs=("REFLECT_READMES",))
+
 if __name__ == "__main__":
-    sys.exit(selftest("check_readme_sync（三语 README：结构互链 + 每次推送必须同批）",
-                      _cases())
-             if "--selftest" in sys.argv else run(sys.argv[1:]))
+    sys.exit(main_selftest_or(sys.argv[1:],
+                              "check_readme_sync（三语 README：结构互链 + 每次推送必须同批）",
+                              _cases, run))
