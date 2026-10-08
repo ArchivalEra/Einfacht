@@ -48,9 +48,20 @@ for g in zreflect/check_*.py; do python3 "$g" || exit 1; done
   新增目录后主动看一眼 `git status --short --ignored <目录>`。
 - **手写名录一定会漂**。所以 `gates-selftest.sh` 是**发现式**的：它扫
   `zreflect/check_*.py`，缺 `--selftest` 就红。别把它改回手写清单。
+  2026-10-07 起这也包括**集合的叙述**：闸门清单 / 红名单 / 插件点名全部从
+  `zreflect/registry.py`（各闸门的 `GATE = gate.meta(…)` 声明行，ast 解析）
+  派生 —— STATE.md 的闸门清单是渲染出来的 `AUTO:GATES` 机器块，不手写。
+- **新闸门 = 纯函数 + 一行声明，别再手抄 run() 尾巴**（2026-10-07）：生命周期
+  （旋钮解析 / off 态明说 / 规格加载 / FATAL / problems 循环 / rc 契约 / `__main__`
+  尾巴）全在 `zreflect/gate.py`（`off` / `fatal` / `load_spec` / `finish` /
+  `main_selftest_or` / `meta`）。实现只写 `problems()` + 一行
+  `GATE = gate.meta(名字, 一句话, knobs=(…), name_dependent=?)`；没声明行的
+  `check_*.py` 名录不收、`--render-doc` 拒绝渲染。旋钮必须先在
+  `zreflect/knobs.py` 登记才算数（扫描面里的未登记记号按幻影/typo 报）。
 - **守卫必须吃「该报的必须报」这类断言**。本系统抽出来的那次实践里，一条守卫因为一个
   未定义变量，**从落地起从未生效过** —— 它失效的方式是「只在真的该报警时才崩」。
-  没有反向断言的守卫，和没有守卫是一样的。
+  没有反向断言的守卫，和没有守卫是一样的。**接线的自证与纯函数的自证同等重要**：
+  决策（纯函数，可自证）与执行（写盘 / 打印）分开 —— 见 `zreflect/guard.py`。
 - **三语 README 是同一条断言的三份拷贝**（2026-10-01 起）：`README.md`（英语，默认）/
   `README.zh.md` / `README.de.md`。改任何一份 ⇒ 这次推送的改动集必须**三份全含**，
   pre-push 缺一份拒推、CI 跑同一条判据（`git push --no-verify` 只躲得过本地）。

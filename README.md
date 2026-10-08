@@ -57,7 +57,11 @@ retraction ledger.
 
 | Component | File | What it stops |
 |---|---|---|
-| **Gate platform** | `zreflect/gate.py` | checkers silently turning green (zero-value guards + three-tier selftest) |
+| **Gate platform** | `zreflect/gate.py` | checkers silently turning green — and the **rc contract's single home**: `off()` (0, says out loud) / `fatal()` (2, config broken ≠ problems found) / `load_spec()` / `finish()` (1 vs 0) own the whole gate lifecycle, so 13 gates don't hand-copy their run-tails (they used to, and three divergent conventions grew: stdout-vs-stderr, header order, exit codes). `selftest()` now **refuses empty case lists** (the 0/0 hole — grep used to accept `0 PASS / 0 FAIL`); `main_selftest_or()` is the universal `__main__` tail (was: zero callers while 15 modules hand-rolled their own); `meta()` is the declaration line the discovery registry parses |
+| **Bare-value runner** | `zreflect/runner.py` | the verbatim executor (`run_cmd` / `quote` / timeout) as a **public seam** — the replay gate (ledger `cmd`) and the world gate (environment stamps) are its two adapters (two adapters = a real seam; it used to live in `check_facts_replay`'s private region and `check_world` imported the underscore names) |
+| **Knob registry** | `zreflect/knobs.py` | the `REFLECT_*` concept having no module: reads scattered across gates, declarations living in docstrings, judgment data in envfile's hand lists, the roster guessed by text-scanning (which admitted **phantom knobs** — `REFLECT_AB` / `REFLECT_PINS` were docstring-only once: configured, silently ignored). One roster: name → (kind, default, one-line meaning); **declared-or-die** — a `REFLECT_*` token in the scan surface that isn't registered reports as phantom/typo, and the READMEs' knob mentions ⊆ registry (reverse assertion) |
+| **Discovery registry** | `zreflect/registry.py` | the gate *set* was discovered but its **narration** was hand-written — and hand-written narrations drift: STATE.md's prose gate list said ten gates when thirteen existed; the runner's hand red-list named 4 of the 6 gates that actually go red; plugins and doctor were named by hand. Gates now self-declare (`GATE = gate.meta(…)` in each checker; ast-parsed, no import); `facts.py --render-doc` renders the **AUTO:GATES machine block** into STATE.md (the AUTO:FACTS precedent — narration derived, `--check` guards the drift), and the red-list + plugin roster derive from the same declaration lines |
+| **Ledger write guards** | `zreflect/guard.py` | the drop/change guards' **wiring** being untested: the pure functions had selftests, the path that actually refuses had none — this repo once shipped a guard dead from birth via an undefined variable ("fails only when it should fire"). `decide()` separates decision (pure; refuse/write/notes, 16 selftests) from execution (`measure()` runs it); `--accept-changes` parsing lives here too |
 | **Fact ledger** | `zreflect/ledger.py` + `facts.py` | numbers hand-copied or silently overwritten |
 | **Fact gate** | `zreflect/check_facts.py` | doc block out of sync with the ledger, bare numbers in prose, citations of keys that don't exist |
 | **Replay gate** | `zreflect/check_facts_replay.py` | "re-runnable" used to be an assertion **with no executor** (issue #2 ①): now every ledger `cmd` is executed verbatim (stdout must equal the value; broken command / timeout / missing cmd all reported; entries that need build artifacts opt out with `replay: false` — and can still carry a cheap **witness**, `witness` + `witness_expect`, issue #5: its provenance runs every commit; or a **calibration sample**, `calibrate` + `calibrate_expect`, issue #6 ①: the instrument runs against a known-positive sample every commit) |
@@ -110,7 +114,33 @@ So `gate.py` provides two things:
   an error, never "clean".
 - `selftest(name, cases)` — every checker's `--selftest` must cover three case classes:
   **normal stays quiet / what must fire, fires / empty input fires**. The middle class is the key:
-  it proves the checker **is not decoration**.
+  it proves the checker **is not decoration**. It also **refuses an empty case list** — the `0/0`
+  accident above used to pass the runner's grep; now it is a shape error that fires on the spot.
+
+**Deepened (2026-10-07).** The three case classes were enforced, but the *plumbing around them* was
+not: each of the 13 checkers hand-copied its `run()` tail (15–45 lines), and the copies had already
+drifted into three conventions — some printed problems to stdout and some to stderr, some printed
+the header before the lines and some after, and exit codes disagreed (`check_world` returned 1 where
+`doctor` returned 2 for the same "spec shape is broken" condition). So `gate.py` grew into the
+gate lifecycle's single home:
+
+- `off()` (0, says out loud it is off) / `fatal()` (2, configuration broken — kept distinct from
+  "problems found" = 1) / `load_spec()` / `finish()` own the verdict; a checker's implementation
+  shrinks to a pure `problems()` plus one `GATE = gate.meta(…)` declaration line;
+- `main_selftest_or()` is the universal `__main__` tail (it shipped with **zero callers** while 15
+  modules hand-rolled their own — including three that re-implemented the selftest loop and forgot
+  the machine summary line once);
+- four capabilities that were shallow or private got their own modules with real seams:
+  `runner.py` (the verbatim executor — the replay gate and the world gate are its two adapters),
+  `knobs.py` (the `REFLECT_*` roster — declared-or-die, so a docstring-only *phantom* knob reports),
+  `registry.py` (gates self-declare; the discovery registry renders the **AUTO:GATES** machine block
+  and derives the red-list, so the hand-written "ten gates" list that had already drifted is gone),
+  and `guard.py` (the ledger write guards' decision, separated from execution so the path that
+  actually refuses has selftests — a guard here once shipped dead from birth).
+
+The lesson is the one this whole repo is built on: **the narration drifts exactly like the numbers
+do.** The gate *set* was discovered, but "how many gates are there and which" was hand-written prose
+— and it was wrong. It is now derived from the same declaration lines the runner reads.
 
 ### 2. Fact ledger: two write guards
 
@@ -466,7 +496,7 @@ cp -r zreflect reflect-hooks gates-selftest.sh /path/to/your-repo/
 #    ⚠️ the collector's four principles live in zreflect/collect.py — persistent disk only,
 #    no inputs that change by themselves, say "unavailable" out loud, cache the expensive ones.
 python3 zreflect/facts.py                       # measure once
-python3 zreflect/facts.py --render-doc STATE.md # write the machine block into the doc
+python3 zreflect/facts.py --render-doc STATE.md # write the machine blocks (facts + gate registry) into the doc
 python3 zreflect/facts.py --get py_lines         # bare value of one fact (for scripts / other languages)
 # 2. Install pre-commit / pre-push (recompute block + run all gates;
 #    pre-push additionally refuses pushes that don't update the README trio together)
@@ -578,8 +608,10 @@ to plain env vars + default names (the mechanism is removable by design).
 | `REFLECT_REPLAY` | empty (on) | `off` ⇒ the replay gate **says out loud it is off**. Individual entries that need build artifacts should opt out one by one with the ledger field `"replay": false` (a fully-exempt ledger turns the replay gate red itself) — don't switch the whole gate off |
 | `REFLECT_REPLAY_TIMEOUT` | `10` | seconds allowed per replayed `cmd`; timeout ⇒ reported (a measurement that never finishes belongs in `replay: false`, not in the data) |
 | `REFLECT_READMES` | `README.md,README.zh.md,README.de.md` | the README trio: input to the structure check **and** to "every push must update all of them"; the hook, the gate and CI all read this knob |
-| `REFLECT_DOCTOR` | `doctor.json` (absent ⇒ off) | start-of-work liveness pre-flight spec (issue #10): `{"checks": [{kind: http/docker/port-free, …, why}]}`; stdout contract `ok` / `DOWN: <which>`; **not a pre-commit gate** (checks things that die — runs at start of work; `gates-selftest.sh` names it once) |
+| `REFLECT_DOCTOR` | `doctor.json` (absent ⇒ off) | start-of-work liveness pre-flight spec (issue #10): `{"checks": [{kind: http/docker/port-free, …, why}]}`; stdout contract `ok` / `DOWN: <which>`; **not a pre-commit gate** (checks things that die — runs at start of work; named once via `registry.SPECIAL_PLUGINS`) |
 | `REFLECT_DOCTOR_TIMEOUT` | `2` | seconds per doctor probe; the decoupling rope — a connect to a dead port otherwise waits forever. Must be a positive number (a broken value is FATAL, not a silent default) |
+| `REFLECT_AB` | `ab.json` | spec name of the A/B same-flag gate (`--spec` overrides; a knob set but pointing nowhere is FATAL, not "off") |
+| `REFLECT_PINS` | `pins.json` | spec name of the derived-tree pin gate (`--spec` overrides; same explicit-missing semantics) |
 | `REFLECT_WORLD` | `world.json` (absent ⇒ off) | reflection-world declaration (issue #13): `{"lines": {…}, "active": …, "stamps": {…}}` — multi-line repos sharing one verification environment; each stamp replays with the same bare-value contract as the ledger (`run_cmd` grafted) |
 | `REFLECT_WORLD_LINE` | empty | line override for CI / special runs (must name a listed line — a dangling override is reported); unset ⇒ resolution order is branch-if-a-line > `active` |
 

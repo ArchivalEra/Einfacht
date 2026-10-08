@@ -45,7 +45,11 @@
 
 | 部件 | 文件 | 它挡住什么 |
 |---|---|---|
-| **闸门平台** | `zreflect/gate.py` | 检查器静默变绿（零值守卫 + 三档自证） |
+| **闸门平台** | `zreflect/gate.py` | 检查器静默变绿 —— 也是 **rc 契约的唯一产地**：`off()`（0，明说未启用）/ `fatal()`（2，配置坏 ≠ 发现问题）/ `load_spec()` / `finish()`（1 vs 0）收编整条闸门生命周期，13 道闸门不再手抄 run() 尾巴（此前手抄出三派漂移：stdout 对 stderr、标题先后、退出码各异）。`selftest()` 现在**拒收空用例清单**（0/0 洞 —— grep 曾照样认「0 PASS / 0 FAIL」）；`main_selftest_or()` 是唯一的 `__main__` 尾巴（此前零调用者、15 个模块各手写一份）；`meta()` 是名录解析的声明行 |
+| **逐字执行器** | `zreflect/runner.py` | 「逐字跑命令 + 裸值判 stdout」的**公共 seam**（`run_cmd` / `quote` / 超时）—— 复跑闸门（台账 `cmd`）与 world 闸门（环境印章）是它的两个 adapter（两个 adapter = 真实 seam；它此前住在 `check_facts_replay` 的私有区，`check_world` 掏下划线名字来用） |
+| **旋钮登记** | `zreflect/knobs.py` | 「旋钮」没有 module 的病：读取散在各闸门、声明活在 docstring、判据数据在 envfile 的手写名单、名册靠文本扫描猜（扫描还收编了**幻影旋钮** —— `REFLECT_AB` / `REFLECT_PINS` 曾只活在文档里：配了静默无效）。一份名册：名字 →（种类，默认值，一句话语义）；**登记才算数** —— 扫描面里出现而未登记的 `REFLECT_*` 记号按幻影/typo 报，三语 README 的旋钮提名 ⊆ 登记（反向断言） |
+| **发现式名录** | `zreflect/registry.py` | 闸门的**集合**是发现式的，**叙述**却是手写的 —— 手写叙述一定会漂：STATE.md 的散文清单写「十道」时实际有十三道；runner 的手写红名单在六道必红的里只点了四道；插件与 doctor 靠点名。现在闸门自声明（每个检查器一行 `GATE = gate.meta(…)`；ast 解析、不 import）；`facts.py --render-doc` 把 **AUTO:GATES 机器块**渲染进 STATE.md（AUTO:FACTS 的先例 —— 叙述派生、`--check` 拦漂移），红名单与插件名单同源派生 |
+| **台账写盘守卫** | `zreflect/guard.py` | 掉条 / 改口守卫的**接线**无自测：纯函数有自证，真正拦住写盘的那条路径没有 —— 本仓发布过一条从落地就死了的守卫（未定义变量，「只在真的该报警时才崩」）。`decide()` 决策与执行分离（纯函数；refuse/write/notes，16 条自证），`measure()` 只执行；`--accept-changes` 的解析也住在这里 |
 | **事实台账** | `zreflect/ledger.py` + `facts.py` | 数字被手抄、被静默覆盖 |
 | **事实闸门** | `zreflect/check_facts.py` | 文档块与台账不一致、正文裸数字、引用不存在的键 |
 | **复跑闸门** | `zreflect/check_facts_replay.py` | 「能复跑」此前是**没有执行者的断言**（issue #2 ①）：现在逐字执行台账每条 `cmd`（stdout 必须等于值；坏命令 / 超时 / 没 cmd 都报；要构建产物的条目写 `replay: false` 显式退出 —— 且仍可挂便宜**见证** `witness` + `witness_expect`，issue #5：来源每提交真跑；或挂**校准样本** `calibrate` + `calibrate_expect`，issue #6 ①：仪器对已知含 X 的样本每提交真跑） |
@@ -92,6 +96,26 @@
 - `require_nonempty(name, seq)` —— **零值守卫**。收集阶段什么都没收到，必须报错，不许当"干净"。
 - `selftest(name, cases)` —— 每个检查器的 `--selftest` 必须写齐三类用例：
   **正常不报 / 该报的必须报 / 空输入必须报**。中间那类是关键：它证明这个检查器**不是装饰**。
+  它还**拒收空用例清单** —— 上面那个 `0/0` 事故此前能骗过 runner 的 grep，现在当场形状报错。
+
+**加深（2026-10-07）。** 三类用例是硬规矩了，但**围着它们的管**不是：13 个检查器
+各手抄自己的 `run()` 尾巴（15–45 行），抄本已经漂成三派 —— 有的问题行走 stdout
+有的走 stderr、有的标题在先有的在后、退出码也各说各话（同样是「规格形状坏」，
+`check_world` 返 1 而 `doctor` 返 2）。于是 `gate.py` 长成闸门生命周期的唯一产地：
+
+- `off()`（0，明说未启用）/ `fatal()`（2，配置坏 —— 与「发现问题」= 1 分清）/ `load_spec()` /
+  `finish()` 收编判据；检查器的 implementation 缩成纯 `problems()` + 一行
+  `GATE = gate.meta(…)` 声明；
+- `main_selftest_or()` 是唯一的 `__main__` 尾巴（它发布时**零调用者**，15 个模块各手写
+  一份 —— 其中三个自己重写了自证循环、还漏过机器摘要行）；
+- 四个此前浅的或私有的能力各得其所：`runner.py`（逐字执行器 —— 复跑闸门与 world 闸门
+  是它的两个 adapter）、`knobs.py`（`REFLECT_*` 名册 —— 登记才算数，只活在 docstring 的
+  **幻影旋钮**会报）、`registry.py`（闸门自声明；发现式名录渲染 **AUTO:GATES** 机器块并
+  派生红名单，那份已经漂过的手写「十道闸门」清单退役）、`guard.py`（台账写盘守卫的
+  决策，与执行分离 —— 真正拦住写盘的路径有自证；本仓出过一条从落地就死了的守卫）。
+
+教训就是本仓整个立身的那一条：**叙述和数字一样会漂。** 闸门的**集合**是发现式的，
+但「有几道、都是谁」是手写散文 —— 而且写错了。现在它从 runner 读的同一份声明行派生。
 
 ### 二、事实台账：两道守卫
 
@@ -382,7 +406,7 @@ cp -r zreflect reflect-hooks gates-selftest.sh /path/to/your-repo/
 #    ⚠️ 采集器四条原则见 zreflect/collect.py —— 只读持久盘、不引入会自己变的输入、
 #    读不到就明说、贵的测量做缓存。
 python3 zreflect/facts.py                      # 量一遍
-python3 zreflect/facts.py --render-doc STATE.md # 把机器块写进文档
+python3 zreflect/facts.py --render-doc STATE.md # 把机器块（事实 + 闸门名录）写进文档
 python3 zreflect/facts.py --get 键名             # 只打印一条事实的裸值（脚本 / 其它语言用）
 # 2. 挂进 pre-commit / pre-push（重算机器块 + 全部闸门；pre-push 还要求三语 README 同批更新）
 sh reflect-hooks/install.sh
@@ -483,8 +507,10 @@ install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
 | `REFLECT_REPLAY` | 空（在线） | 设 `off` ⇒ 复跑闸门**明说未启用**。个别要构建产物才跑得动的条目用台账字段 `"replay": false` 逐个退出（全豁免会被复跑闸门自己报红），别关整道闸 |
 | `REFLECT_REPLAY_TIMEOUT` | `10` | 复跑单条 `cmd` 的秒数上限；超时 ⇒ 报（等不出来的量法应写 `replay: false`，不该当数据） |
 | `REFLECT_READMES` | `README.md,README.zh.md,README.de.md` | 三语 README 名单（逗号分隔）：结构检查 + 「每次推送必须全量出现在改动集里」判据的输入；hook / 闸门 / CI 共用 |
-| `REFLECT_DOCTOR` | `doctor.json`（不在 ⇒ 未启用） | 开工预检的活性规格（issue #10）：`{"checks": [{kind: http/docker/port-free, …, why}]}`；stdout 契约 `ok` / `DOWN: <哪条>`；**不是 pre-commit 闸门**（查的是会死的东西 —— 开工前手动跑；`gates-selftest.sh` 点名一次） |
+| `REFLECT_DOCTOR` | `doctor.json`（不在 ⇒ 未启用） | 开工预检的活性规格（issue #10）：`{"checks": [{kind: http/docker/port-free, …, why}]}`；stdout 契约 `ok` / `DOWN: <哪条>`；**不是 pre-commit 闸门**（查的是会死的东西 —— 开工前手动跑；经 `registry.SPECIAL_PLUGINS` 点名） |
 | `REFLECT_DOCTOR_TIMEOUT` | `2` | 每条 doctor 探测的秒数；解耦绳 —— 对死端口 connect 否则等到天荒地老。必须为正数（坏值 FATAL，不许静默回落） |
+| `REFLECT_AB` | `ab.json` | A/B 同旗标闸门的规格名（`--spec` 可覆盖；显式指定却指向不存在 ⇒ FATAL，不是「未启用」） |
+| `REFLECT_PINS` | `pins.json` | 派生树 pin 闸门的规格名（`--spec` 可覆盖；同款显式缺失语义） |
 | `REFLECT_WORLD` | `world.json`（不在 ⇒ 未启用） | 反射世界声明（issue #13）：`{"lines": {…}, "active": …, "stamps": {…}}` —— 多线仓库共享同一个验证环境；每枚印章按同复跑闸门的裸值契约复跑（`run_cmd` 嫁接） |
 | `REFLECT_WORLD_LINE` | 空 | 线覆盖，给 CI / 特殊跑法（必须指清单里有的线 —— 指空会报）；未配 ⇒ 解析顺序为「分支是线 > `active`」 |
 
