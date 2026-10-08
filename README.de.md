@@ -58,7 +58,11 @@ Retraktionsledger.
 
 | Baustein | Datei | Was es verhindert |
 |---|---|---|
-| **Gate-Plattform** | `zreflect/gate.py` | still grün werdende Prüfer (Zero-Value-Guard + dreistufiger Selftest) |
+| **Gate-Plattform** | `zreflect/gate.py` | still grün werdende Prüfer — und die **eine Heimat des rc-Vertrags**: `off()` (0, laut gesagt) / `fatal()` (2, Konfiguration kaputt ≠ Probleme gefunden) / `load_spec()` / `finish()` (1 vs 0) besitzen den ganzen Gate-Lebenszyklus, damit 13 Gates ihren run()-Schwanz nicht von Hand kopieren (früher kopiert, drei abgedriftete Konventionen: stdout-gegen-stderr, Reihenfolge der Überschrift, Exit-Codes). `selftest()` **lehnt leere Falllisten ab** (das 0/0-Loch — der grep akzeptierte `0 PASS / 0 FAIL`); `main_selftest_or()` ist der universelle `__main__`-Schwanz (vorher: null Aufrufer bei 15 handgerollten Kopien); `meta()` ist die Deklarationszeile, die das Entdeckungsregister parst |
+| **Bare-Wert-Runner** | `zreflect/runner.py` | der wörtliche Ausführer (`run_cmd` / `quote` / Timeout) als **öffentliche Naht** — das Replay-Gate (Ledger-`cmd`) und das World-Gate (Umgebungsstempel) sind seine zwei Adapter (zwei Adapter = echte Naht; er wohnte vorher in `check_facts_replay`'s Privatbereich, und `check_world` importierte die Unterstrich-Namen) |
+| **Knopf-Register** | `zreflect/knobs.py` | das Konzept „Knopf" ohne module: Lesezugriffe verstreut über die Gates, Deklarationen in Docstrings, Urteilsdaten in envfiles Handlisten, das Register per Text-Scan geraten (das auch **Phantom-Knöpfe** aufnahm — `REFLECT_AB` / `REFLECT_PINS` waren einmal nur Docstring: gesetzt, still ignoriert). Ein Register: Name → (Art, Default, Ein-Satz-Bedeutung); **Deklaration oder Tod** — eine `REFLECT_*`-Marke in der Scanfläche, die nicht registriert ist, wird als Phantom/Typo gemeldet; die Knopf-Erwähnungen der READMEs ⊆ Register (Reverse-Assertion) |
+| **Entdeckungsregister** | `zreflect/registry.py` | die *Menge* der Gates war entdeckt, ihre **Erzählung** aber handgeschrieben — und handgeschriebene Erzählungen driften: STATE.md's Prosa-Liste sagte zehn Gates, als dreizehn existierten; die handgeschriebene Rot-Liste des Runners nannte 4 von 6; Plugins und Doctor wurden von Hand genannt. Gates deklarieren sich jetzt selbst (`GATE = gate.meta(…)` in jedem Prüfer; ast-geparst, kein Import); `facts.py --render-doc` rendert den **AUTO:GATES-Maschinenblock** nach STATE.md (das AUTO:FACTS-Präzedenz — Erzählung abgeleitet, `--check` bewacht das Driften), Rot-Liste und Plugin-Roster leiten sich aus denselben Deklarationszeilen ab |
+| **Ledger-Schreibwächter** | `zreflect/guard.py` | die **Verdrahtung** der Drop-/Change-Wächter war ungetestet: die reinen Funktionen hatten Selftests, der Pfad, der wirklich abweist, nicht — dieses Repo verschickte einmal einen tot geborenen Wächter (undefinierte Variable, „versagt nur, wenn er zuschlagen soll"). `decide()` trennt Entscheidung (rein; refuse/write/notes, 16 Selftests) von Ausführung (`measure()` fährt sie); das `--accept-changes`-Parsen wohnt auch hier |
 | **Fakten-Ledger** | `zreflect/ledger.py` + `facts.py` | hand-kopierte oder still überschriebene Zahlen |
 | **Fakten-Gate** | `zreflect/check_facts.py` | Doc-Block ungleich Ledger, nackte Zahlen im Text, Zitate nicht existierender Schlüssel |
 | **Replay-Gate** | `zreflect/check_facts_replay.py` | „re-laufbar" war eine Aussage **ohne Vollstrecker** (issue #2 ①): jetzt wird jedes `cmd` im Ledger wörtlich ausgeführt (stdout muss dem Wert gleichen; kaputtes Kommando / Timeout / fehlendes cmd werden gemeldet; Einträge, die Build-Artefakte brauchen, steigen mit `replay: false` explizit aus — und können trotzdem eine billige **Zeugenschaft** tragen, `witness` + `witness_expect`, issue #5: die Herkunft wird bei jedem Commit gefahren; oder eine **Kalibrierungsprobe**, `calibrate` + `calibrate_expect`, issue #6 ①: das Instrument läuft bei jedem Commit gegen eine bekannt-positive Probe) |
@@ -112,7 +116,36 @@ Darum liefert `gate.py` zwei Dinge:
   ist das ein Fehler, niemals „clean".
 - `selftest(name, cases)` — jeder `--selftest` muss drei Fallklassen abdecken:
   **normal bleibt still / was feuern muss, feuert / leere Eingabe feuert**. Die mittlere Klasse
-  ist entscheidend: Sie beweist, dass der Prüfer **keine Dekoration** ist.
+  ist entscheidend: Sie beweist, dass der Prüfer **keine Dekoration** ist. Sie **lehnt außerdem
+  eine leere Fallliste ab** — der `0/0`-Unfall oben passierte früher den grep des Runners; jetzt
+  ist es ein Formfehler, der auf der Stelle feuert.
+
+**Vertieft (2026-10-07).** Die drei Fallklassen waren erzwungen, aber die *Verkabelung darum
+herum* nicht: jeder der 13 Prüfer kopierte seinen `run()`-Schwanz von Hand (15–45 Zeilen), und die
+Kopien waren bereits in drei Konventionen abgedriftet — mal gingen Problemzeilen nach stdout, mal
+nach stderr; mal stand die Überschrift vor den Zeilen, mal danach; und die Exit-Codes waren sich
+uneins (`check_world` gab 1 zurück, wo `doctor` 2 gab — dieselbe Bedingung „Spec-Form kaputt").
+Also wuchs `gate.py` zur einen Heimat des Gate-Lebenszyklus:
+
+- `off()` (0, laut gesagt) / `fatal()` (2, Konfiguration kaputt — getrennt von „Probleme
+  gefunden" = 1) / `load_spec()` / `finish()` besitzen das Urteil; die Implementierung eines
+  Prüfers schrumpft auf ein reines `problems()` plus eine Deklarationszeile `GATE = gate.meta(…)`;
+- `main_selftest_or()` ist der universelle `__main__`-Schwanz (er erschien mit **null Aufrufern**,
+  während 15 Module ihre eigenen von Hand rollten — darunter drei, die die Selftest-Schleife neu
+  implementierten und einmal die Maschinen-Summenzeile vergaßen);
+- vier zuvor flache oder private Fähigkeiten bekamen eigene Module mit echten Nähten: `runner.py`
+  (der wörtliche Ausführer — Replay-Gate und World-Gate sind seine zwei Adapter), `knobs.py` (das
+  `REFLECT_*`-Register — Deklaration oder Tod, damit ein nur im Docstring lebender *Phantom*-Knopf
+  gemeldet wird), `registry.py` (Gates deklarieren sich selbst; das Entdeckungsregister rendert den
+  **AUTO:GATES**-Maschinenblock und leitet die Rot-Liste ab, sodass die bereits abgedriftete
+  handgeschriebene „zehn Gates"-Liste verschwindet) und `guard.py` (die Entscheidung der
+  Ledger-Schreibwächter, von der Ausführung getrennt, damit der Pfad, der wirklich abweist,
+  Selftests hat — hier verschickte einmal ein Wächter tot geboren).
+
+Die Lektion ist die, auf der dieses ganze Repo gebaut ist: **die Erzählung driftet genau wie die
+Zahlen.** Die *Menge* der Gates war entdeckt, aber „wie viele Gates gibt es und welche" war
+handgeschriebene Prosa — und sie war falsch. Jetzt leitet sie sich aus denselben
+Deklarationszeilen ab, die der Runner liest.
 
 ### 2. Fakten-Ledger: zwei Schreib-Guards
 
@@ -638,8 +671,10 @@ Defaults zurück (der Mechanismus ist nach Bauart aussteckbar).
 | `REFLECT_REPLAY` | leer (an) | `off` ⇒ das Replay-Gate **sagt laut, dass es aus ist**. Einzelne Einträge, die Build-Artefakte brauchen, steigen per Ledger-Feld `"replay": false` einzeln aus (ein komplett freigestelltes Ledger macht das Replay-Gate selbst rot) — nicht gleich das ganze Gate abschalten |
 | `REFLECT_REPLAY_TIMEOUT` | `10` | Sekunden pro wiederausgeführtem `cmd`; Timeout ⇒ gemeldet (eine Messung, die nie fertig wird, gehört in `replay: false`, nicht in die Daten) |
 | `REFLECT_READMES` | `README.md,README.zh.md,README.de.md` | das README-Trio: Eingang für die Strukturaudit **und** für „jeder Push muss alle im Änderungssatz haben"; Hook, Gate und CI lesen denselben Knopf |
-| `REFLECT_DOCTOR` | `doctor.json` (fehlt ⇒ aus) | Liveness-Spec der Arbeitsbeginn-Vorbedingung (Issue #10): `{"checks": [{kind: http/docker/port-free, …, why}]}`; Stdout-Vertrag `ok` / `DOWN: <welche>`; **kein pre-commit-Gate** (prüft Dinge, die sterben — läuft beim Arbeitsbeginn; `gates-selftest.sh` nennt es einmal) |
+| `REFLECT_DOCTOR` | `doctor.json` (fehlt ⇒ aus) | Liveness-Spec der Arbeitsbeginn-Vorbedingung (Issue #10): `{"checks": [{kind: http/docker/port-free, …, why}]}`; Stdout-Vertrag `ok` / `DOWN: <welche>`; **kein pre-commit-Gate** (prüft Dinge, die sterben — läuft beim Arbeitsbeginn; einmal via `registry.SPECIAL_PLUGINS` genannt) |
 | `REFLECT_DOCTOR_TIMEOUT` | `2` | Sekunden pro Doctor-Sonde; das Entkopplungsseil — ein Connect auf einen toten Port sonst bis ans Ende aller Zeiten. Muss eine positive Zahl sein (ein defekter Wert ist FATAL, kein stilles Default) |
+| `REFLECT_AB` | `ab.json` | Spec-Name des A/B-Gleichflaggen-Gates (`--spec` überschreibt; explizit gesetzt aber ziellos ⇒ FATAL, nicht „aus") |
+| `REFLECT_PINS` | `pins.json` | Spec-Name des Derived-Tree-Pin-Gates (`--spec` überschreibt; dieselbe Explicit-Missing-Semantik) |
 | `REFLECT_WORLD` | `world.json` (fehlt ⇒ aus) | Reflexionswelt-Deklaration (Issue #13): `{"lines": {…}, "active": …, "stamps": {…}}` — Repos mit mehreren Linien, die sich eine Verifikationsumgebung teilen; jeder Stempel replayt mit demselben Bare-Wert-Vertrag wie das Ledger (`run_cmd` eingepfropft) |
 | `REFLECT_WORLD_LINE` | leer | Linien-Override für CI / Sonderläufe (muss eine gelistete Linie sein — ein freier Override wird gemeldet); ungesetzt ⇒ Auflösung: Branch-ist-Linie > `active` |
 
