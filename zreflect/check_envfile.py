@@ -58,7 +58,11 @@ ENV_FILE = (os.environ.get("REFLECT_ENV_FILE", "Einfacht.env")
 
 _EXPORT_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 _QUOTES_RE = re.compile(r'^["\']|["\']$')
-_TOKEN_RE = re.compile(r"REFLECT_[A-Z0-9_]+")
+# 旋钮记号：REFLECT_ + 大写。**左边界必需** —— 不加时，翻案示例文本
+# （`ZCODE_` 前缀 + 一个记号）会被从中间切成假记号，三语 README 对账
+# 各报一次假阳性（实测踩到）。⚠️ 本注释与自证里都**不写出**那个假记号
+# 字面量 —— 本文件在扫描面内，写出来就会被对账收编（自证用例用拼接构造）。
+_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_])REFLECT_[A-Z0-9_]+")
 
 
 def known_knobs(py_dir=None):
@@ -312,6 +316,17 @@ def _cases():
         ("★ 空 export 集（空文件 / 只剩注释）⇒ 必须报",
          lambda: problems({}, registry, fe, de, syntax_ok=True,
                           scanned=registry.keys()) != []),
+        # 边界：左边界 —— 假记号不许从别的前缀里切出来（翻案示例文本
+        # 曾被切成假旋钮名，三语 README 各报一次假阳性；实测踩到）。
+        # ⚠️ 样例用拼接构造：本文件在扫描面内，字面量写出来会被对账收编。
+        ("★ 前缀词里的记号不许被切出假旋钮名",
+         lambda: readme_knob_problems(files={
+             "README.md": "> ZCODE_" + typo + " 这条是已翻案的示例。",
+             "README.zh.md": "x", "README.de.md": "x"}) == []),
+        ("★ 真记号紧邻中文标点仍必须认（左边界只排字母数字下划线）",
+         lambda: readme_knob_problems(files={
+             "README.md": "用（" + typo + "）试试。",
+             "README.zh.md": "x", "README.de.md": "x"}) != []),
     ]
 
 

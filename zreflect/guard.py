@@ -158,5 +158,12 @@ if __name__ == "__main__":
     import os                                            # noqa: PLC0415
     import sys                                           # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from gate import selftest                            # noqa: PLC0415
-    sys.exit(selftest("guard（台账写盘守卫：掉条 / 改口 / 逐条接受的接线）", _cases()))
+    from gate import main_selftest_or                    # noqa: PLC0415
+
+    def _run(argv):
+        print("guard 是模块（被 facts.measure 调用）；不单独跑。--selftest 看自证。",
+              file=sys.stderr)
+        return 2
+    sys.exit(main_selftest_or(sys.argv[1:],
+                              "guard（台账写盘守卫：掉条 / 改口 / 逐条接受的接线）",
+                              _cases, _run))

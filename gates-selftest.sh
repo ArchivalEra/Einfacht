@@ -149,6 +149,41 @@ plugin_selftest() {
   return "$bad"
 }
 
+module_selftest() {
+  # 平台模块（不是 check_*.py：gate / runner / knobs / registry / guard /
+  # ledger / render / facts …）也写自证 —— 但 run_gates 只扫 check_*.py，
+  # 它们的自证此前【无人执行】= 装饰（实测：Phase 4 加的 guard.py 正犯此病）。
+  # 名单从 registry --selftest-modules 派生（发现谓词 = 写了 _cases/CASES），
+  # 每个实跑并校验机器摘要行 —— 「写而不跑」由 registry 的 problems 报。
+  bad=0
+  mods=$(python3 "$HERE/zreflect/registry.py" --selftest-modules) || {
+    echo "  ❌ 平台模块自证名录不干净（有写了自证却没入口的模块）"
+    printf '%s\n' "$mods" | sed 's/^/      /'
+    bad=$((bad + 1))
+    mods=""
+  }
+  n=0
+  for m in $mods; do
+    n=$((n + 1))
+    f="$HERE/$m"
+    out=$(python3 "$f" --selftest 2>&1)
+    if [ $? -ne 0 ]; then
+      echo "  ❌ $m"
+      printf '%s\n' "$out" | tail -3 | sed 's/^/      /'
+      bad=$((bad + 1))
+      continue
+    fi
+    if ! printf '%s\n' "$out" | grep -qE '^=== [0-9]+ PASS / [0-9]+ FAIL ===$'; then
+      echo "  ❌ $m 自证缺机器摘要行（=== N PASS / M FAIL ===）"
+      bad=$((bad + 1))
+      continue
+    fi
+    echo "  ✅ $m  $(printf '%s\n' "$out" | tail -1)"
+  done
+  [ "$n" -ge 1 ] || { echo "  ❌ 一个平台模块自证都没发现 —— 零值守卫"; bad=$((bad + 1)); }
+  return "$bad"
+}
+
 # ── 跨仓库可配置性自证（**没有硬编码**的可证伪证据）────────────────────────────
 # 做法：搭一个**临时夹具仓库**，把三个名字全换掉（REFLECT_FACTS/REFLECT_DOC/DOCS），
 #       三个闸门必须仍全绿；再用**默认名字**跑同一夹具 —— **必须红**
@@ -220,6 +255,8 @@ else
   run_gates "$HERE" || rc=1
   echo "── 可拔插件与点名自证（名单从 registry 派生）──"
   plugin_selftest || rc=1
+  echo "── 平台模块自证（gate / runner / knobs / registry / guard / ledger / render / facts）──"
+  module_selftest || rc=1
   echo "── 跨仓库可配置性 ──"
   configurable_selftest || rc=1
 fi

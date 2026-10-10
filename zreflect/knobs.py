@@ -91,4 +91,13 @@ def selftest():
 
 
 if __name__ == "__main__":
-    sys.exit(selftest())
+    sys.path.insert(0, __file__.rsplit("/", 1)[0])
+    from gate import main_selftest_or                    # noqa: PLC0415
+
+    def _run(argv):
+        print("knobs 是模块（被各闸门消费）；--selftest 看自证。",
+              file=sys.stderr)
+        return 2
+    sys.exit(main_selftest_or(sys.argv[1:],
+                              "knobs（旋钮登记：REFLECT_* 的唯一名册）",
+                              _cases, _run))
