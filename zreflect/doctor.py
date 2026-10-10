@@ -68,7 +68,7 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import fatal, load_spec, main_selftest_or, off, repo, selftest  # noqa: E402
+from gate import fatal, load_spec, main_selftest_or, meta, off, repo, selftest  # noqa: E402
 
 DEFAULT_SPEC = "doctor.json"
 DEFAULT_TIMEOUT = 2.0
@@ -377,6 +377,11 @@ def _cases():
          lambda: spec_problems(None) != []),
     ]
 
+
+GATE = meta("开工预检 doctor",
+            "进程 / 端口活性（查会死的东西 ⇒ runs_at=start-of-work，不进 pre-commit）",
+            knobs=("REFLECT_DOCTOR", "REFLECT_DOCTOR_TIMEOUT"),
+            runs_at="start-of-work")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],

@@ -25,10 +25,9 @@ if [ -f "$DOC" ]; then
   git add "$DOC"
 fi
 
-# ② 全部闸门：**发现式**名录（与 gates-selftest.sh 同一逻辑 —— 别手写清单，
-#    手写清单漏登记一个 check_*.py 时，hook 自己还绿着（issue #1 ①）。
-#    约定：每个闸门都必须支持 --selftest（由 gates-selftest.sh 强制）。
-for g in zreflect/check_*.py; do
-  [ -f "$g" ] || continue
-  python3 "$g" || exit 1
-done
+# ② 全部闸门：**执行面唯一产地**（C1）—— `registry --run commit` 跑所有
+#    runs_at="commit" 的闸门并聚合 ran/off/failed。别再 glob `check_*.py`：
+#    glob 与声明（GATE = meta(…, runs_at=…)）是两套谓词，会分叉（doctor 曾
+#    只能靠「不叫 check_」表达频率）。执行面只认声明 —— 名字不再承重。
+#    off 态被单列（C2）：`ran N / off M / failed K`，off 不是通过。
+python3 zreflect/registry.py --run commit || exit 1

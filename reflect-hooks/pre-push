@@ -20,13 +20,9 @@ DOC=${REFLECT_DOC:-STATE.md}
 if [ -f "$DOC" ]; then
   python3 zreflect/facts.py --check "$DOC"
 fi
-# ② 全部闸门：**发现式**名录（与 gates-selftest.sh 同一逻辑 —— 别手写清单，
-#    手写清单漏登记一个 check_*.py 时，hook 自己还绿着（issue #1 ①）。
-#    约定：每个闸门都必须支持 --selftest（由 gates-selftest.sh 强制）。
-for g in zreflect/check_*.py; do
-  [ -f "$g" ] || continue
-  python3 "$g" || exit 1
-done
+# ② 全部闸门：**执行面唯一产地**（C1）—— 同 pre-commit，跑 runs_at="commit"
+#    的闸门并聚合 ran/off/failed（别再 glob：谓词只有声明一处）。
+python3 zreflect/registry.py --run commit || exit 1
 
 # ③ 三语 README：**每次推送必须三份同批更新**（缺一份 ⇒ 拒推）。
 #    判据住在 check_readme_sync.py 的 --changed 模式（--selftest 齐全，名录发现得到它）；

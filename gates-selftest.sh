@@ -12,14 +12,22 @@ set -u
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 run_gates() {
-  # $1 = 仓库根。全绿返回 0；否则返回 1。
+  # $1 = 仓库根；$2 = 文件清单（可选，换行分隔）。
+  # 生产：清单 = `registry --all-runnable`（声明派生，glob 退役 —— C1）。
+  # 自证：夹具显式传假清单（不依赖真仓）。
+  # 全绿返回 0；否则返回 1。
   d=$1
+  if [ -n "${2:-}" ]; then
+    list=$2
+  else
+    list=$(cd "$d" && python3 zreflect/registry.py --all-runnable 2>/dev/null)
+  fi
   n=0
   bad=0
-  for g in "$d"/zreflect/check_*.py; do
-    [ -f "$g" ] || continue
+  for rel in $list; do
+    g="$d/$rel"
+    [ -f "$g" ] || { echo "  ❌ $rel 不在（registry 点了名，文件却不在）"; bad=$((bad + 1)); continue; }
     n=$((n + 1))
-    rel=${g#"$d"/}
     # 自证的广告标记：平台尾巴 main_selftest_or（--selftest 的路由在
     # gate.py），或老式字面量。两者都没有 = 没人盯着的闸门。
     if ! grep -qE '(main_selftest_or|--selftest)' "$g"; then
@@ -89,19 +97,19 @@ EOF
 
   show() { printf '%s' "$1" | sed 's/^/      /'; }
 
-  out=$(run_gates "$t/good" 2>&1) && { echo "  PASS | 全绿夹具 ⇒ runner 绿"; } \
+  out=$(run_gates "$t/good" "zreflect/check_ok.py" 2>&1) && { echo "  PASS | 全绿夹具 ⇒ runner 绿"; } \
     || { echo "  fail | 全绿夹具 ⇒ runner 却是红的（阳性对照失败：runner 可能是'总是红'）"; show "$out"; bad=1; }
 
-  out=$(run_gates "$t/nomark" 2>&1) && { echo "  fail | 缺 --selftest 的闸门 ⇒ runner 竟然绿了"; bad=1; } \
+  out=$(run_gates "$t/nomark" "zreflect/check_silent.py" 2>&1) && { echo "  fail | 缺 --selftest 的闸门 ⇒ runner 竟然绿了"; bad=1; } \
     || echo "  PASS | 缺 --selftest 的闸门 ⇒ runner 红"
 
-  out=$(run_gates "$t/failing" 2>&1) && { echo "  fail | 自证失败的闸门 ⇒ runner 竟然绿了"; bad=1; } \
+  out=$(run_gates "$t/failing" "zreflect/check_bad.py" 2>&1) && { echo "  fail | 自证失败的闸门 ⇒ runner 竟然绿了"; bad=1; } \
     || echo "  PASS | 自证失败的闸门 ⇒ runner 红"
 
-  out=$(run_gates "$t/empty" 2>&1) && { echo "  fail | 一个闸门都没有 ⇒ runner 竟然绿了（零值守卫失效）"; bad=1; } \
+  out=$(run_gates "$t/empty" "" 2>&1) && { echo "  fail | 一个闸门都没有 ⇒ runner 竟然绿了（零值守卫失效）"; bad=1; } \
     || echo "  PASS | 一个闸门都没有 ⇒ runner 红（零值守卫）"
 
-  out=$(run_gates "$t/nomachine" 2>&1) && { echo "  fail | 缺机器摘要行的闸门 ⇒ runner 竟然绿了（issue #3 ③）"; bad=1; } \
+  out=$(run_gates "$t/nomachine" "zreflect/check_nomachine.py" 2>&1) && { echo "  fail | 缺机器摘要行的闸门 ⇒ runner 竟然绿了（issue #3 ③）"; bad=1; } \
     || echo "  PASS | 缺机器摘要行的闸门 ⇒ runner 红（issue #3 ③）"
 
   rm -rf "$t"
@@ -150,11 +158,12 @@ plugin_selftest() {
 }
 
 module_selftest() {
-  # 平台模块（不是 check_*.py：gate / runner / knobs / registry / guard /
-  # ledger / render / facts …）也写自证 —— 但 run_gates 只扫 check_*.py，
-  # 它们的自证此前【无人执行】= 装饰（实测：Phase 4 加的 guard.py 正犯此病）。
-  # 名单从 registry --selftest-modules 派生（发现谓词 = 写了 _cases/CASES），
-  # 每个实跑并校验机器摘要行 —— 「写而不跑」由 registry 的 problems 报。
+  # 平台模块（不是闸门：gate / runner / knobs / registry / guard / ledger /
+  # render / facts …）也写自证 —— 但 run_gates 只跑**闸门**（registry
+  # --all-runnable），平台模块的自证此前【无人执行】= 装饰（实测：guard.py
+  # 正犯此病）。这里只跑**闸门以外**的自证模块（差集 —— 闸门的自证已在
+  # run_gates 跑过，不再跑第二遍；此前两段各跑一遍 13 道，重复执行）。
+  all_gates=$(cd "$HERE" && python3 zreflect/registry.py --all-runnable | tr '\n' ' ')
   bad=0
   mods=$(python3 "$HERE/zreflect/registry.py" --selftest-modules) || {
     echo "  ❌ 平台模块自证名录不干净（有写了自证却没入口的模块）"
@@ -164,6 +173,7 @@ module_selftest() {
   }
   n=0
   for m in $mods; do
+    case " $all_gates " in *" $m "*) continue ;; esac   # 闸门的自证归 run_gates
     n=$((n + 1))
     f="$HERE/$m"
     out=$(python3 "$f" --selftest 2>&1)
@@ -210,7 +220,8 @@ configurable_selftest() {
   GATE_REPO="$tmp" REFLECT_FACTS=LEDGER.json REFLECT_DOC=NOTES.md \
     python3 "$HERE/zreflect/facts.py" --render-doc NOTES.md >/dev/null 2>&1
   ok=0; n=0
-  for g in "$HERE"/zreflect/check_*.py; do
+  for rel in $(cd "$HERE" && python3 zreflect/registry.py --all-runnable); do
+    g="$HERE/$rel"
     n=$((n + 1))
     if GATE_REPO="$tmp" REFLECT_FACTS=LEDGER.json REFLECT_DOC=NOTES.md \
        REFLECT_DOCS=NOTES.md,AGENTS.md REFLECT_RETRACTIONS=RETRACT.json \
@@ -231,9 +242,9 @@ configurable_selftest() {
   red_need=$(python3 "$HERE/zreflect/registry.py" --red-need)
   [ -n "$red_need" ] || { echo "  ❌ 红名单为空 —— 零值守卫：没有它这一节什么都没证明"; rm -rf "$tmp"; return 1; }
   red=""
-  for g in "$HERE"/zreflect/check_*.py; do
-    b=$(basename "$g")
-    if ! GATE_REPO="$tmp" python3 "$g" >/dev/null 2>&1; then red="$red $b"; fi
+  for rel in $(cd "$HERE" && python3 zreflect/registry.py --all-runnable); do
+    b=$(basename "$rel")
+    if ! GATE_REPO="$tmp" python3 "$HERE/$rel" >/dev/null 2>&1; then red="$red $b"; fi
   done
   for b in $red_need; do
     case " $red " in *" $b "*) ;; *) echo "  ❌ 默认名字下 $b **没有红** ⇒ 换名自证对它的名字什么都没证明"; red=""; break;; esac
