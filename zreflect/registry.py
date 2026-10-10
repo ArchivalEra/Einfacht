@@ -350,11 +350,14 @@ def render_gates(gs):
     lines = [GATES_BEGIN,
              "> 本区块由 `zreflect/facts.py --render-doc` 从发现式名录"
              "（zreflect/registry.py 的声明行）渲染，**不要手改**。",
+             "> 执行面（hooks / CI）读 `registry --run <相位>` —— 相位是声明字段"
+             "（`runs_at`），不是文件名。",
              "",
-             "| 闸门 | 它挡住什么 | 消费的旋钮 |", "|---|---|---|"]
-    for g in sorted(gs, key=lambda x: x["file"]):
-        lines.append("| `%s`（%s） | %s | %s |"
-                     % (os.path.basename(g["file"]), g["name"], g["desc"],
+             "| 闸门 | 相位 | 它挡住什么 | 消费的旋钮 |", "|---|---|---|---|"]
+    for g in sorted(gs, key=lambda x: (x.get("runs_at", "commit"), x["file"])):
+        lines.append("| `%s`（%s） | %s | %s | %s |"
+                     % (os.path.basename(g["file"]), g["name"],
+                        g.get("runs_at", "commit"), g["desc"],
                         ", ".join("`%s`" % k for k in g["knobs"]) or "—"))
     lines += ["", "%d 道闸门（发现式名录派生 —— 手写清单会漂，加闸门 = "
               "落一个声明行，这里自动长出来）。" % len(gs), GATES_END]
