@@ -614,6 +614,12 @@ to plain env vars + default names (the mechanism is removable by design).
 | `REFLECT_PINS` | `pins.json` | spec name of the derived-tree pin gate (`--spec` overrides; same explicit-missing semantics) |
 | `REFLECT_WORLD` | `world.json` (absent ⇒ off) | reflection-world declaration (issue #13): `{"lines": {…}, "active": …, "stamps": {…}}` — multi-line repos sharing one verification environment; each stamp replays with the same bare-value contract as the ledger (`run_cmd` grafted) |
 | `REFLECT_WORLD_LINE` | empty | line override for CI / special runs (must name a listed line — a dangling override is reported); unset ⇒ resolution order is branch-if-a-line > `active` |
+| `REFLECT_INVARIANTS` | empty (absent ⇒ off) | declarative-invariants spec (issue #7): `{"checks": [{path, must_contain?, must_not_contain?, why}]}` |
+| `REFLECT_INSTRUMENTS` | empty (absent ⇒ off) | falsified-measurement-method registry (issue #6 ①): `{"methods": [{text, why, fixed_in}]}` |
+| `REFLECT_INSTRUMENT_DAYS` | empty (absent ⇒ off) | constant-value detection threshold in days (issue #6 ①): a ledger entry whose `first_seen` is older ⇒ "is this cmd measuring, or always returning the same number?" |
+| `REFLECT_ENV_FILE` | `Einfacht.env` | file name of the hooks' knob carrier (issue #8), resolved by the removable plugin `einfacht-env.sh` (hooks dir first, repo root second) |
+| `REFLECT_RETRACTIONS` | `retractions.json` | refuted-claims ledger (the retraction gate scans the `REFLECT_DOCS` docs for their reappearance) |
+| `REFLECT_QUESTIONS` | `questions` | open-questions directory (one question per file; each must name a runnable settler) |
 
 `GATE_REPO` (`zreflect/gate.py`) points at **the repo being checked** — selftests run against
 fixture trees through it and never touch the real repo.

@@ -513,6 +513,12 @@ install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
 | `REFLECT_PINS` | `pins.json` | 派生树 pin 闸门的规格名（`--spec` 可覆盖；同款显式缺失语义） |
 | `REFLECT_WORLD` | `world.json`（不在 ⇒ 未启用） | 反射世界声明（issue #13）：`{"lines": {…}, "active": …, "stamps": {…}}` —— 多线仓库共享同一个验证环境；每枚印章按同复跑闸门的裸值契约复跑（`run_cmd` 嫁接） |
 | `REFLECT_WORLD_LINE` | 空 | 线覆盖，给 CI / 特殊跑法（必须指清单里有的线 —— 指空会报）；未配 ⇒ 解析顺序为「分支是线 > `active`」 |
+| `REFLECT_INVARIANTS` | 空（不在 ⇒ 未启用） | 声明式不变量规格（issue #7）：`{"checks": [{path, must_contain?, must_not_contain?, why}]}` |
+| `REFLECT_INSTRUMENTS` | 空（不在 ⇒ 未启用） | 被证伪量法登记（issue #6 ①）：`{"methods": [{text, why, fixed_in}]}` |
+| `REFLECT_INSTRUMENT_DAYS` | 空（不在 ⇒ 未启用） | 恒常检测阈值天（issue #6 ①）：台账条目 `first_seen` 超阈值 ⇒「这条 cmd 是在量，还是恒返回同一个数？」 |
+| `REFLECT_ENV_FILE` | `Einfacht.env` | 钩子旋钮载体的文件名（issue #8），由可拔插件 `einfacht-env.sh` 解析（钩子目录优先、仓库根次之） |
+| `REFLECT_RETRACTIONS` | `retractions.json` | 翻案台账（翻案闸门扫 `REFLECT_DOCS` 文档里的重现行） |
+| `REFLECT_QUESTIONS` | `questions` | 悬案目录（一题一文件；每份必须挂可跑的结算件） |
 
 `GATE_REPO`（`zreflect/gate.py`）指向**被检查的仓库根** —— 自证靠它在夹具树上跑，
 不碰真仓库。
