@@ -21,5 +21,13 @@ jobs:
           python-version: "3"
       - name: 事实块与台账一致 + 发现式名录的全部闸门全绿
         run: |
+          # 名录对账（缺声明 / 孤儿 / 旗标错 / 写而不跑的自证）—— 判据一份产地
+          python3 zreflect/registry.py --gates >/dev/null
+          python3 zreflect/registry.py --selftest-modules >/dev/null
           python3 zreflect/facts.py --check "${REFLECT_DOC:-STATE.md}"
           for g in zreflect/check_*.py; do echo "--- $g"; python3 "$g" || exit 1; done
+      - name: 平台模块自证（gate / runner / knobs / registry / guard / ledger / render / facts）
+        run: |
+          for m in $(python3 zreflect/registry.py --selftest-modules); do
+            echo "--- $m"; python3 "$m" --selftest || exit 1
+          done

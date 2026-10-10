@@ -58,6 +58,15 @@ for g in zreflect/check_*.py; do python3 "$g" || exit 1; done
   `GATE = gate.meta(名字, 一句话, knobs=(…), name_dependent=?)`；没声明行的
   `check_*.py` 名录不收、`--render-doc` 拒绝渲染。旋钮必须先在
   `zreflect/knobs.py` 登记才算数（扫描面里的未登记记号按幻影/typo 报）。
+- **发现谓词只能有一个**（2026-10-07）：执行面（hooks / CI / runner 的
+  `for g in zreflect/check_*.py`）用 `check_` 前缀，发现面（`registry.gates()`）
+  就必须用同一个 —— 否则「被发现」与「被执行」分叉。于是 `check_` 前缀是
+  **承重**的：叫 `check_` 的闸门会被跑；**声明了却不叫 `check_`** 的孤儿由
+  `registry.misnamed()` 报（`problems()` 收它 ⇒ `--render-doc` / `--check`
+  拒绝、pre-commit 红）—— 不许静默。平台模块（`gate` / `runner` / `knobs` /
+  `registry` / `guard` / `ledger` / `render` / `facts`）不是闸门、无声明，
+  它们**自己写自证**（`_cases` / `CASES`），由 `registry.selftest_modules()`
+  发现、`gates-selftest.sh` 的 module 段实跑 —— 写而不跑的自证 = 装饰。
 - **守卫必须吃「该报的必须报」这类断言**。本系统抽出来的那次实践里，一条守卫因为一个
   未定义变量，**从落地起从未生效过** —— 它失效的方式是「只在真的该报警时才崩」。
   没有反向断言的守卫，和没有守卫是一样的。**接线的自证与纯函数的自证同等重要**：
