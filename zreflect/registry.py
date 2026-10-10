@@ -216,11 +216,12 @@ def _touches_renamed(g):
     return False
 
 
-def problems(gs, missing, orphans=None, mods=None, mods_missing=None):
+def problems(gs, missing, orphans=None, mods=None, mods_missing=None,
+             knob_problems=None):
     """名录的对账（纯函数）：空 = 绿。自证期间不许 print。
 
-    `orphans` / `mods` / `mods_missing` 可注入（自证用夹具目录）；
-    None ⇒ 现读真仓。
+    `orphans` / `mods` / `mods_missing` / `knob_problems` 可注入
+    （自证用夹具）；None ⇒ 现读真仓。
 
     · 叫 check_ 却没有 GATE 声明行 ⇒ 报（忘写声明 = 叙述会漂）；
     · 声明了却不叫 check_ ⇒ 报（孤儿：进叙述却不被执行面跑到）；
@@ -254,6 +255,13 @@ def problems(gs, missing, orphans=None, mods=None, mods_missing=None):
                    "写而不跑的自证 = 装饰：%s" % ", ".join(mods_missing))
     if not mods:
         out.append("没有任何平台模块自证可发现 —— 零值守卫：空输入不是通过")
+    # 名册自洽性（C3）：幻影旋钮 / README 幻影 —— 与任何载体是否存在无关。
+    # 此前焊在 check_envfile.run() 的「载体存在」前置之后，本仓没有
+    # Einfacht.env ⇒ 从未执行（实测踩到）。名册的家在这里收口。
+    if knob_problems is None:
+        import knobs                                     # noqa: PLC0415
+        knob_problems = knobs.scan_surface_problems() + knobs.readme_problems()
+    out += list(knob_problems)
     return out
 
 
@@ -389,18 +397,19 @@ def _cases():
         ("★ 声明了却不叫 check_ ⇒ 必须报（孤儿：进叙述不被执行）",
          lambda: any("却不叫 check_" in x for x in problems(
              [], [], orphans=["zreflect/named_other.py"],
-             mods=["zreflect/x.py"], mods_missing=[]))),
+             mods=["zreflect/x.py"], mods_missing=[], knob_problems=[]))),
         ("★ 标了 name_dependent 却不消费改名默认名 ⇒ 必须报（旗标错了）",
          lambda: any("旗标" in x for x in problems(
              [dict(plain, name_dependent=True)], [], orphans=[],
-             mods=["zreflect/x.py"], mods_missing=[]))),
+             mods=["zreflect/x.py"], mods_missing=[], knob_problems=[]))),
         ("★ 写了自证却没有 --selftest 入口 ⇒ 必须报（写而不跑 = 装饰）",
          lambda: any("写而不跑" in x for x in problems(
              [], [], orphans=[], mods=["zreflect/x.py"],
-             mods_missing=["zreflect/y.py"]))),
+             mods_missing=["zreflect/y.py"], knob_problems=[]))),
         # ③ 空输入必须报
         ("★ 空名录 + 空模块 ⇒ 必须报（零值守卫）",
-         lambda: problems([], [], orphans=[], mods=[], mods_missing=[]) != []),
+         lambda: problems([], [], orphans=[], mods=[], mods_missing=[],
+                          knob_problems=[]) != []),
     ]
 
 

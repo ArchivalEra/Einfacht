@@ -51,6 +51,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import fatal, finish, main_selftest_or, meta, off, repo, selftest  # noqa: E402
+import knobs                                              # noqa: E402
 from knobs import KINDS, REGISTRY                         # noqa: E402
 
 ENV_FILE = (os.environ.get("REFLECT_ENV_FILE", "Einfacht.env")
@@ -171,30 +172,6 @@ def problems(exports, registry, file_exists, dir_exists, syntax_ok=None,
     return out
 
 
-def readme_knob_problems(files=None):
-    """三语 README（REFLECT_READMES 名单）里出现、登记表里没有的
-    REFLECT_* 名字（文档侧幻影防御；`files` 可注入假文件系统）。"""
-    out = []
-    names = [s.strip() for s in os.environ.get(
-        "REFLECT_READMES",
-        "README.md,README.zh.md,README.de.md").split(",") if s.strip()]
-    for name in names:
-        if files is not None:
-            if name not in files:
-                continue
-            text = files[name]
-        else:
-            p = repo(name)
-            if not os.path.exists(p):
-                continue
-            text = open(p, encoding="utf-8", errors="replace").read()
-        for tok in sorted(set(_TOKEN_RE.findall(text))):
-            if tok not in REGISTRY:
-                out.append("%s 提到未登记旋钮 `%s` —— 幻影 or typo；"
-                           "登记进 zreflect/knobs.py 才算数" % (name, tok))
-    return out
-
-
 def _find_env_file():
     """插件同款的解析顺序：钩子目录优先、仓库根次之。"""
     for d in (repo("reflect-hooks"), repo()):
@@ -208,11 +185,16 @@ def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     p = _find_env_file()
     if p is None:
+        # ⚠️ C3：off 早返回**只跳过载体检查** —— 名册自洽性（幻影旋钮 /
+        # README 幻影）与载体是否存在无关，已搬到 knobs.py 并由
+        # registry.problems() 收口（此前它焊在这里之后，本仓没有
+        # Einfacht.env ⇒ 从未执行，实测踩到）。
         return off("env 文件闸门：%s 不存在（钩子目录与仓库根都没有）"
                    " ⇒ 本闸门未启用（可插拔模块；钩子回落纯环境变量"
                    " + 默认名。要启用：cp reflect-hooks/"
                    "Einfacht.env.example reflect-hooks/%s）"
-                   % (ENV_FILE, ENV_FILE))
+                   "。注：名册自洽性（幻影旋钮）不随本闸门关闭 —— 见 "
+                   "registry.problems() / knobs.py" % (ENV_FILE, ENV_FILE))
     try:
         with open(p, encoding="utf-8", errors="replace") as fh:
             text = fh.read()
@@ -232,11 +214,12 @@ def run(argv=None):
     except OSError:
         syntax = None
     exports = parse_exports(text)
+    # 载体内的判据：export 名 typo / 文件旋钮指向缺失 / 空值 / sh 语法。
+    # 幻影旋钮与 README 幻影已归 knobs.py（与载体无关）。
     probs = problems(exports, REGISTRY,
                      lambda t: os.path.exists(repo(t)),
                      lambda t: os.path.isdir(repo(t)),
                      syntax_ok=syntax, scanned=scanned)
-    probs += readme_knob_problems()
     return finish("env 文件闸门", probs,
                   "env 文件闸门：OK（%s：%d 条生效 export，名字全在登记表、"
                   "文件旋钮指向都在）"
@@ -270,8 +253,8 @@ def _cases():
         ("扫描面对账干净（全在登记表）⇒ 不报",
          lambda: problems(good_env, registry, fe, de, syntax_ok=True,
                           scanned=set(registry) | {"REFLECT_FACTS"}) == []),
-        ("三语 README 的旋钮提名 ⊆ 登记 ⇒ 不报",
-         lambda: readme_knob_problems(files={
+        ("三语 README 的旋钮提名 ⊆ 登记 ⇒ 不报（判据归 knobs）",
+         lambda: knobs.readme_problems(files={
              "README.md": "用 REFLECT_DOC 与 REFLECT_READMES。",
              "README.zh.md": "x", "README.de.md": "x"}) == []),
         # ② 该报的必须报
@@ -307,26 +290,17 @@ def _cases():
          lambda: any("跑不了" in x for x in problems(
              good_env, registry, fe, de, syntax_ok=None,
              scanned=registry.keys()))),
-        ("★ README 提到未登记旋钮 ⇒ 必须报（文档侧幻影）",
-         lambda: any("未登记旋钮" in x and "README.zh.md" in x
-                     for x in readme_knob_problems(files={
-                         "README.md": "x", "README.zh.md": "见 " + typo + "。",
-                         "README.de.md": "x"}))),
         # ③ 空输入必须报
         ("★ 空 export 集（空文件 / 只剩注释）⇒ 必须报",
          lambda: problems({}, registry, fe, de, syntax_ok=True,
                           scanned=registry.keys()) != []),
-        # 边界：左边界 —— 假记号不许从别的前缀里切出来（翻案示例文本
-        # 曾被切成假旋钮名，三语 README 各报一次假阳性；实测踩到）。
+        # 边界（判据归 knobs.py；此处保留一条串联证明搬运没丢语义）：
+        # 假记号不许从别的前缀里切出来（翻案示例文本曾被切成假旋钮名）。
         # ⚠️ 样例用拼接构造：本文件在扫描面内，字面量写出来会被对账收编。
         ("★ 前缀词里的记号不许被切出假旋钮名",
-         lambda: readme_knob_problems(files={
+         lambda: knobs.readme_problems(files={
              "README.md": "> ZCODE_" + typo + " 这条是已翻案的示例。",
              "README.zh.md": "x", "README.de.md": "x"}) == []),
-        ("★ 真记号紧邻中文标点仍必须认（左边界只排字母数字下划线）",
-         lambda: readme_knob_problems(files={
-             "README.md": "用（" + typo + "）试试。",
-             "README.zh.md": "x", "README.de.md": "x"}) != []),
     ]
 
 
