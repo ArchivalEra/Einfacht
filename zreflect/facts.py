@@ -101,12 +101,13 @@ def _machine_blocks(ledger):
         （手写的「N 道闸门」清单漂过：ab/locks/pins 并入当天清单就少了
         三道 —— 叙述从声明行派生，手写退役）。
 
-    返回 (blocks, 错误句)。名录收不齐（某道闸门没落声明行）⇒ 拒绝渲染。
+    返回 (blocks, 错误句)。名录对账不过（缺声明 / 孤儿 / 旗标错）⇒ 拒绝渲染
+    —— 判据只有一份产地：`registry.problems()`。
     """
     gs, missing = registry.gates()
-    if missing:
-        return None, ("以下闸门没有 GATE = gate.meta(…) 声明行 —— 名录不收"
-                      "无名之辈：%s" % ", ".join(missing))
+    probs = registry.problems(gs, missing)
+    if probs:
+        return None, "名录对账不过，拒绝渲染：\n  · " + "\n  · ".join(probs)
     return ((BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
             (registry.GATES_BEGIN, registry.GATES_END,
              registry.render_gates(gs))), None
