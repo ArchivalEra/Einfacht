@@ -64,8 +64,16 @@ def guard_nonempty(name, seq, what="输入"):
 
 
 def off(notice):
-    """未启用：明说（stderr）+ 退 0 —— 可插拔闸门 off 态的唯一产地。"""
-    print(notice, file=sys.stderr)
+    """未启用：明说 + 退 0。
+
+    ⚠️ **off 与「真跑通过」必须可区分**（C2）：两者 rc 都是 0（off 不是失败，
+    hooks 的 `|| exit` 不该把它当红），但 off 在 stdout 打一行机器可读标记
+    `OFF: …` —— 执行面（`gate.run_phase`）据此把闸门分成 ran / off / failed
+    三档，而不是把「没跑」算进「绿」。此前 off 只打 stderr 的自由文本，
+    「全部闸门绿」实为「N 道通过 + M 道从未运行」不可见（本仓实测 8/13 道
+    off —— 与本仓立身要消灭的假绿同形）。
+    """
+    print("OFF: %s" % notice)
     return 0
 
 
@@ -98,17 +106,28 @@ def finish(name, problems, ok):
     return 0
 
 
-def meta(name, desc, knobs=(), name_dependent=False):
+def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit"):
     """闸门声明行（registry 的 ast 提取目标）：名字 + 一句话 + 消费的旋钮。
 
-    声明即登记 —— 手写名录会漂，这里只许写事实。`name_dependent=True`
-    标给「默认输入被换名自证改名」的闸门（gates-selftest 的跨仓库节里
-    必须红的那批）：标了会被两头拦 —— 夹具要求它真红，registry.problems
-    要求它真消费改名的默认名。registry（Phase 3）从这里派生闸门清单、
-    红名单与 STATE.md 的 AUTO:GATES 机器块。
+    声明即登记 —— 手写名录会漂，这里只许写事实。
+
+    · `name_dependent=True` 标给「默认输入被换名自证改名」的闸门
+      （gates-selftest 的跨仓库节里必须红的那批）：标了会被两头拦 ——
+      夹具要求它真红，registry.problems 要求它真消费改名的默认名。
+    · `runs_at`（C1）**正面声明频率**：`"commit"`（每次提交跑，进 hooks /
+      CI）或 `"start-of-work"`（开工前手动跑 —— doctor 那种「查会死的东西」，
+      挂 pre-commit 频率错）。此前频率只能靠「文件名不叫 check_」这种**否定式
+      命名意外**表达，且执行面 glob 与它无关 ⇒ 改个名就把 doctor 变成每次
+      提交探测活进程的闸门，无人拦。现在频率是声明里的一个字段，执行面
+      （gate.run_phase）按它过滤 —— 名字不再是承重的。
+
+    registry 从这些声明派生：执行清单（按 runs_at 过滤）、叙述
+    （AUTO:GATES）、红名单、自证清单。名字只用于 `check_*.py` 的文件约定
+    （描述性），不再承载语义。
     """
     return {"name": name, "desc": desc, "knobs": tuple(knobs),
-            "name_dependent": bool(name_dependent)}
+            "name_dependent": bool(name_dependent),
+            "runs_at": str(runs_at)}
 
 
 def raises(fn):
@@ -162,6 +181,44 @@ def main_selftest_or(args, name, cases, run):
     if "--selftest" in args:
         return selftest(name, cases() if callable(cases) else cases)
     return run([a for a in args if a != "--selftest"])
+
+
+def run_phase(phase, gates, runner=None, repo_root=None):
+    """按相位跑一组闸门并**聚合 ran / off / failed**（C1+C2 的执行面）。
+
+    这是 hooks / CI / runner 的**唯一执行入口** —— 取代此前散在 6 处的
+    `for g in zreflect/check_*.py` glob。`gates` = registry 派生的
+    (file, runs_at) 清单（调用方按 `phase` 过滤，或传全集由这里过滤）。
+
+    为什么聚合三档而不是只看 rc：off 与「跑过且通过」rc 都是 0，只看 rc
+    会把「没跑」算进「绿」（本仓实测 8/13 道 off）。这里读子进程 stdout 的
+    `OFF:` 机器标记把 off 单列，于是「全绿」永远附带「其中 N 道 off（没查）」。
+    `runner` 可注入（自证用假执行器）。
+
+    返回 {ran, off, failed, off_list, fail_list}。
+    """
+    import subprocess                                    # noqa: PLC0415
+
+    def _default(f):
+        p = subprocess.run([sys.executable, f], capture_output=True, text=True,
+                           cwd=repo_root or GATE_REPO)
+        return p.returncode, p.stdout
+    run = runner or _default
+    res = {"ran": 0, "off": 0, "failed": 0, "off_list": [], "fail_list": []}
+    for item in gates:
+        f = item["file"] if isinstance(item, dict) else item
+        if isinstance(item, dict) and item.get("runs_at") not in (None, phase):
+            continue
+        rc, out = run(f)
+        if rc != 0:
+            res["failed"] += 1
+            res["fail_list"].append(f)
+        elif any(ln.startswith("OFF:") for ln in (out or "").splitlines()):
+            res["off"] += 1
+            res["off_list"].append(f)
+        else:
+            res["ran"] += 1
+    return res
 
 
 if __name__ == "__main__":

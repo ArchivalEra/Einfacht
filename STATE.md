@@ -60,10 +60,10 @@
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `md_files` | **7** | 2026-10-10T13:40:16+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `md_lines` | **2203** | 2026-10-10T13:40:16+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
-| `py_files` | **27** | 2026-10-10T13:40:16+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **5125** | 2026-10-10T13:40:16+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **7** | 2026-10-10T13:45:50+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `md_lines` | **2203** | 2026-10-10T13:45:50+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
+| `py_files` | **27** | 2026-10-10T13:45:50+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **5230** | 2026-10-10T13:45:50+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 4 条事实。
 <!-- /AUTO:FACTS -->
@@ -86,6 +86,7 @@
 | `check_retractions.py`（翻案重现检测） | 被推翻的断言不许悄悄回来当现状 | `REFLECT_RETRACTIONS`, `REFLECT_DOCS`, `REFLECT_HISTORY_SECS` |
 | `check_stale.py`（陈旧断言检测） | sha 出处 / 退役名 / 测龄 | `REFLECT_DOCS`, `REFLECT_FACTS`, `REFLECT_HISTORY_SECS`, `REFLECT_RETIRED`, `REFLECT_STALE_DAYS` |
 | `check_world.py`（world 闸门） | 声明式验证对象：多线仓库共享验证环境的世界对账 | `REFLECT_WORLD`, `REFLECT_WORLD_LINE` |
+| `doctor.py`（开工预检 doctor） | 进程 / 端口活性（查会死的东西 ⇒ runs_at=start-of-work，不进 pre-commit） | `REFLECT_DOCTOR`, `REFLECT_DOCTOR_TIMEOUT` |
 
-13 道闸门（发现式名录派生 —— 手写清单会漂，加闸门 = 落一个声明行，这里自动长出来）。
+14 道闸门（发现式名录派生 —— 手写清单会漂，加闸门 = 落一个声明行，这里自动长出来）。
 <!-- /AUTO:GATES -->

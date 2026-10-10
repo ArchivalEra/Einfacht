@@ -57,13 +57,10 @@ def _zdir():
 RENAMED_DEFAULTS = ("FACTS.json", "STATE.md", "retractions.json", "questions",
                     "README.md", "README.zh.md", "README.de.md")
 
-# 点名自证的特殊件（不是 check_*.py，发现式名录扫不到 —— 理由住在数据旁）。
-SPECIAL_PLUGINS = (
-    ("zreflect/doctor.py",
-     "开工预检查的是会死的东西（issue #10）：挂 pre-commit 频率错，"
-     "故意不进发现式名录 —— 但自证没人跑就会漂，所以点名一次"),
-)
-
+# 已知相位（C1）：闸门声明自己的运行频率。执行面（gate.run_phase）按它过滤。
+#   commit        每次提交跑（pre-commit / pre-push / CI）
+#   start-of-work 开工前手动跑（doctor —— 查会死的东西，挂提交频率错）
+PHASES = ("commit", "start-of-work")
 
 def selftest_modules(zdir=None):
     """发现式自证模块名录：zreflect/*.py 里**写了自证**（`_cases` / `CASES`）
@@ -120,17 +117,19 @@ def _has_cases(tree):
 
 
 def gates(zdir=None):
-    """发现式闸门名录：ast 解析每个 check_*.py 的模块级声明行。
+    """发现式闸门名录：**声明即闸门** —— ast 解析 zreflect/*.py 的模块级
+    `GATE = gate.meta(…)` 行，与文件名无关（C1）。
 
     返回 (gates, missing)。gates = [{file, name, desc, knobs,
-    name_dependent}]；missing = **叫 check_ 却没有声明行**的文件
-    （problems 报、render 拒绝 —— 那是「忘了写声明」的形状）。
+    name_dependent, runs_at}]；missing = **叫 check_ 却没有声明行**的文件
+    （problems 报、render 拒绝 —— 那是「起名叫闸门却忘了声明」的形状）。
 
-    发现谓词 = `check_` 前缀（**执行面也用它**：hooks / CI / runner 的
-    `for g in zreflect/check_*.py`）—— 谓词只能有一个，否则「被发现」与
-    「被执行」会分叉。命名约定于是是**承重的**：`check_` = 会被执行的闸门。
-    「声明了却不叫 check_」的孤儿由 `misnamed()` 报告（不许静默 ——
-    否则它进了 AUTO:GATES 却不被跑，比完全看不见更坏）。
+    谓词 = **声明**，不是文件名（2026-10-10，C1）：执行面（hooks / CI）
+    改为读 registry.runnable() ⇒ 谓词只有一处（这里）。于是：
+      · 名字不再承重 —— doctor 靠 `runs_at="start-of-work"` 正面声明频率，
+        不靠「它没叫 check_」这种否定式命名意外；
+      · 「孤儿」（声明了却不叫 check_）概念消失 —— 声明了就是闸门，会被
+        runnable() 收进执行清单，不存在「进叙述不被执行」的中间态。
     """
     d = zdir if zdir is not None else _zdir()
     out, missing = [], []
@@ -139,35 +138,17 @@ def gates(zdir=None):
     except OSError:
         return [], []                     # zreflect/ 不在：调用方按零值守卫报
     for n in names:
-        if not (n.startswith("check_") and n.endswith(".py")):
+        if not n.endswith(".py") or n == "__init__.py":
             continue
         rel = "zreflect/" + n
         meta = _declaration(os.path.join(d, n), rel)
         if meta:
             out.append(meta)
-        else:
+        elif n.startswith("check_"):
+            # 起名叫 check_ 却没声明 ⇒ 忘写声明（名录不收、render 拒绝）。
+            # 非 check_ 且无声明 = 平台模块（gate/knobs/registry/…），不是闸门。
             missing.append(rel)
     return out, missing
-
-
-def misnamed(zdir=None):
-    """**声明了却不叫 check_** 的文件（孤儿）：它们进了 AUTO:GATES 的叙述，
-    却不被执行面（glob `check_*.py`）跑到 —— 静默缺口，必须报。"""
-    d = zdir if zdir is not None else _zdir()
-    out = []
-    try:
-        names = sorted(os.listdir(d))
-    except OSError:
-        return out
-    for n in names:
-        if not n.endswith(".py") or n == "__init__.py":
-            continue
-        if n.startswith("check_"):
-            continue
-        rel = "zreflect/" + n
-        if _declaration(os.path.join(d, n), rel):
-            out.append(rel)
-    return out
 
 
 def _declaration(path, rel):
@@ -189,20 +170,34 @@ def _declaration(path, rel):
                     or getattr(func, "attr", "") == "meta"):
                 continue
             try:
-                knobs, name_dep = (), False
+                knobs, name_dep, runs_at = (), False, "commit"
                 for kw in node.value.keywords:
                     if kw.arg == "knobs":
                         knobs = ast.literal_eval(kw.value)
                     elif kw.arg == "name_dependent":
                         name_dep = ast.literal_eval(kw.value)
+                    elif kw.arg == "runs_at":
+                        runs_at = ast.literal_eval(kw.value)
                 return {"file": rel,
                         "name": ast.literal_eval(node.value.args[0]),
                         "desc": ast.literal_eval(node.value.args[1]),
                         "knobs": tuple(knobs),
-                        "name_dependent": bool(name_dep)}
+                        "name_dependent": bool(name_dep),
+                        "runs_at": str(runs_at)}
             except (ValueError, IndexError):
                 return None
     return None
+
+
+def runnable(phase="commit", zdir=None):
+    """按相位给出**该跑**的闸门清单（C1：执行面唯一产地）。
+
+    `phase="commit"` ⇒ 每次提交跑的（hooks / CI）；`phase="start-of-work"`
+    ⇒ 开工前手动跑的（doctor）。返回 [{file, name, runs_at, …}]。
+    声明面（GATE = meta(…, runs_at=…)）是唯一产地 —— 执行面不再 glob 文件名。
+    """
+    gs, _missing = gates(zdir)
+    return [g for g in gs if g.get("runs_at", "commit") == phase]
 
 
 def _touches_renamed(g):
@@ -216,17 +211,18 @@ def _touches_renamed(g):
     return False
 
 
-def problems(gs, missing, orphans=None, mods=None, mods_missing=None,
+def problems(gs, missing, mods=None, mods_missing=None,
              knob_problems=None):
     """名录的对账（纯函数）：空 = 绿。自证期间不许 print。
 
-    `orphans` / `mods` / `mods_missing` / `knob_problems` 可注入
-    （自证用夹具）；None ⇒ 现读真仓。
+    `mods` / `mods_missing` / `knob_problems` 可注入（自证用夹具）；
+    None ⇒ 现读真仓。
 
     · 叫 check_ 却没有 GATE 声明行 ⇒ 报（忘写声明 = 叙述会漂）；
-    · 声明了却不叫 check_ ⇒ 报（孤儿：进叙述却不被执行面跑到）；
+    · runs_at 不是已知相位 ⇒ 报（频率是声明字段，写错值会让执行面漏掉它）；
     · 标了 name_dependent 却不消费任何改名默认名 ⇒ 报（旗标错了）；
     · 写了自证却没有 --selftest 入口 ⇒ 报（写而不跑 = 装饰）；
+    · 名册自洽性（幻影旋钮 / README 幻影）⇒ 报（C3，与载体无关）；
     · 名录整体为空 ⇒ 报（零值守卫）。
     """
     out = []
@@ -234,12 +230,11 @@ def problems(gs, missing, orphans=None, mods=None, mods_missing=None,
         out.append("以下闸门没有 GATE = gate.meta(…) 声明行 —— 名录不收"
                    "无名之辈（手写名录会漂，声明即登记）：%s"
                    % ", ".join(missing))
-    orph = misnamed() if orphans is None else orphans
-    if orph:
-        out.append("以下文件声明了 GATE 却不叫 check_ —— 发现谓词是 check_ 前缀"
-                   "（执行面 hooks/CI 也用它），孤儿会进 AUTO:GATES 叙述却不被"
-                   "执行（比看不见更坏）。改名成 check_*.py，或去掉声明：%s"
-                   % ", ".join(orph))
+    for g in gs:
+        if g.get("runs_at", "commit") not in PHASES:
+            out.append("`%s` 的 runs_at=%r 不是已知相位（%s）—— 频率是声明"
+                       "字段，写错值会让执行面漏掉它"
+                       % (g["file"], g.get("runs_at"), " | ".join(PHASES)))
     for g in gs:
         if g["name_dependent"] and not _touches_renamed(g):
             out.append("`%s` 标了 name_dependent，但消费的旋钮没有一个默认名"
@@ -274,8 +269,12 @@ def red_need(gs=None):
 
 
 def plugins(hooks_dir=None):
-    """自证点名的插件清单：reflect-hooks/*.sh 带自证标记的（发现式收编）
-    + 点名特殊件（doctor.py —— 理由见 SPECIAL_PLUGINS）。"""
+    """自证点名的**插件**清单：reflect-hooks/*.sh 带自证标记的（发现式收编）。
+
+    doctor 不再是「点名特殊件」—— C1 起它是正常声明的闸门
+    （`runs_at="start-of-work"`），由 gates()/runnable() 收编，不再需要
+    旁路点名（此前它靠 SPECIAL_PLUGINS 手写一行，是「名字承重」时代的产物）。
+    """
     d = hooks_dir if hooks_dir is not None else repo("reflect-hooks")
     out = []
     try:
@@ -292,7 +291,6 @@ def plugins(hooks_dir=None):
             continue
         if "--selftest" in text:
             out.append("reflect-hooks/" + n)
-    out.extend(p for p, _why in SPECIAL_PLUGINS)
     return out
 
 
@@ -317,6 +315,39 @@ def main(argv):
     if "--red-need" in argv:
         print(" ".join(red_need()))
         return 0
+    if "--runnable" in argv:
+        # 执行面唯一产地（C1）：--runnable [phase]，默认 commit。
+        i = argv.index("--runnable")
+        phase = (argv[i + 1] if len(argv) > i + 1
+                 and not argv[i + 1].startswith("-") else "commit")
+        for g in runnable(phase):
+            print(g["file"])
+        return 0
+    if "--all-runnable" in argv:
+        # 全部相位的闸门（自证用：每道闸门都必须证明自己能红，与相位无关）。
+        gs, _m = gates()
+        for g in gs:
+            print(g["file"])
+        return 0
+    if "--run" in argv:
+        # 执行面：跑一个相位的全部闸门并聚合 ran / off / failed（C1+C2）。
+        # hooks / CI 只调这一行 —— glob 退役，谓词只有 gates() 一处。
+        i = argv.index("--run")
+        phase = (argv[i + 1] if len(argv) > i + 1
+                 and not argv[i + 1].startswith("-") else "commit")
+        from gate import run_phase                          # noqa: PLC0415
+        gs = runnable(phase)
+        if not gs:
+            return fatal("相位 %s 没有可跑的闸门 —— 零值守卫：空清单不是通过"
+                         "（谓词或声明坏了？）" % phase)
+        res = run_phase(phase, gs)
+        print("相位 %s：ran %d / off %d / failed %d"
+              % (phase, res["ran"], res["off"], res["failed"]))
+        for f in res["off_list"]:
+            print("  off    %s（未启用 —— 没查，不是通过）" % f)
+        for f in res["fail_list"]:
+            print("  FAILED %s" % f, file=sys.stderr)
+        return 1 if res["failed"] else 0
     if "--plugins" in argv:
         print("\n".join(plugins()))
         return 0
@@ -339,8 +370,8 @@ def main(argv):
         for g in gs:
             print("%s\t%s\t%s" % (g["file"], g["name"], g["desc"]))
         return 0
-    print("用法：registry.py [--gates|--red-need|--plugins|--selftest-modules|--selftest]",
-          file=sys.stderr)
+    print("用法：registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|"
+          "--red-need|--plugins|--selftest-modules|--selftest]", file=sys.stderr)
     return 2
 
 
@@ -357,7 +388,9 @@ def _cases():
         'GATE = gate.meta("乙闸门", "挡乙", knobs=("REFLECT_WORLD",))\n')
     open(os.path.join(d, "check_bare.py"), "w").write("X = 1\n")
     open(os.path.join(d, "named_other.py"), "w").write(
-        'GATE = gate.meta("丙", "声明了却不叫 check_（孤儿）", knobs=())\n')
+        'GATE = gate.meta("丙", "声明即闸门，名字无关", knobs=())\n')
+    open(os.path.join(d, "doc_gate.py"), "w").write(
+        'GATE = gate.meta("丁", "开工相位", knobs=(), runs_at="start-of-work")\n')
     open(os.path.join(d, "platform.py"), "w").write("Y = 2\n")   # 无声明 = 平台模块
     gs, missing = gates(d)
     ok = [g for g in gs if g["file"].endswith("check_ok.py")][0]
@@ -369,24 +402,34 @@ def _cases():
                 if n.startswith("check_") and n.endswith(".py")}
     return [
         # ① 正常不报
-        ("ast 提取声明行：名字 / 一句话 / 旋钮 / 旗标",
+        ("ast 提取声明行：名字 / 一句话 / 旋钮 / 旗标 / 相位",
          lambda: ok["name"] == "甲闸门" and ok["desc"] == "挡甲"
          and ok["knobs"] == ("REFLECT_FACTS",)
-         and ok["name_dependent"] is True),
+         and ok["name_dependent"] is True and ok["runs_at"] == "commit"),
         ("无声明且非 check_ ⇒ 平台模块，既不入名录也不入 missing",
          lambda: all(not m.endswith("platform.py") for m in missing)
          and all(not g["file"].endswith("platform.py") for g in gs)),
+        ("声明即闸门：非 check_ 命名但有声明 ⇒ 被发现（孤儿概念消失）",
+         lambda: any(g["file"].endswith("named_other.py") for g in gs)
+         and not any(m.endswith("named_other.py") for m in missing)),
         ("真仓名录与磁盘一致：每个 check_*.py 都在名录里",
          lambda: not real_missing and real_files() <= {g["file"] for g in real}),
-        ("真仓无孤儿（没有声明了却不叫 check_ 的文件）",
-         lambda: misnamed() == []),
+        ("runnable 按相位过滤：commit 不含 start-of-work 的闸门",
+         lambda: (lambda cm, sw: all(g["runs_at"] == "commit" for g in cm)
+                  and [g["file"] for g in sw]
+                  == ["zreflect/doc_gate.py"])(runnable("commit", d),
+                                               runnable("start-of-work", d))),
+        ("真仓：doctor 是 start-of-work 相位（不靠名字排除）",
+         lambda: any(g["file"].endswith("doctor.py") for g in real)
+         and not any(g["file"].endswith("doctor.py")
+                     for g in runnable("commit"))),
         ("红名单非空且每道都标了旗标（真仓一致性）",
          lambda: (lambda rn: len(rn) >= 1 and all(
              any(g["file"].endswith(b) and g["name_dependent"] for g in real)
              for b in rn))(red_need(real))),
-        ("插件：einfacht-env.sh 发现式收编 + doctor 点名",
+        ("插件：einfacht-env.sh 发现式收编（doctor 不再靠点名）",
          lambda: "reflect-hooks/einfacht-env.sh" in plugins()
-         and "zreflect/doctor.py" in plugins()),
+         and "zreflect/doctor.py" not in plugins()),
         ("render_gates 是纯函数且含每道闸门（含首尾标记）",
          lambda: render_gates(gs) == render_gates(gs)
          and "甲闸门" in render_gates(gs)
@@ -394,21 +437,21 @@ def _cases():
         # ② 该报的必须报
         ("★ 叫 check_ 却没声明 ⇒ 必须报（忘写声明行的形状）",
          lambda: missing == ["zreflect/check_bare.py"]),
-        ("★ 声明了却不叫 check_ ⇒ 必须报（孤儿：进叙述不被执行）",
-         lambda: any("却不叫 check_" in x for x in problems(
-             [], [], orphans=["zreflect/named_other.py"],
+        ("★ runs_at 是未知相位 ⇒ 必须报（频率写错会让执行面漏掉它）",
+         lambda: any("不是已知相位" in x for x in problems(
+             [dict(plain, runs_at="whenever")], [],
              mods=["zreflect/x.py"], mods_missing=[], knob_problems=[]))),
         ("★ 标了 name_dependent 却不消费改名默认名 ⇒ 必须报（旗标错了）",
          lambda: any("旗标" in x for x in problems(
-             [dict(plain, name_dependent=True)], [], orphans=[],
+             [dict(plain, name_dependent=True)], [],
              mods=["zreflect/x.py"], mods_missing=[], knob_problems=[]))),
         ("★ 写了自证却没有 --selftest 入口 ⇒ 必须报（写而不跑 = 装饰）",
          lambda: any("写而不跑" in x for x in problems(
-             [], [], orphans=[], mods=["zreflect/x.py"],
+             [], [], mods=["zreflect/x.py"],
              mods_missing=["zreflect/y.py"], knob_problems=[]))),
         # ③ 空输入必须报
         ("★ 空名录 + 空模块 ⇒ 必须报（零值守卫）",
-         lambda: problems([], [], orphans=[], mods=[], mods_missing=[],
+         lambda: problems([], [], mods=[], mods_missing=[],
                           knob_problems=[]) != []),
     ]
 
