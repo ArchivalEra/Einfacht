@@ -47,7 +47,7 @@
 """
 import re
 
-from gate import repo                                    # noqa: F401  (re-export 便利)
+from gate import module_meta, repo                                    # noqa: F401  (re-export 便利)
 
 
 def unavailable(what, why):
@@ -81,3 +81,6 @@ def parse_prev_values(doc_text, row_pattern, group_names):
                     "回收靠命名分组，别用位置分组（换行序 = 静默拿错值）" % name) from error
         out[key] = rec
     return out
+
+
+MODULE = module_meta("采集器契约", "measure() 的四条原则 + 帮手（无独立自证）", selftest=False)

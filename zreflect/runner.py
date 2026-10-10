@@ -27,7 +27,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import GATE_REPO                                # noqa: E402
+from gate import module_meta, GATE_REPO                                # noqa: E402
 
 
 def default_timeout():
@@ -104,6 +104,9 @@ def _selftest():
     return main_selftest_or(sys.argv[1:],
                             "runner（逐字执行器：裸值契约 + pipefail + 超时）",
                             _cases, _run)
+
+
+MODULE = module_meta("逐字执行器", "裸值契约的公共 seam（复跑 / world 印章共用）", selftest=True)
 
 
 if __name__ == "__main__":

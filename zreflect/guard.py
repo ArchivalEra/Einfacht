@@ -30,6 +30,7 @@ interface（决策与执行分离 —— 决策可自证，执行归 measure()�
 from __future__ import annotations
 
 from ledger import changed_keys, dropped_keys, short_value
+from gate import module_meta
 
 
 def accepted_keys(argv):
@@ -154,11 +155,14 @@ def _cases():
     ]
 
 
+MODULE = module_meta("台账写盘守卫", "掉条 / 改口 / 逐条接受（决策与执行分离）", selftest=True)
+
+
 if __name__ == "__main__":
     import os                                            # noqa: PLC0415
     import sys                                           # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from gate import main_selftest_or                    # noqa: PLC0415
+    from gate import module_meta, main_selftest_or                    # noqa: PLC0415
 
     def _run(argv):
         print("guard 是模块（被 facts.measure 调用）；不单独跑。--selftest 看自证。",

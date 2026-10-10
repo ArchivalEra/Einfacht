@@ -34,7 +34,7 @@ import os
 import re
 import sys
 
-from gate import GATE_REPO                                # noqa: E402
+from gate import module_meta, GATE_REPO                                # noqa: E402
 
 # 名字 → (kind, 默认值, 一句话语义)。默认值 = 旋钮未配时各消费方的回落名。
 REGISTRY = {
@@ -184,6 +184,9 @@ def selftest():
     sys.path.insert(0, __file__.rsplit("/", 1)[0])
     from gate import selftest as _st                     # noqa: PLC0415
     return _st("knobs（旋钮登记：REFLECT_* 的唯一名册）", _cases())
+
+
+MODULE = module_meta("旋钮登记", "REFLECT_* 的唯一名册 + 名册自洽性判据", selftest=True)
 
 
 if __name__ == "__main__":

@@ -35,7 +35,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import fatal, repo, selftest                    # noqa: E402
+from gate import module_meta, fatal, repo, selftest                    # noqa: E402
 from knobs import REGISTRY                                # noqa: E402
 
 GATES_BEGIN = "<!-- AUTO:GATES -->"
@@ -62,19 +62,16 @@ RENAMED_DEFAULTS = ("FACTS.json", "STATE.md", "retractions.json", "questions",
 #   start-of-work 开工前手动跑（doctor —— 查会死的东西，挂提交频率错）
 PHASES = ("commit", "start-of-work")
 
-def selftest_modules(zdir=None):
-    """发现式自证模块名录：zreflect/*.py 里**写了自证**（`_cases` / `CASES`）
-    的模块 —— 不分是不是 check_*.py。返回 (mods, missing)。
+def modules(zdir=None):
+    """平台模块名录（C5）：ast 解析 `MODULE = module_meta(…)` 声明行。
 
-    为什么需要它：本仓立身的纪律「没人跑的检查器 = 没人盯」（runner 只扫
-    check_*.py）治的是**闸门**，却漏了**平台模块**（guard / knobs / registry /
-    render / ledger / facts）—— 它们也写自证，但此前没有任何 harness 执行，
-    自证存在而从不运行 = 装饰（实测：Phase 4 加的 guard.py 正犯此病）。
-    「登记被两头拦」：`mods` 里每个都必须带自证机器摘要行（harness 实跑校验），
-    `missing` 里每个都不许写 `_cases` / `CASES`（写而不登记 = 不可机器读的自证）。
+    返回 (declared, undeclared)：`declared` = [{file, name, desc, selftest}]；
+    `undeclared` = **非闸门、非 __init__ 却没有 MODULE 声明**的 .py ——
+    平台模块必须声明自己（哪怕是 selftest=False，也要正面说「我不用自证」），
+    否则「该有自证却没写」无人问（文本猜 `_cases` 猜不出来「本该有」）。
     """
     d = zdir if zdir is not None else _zdir()
-    mods, missing = [], []
+    declared, undeclared = [], []
     try:
         names = sorted(os.listdir(d))
     except OSError:
@@ -82,20 +79,37 @@ def selftest_modules(zdir=None):
     for n in names:
         if not n.endswith(".py") or n == "__init__.py":
             continue
-        try:
-            tree = ast.parse(open(os.path.join(d, n), encoding="utf-8").read())
-        except (OSError, SyntaxError):
+        rel = "zreflect/" + n
+        if _declaration(os.path.join(d, n), rel, attr="MODULE", func="module_meta"):
+            declared.append(_declaration(os.path.join(d, n), rel,
+                                         attr="MODULE", func="module_meta"))
+        elif _declaration(os.path.join(d, n), rel):
+            continue                    # 是闸门（有 GATE 声明），不算平台模块
+        else:
+            undeclared.append(rel)
+    return declared, undeclared
+
+
+def selftest_modules(zdir=None):
+    """有自证义务的模块名录（C5，声明驱动）：`MODULE = module_meta(…,
+    selftest=True)` 声明的模块 —— 闸门（GATE 声明）不算在内（它们由
+    run_gates 覆盖）。返回 (mods, missing)：`mods` = 该跑自证的；
+    `missing` = 声明了 selftest=True 却没有 --selftest 入口的（写而不跑 = 装饰）。
+    """
+    declared, _und = modules(zdir)
+    d = zdir if zdir is not None else _zdir()
+    mods, missing = [], []
+    for m in declared:
+        if not m.get("selftest"):
             continue
-        if not _has_cases(tree):
-            continue
-        text = open(os.path.join(d, n), encoding="utf-8").read()
+        text = open(os.path.join(d, os.path.basename(m["file"])),
+                    encoding="utf-8").read()
         can = ("--selftest" in text or "main_selftest_or" in text
                or "_selftest()" in text)
-        rel = "zreflect/" + n
         if can:
-            mods.append(rel)
+            mods.append(m["file"])
         else:
-            missing.append(rel)
+            missing.append(m["file"])
     return mods, missing
 
 
@@ -151,9 +165,12 @@ def gates(zdir=None):
     return out, missing
 
 
-def _declaration(path, rel):
-    """从文件里 ast 提取 `GATE = meta(名字, 一句话, knobs=…, name_dependent=…)`。
-    没有 ⇒ None。"""
+def _declaration(path, rel, attr="GATE", func="meta"):
+    """从文件里 ast 提取声明行（默认 `GATE = meta(…)`；C5 用
+    `MODULE = module_meta(…)`）。没有 ⇒ None。
+
+    `attr` / `func` 可换（同一套解析服务闸门与平台模块两类声明）。
+    """
     try:
         tree = ast.parse(open(path, encoding="utf-8").read())
     except (OSError, SyntaxError):
@@ -161,15 +178,24 @@ def _declaration(path, rel):
     for node in tree.body:
         if (isinstance(node, ast.Assign) and len(node.targets) == 1
                 and isinstance(node.targets[0], ast.Name)
-                and node.targets[0].id == "GATE"
+                and node.targets[0].id == attr
                 and isinstance(node.value, ast.Call)
                 and len(node.value.args) >= 2):
-            func = node.value.func
+            fn = node.value.func
             # 两种等价写法都认：meta(…)（裸导入名）与 gate.meta(…)（属性）
-            if not (getattr(func, "id", "") == "meta"
-                    or getattr(func, "attr", "") == "meta"):
+            if not (getattr(fn, "id", "") == func
+                    or getattr(fn, "attr", "") == func):
                 continue
             try:
+                if func == "module_meta":
+                    st = True
+                    for kw in node.value.keywords:
+                        if kw.arg == "selftest":
+                            st = ast.literal_eval(kw.value)
+                    return {"file": rel,
+                            "name": ast.literal_eval(node.value.args[0]),
+                            "desc": ast.literal_eval(node.value.args[1]),
+                            "selftest": bool(st)}
                 knobs, name_dep, runs_at = (), False, "commit"
                 for kw in node.value.keywords:
                     if kw.arg == "knobs":
@@ -212,7 +238,7 @@ def _touches_renamed(g):
 
 
 def problems(gs, missing, mods=None, mods_missing=None,
-             knob_problems=None):
+             knob_problems=None, undeclared=None):
     """名录的对账（纯函数）：空 = 绿。自证期间不许 print。
 
     `mods` / `mods_missing` / `knob_problems` 可注入（自证用夹具）；
@@ -246,10 +272,19 @@ def problems(gs, missing, mods=None, mods_missing=None,
     if mods is None or mods_missing is None:
         mods, mods_missing = selftest_modules()
     if mods_missing:
-        out.append("以下模块写了自证用例（_cases/CASES）却没有 --selftest 入口 —— "
+        out.append("以下模块声明了 selftest=True 却没有 --selftest 入口 —— "
                    "写而不跑的自证 = 装饰：%s" % ", ".join(mods_missing))
     if not mods:
         out.append("没有任何平台模块自证可发现 —— 零值守卫：空输入不是通过")
+    # C5：平台模块必须声明自己（MODULE = module_meta(…)），否则
+    # 「该有自证却没写」无人问（文本猜 _cases 猜不出「本该有」）。
+    if undeclared is None:
+        _decl, undeclared = modules()
+    if undeclared:
+        out.append("以下 .py 既非闸门（无 GATE 声明）也非已声明的平台模块"
+                   "（无 MODULE = module_meta(…)）—— 平台模块必须声明自己，"
+                   "哪怕 selftest=False（正面说「我不用自证」）：%s"
+                   % ", ".join(undeclared))
     # 名册自洽性（C3）：幻影旋钮 / README 幻影 —— 与任何载体是否存在无关。
     # 此前焊在 check_envfile.run() 的「载体存在」前置之后，本仓没有
     # Einfacht.env ⇒ 从未执行（实测踩到）。名册的家在这里收口。
@@ -427,6 +462,12 @@ def _cases():
          lambda: (lambda rn: len(rn) >= 1 and all(
              any(g["file"].endswith(b) and g["name_dependent"] for g in real)
              for b in rn))(red_need(real))),
+        ("真仓：每个平台模块都声明了 MODULE（无 undeclared）",
+         lambda: modules()[1] == [] and len(modules()[0]) >= 8),
+        ("★ 未声明的平台模块 ⇒ 必须报（C5：平台模块必须声明自己）",
+         lambda: any("必须声明自己" in x for x in problems(
+             [], [], mods=["zreflect/x.py"], mods_missing=[],
+             knob_problems=[], undeclared=["zreflect/orphan_mod.py"]))),
         ("插件：einfacht-env.sh 发现式收编（doctor 不再靠点名）",
          lambda: "reflect-hooks/einfacht-env.sh" in plugins()
          and "zreflect/doctor.py" not in plugins()),
@@ -440,11 +481,11 @@ def _cases():
         ("★ runs_at 是未知相位 ⇒ 必须报（频率写错会让执行面漏掉它）",
          lambda: any("不是已知相位" in x for x in problems(
              [dict(plain, runs_at="whenever")], [],
-             mods=["zreflect/x.py"], mods_missing=[], knob_problems=[]))),
+             mods=["zreflect/x.py"], mods_missing=[], knob_problems=[], undeclared=[]))),
         ("★ 标了 name_dependent 却不消费改名默认名 ⇒ 必须报（旗标错了）",
          lambda: any("旗标" in x for x in problems(
              [dict(plain, name_dependent=True)], [],
-             mods=["zreflect/x.py"], mods_missing=[], knob_problems=[]))),
+             mods=["zreflect/x.py"], mods_missing=[], knob_problems=[], undeclared=[]))),
         ("★ 写了自证却没有 --selftest 入口 ⇒ 必须报（写而不跑 = 装饰）",
          lambda: any("写而不跑" in x for x in problems(
              [], [], mods=["zreflect/x.py"],
@@ -452,8 +493,11 @@ def _cases():
         # ③ 空输入必须报
         ("★ 空名录 + 空模块 ⇒ 必须报（零值守卫）",
          lambda: problems([], [], mods=[], mods_missing=[],
-                          knob_problems=[]) != []),
+                          knob_problems=[], undeclared=[]) != []),
     ]
+
+
+MODULE = module_meta("发现式名录", "闸门/模块/插件的声明派生：执行面 + 叙述 + 红名单", selftest=True)
 
 
 if __name__ == "__main__":
