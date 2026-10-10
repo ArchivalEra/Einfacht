@@ -233,7 +233,7 @@ def run_phase(phase, gates, runner=None, repo_root=None):
     return res
 
 
-MODULE = module_meta("闸门平台", "rc 契约 + 零值守卫 + 三档自证 + 相位执行器", selftest=True)
+MODULE = module_meta("闸门平台", "rc 契约 + 零值守卫 + 三档自证 + 相位执行器（提供 selftest，自己不消费）", selftest=False)
 
 
 if __name__ == "__main__":

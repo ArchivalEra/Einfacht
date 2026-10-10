@@ -54,8 +54,19 @@ def _zdir():
 
 # 换名自证的夹具把哪些默认名改掉了（gates-selftest.sh 跨仓库节的改名面）。
 # 名册纪律同 knobs：只登记真的被夹具改名的默认名 —— 这是红名单对账的判据数据。
-RENAMED_DEFAULTS = ("FACTS.json", "STATE.md", "retractions.json", "questions",
-                    "README.md", "README.zh.md", "README.de.md")
+# C4 对账③：`FIXTURE_RENAMES` 是「原名 → 夹具名」的**唯一产地** ——
+# gates-selftest.sh 的夹具从 `--fixture-renames` 派生它建的文件名，不再手写
+# 两份会漂的清单（此前夹具的名字与这张表是两处手写，无对账器）。
+FIXTURE_RENAMES = {
+    "FACTS.json": "LEDGER.json",
+    "STATE.md": "NOTES.md",
+    "retractions.json": "RETRACT.json",
+    "questions": "cases",
+    "README.md": "R1.md",
+    "README.zh.md": "R2.md",
+    "README.de.md": "R3.md",
+}
+RENAMED_DEFAULTS = tuple(FIXTURE_RENAMES)
 
 # 已知相位（C1）：闸门声明自己的运行频率。执行面（gate.run_phase）按它过滤。
 #   commit        每次提交跑（pre-commit / pre-push / CI）
@@ -290,7 +301,11 @@ def problems(gs, missing, mods=None, mods_missing=None,
     # Einfacht.env ⇒ 从未执行（实测踩到）。名册的家在这里收口。
     if knob_problems is None:
         import knobs                                     # noqa: PLC0415
-        knob_problems = knobs.scan_surface_problems() + knobs.readme_problems()
+        knob_problems = (knobs.scan_surface_problems()
+                         + knobs.readme_problems()
+                         # C4 对账：声明↔实读、REGISTRY↔README 表
+                         + knobs.declared_vs_read_problems(gs)
+                         + knobs.registry_vs_readme_problems())
     out += list(knob_problems)
     return out
 
@@ -386,6 +401,11 @@ def main(argv):
     if "--plugins" in argv:
         print("\n".join(plugins()))
         return 0
+    if "--fixture-renames" in argv:
+        # C4 对账③：夹具改名集的唯一产地（原名=夹具名，每行一条）。
+        for orig, fix in sorted(FIXTURE_RENAMES.items()):
+            print("%s=%s" % (orig, fix))
+        return 0
     if "--selftest-modules" in argv:
         mods, missing = selftest_modules()
         for m in missing:
@@ -468,6 +488,9 @@ def _cases():
          lambda: any("必须声明自己" in x for x in problems(
              [], [], mods=["zreflect/x.py"], mods_missing=[],
              knob_problems=[], undeclared=["zreflect/orphan_mod.py"]))),
+        ("真仓：夹具改名集唯一产地（FIXTURE_RENAMES 覆盖全部 RENAMED_DEFAULTS）",
+         lambda: set(FIXTURE_RENAMES) == set(RENAMED_DEFAULTS)
+         and len(FIXTURE_RENAMES) >= 7),
         ("插件：einfacht-env.sh 发现式收编（doctor 不再靠点名）",
          lambda: "reflect-hooks/einfacht-env.sh" in plugins()
          and "zreflect/doctor.py" not in plugins()),

@@ -200,10 +200,16 @@ module_selftest() {
 #       （否则说明这一节是恒真的空转，什么都没证明）。
 configurable_selftest() {
   tmp=$(mktemp -d)
+  # C4 对账③：夹具的改名集必须与 registry.FIXTURE_RENAMES 一致（唯一产地）——
+  # 夹具用的每个改名名都必须在表里，表里的每项都必须在夹具里出现。
+  fr=$(cd "$HERE" && python3 zreflect/registry.py --fixture-renames)
+  fixture_facts=$(printf '%s\n' "$fr" | sed -n 's/^FACTS\.json=//p')
+  fixture_doc=$(printf '%s\n' "$fr" | sed -n 's/^STATE\.md=//p')
+  : "${fixture_facts:=LEDGER.json}" "${fixture_doc:=NOTES.md}"
   printf 'x = 1\n' > "$tmp/a.py"
   # 机器块标记要**先手工放一次**（工具自己的约定：找不到块 ≠ 块是对的）。
   # Phase 3 起文档有两个机器块（事实 + 闸门名录），标记都要先放。
-  printf '# 标题\n\n正文引用 [[py_files]] 与 [[md_files]]（引用键，不手抄数字）。\n\n<!-- AUTO:FACTS -->\n<!-- /AUTO:FACTS -->\n\n<!-- AUTO:GATES -->\n<!-- /AUTO:GATES -->\n' > "$tmp/NOTES.md"
+  printf '# 标题\n\n正文引用 [[py_files]] 与 [[md_files]]（引用键，不手抄数字）。\n\n<!-- AUTO:FACTS -->\n<!-- /AUTO:FACTS -->\n\n<!-- AUTO:GATES -->\n<!-- /AUTO:GATES -->\n' > "$tmp/$fixture_doc"
   printf '# AGENTS\n' > "$tmp/AGENTS.md"
   printf '{"schema":1,"retractions":[]}\n' > "$tmp/RETRACT.json"        # 换名：REFLECT_RETRACTIONS
   mkdir -p "$tmp/cases"                                                  # 换名：REFLECT_QUESTIONS
@@ -212,19 +218,19 @@ configurable_selftest() {
   for f in R1 R2 R3; do
     printf '# %s\n\n切换器：[R1.md](R1.md) [R2.md](R2.md) [R3.md](R3.md)\n' "$f" > "$tmp/$f.md"
   done
-  # 生成台账并把机器块渲染进 **NOTES.md**（名字全换掉）
+  # 生成台账并把机器块渲染进 **夹具文档名**（名字全换掉）
   # ① 先量一遍（新仓库的正确顺序：量测 → 渲染）
-  GATE_REPO="$tmp" REFLECT_FACTS=LEDGER.json REFLECT_DOC=NOTES.md \
+  GATE_REPO="$tmp" REFLECT_FACTS="$fixture_facts" REFLECT_DOC="$fixture_doc" \
     python3 "$HERE/zreflect/facts.py" >/dev/null 2>&1
-  # ② 再把机器块渲染进 NOTES.md（名字全换掉）
-  GATE_REPO="$tmp" REFLECT_FACTS=LEDGER.json REFLECT_DOC=NOTES.md \
-    python3 "$HERE/zreflect/facts.py" --render-doc NOTES.md >/dev/null 2>&1
+  # ② 再把机器块渲染进夹具文档（名字全换掉）
+  GATE_REPO="$tmp" REFLECT_FACTS="$fixture_facts" REFLECT_DOC="$fixture_doc" \
+    python3 "$HERE/zreflect/facts.py" --render-doc "$fixture_doc" >/dev/null 2>&1
   ok=0; n=0
   for rel in $(cd "$HERE" && python3 zreflect/registry.py --all-runnable); do
     g="$HERE/$rel"
     n=$((n + 1))
-    if GATE_REPO="$tmp" REFLECT_FACTS=LEDGER.json REFLECT_DOC=NOTES.md \
-       REFLECT_DOCS=NOTES.md,AGENTS.md REFLECT_RETRACTIONS=RETRACT.json \
+    if GATE_REPO="$tmp" REFLECT_FACTS="$fixture_facts" REFLECT_DOC="$fixture_doc" \
+       REFLECT_DOCS="$fixture_doc,AGENTS.md" REFLECT_RETRACTIONS=RETRACT.json \
        REFLECT_QUESTIONS=cases REFLECT_READMES=R1.md,R2.md,R3.md \
        python3 "$g" >/dev/null 2>&1; then
       ok=$((ok + 1))
