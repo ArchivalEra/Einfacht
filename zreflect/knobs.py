@@ -140,6 +140,69 @@ def _zdir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
+def declared_vs_read_problems(gates):
+    """C4 对账①：闸门**声明**消费的旋钮 ⊆ 它**实际读**的旋钮。
+
+    声明在 `GATE = meta(…, knobs=(…))`，实读在源码里的
+    `os.environ.get("REFLECT_…")`（旋钮名一定以字面量出现在源码某处 ——
+    否则它读不到那个环境变量）。两者此前无任何比较 —— AUTO:GATES 表
+    可能列着闸门根本不读的旋钮（声明与实现不符，静默）。
+    `gates` = registry.gates() 的结果（含 file / knobs）。
+    """
+    out = []
+    for g in gates:
+        declared = set(g.get("knobs") or ())
+        if not declared:
+            continue
+        try:
+            text = open(os.path.join(GATE_REPO, g["file"]), encoding="utf-8",
+                        errors="replace").read()
+        except OSError:
+            continue
+        read = set(_TOKEN_RE.findall(text))
+        ghost = sorted(k for k in declared if k not in read)
+        if ghost:
+            out.append("`%s` 声明消费 %s，但源码里读不到这些旋钮 —— "
+                       "声明与实现不符（AUTO:GATES 表会撒谎）"
+                       % (g["file"], ", ".join(ghost)))
+    return out
+
+
+def registry_vs_readme_problems(readmes=None, tables=None):
+    """C4 对账②：登记表里的旋钮 ⊆ 三语 README 配置表。
+
+    `knobs.REGISTRY` 与三语 README 的配置表是两份「旋钮清单」，此前只查
+    单向（README ⊆ REGISTRY，见 readme_problems）。这条查反向：登记了的
+    旋钮必须在三语 README 里都有配置行 —— 否则新旋钮登记了却没人知道
+    怎么配（文档缺口，静默）。`tables` 可注入（自证用假 README）。
+    """
+    row = re.compile(r"\|\s*`(REFLECT_[A-Z0-9_]+)`\s*\|")
+    out = []
+    names = readmes if readmes is not None else [
+        s.strip() for s in os.environ.get(
+            "REFLECT_READMES",
+            "README.md,README.zh.md,README.de.md").split(",") if s.strip()]
+    for name in names:
+        if tables is not None:
+            if name not in tables:
+                continue
+            text = tables[name]
+        else:
+            p = os.path.join(GATE_REPO, name)
+            if not os.path.exists(p):
+                continue
+            text = open(p, encoding="utf-8", errors="replace").read()
+        have = set(row.findall(text))
+        if not have:
+            continue                    # 非配置表形态：不误报
+        missing = sorted(k for k in REGISTRY if k not in have)
+        if missing:
+            out.append("%s 的配置表缺这些已登记旋钮的说明行：%s —— "
+                       "登记了却没人知道怎么配（文档缺口）"
+                       % (name, ", ".join(missing)))
+    return out
+
+
 # ── 自证：名册自身的形状守卫（登记表坏 = 所有消费方的判据数据坏）──────────────
 def _cases():
     import atexit                                        # noqa: PLC0415
