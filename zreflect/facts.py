@@ -22,7 +22,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import GATE_REPO, main_selftest_or, repo, selftest  # noqa: E402
+from gate import module_meta, GATE_REPO, main_selftest_or, repo, selftest  # noqa: E402
 from ledger import age_days, fact, facts_of, load, value_of  # noqa: E402
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
 import guard                                             # noqa: E402
@@ -341,6 +341,9 @@ CASES = [
     ("★ --get：键不存在 ⇒ (False, 错误句)（空输入不是通过）",
      lambda: get_value({"facts": {"n": 1}}, "zzz")[0] is False),
 ]
+
+
+MODULE = module_meta("台账 CLI", "量一遍 / 渲染 / --get / 两道守卫", selftest=True)
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ append-only 的历史章节里，数字是"当时如此"，拿来跟今天的产
      宽松识别的出口，等于给假断言发了通行证。
 """
 import re
+from gate import module_meta
 
 # 行内历史标记（与翻案台账的更正标记同一份词表 —— 词表只生产一次）。
 HIST_MARK = re.compile(
@@ -60,3 +61,6 @@ def living_lines(text, historical_secs=()):
             keep = section_is_living(ln, historical_secs)
         out.append((i, ln, keep))
     return out
+
+
+MODULE = module_meta("活状态抽取", "哪些行是「现在如此」（历史出口 / 默认从严）", selftest=False)

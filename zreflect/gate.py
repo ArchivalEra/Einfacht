@@ -130,6 +130,18 @@ def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit"):
             "runs_at": str(runs_at)}
 
 
+def module_meta(name, desc, selftest=True):
+    """平台模块声明行（C5）：registry 的 ast 提取目标。
+
+    闸门用 `GATE = meta(…)` 声明；**平台模块**（gate / runner / knobs /
+    registry / guard / ledger / render / facts …）用 `MODULE = module_meta(…)`
+    声明自己的存在与「有没有自证义务」。此前「该有自证」只能靠**文本猜测**
+    （扫 `_cases` 字面量）——「一个模块该有自证却没写」无人问；现在它是声明里
+    的一个字段：`selftest=True` ⇒ registry 要求它真能 `--selftest` 且被实跑。
+    """
+    return {"name": name, "desc": desc, "selftest": bool(selftest)}
+
+
 def raises(fn):
     """「该报错的必须报错」—— 反向断言用。返回 True 表示它确实报了 SystemExit。"""
     try:
@@ -219,6 +231,9 @@ def run_phase(phase, gates, runner=None, repo_root=None):
         else:
             res["ran"] += 1
     return res
+
+
+MODULE = module_meta("闸门平台", "rc 契约 + 零值守卫 + 三档自证 + 相位执行器", selftest=True)
 
 
 if __name__ == "__main__":

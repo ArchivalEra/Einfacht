@@ -12,6 +12,7 @@
 import json
 import time
 from datetime import datetime, timedelta, timezone
+from gate import module_meta
 
 
 def load(path, missing_ok=False):
@@ -151,7 +152,7 @@ def age_days(entry):
 
 # ── 自证（三档：正常不报 / 该报的必须报 / 空输入必须报）──────────────────────────
 def _cases():
-    from gate import raises                            # noqa: PLC0415
+    from gate import module_meta, raises                            # noqa: PLC0415
     return [
         # ① 正常不报
         ("掉条：不掉条时不报", lambda: dropped_keys({"a": 1}, {"a": 1, "c": 3}) == []),
@@ -212,6 +213,9 @@ def _cases():
 def _selftest():
     from gate import selftest                          # noqa: PLC0415
     return selftest("ledger（两道守卫）", _cases())
+
+
+MODULE = module_meta("事实台账数据层", "读写 + 两道守卫的纯函数", selftest=True)
 
 
 if __name__ == "__main__":

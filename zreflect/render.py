@@ -5,6 +5,12 @@
 否则「块对不对」两边口径会分叉：生成器改了排版，闸门还按旧排版比，于是永远不一致
 （或者更糟：两边都改成了宽松匹配，于是永远「一致」）。
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gate import module_meta                             # noqa: E402
+
 BLOCK_BEGIN = "<!-- AUTO:FACTS -->"
 BLOCK_END = "<!-- /AUTO:FACTS -->"
 
@@ -93,8 +99,11 @@ def _selftest():
     import os                                            # noqa: PLC0415
     import sys                                           # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from gate import selftest                            # noqa: PLC0415
+    from gate import module_meta, selftest                            # noqa: PLC0415
     return selftest("render（数字的唯一产地）", _cases())
+
+
+MODULE = module_meta("机器块渲染", "数字的唯一产地（纯函数）", selftest=True)
 
 
 if __name__ == "__main__":
