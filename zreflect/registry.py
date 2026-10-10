@@ -41,6 +41,17 @@ from knobs import REGISTRY                                # noqa: E402
 GATES_BEGIN = "<!-- AUTO:GATES -->"
 GATES_END = "<!-- /AUTO:GATES -->"
 
+
+def _zdir():
+    """闸门名录所在的目录 = **本文件所在处**，与 GATE_REPO 无关。
+
+    名录是**工具**的属性（`zreflect/` 里的 check_*.py 就是工具自带的那批），
+    不是**被检查仓库**的属性：GATE_REPO 指向「被检查的仓库」（可能是换名
+    夹具、别的仓库），那里根本没有 zreflect/ 目录 —— 用 repo("zreflect")
+    会让夹具里名录为空、render 拒绝（实测踩到：换名自证的夹具里
+    check_facts 因「名录空」而红）。"""
+    return os.path.dirname(os.path.abspath(__file__))
+
 # 换名自证的夹具把哪些默认名改掉了（gates-selftest.sh 跨仓库节的改名面）。
 # 名册纪律同 knobs：只登记真的被夹具改名的默认名 —— 这是红名单对账的判据数据。
 RENAMED_DEFAULTS = ("FACTS.json", "STATE.md", "retractions.json", "questions",
@@ -65,7 +76,7 @@ def selftest_modules(zdir=None):
     「登记被两头拦」：`mods` 里每个都必须带自证机器摘要行（harness 实跑校验），
     `missing` 里每个都不许写 `_cases` / `CASES`（写而不登记 = 不可机器读的自证）。
     """
-    d = zdir if zdir is not None else repo("zreflect")
+    d = zdir if zdir is not None else _zdir()
     mods, missing = [], []
     try:
         names = sorted(os.listdir(d))
@@ -112,10 +123,16 @@ def gates(zdir=None):
     """发现式闸门名录：ast 解析每个 check_*.py 的模块级声明行。
 
     返回 (gates, missing)。gates = [{file, name, desc, knobs,
-    name_dependent}]；missing = 没有可解析 GATE 声明的 check_*.py
-    （problems 报，render 拒绝渲染 —— 逼声明行落地）。
+    name_dependent}]；missing = **叫 check_ 却没有声明行**的文件
+    （problems 报、render 拒绝 —— 那是「忘了写声明」的形状）。
+
+    发现谓词 = `check_` 前缀（**执行面也用它**：hooks / CI / runner 的
+    `for g in zreflect/check_*.py`）—— 谓词只能有一个，否则「被发现」与
+    「被执行」会分叉。命名约定于是是**承重的**：`check_` = 会被执行的闸门。
+    「声明了却不叫 check_」的孤儿由 `misnamed()` 报告（不许静默 ——
+    否则它进了 AUTO:GATES 却不被跑，比完全看不见更坏）。
     """
-    d = zdir if zdir is not None else repo("zreflect")
+    d = zdir if zdir is not None else _zdir()
     out, missing = [], []
     try:
         names = sorted(os.listdir(d))
@@ -125,43 +142,67 @@ def gates(zdir=None):
         if not (n.startswith("check_") and n.endswith(".py")):
             continue
         rel = "zreflect/" + n
-        meta = None
-        try:
-            tree = ast.parse(open(os.path.join(d, n), encoding="utf-8").read())
-        except (OSError, SyntaxError):
-            tree = None
-        if tree is not None:
-            for node in tree.body:
-                if (isinstance(node, ast.Assign) and len(node.targets) == 1
-                        and isinstance(node.targets[0], ast.Name)
-                        and node.targets[0].id == "GATE"
-                        and isinstance(node.value, ast.Call)
-                        and len(node.value.args) >= 2):
-                    func = node.value.func
-                    # 两种等价写法都认：meta(…)（裸导入名）与 gate.meta(…)（属性）
-                    if not (getattr(func, "id", "") == "meta"
-                            or getattr(func, "attr", "") == "meta"):
-                        continue
-                    try:
-                        knobs, name_dep = (), False
-                        for kw in node.value.keywords:
-                            if kw.arg == "knobs":
-                                knobs = ast.literal_eval(kw.value)
-                            elif kw.arg == "name_dependent":
-                                name_dep = ast.literal_eval(kw.value)
-                        meta = {"file": rel,
-                                "name": ast.literal_eval(node.value.args[0]),
-                                "desc": ast.literal_eval(node.value.args[1]),
-                                "knobs": tuple(knobs),
-                                "name_dependent": bool(name_dep)}
-                    except (ValueError, IndexError):
-                        meta = None
-                    break
+        meta = _declaration(os.path.join(d, n), rel)
         if meta:
             out.append(meta)
         else:
             missing.append(rel)
     return out, missing
+
+
+def misnamed(zdir=None):
+    """**声明了却不叫 check_** 的文件（孤儿）：它们进了 AUTO:GATES 的叙述，
+    却不被执行面（glob `check_*.py`）跑到 —— 静默缺口，必须报。"""
+    d = zdir if zdir is not None else _zdir()
+    out = []
+    try:
+        names = sorted(os.listdir(d))
+    except OSError:
+        return out
+    for n in names:
+        if not n.endswith(".py") or n == "__init__.py":
+            continue
+        if n.startswith("check_"):
+            continue
+        rel = "zreflect/" + n
+        if _declaration(os.path.join(d, n), rel):
+            out.append(rel)
+    return out
+
+
+def _declaration(path, rel):
+    """从文件里 ast 提取 `GATE = meta(名字, 一句话, knobs=…, name_dependent=…)`。
+    没有 ⇒ None。"""
+    try:
+        tree = ast.parse(open(path, encoding="utf-8").read())
+    except (OSError, SyntaxError):
+        return None
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == "GATE"
+                and isinstance(node.value, ast.Call)
+                and len(node.value.args) >= 2):
+            func = node.value.func
+            # 两种等价写法都认：meta(…)（裸导入名）与 gate.meta(…)（属性）
+            if not (getattr(func, "id", "") == "meta"
+                    or getattr(func, "attr", "") == "meta"):
+                continue
+            try:
+                knobs, name_dep = (), False
+                for kw in node.value.keywords:
+                    if kw.arg == "knobs":
+                        knobs = ast.literal_eval(kw.value)
+                    elif kw.arg == "name_dependent":
+                        name_dep = ast.literal_eval(kw.value)
+                return {"file": rel,
+                        "name": ast.literal_eval(node.value.args[0]),
+                        "desc": ast.literal_eval(node.value.args[1]),
+                        "knobs": tuple(knobs),
+                        "name_dependent": bool(name_dep)}
+            except (ValueError, IndexError):
+                return None
+    return None
 
 
 def _touches_renamed(g):
@@ -175,12 +216,16 @@ def _touches_renamed(g):
     return False
 
 
-def problems(gs, missing):
+def problems(gs, missing, orphans=None, mods=None, mods_missing=None):
     """名录的对账（纯函数）：空 = 绿。自证期间不许 print。
 
-    · check_*.py 没有 GATE 声明行 ⇒ 报（未登记 = 叙述会漂）；
-    · 标了 name_dependent 却不消费任何改名默认名 ⇒ 报（旗标错了 ——
-      要么去掉旗标，要么把新默认名登记进 RENAMED_DEFAULTS）；
+    `orphans` / `mods` / `mods_missing` 可注入（自证用夹具目录）；
+    None ⇒ 现读真仓。
+
+    · 叫 check_ 却没有 GATE 声明行 ⇒ 报（忘写声明 = 叙述会漂）；
+    · 声明了却不叫 check_ ⇒ 报（孤儿：进叙述却不被执行面跑到）；
+    · 标了 name_dependent 却不消费任何改名默认名 ⇒ 报（旗标错了）；
+    · 写了自证却没有 --selftest 入口 ⇒ 报（写而不跑 = 装饰）；
     · 名录整体为空 ⇒ 报（零值守卫）。
     """
     out = []
@@ -188,6 +233,12 @@ def problems(gs, missing):
         out.append("以下闸门没有 GATE = gate.meta(…) 声明行 —— 名录不收"
                    "无名之辈（手写名录会漂，声明即登记）：%s"
                    % ", ".join(missing))
+    orph = misnamed() if orphans is None else orphans
+    if orph:
+        out.append("以下文件声明了 GATE 却不叫 check_ —— 发现谓词是 check_ 前缀"
+                   "（执行面 hooks/CI 也用它），孤儿会进 AUTO:GATES 叙述却不被"
+                   "执行（比看不见更坏）。改名成 check_*.py，或去掉声明：%s"
+                   % ", ".join(orph))
     for g in gs:
         if g["name_dependent"] and not _touches_renamed(g):
             out.append("`%s` 标了 name_dependent，但消费的旋钮没有一个默认名"
@@ -196,10 +247,11 @@ def problems(gs, missing):
                        % g["file"])
     if not gs and not missing:
         out.append("一个闸门都没发现 —— 零值守卫：空输入不是通过")
-    mods, mmissing = selftest_modules()
-    if mmissing:
+    if mods is None or mods_missing is None:
+        mods, mods_missing = selftest_modules()
+    if mods_missing:
         out.append("以下模块写了自证用例（_cases/CASES）却没有 --selftest 入口 —— "
-                   "写而不跑的自证 = 装饰：%s" % ", ".join(mmissing))
+                   "写而不跑的自证 = 装饰：%s" % ", ".join(mods_missing))
     if not mods:
         out.append("没有任何平台模块自证可发现 —— 零值守卫：空输入不是通过")
     return out
@@ -296,15 +348,16 @@ def _cases():
     open(os.path.join(d, "check_plain.py"), "w").write(
         'GATE = gate.meta("乙闸门", "挡乙", knobs=("REFLECT_WORLD",))\n')
     open(os.path.join(d, "check_bare.py"), "w").write("X = 1\n")
-    open(os.path.join(d, "helper.py"), "w").write(
-        'GATE = gate.meta("丙", "非 check_ 前缀不应被发现", knobs=())\n')
+    open(os.path.join(d, "named_other.py"), "w").write(
+        'GATE = gate.meta("丙", "声明了却不叫 check_（孤儿）", knobs=())\n')
+    open(os.path.join(d, "platform.py"), "w").write("Y = 2\n")   # 无声明 = 平台模块
     gs, missing = gates(d)
     ok = [g for g in gs if g["file"].endswith("check_ok.py")][0]
     plain = [g for g in gs if g["file"].endswith("check_plain.py")][0]
     real, real_missing = gates()
 
     def real_files():
-        return {"zreflect/" + n for n in os.listdir(repo("zreflect"))
+        return {"zreflect/" + n for n in os.listdir(_zdir())
                 if n.startswith("check_") and n.endswith(".py")}
     return [
         # ① 正常不报
@@ -312,11 +365,13 @@ def _cases():
          lambda: ok["name"] == "甲闸门" and ok["desc"] == "挡甲"
          and ok["knobs"] == ("REFLECT_FACTS",)
          and ok["name_dependent"] is True),
-        ("非 check_ 前缀的文件不收（helper.py 的声明行被无视）",
-         lambda: all(not g["file"].endswith("helper.py") for g in gs)),
-        ("真仓名录与磁盘一致：每个 check_*.py 都有声明、无 missing",
-         lambda: not real_missing
-         and {g["file"] for g in real} == real_files()),
+        ("无声明且非 check_ ⇒ 平台模块，既不入名录也不入 missing",
+         lambda: all(not m.endswith("platform.py") for m in missing)
+         and all(not g["file"].endswith("platform.py") for g in gs)),
+        ("真仓名录与磁盘一致：每个 check_*.py 都在名录里",
+         lambda: not real_missing and real_files() <= {g["file"] for g in real}),
+        ("真仓无孤儿（没有声明了却不叫 check_ 的文件）",
+         lambda: misnamed() == []),
         ("红名单非空且每道都标了旗标（真仓一致性）",
          lambda: (lambda rn: len(rn) >= 1 and all(
              any(g["file"].endswith(b) and g["name_dependent"] for g in real)
@@ -329,13 +384,23 @@ def _cases():
          and "甲闸门" in render_gates(gs)
          and GATES_BEGIN in render_gates(gs) and GATES_END in render_gates(gs)),
         # ② 该报的必须报
-        ("★ 无声明的 check_*.py ⇒ 必须报（名录不收无名之辈）",
+        ("★ 叫 check_ 却没声明 ⇒ 必须报（忘写声明行的形状）",
          lambda: missing == ["zreflect/check_bare.py"]),
+        ("★ 声明了却不叫 check_ ⇒ 必须报（孤儿：进叙述不被执行）",
+         lambda: any("却不叫 check_" in x for x in problems(
+             [], [], orphans=["zreflect/named_other.py"],
+             mods=["zreflect/x.py"], mods_missing=[]))),
         ("★ 标了 name_dependent 却不消费改名默认名 ⇒ 必须报（旗标错了）",
          lambda: any("旗标" in x for x in problems(
-             [dict(plain, name_dependent=True)], []))),
+             [dict(plain, name_dependent=True)], [], orphans=[],
+             mods=["zreflect/x.py"], mods_missing=[]))),
+        ("★ 写了自证却没有 --selftest 入口 ⇒ 必须报（写而不跑 = 装饰）",
+         lambda: any("写而不跑" in x for x in problems(
+             [], [], orphans=[], mods=["zreflect/x.py"],
+             mods_missing=["zreflect/y.py"]))),
         # ③ 空输入必须报
-        ("★ 空名录 ⇒ 必须报（零值守卫）", lambda: problems([], []) != []),
+        ("★ 空名录 + 空模块 ⇒ 必须报（零值守卫）",
+         lambda: problems([], [], orphans=[], mods=[], mods_missing=[]) != []),
     ]
 
 
