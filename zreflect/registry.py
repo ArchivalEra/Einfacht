@@ -54,6 +54,60 @@ SPECIAL_PLUGINS = (
 )
 
 
+def selftest_modules(zdir=None):
+    """发现式自证模块名录：zreflect/*.py 里**写了自证**（`_cases` / `CASES`）
+    的模块 —— 不分是不是 check_*.py。返回 (mods, missing)。
+
+    为什么需要它：本仓立身的纪律「没人跑的检查器 = 没人盯」（runner 只扫
+    check_*.py）治的是**闸门**，却漏了**平台模块**（guard / knobs / registry /
+    render / ledger / facts）—— 它们也写自证，但此前没有任何 harness 执行，
+    自证存在而从不运行 = 装饰（实测：Phase 4 加的 guard.py 正犯此病）。
+    「登记被两头拦」：`mods` 里每个都必须带自证机器摘要行（harness 实跑校验），
+    `missing` 里每个都不许写 `_cases` / `CASES`（写而不登记 = 不可机器读的自证）。
+    """
+    d = zdir if zdir is not None else repo("zreflect")
+    mods, missing = [], []
+    try:
+        names = sorted(os.listdir(d))
+    except OSError:
+        return [], []
+    for n in names:
+        if not n.endswith(".py") or n == "__init__.py":
+            continue
+        try:
+            tree = ast.parse(open(os.path.join(d, n), encoding="utf-8").read())
+        except (OSError, SyntaxError):
+            continue
+        if not _has_cases(tree):
+            continue
+        text = open(os.path.join(d, n), encoding="utf-8").read()
+        can = ("--selftest" in text or "main_selftest_or" in text
+               or "_selftest()" in text)
+        rel = "zreflect/" + n
+        if can:
+            mods.append(rel)
+        else:
+            missing.append(rel)
+    return mods, missing
+
+
+def _has_cases(tree):
+    """模块里**写**了自证用例（`_cases` 或 `CASES` 赋值/定义）。
+
+    只认这两个名字：`selftest` 不算 —— gate.py 自己**定义** selftest（平台
+    函数），拿它当判据会把平台本身误收进名录（实测踩到：gate.py 被当模块
+    自证跑，却没有用例清单、也不该有）。
+    """
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and t.id in ("_cases", "CASES"):
+                    return True
+        if isinstance(node, ast.FunctionDef) and node.name == "_cases":
+            return True
+    return False
+
+
 def gates(zdir=None):
     """发现式闸门名录：ast 解析每个 check_*.py 的模块级声明行。
 
@@ -142,6 +196,12 @@ def problems(gs, missing):
                        % g["file"])
     if not gs and not missing:
         out.append("一个闸门都没发现 —— 零值守卫：空输入不是通过")
+    mods, mmissing = selftest_modules()
+    if mmissing:
+        out.append("以下模块写了自证用例（_cases/CASES）却没有 --selftest 入口 —— "
+                   "写而不跑的自证 = 装饰：%s" % ", ".join(mmissing))
+    if not mods:
+        out.append("没有任何平台模块自证可发现 —— 零值守卫：空输入不是通过")
     return out
 
 
@@ -200,6 +260,15 @@ def main(argv):
     if "--plugins" in argv:
         print("\n".join(plugins()))
         return 0
+    if "--selftest-modules" in argv:
+        mods, missing = selftest_modules()
+        for m in missing:
+            print("  ❌ %s 写了自证却没有 --selftest 入口（写而不跑 = 装饰）" % m,
+                  file=sys.stderr)
+        if missing:
+            return 1
+        print("\n".join(mods))
+        return 0
     if "--gates" in argv:
         gs, missing = gates()
         probs = problems(gs, missing)
@@ -210,7 +279,7 @@ def main(argv):
         for g in gs:
             print("%s\t%s\t%s" % (g["file"], g["name"], g["desc"]))
         return 0
-    print("用法：registry.py [--gates|--red-need|--plugins|--selftest]",
+    print("用法：registry.py [--gates|--red-need|--plugins|--selftest-modules|--selftest]",
           file=sys.stderr)
     return 2
 

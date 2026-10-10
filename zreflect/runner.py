@@ -59,6 +59,52 @@ def run_cmd(cmd, timeout=None):
     return p.returncode, p.stdout
 
 
+def _cases():
+    """三档自证（真跑 shell —— runner 的判据就是 shell 行为，假 runner 自证
+    runner 是循环论证；但命令都是 echo/printf/false，无副作用、无网络）。"""
+    return [
+        # ① 正常不报
+        ("跑一条 echo ⇒ rc=0、stdout 是原样输出",
+         lambda: run_cmd("echo hello") == (0, "hello\n")),
+        ("裸值契约的前提：stdout 保留原始换行（判定在 adapter 里 strip）",
+         lambda: run_cmd("printf 'v1'") == (0, "v1")),
+        # ② 该报的必须报
+        ("★ 命令 rc≠0 ⇒ 原样透出（不许吞成成功）",
+         lambda: run_cmd("exit 3")[0] == 3),
+        ("★ 管道吞错被抓：`false | cat` 在 pipefail 下必须 rc≠0",
+         lambda: run_cmd("false | cat")[0] != 0),
+        ("★ 超时 ⇒ rc=None（挂在 pre-commit 里不许永远等）",
+         lambda: run_cmd("sleep 5", timeout=0.3)[0] is None),
+        ("★ 命令不存在 ⇒ rc≠0（shell 报 127），不许算通过",
+         lambda: run_cmd("definitely_not_a_command_xyz")[0] != 0),
+        # quote 的截断（复现事故时不糊终端）
+        ("quote 长输出截断且带省略号",
+         lambda: quote("a" * 100).endswith("…'")),
+        ("quote 短输出不截断",
+         lambda: quote("ok") == "'ok'"),
+        # ③ 空输入必须报（对 runner 而言，「空」是空输出/空命令的形状）
+        ("★ quote 空串 ⇒ 必须给出可引用的 repr（空不是无声）",
+         lambda: quote("") == "''"),
+        ("★ 空命令 ⇒ stdout 空（adapter 必须把「空 stdout」与「期望值」比对，"
+         "空不等于通过）",
+         lambda: run_cmd("")[1] == ""),
+    ]
+
+
+def _selftest():
+    import os                                            # noqa: PLC0415
+    import sys                                           # noqa: PLC0415
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from gate import main_selftest_or                    # noqa: PLC0415
+
+    def _run(argv):
+        print("runner 是模块（被复跑 / world 闸门消费）；--selftest 看自证。",
+              file=sys.stderr)
+        return 2
+    return main_selftest_or(sys.argv[1:],
+                            "runner（逐字执行器：裸值契约 + pipefail + 超时）",
+                            _cases, _run)
+
+
 if __name__ == "__main__":
-    print("逐字执行器。用法：`from runner import run_cmd, quote, default_timeout`。")
-    sys.exit(0)
+    sys.exit(_selftest())
