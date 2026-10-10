@@ -58,19 +58,30 @@ for g in zreflect/check_*.py; do python3 "$g" || exit 1; done
   `GATE = gate.meta(名字, 一句话, knobs=(…), name_dependent=?)`；没声明行的
   `check_*.py` 名录不收、`--render-doc` 拒绝渲染。旋钮必须先在
   `zreflect/knobs.py` 登记才算数（扫描面里的未登记记号按幻影/typo 报）。
-- **发现谓词只能有一个**（2026-10-07）：执行面（hooks / CI / runner 的
-  `for g in zreflect/check_*.py`）用 `check_` 前缀，发现面（`registry.gates()`）
-  就必须用同一个 —— 否则「被发现」与「被执行」分叉。于是 `check_` 前缀是
-  **承重**的：叫 `check_` 的闸门会被跑；**声明了却不叫 `check_`** 的孤儿由
-  `registry.misnamed()` 报（`problems()` 收它 ⇒ `--render-doc` / `--check`
-  拒绝、pre-commit 红）—— 不许静默。平台模块（`gate` / `runner` / `knobs` /
-  `registry` / `guard` / `ledger` / `render` / `facts`）不是闸门、无声明，
-  它们**自己写自证**（`_cases` / `CASES`），由 `registry.selftest_modules()`
-  发现、`gates-selftest.sh` 的 module 段实跑 —— 写而不跑的自证 = 装饰。
+- **谓词 = 声明，不是文件名**（2026-10-10，C1）：执行面（hooks / CI / runner）
+  读 `registry --run <相位>`（= `registry.runnable(phase)`），**不再 glob
+  `check_*.py`** —— 「什么该跑」的唯一产地是各闸门的声明行
+  `GATE = gate.meta(名字, 一句话, knobs=(…), runs_at="commit"|"start-of-work")`。
+  频率是**声明字段**，不是命名意外（doctor 曾经只能靠「它没叫 check_」表达
+  「不挂 pre-commit」）。名字不再承重 ⇒ 「孤儿」概念消失（声明了就是闸门）。
+  平台模块也声明自己：`MODULE = module_meta(名字, 一句话, selftest=True/False)`
+  —— `selftest=True` ⇒ 必须真能 `--selftest` 且被 harness 实跑；`selftest=False`
+  ⇒ 正面说「我不用自证」。没声明的 `.py`（非闸门、非 `__init__`）⇒ registry 报。
+- **off 与「跑过且通过」必须可区分**（2026-10-10，C2）：`gate.off()` 在 stdout
+  打 `OFF:` 机器标记（rc 仍 0 —— off 不是失败）；执行面聚合
+  `ran / off / failed`。**「全绿」不许把「没跑」算进去** —— 本仓曾有 8/13 道
+  off 而「全绿」不可见，那是本仓立身要消灭的假绿同形。off 是合法状态，
+  但必须可见（`registry --run` 单列 off 清单）。
+- **必须一致的两份要配对账器**（2026-10-10，C4）：本仓反复踩「两份拷贝会漂」，
+  这条纪律同样适用于**代码内部**：声明旋钮 ⊆ 实读旋钮、登记表 ⊆ 三语 README
+  配置表、夹具改名集唯一产地（`registry.FIXTURE_RENAMES`）—— 各配一个可复跑
+  对账，接进 `registry.problems()`。**没有对账器的「必须一致」= 迟早不一致。**
 - **守卫必须吃「该报的必须报」这类断言**。本系统抽出来的那次实践里，一条守卫因为一个
   未定义变量，**从落地起从未生效过** —— 它失效的方式是「只在真的该报警时才崩」。
   没有反向断言的守卫，和没有守卫是一样的。**接线的自证与纯函数的自证同等重要**：
   决策（纯函数，可自证）与执行（写盘 / 打印）分开 —— 见 `zreflect/guard.py`。
+  **守卫不许随开关一起消失**（C3）：env 闸门的幻影守卫曾焊在「载体存在」之后，
+  本仓没有 Einfacht.env ⇒ 从未执行 —— 判据的家要与开关解耦。
 - **三语 README 是同一条断言的三份拷贝**（2026-10-01 起）：`README.md`（英语，默认）/
   `README.zh.md` / `README.de.md`。改任何一份 ⇒ 这次推送的改动集必须**三份全含**，
   pre-push 缺一份拒推、CI 跑同一条判据（`git push --no-verify` 只躲得过本地）。
