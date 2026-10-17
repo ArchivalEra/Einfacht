@@ -66,10 +66,10 @@
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `md_files` | **7** | 2026-10-10T13:55:22+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `md_lines` | **2232** | 2026-10-10T13:55:22+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
-| `py_files` | **27** | 2026-10-10T13:55:22+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **5411** | 2026-10-10T13:55:22+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **7** | 2026-10-17T23:52:01+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `md_lines` | **2320** | 2026-10-17T23:52:01+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
+| `py_files` | **27** | 2026-10-17T23:52:01+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **5496** | 2026-10-17T23:52:01+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 4 条事实。
 <!-- /AUTO:FACTS -->
@@ -86,7 +86,7 @@
 | `check_facts_replay.py`（复跑闸门） | commit | 台账 cmd 逐字复跑（裸值契约：stdout 必须等于值） | `REFLECT_FACTS`, `REFLECT_REPLAY`, `REFLECT_REPLAY_TIMEOUT` |
 | `check_instruments.py`（仪器生命周期闸门） | commit | 恒常检测（first_seen）+ 被证伪量法登记 | `REFLECT_INSTRUMENTS`, `REFLECT_INSTRUMENT_DAYS`, `REFLECT_FACTS` |
 | `check_invariants.py`（不变量闸门） | commit | 声明式不变量：仓库文件必须/不得含某片段（grep 级） | `REFLECT_INVARIANTS` |
-| `check_locks.py`（锁定源闸门） | commit | 锁定源清单（URL + 文件 + sha256 的内容指纹） | — |
+| `check_locks.py`（锁定源闸门） | commit | 锁定源清单（URL + 文件 + sha256 的内容指纹） | `REFLECT_LOCKS` |
 | `check_pins.py`（pin 闸门） | commit | 派生树 pin 一致性（stamp commit / dirty / 版本串对读） | `REFLECT_PINS` |
 | `check_questions.py`（悬案闸门） | commit | 未结案的问题必须挂一个能跑的结算件 | `REFLECT_QUESTIONS` |
 | `check_readme_sync.py`（三语 README 闸门） | commit | 语言版本是同一条断言的三份拷贝：结构互链 + 每次推送同批 | `REFLECT_READMES` |

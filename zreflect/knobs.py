@@ -62,6 +62,8 @@ REGISTRY = {
     "REFLECT_WORLD_LINE": ("value", "", "world 线覆盖（CI / 特殊跑法）"),
     "REFLECT_AB": ("file", "ab.json", "A/B 同旗标闸门的规格名"),
     "REFLECT_PINS": ("file", "pins.json", "派生树 pin 一致性闸门的规格名"),
+    "REFLECT_LOCKS": ("file", "upstream-lock.json", "锁定源清单闸门的规格名"),
+    "REFLECT_MEASURE_MODULE": ("value", "", "采集模块名（换仓只改 env 一行；空 = 用占位 measure_example）"),
 }
 
 KINDS = ("file", "list", "dir", "number", "flag", "value")

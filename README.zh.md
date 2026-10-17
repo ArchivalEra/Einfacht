@@ -174,6 +174,29 @@
 `calibrate_expect`（样本的已知输出）。与 `witness` 同理：与
 `replay` 正交、**每次提交真跑**、判据同裸值契约；两者必须同给。
 
+**「每跑必变」的量的三种形态**（issue #4 ⑤ + #17）。每轮都变的量不许裸存
+（复跑永远红）。三种形态，按「你关心什么」选：
+
+| 形态 | 何时用 | 代价 |
+|---|---|---|
+| 采样 + `*_stable` 标记（issue #4 ⑤） | 消费侧要精确值 | 重测可能要求 `--accept-changes` |
+| `replay: false`（+ `witness`，issue #5） | 太贵、无法逐字复跑 | 放弃逐字复查，只靠来源见证 |
+| **量级档**（issue #17） | 便宜可复跑、但**本质波动** | 分辨率被粗化到档 |
+
+量级档是唯一**保住 `replay: true`** 的形态：`cmd` 读当轮原始值、用与产出
+台账值时**同一个算法**量化（`heap_peak_mib32` → 取整到 32 MiB；`compile_ms500`
+→ 取整到 500 ms）。不变式：**cmd 与值同源同算法** —— 只要当轮原始值落在
+同一档内，stdout 与台账值逐字相等。两次实测教训：（1）波动的量以原值进台账
+是**判据错配**，不是产物坏了；（2）**档必须粗于噪声** —— 首版取整到 100ms
+仍然红（295→300 对 306→400 跨了档边界），改 500ms 才稳住。
+
+**产物级事实**（issue #16）：「台账量的是仓库*内容*，不是产物能不能解析 /
+在部署形态下行为对不对」。最便宜的通用形态：量**构建产物的可解析性**
+（如 `node --check dist/*.js` / `new Function(src)`，`replay: true`）——
+拦住「源码绿、产物死」（同一周机器改机器代码三次、两次致命）。部署形态
+（子路径 / 域名 / 协议）是普通事实（来源 = CI 配置）；行为类断言（点击序列、
+三连跳不 404）贵且需要浏览器，进 `questions/` 讨论而不是在这里预建机制。
+
 **仪器生命周期是可插拔的**（`check_instruments.py`）：恒常检测
 （`first_seen` —— 采集时盖章、值不变时由 `measure()` 沿用）
 超过 `REFLECT_INSTRUMENT_DAYS` 即报「这条 cmd 是在量，还是恒
@@ -515,6 +538,8 @@ install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
 | `REFLECT_DOCTOR_TIMEOUT` | `2` | 每条 doctor 探测的秒数；解耦绳 —— 对死端口 connect 否则等到天荒地老。必须为正数（坏值 FATAL，不许静默回落） |
 | `REFLECT_AB` | `ab.json` | A/B 同旗标闸门的规格名（`--spec` 可覆盖；显式指定却指向不存在 ⇒ FATAL，不是「未启用」） |
 | `REFLECT_PINS` | `pins.json` | 派生树 pin 闸门的规格名（`--spec` 可覆盖；同款显式缺失语义） |
+| `REFLECT_LOCKS` | `upstream-lock.json` | 锁定源闸门的规格名（issue #15 C2：无 git 上游的供给件是常见形状；`--spec` 可覆盖，显式缺失 ⇒ FATAL） |
+| `REFLECT_MEASURE_MODULE` | 空（回落占位） | 采集模块名，其 `measure()` 量本仓事实（issue #15 A1/C3）：换仓 = `Einfacht.env` 一行；空 ⇒ `measure_example()` 并**响亮警告**（空台账绝不静默） |
 | `REFLECT_WORLD` | `world.json`（不在 ⇒ 未启用） | 反射世界声明（issue #13）：`{"lines": {…}, "active": …, "stamps": {…}}` —— 多线仓库共享同一个验证环境；每枚印章按同复跑闸门的裸值契约复跑（`run_cmd` 嫁接） |
 | `REFLECT_WORLD_LINE` | 空 | 线覆盖，给 CI / 特殊跑法（必须指清单里有的线 —— 指空会报）；未配 ⇒ 解析顺序为「分支是线 > `active`」 |
 | `REFLECT_INVARIANTS` | 空（不在 ⇒ 未启用） | 声明式不变量规格（issue #7）：`{"checks": [{path, must_contain?, must_not_contain?, why}]}` |
