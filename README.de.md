@@ -207,6 +207,34 @@ mit demselben Bare-Wert-Urteil (`stdout.strip() == witness_expect`);
 das Paar muss zusammen gegeben werden — ein halber Zeuge ist eine
 kaputte Behauptung, und `ledger.fact()` verweigert sie an Ort und
 Stelle. Der Unfall dahinter: ein Artefakt, gebaut von einem
+
+**Drei Formen für „Werte, die sich bei jedem Lauf ändern"** (Issue #4 ⑤ + #17).
+Ein Quantität, die sich bei jedem Lauf ändert, darf nicht roh gespeichert
+werden (Replay wäre immer rot). Drei Formen — wähle nach *was du brauchst*:
+
+| Form | Wann | Kosten |
+|---|---|---|
+| Probe + `*_stable`-Marke (Issue #4 ⑤) | Konsumenten brauchen den exakten Wert | Neu-Messung kann `--accept-changes` verlangen |
+| `replay: false` (+ `witness`, Issue #5) | zu teuer für wörtliches Replay | kein wörtliches Nachprüfen, nur Herkunft |
+| **Größenklasse** (Issue #17) | billig, aber *inhärent* verrauscht | Auflösung auf die Klasse vergröbert |
+
+Die Größenklasse ist die einzige Form, die **`replay: true` behält**: das
+`cmd` liest den Rohwert dieses Laufs und quantisiert ihn mit *demselben
+Algorithmus* wie beim Erzeugen des gespeicherten Werts (`heap_peak_mib32` →
+auf 32 MiB runden; `compile_ms500` → auf 500 ms). Invariante: **cmd und Wert
+aus derselben Quelle und derselben Quantisierung** — solange der Rohwert in
+derselben Klasse landet, ist stdout byte-gleich. Zwei Lehren: (1) eine
+schwankende Größe roh ins Ledger zu schreiben ist ein *Urteilsfehler*, kein
+kaputtes Artefakt; (2) **die Klasse muss gröber als das Rauschen sein** —
+100 ms ging noch rot (295→300 vs 306→400 überschritt die Grenze), 500 ms hielt.
+
+**Artefakt-Fakten** (Issue #16): „das Ledger misst Repo-*Inhalt*, nicht ob das
+Artefakt parst / sich in der Deployment-Form verhält." Die billige generische
+Form: **Parsbarkeit** der Build-Ausgabe messen (`node --check dist/*.js` /
+`new Function(src)`, `replay: true`) — fängt „Quelle grün, Artefakt tot".
+Deployment-Form-Fakten (Basispfad / Domain / Schema) sind normale Fakten
+(Quelle: CI-Konfiguration); Verhaltens-Gates sind teuer und gehören in
+`questions/`, nicht vorab in die Mechanik.
 gedrifteten Werkzeug (`-flto` als Rest in einem Build-Skript), passierte
 alle billigen Gates und explodierte erst in der Browser-Regression —
 ein Zeuge, der die `tool.script_sha256` des Artefakts mit dem sha
@@ -679,6 +707,8 @@ Defaults zurück (der Mechanismus ist nach Bauart aussteckbar).
 | `REFLECT_DOCTOR_TIMEOUT` | `2` | Sekunden pro Doctor-Sonde; das Entkopplungsseil — ein Connect auf einen toten Port sonst bis ans Ende aller Zeiten. Muss eine positive Zahl sein (ein defekter Wert ist FATAL, kein stilles Default) |
 | `REFLECT_AB` | `ab.json` | Spec-Name des A/B-Gleichflaggen-Gates (`--spec` überschreibt; explizit gesetzt aber ziellos ⇒ FATAL, nicht „aus") |
 | `REFLECT_PINS` | `pins.json` | Spec-Name des Derived-Tree-Pin-Gates (`--spec` überschreibt; dieselbe Explicit-Missing-Semantik) |
+| `REFLECT_LOCKS` | `upstream-lock.json` | Spec-Name des Locked-Sources-Gates (Issue #15 C2: Supply-Artefakte ohne git-Upstream sind eine häufige Form; `--spec` überschreibt, explizit fehlend ist FATAL) |
+| `REFLECT_MEASURE_MODULE` | leer (fällt auf den Platzhalter zurück) | Modulname, dessen `measure()` die Fakten dieses Repos sammelt (Issue #15 A1/C3): Repo-Wechsel = eine Zeile in `Einfacht.env`; leer ⇒ `measure_example()` mit **lauter Warnung** (ein leeres Ledger ist nie still) |
 | `REFLECT_WORLD` | `world.json` (fehlt ⇒ aus) | Reflexionswelt-Deklaration (Issue #13): `{"lines": {…}, "active": …, "stamps": {…}}` — Repos mit mehreren Linien, die sich eine Verifikationsumgebung teilen; jeder Stempel replayt mit demselben Bare-Wert-Vertrag wie das Ledger (`run_cmd` eingepfropft) |
 | `REFLECT_WORLD_LINE` | leer | Linien-Override für CI / Sonderläufe (muss eine gelistete Linie sein — ein freier Override wird gemeldet); ungesetzt ⇒ Auflösung: Branch-ist-Linie > `active` |
 | `REFLECT_INVARIANTS` | leer (fehlt ⇒ aus) | Spec der deklarativen Invarianten (Issue #7): `{"checks": [{path, must_contain?, must_not_contain?, why}]}` |

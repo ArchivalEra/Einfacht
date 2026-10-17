@@ -213,6 +213,37 @@ the sample) + `calibrate_expect` (the sample's known output). Like
 `witness`, orthogonal to `replay`, run **every commit**, judged by
 the same bare-value contract; the pair must be given together.
 
+**Three shapes for "value that changes"** (issue #4 ⑤ + #17). A quantity that
+changes every run must not be stored raw (replay would always be red). Three
+shapes exist — pick by *what you care about*:
+
+| Shape | Use when | Cost |
+|---|---|---|
+| Sample + `*_stable` flag (issue #4 ⑤) | consumers need the precise value | re-measure may ask for `--accept-changes` |
+| `replay: false` (+ `witness`, issue #5) | too expensive to re-run verbatim | no verbatim re-check; provenance only |
+| **Magnitude bucket** (issue #17) | cheap to re-run but *inherently* noisy | resolution coarsened to the bucket |
+
+The bucket is the only shape that **keeps `replay: true`**: the `cmd` reads
+this run's raw value and quantizes it with the *same algorithm* used to
+produce the stored value (`heap_peak_mib32` → round to 32 MiB; `compile_ms500`
+→ round to 500 ms). Invariant: **cmd and value come from the same source and
+the same quantization** — as long as this run's raw value lands in the same
+bucket, stdout equals the stored value byte-for-byte. Two lessons from real
+runs: (1) a fluctuating quantity entering the ledger raw is a *judgment
+mismatch*, not a broken artifact; (2) **the bucket must be coarser than the
+noise** — a first attempt at 100 ms still went red (295→300 vs 306→400
+crossed the boundary); 500 ms held.
+
+**Artifact-level facts** (issue #16): "the ledger measures repo *content*,
+not whether the artifact parses / behaves under the deployment shape." The
+cheap generic form: measure **parseability** of build output (e.g.
+`node --check dist/*.js` / `new Function(src)`, `replay: true`) — it catches
+"source green, artifact dead" (machine-patching code three times, two fatal).
+Deployment-shape facts (base path / domain / scheme) are ordinary facts whose
+source is CI config; behaviour gates (click sequences, no-404 chains) are
+expensive and are discussed in `questions/` rather than pre-built here.
+
+
 **Instrument lifecycle is pluggable** (`check_instruments.py`):
 constant-value detection (`first_seen` — stamped at collection,
 carried over by `measure()` while a value is unchanged) fires past
@@ -616,6 +647,8 @@ to plain env vars + default names (the mechanism is removable by design).
 | `REFLECT_DOCTOR_TIMEOUT` | `2` | seconds per doctor probe; the decoupling rope — a connect to a dead port otherwise waits forever. Must be a positive number (a broken value is FATAL, not a silent default) |
 | `REFLECT_AB` | `ab.json` | spec name of the A/B same-flag gate (`--spec` overrides; a knob set but pointing nowhere is FATAL, not "off") |
 | `REFLECT_PINS` | `pins.json` | spec name of the derived-tree pin gate (`--spec` overrides; same explicit-missing semantics) |
+| `REFLECT_LOCKS` | `upstream-lock.json` | spec name of the locked-sources gate (issue #15 C2: supply artifacts without a git upstream are a common shape; `--spec` overrides, explicit-missing is FATAL) |
+| `REFLECT_MEASURE_MODULE` | empty (falls back to the placeholder) | module name whose `measure()` collects this repo's facts (issue #15 A1/C3): switching repos = one line in `Einfacht.env`; empty ⇒ `measure_example()` with a loud warning (an empty ledger is never silent) |
 | `REFLECT_WORLD` | `world.json` (absent ⇒ off) | reflection-world declaration (issue #13): `{"lines": {…}, "active": …, "stamps": {…}}` — multi-line repos sharing one verification environment; each stamp replays with the same bare-value contract as the ledger (`run_cmd` grafted) |
 | `REFLECT_WORLD_LINE` | empty | line override for CI / special runs (must name a listed line — a dangling override is reported); unset ⇒ resolution order is branch-if-a-line > `active` |
 | `REFLECT_INVARIANTS` | empty (absent ⇒ off) | declarative-invariants spec (issue #7): `{"checks": [{path, must_contain?, must_not_contain?, why}]}` |

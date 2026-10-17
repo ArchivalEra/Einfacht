@@ -28,6 +28,7 @@ from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # no
 import guard                                             # noqa: E402
 import registry                                          # noqa: E402
 
+REPO_REAL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
 OUT = repo(LEDGER_NAME)
 DOC = os.environ.get("REFLECT_DOC", "STATE.md")
@@ -189,6 +190,32 @@ def _age_human(entry):
     return "%d 天前测的" % int(d)
 
 
+def _measure():
+    """采集入口（issue #15 A1/C3）：`REFLECT_MEASURE_MODULE` 旋钮分派。
+
+    · 旋钮未配 / 模块导入失败 / 夹具场景（GATE_REPO 不是本仓）⇒ 回落
+      `measure_example()`（占位），并**打印警告** —— 下游实测过：手动跑
+      facts.py 忘带旋钮 ⇒ 空表 + `--allow-drop` 诱惑（OM 仓「会掉 24 条」
+      的吓人 FATAL，真因只是旋钮没传）。回落必须可闻，不许静默。
+    · 旋钮已配且导入成功且 GATE_REPO 是真仓 ⇒ 用旋钮指定的 measure()。
+    """
+    mod_name = os.environ.get("REFLECT_MEASURE_MODULE", "").strip()
+    if mod_name:
+        try:
+            _m = __import__(mod_name)
+            fn = getattr(_m, "measure")
+            if os.path.abspath(GATE_REPO) == os.path.abspath(REPO_REAL):
+                return fn()
+        except Exception as e:                            # noqa: BLE001
+            print("⚠ REFLECT_MEASURE_MODULE=%s 不可用（%r）⇒ 回落占位 measure_example()"
+                  % (mod_name, e), file=sys.stderr)
+    elif os.path.abspath(GATE_REPO) == os.path.abspath(REPO_REAL):
+        print("⚠ measure_example() used; set REFLECT_MEASURE_MODULE for real repo"
+              "（换仓只改 Einfacht.env 一行；回落占位时台账会空）",
+              file=sys.stderr)
+    return measure_example()
+
+
 def measure(argv):
     """量一遍并写台账。**必须接 `argv`** —— 两道守卫都要读它。
 
@@ -198,7 +225,7 @@ def measure(argv):
     那不叫守卫，那叫故障。所以本文件把 argv 显式传进来；守卫的**决策**在
     `zreflect/guard.py`（decide()，接线有自证），本函数只执行它。
     """
-    facts = measure_example()
+    facts = _measure()
 
     old = facts_of(load(OUT)) if os.path.exists(OUT) else {}
 
