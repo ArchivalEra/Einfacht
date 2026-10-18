@@ -550,6 +550,13 @@ sh reflect-hooks/install.sh
 #     active, stamps — for multi-line repos sharing one
 #     verification environment; single-line repos leave
 #     it absent (the gate says out loud it is off)
+# 2e. migration note (issue #20 ①): a repo may hold AT MOST ONE selftest
+#     harness whose duties OVERLAP. If you genuinely need two (platform gates
+#     via zreflect/ + repo-specific ones elsewhere), you MUST add an
+#     empty-intersection selftest — otherwise both sides will collect the
+#     same item and duties will drift (a downstream ran both harnesses from
+#     pre-commit with different lists for months). Overlap is the disease;
+#     two files are not.
 # 3. Manual re-verification (the same commands the hooks run)
 sh gates-selftest.sh                            # every gate must first prove it can turn red
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # discovered registry — no hand-written lists, not even here

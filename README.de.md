@@ -601,6 +601,13 @@ sh reflect-hooks/install.sh
 #     unabhängig gepflegten Linien, die sich eine
 #     Verifikationsumgebung teilen; Ein-Linien-Repos
 #     lassen sie weg (das Gate sagt laut, es ist aus)
+# 2e. Migrationsregel (Issue #20 ①): ein Repo darf höchstens EINE Selftest-
+#     Harness mit ÜBERLAPPENDEN Aufgaben haben. Brauchst du wirklich zwei
+#     (Plattform-Gates in zreflect/ + Repo-eigene woanders), MUSS eine
+#     leere-Schnittstelle-Selbstprüfung dazu — sonst sammeln beide Seiten
+#     dasselbe und die Aufgaben driften (ein Downstream fuhr monatelang zwei
+#     Harnesses mit verschiedenen Listen aus dem pre-commit). Überlappung ist
+#     die Krankheit, zwei Dateien nicht.
 # 3. manuelle Nachprüfung (dieselben Befehle, die die Hooks fahren)
 sh gates-selftest.sh                             # jedes Gate muss erst beweisen, dass es rot kann
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # Entdeckungsregister — keine handgeschriebenen Listen, nicht mal hier

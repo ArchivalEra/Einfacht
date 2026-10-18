@@ -450,6 +450,10 @@ sh reflect-hooks/install.sh
 #     cp zreflect/world.json.example world.json   # 改：lines、
 #     active、stamps —— 多条独立维护线共享同一个验证
 #     环境的仓库用；单线仓库不用建（闸门明说未启用）
+# 2e. 迁移期纪律（issue #20 ①）：一个仓只许有一份**职责重叠**的 gates-selftest。
+#     若确实需要两份（平台件在 zreflect/ + 仓专属件在别处），必须加一条
+#     **交集为空**的自证 —— 否则两边都会收同一项，职责必然漂（下游实测：
+#     pre-commit 同时跑两份、名单不同跑了几个月）。重叠才是病，两份文件不是。
 # 3. 手动复验（也是 hooks 会跑的那几条）
 sh gates-selftest.sh                           # 每个闸门先证明自己会红
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # 发现式名录 —— README 也不手写闸门清单
