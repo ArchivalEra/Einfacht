@@ -250,6 +250,15 @@ def measure(argv):
         if fs and value_of(o) == value_of(entry):
             entry["first_seen"] = fs
 
+    # 盲写守卫（issue #20 ②）：写盘前查目标 —— 被 gitignore 覆盖 ⇒ FATAL；
+    # 仓里有 Einfacht.env 而本次没设旋钮 ⇒ warn（两个产地此刻分叉）。
+    fatal_w, warn_w = guard.write_target_problems(
+        OUT, knob_set=bool(os.environ.get("REFLECT_FACTS", "").strip()))
+    if warn_w:
+        print("⚠ %s" % warn_w, file=sys.stderr)
+    if fatal_w:
+        print("FATAL: %s" % fatal_w, file=sys.stderr)
+        return 2
     import json                                         # noqa: PLC0415
     import time                                         # noqa: PLC0415
     doc = {"schema": 1, "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -287,9 +296,16 @@ def _load_or_die():
     FileNotFoundError —— 那是"为本仓写死"的味道（我们那边永远有 FACTS.json）。
     语义仍是 fail-loud（空台账照样拒绝渲染），只是**把下一步写在错误里**。"""
     if not os.path.exists(OUT):
-        print("FATAL: 还没有台账 %s\n"
-              "       先在仓库根跑一遍量测：python3 zreflect/facts.py\n"
-              "       然后再 --render-doc 把机器块写进文档。" % os.path.basename(OUT),
+        # issue #20 ② 补充 2：旧提示「先在仓库根跑一遍量测」正是写出野文件
+        # 的那个动作 —— 提示文本本身也是「默认值产地」的一部分，不许教人
+        # 踩坑。改说「先确认 REFLECT_FACTS 指向哪里」。
+        print("FATAL: 还没有台账 %s（路径 = REFLECT_FACTS，当前解析为 %s）\n"
+              "       先确认本仓的台账路径：检查 Einfacht.env / facts 壳脚本里"
+              " REFLECT_FACTS 设了什么，\n"
+              "       再带着同样的环境跑一遍量测：python3 zreflect/facts.py"
+              "（裸跑会用代码默认值 —— 目标可能与钩子语境不同）\n"
+              "       然后再 --render-doc 把机器块写进文档。"
+              % (os.path.basename(OUT), os.path.relpath(OUT, GATE_REPO)),
               file=sys.stderr)
         raise SystemExit(2)
     return load(OUT)
