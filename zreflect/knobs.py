@@ -64,6 +64,7 @@ REGISTRY = {
     "REFLECT_PINS": ("file", "pins.json", "派生树 pin 一致性闸门的规格名"),
     "REFLECT_LOCKS": ("file", "upstream-lock.json", "锁定源清单闸门的规格名"),
     "REFLECT_MEASURE_MODULE": ("value", "", "采集模块名（换仓只改 env 一行；空 = 用占位 measure_example）"),
+    "REFLECT_PHASES": ("value", "", "追加自定义相位（逗号分隔，如 lab）；内置 commit/start-of-work 不可删不可重名"),
 }
 
 KINDS = ("file", "list", "dir", "number", "flag", "value")
@@ -242,6 +243,7 @@ def _cases():
              "README.zh.md": "x", "README.de.md": "x"}))),
         # ③ 空输入必须报
         ("★ 登记表为空 = 名册坏（零值守卫）", lambda: bool(REGISTRY)),
+        ("REFLECT_PHASES 已登记（issue #21 相位旋钮）", lambda: "REFLECT_PHASES" in REGISTRY),
     ]
 
 

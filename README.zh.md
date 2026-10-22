@@ -549,6 +549,7 @@ install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
 | `REFLECT_PINS` | `pins.json` | 派生树 pin 闸门的规格名（`--spec` 可覆盖；同款显式缺失语义） |
 | `REFLECT_LOCKS` | `upstream-lock.json` | 锁定源闸门的规格名（issue #15 C2：无 git 上游的供给件是常见形状；`--spec` 可覆盖，显式缺失 ⇒ FATAL） |
 | `REFLECT_MEASURE_MODULE` | 空（回落占位） | 采集模块名，其 `measure()` 量本仓事实（issue #15 A1/C3）：换仓 = `Einfacht.env` 一行；空 ⇒ `measure_example()` 并**响亮警告**（空台账绝不静默） |
+| `REFLECT_PHASES` | 空 | 追加自定义相位，逗号分隔（如 `lab` —— S26 仓「实验目录在场才跑」的相位，issue #21）。内置两个（`commit` / `start-of-work`）不可删、不可重报；闸门声明未知 `runs_at` 仍会报（typo 守卫）—— 下游加自己的相位**不需要 fork** |
 | `REFLECT_WORLD` | `world.json`（不在 ⇒ 未启用） | 反射世界声明（issue #13）：`{"lines": {…}, "active": …, "stamps": {…}}` —— 多线仓库共享同一个验证环境；每枚印章按同复跑闸门的裸值契约复跑（`run_cmd` 嫁接） |
 | `REFLECT_WORLD_LINE` | 空 | 线覆盖，给 CI / 特殊跑法（必须指清单里有的线 —— 指空会报）；未配 ⇒ 解析顺序为「分支是线 > `active`」 |
 | `REFLECT_INVARIANTS` | 空（不在 ⇒ 未启用） | 声明式不变量规格（issue #7）：`{"checks": [{path, must_contain?, must_not_contain?, why}]}` |
