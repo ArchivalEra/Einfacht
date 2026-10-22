@@ -71,7 +71,36 @@ RENAMED_DEFAULTS = tuple(FIXTURE_RENAMES)
 # 已知相位（C1）：闸门声明自己的运行频率。执行面（gate.run_phase）按它过滤。
 #   commit        每次提交跑（pre-commit / pre-push / CI）
 #   start-of-work 开工前手动跑（doctor —— 查会死的东西，挂提交频率错）
-PHASES = ("commit", "start-of-work")
+# ⚠️ issue #21：相位清单**焊死在这里**会逼下游 fork —— 使用方有自己的相位
+# （S26 仓的 lab：*.lab.py 只在实验目录在场时跑）。旋钮 `REFLECT_PHASES`
+# 追加自定义相位（逗号分隔，追加在两个内置相位之后）；核心两个不可删、
+# 不可重名 —— 相位是执行面与声明的公共词汇，乱改会让既有 runs_at 声明
+# 静默变孤儿。problems() 仍拦未知相位：声明了 runs_at 却不在清单 ⇒ 红。
+BUILTIN_PHASES = ("commit", "start-of-work")
+
+
+def phases():
+    """已知相位 = 内置两个 + `REFLECT_PHASES` 追加（下游自定义，如 lab）。"""
+    raw = os.environ.get("REFLECT_PHASES", "").strip()
+    out = list(BUILTIN_PHASES)
+    for p in (x.strip() for x in raw.split(",")):
+        if p and p not in out:
+            out.append(p)
+    return tuple(out)
+
+
+def phases_problems():
+    """相位清单自洽（旋钮坏值的判据；纯函数）。"""
+    raw = os.environ.get("REFLECT_PHASES", "").strip()
+    out = []
+    if raw:
+        dup = [p for p in (x.strip() for x in raw.split(","))
+               if p in BUILTIN_PHASES]
+        if dup:
+            out.append("REFLECT_PHASES 里的 %s 是内置相位（commit / "
+                       "start-of-work 不可重名也不必重报）—— 删掉它们，"
+                       "只留自定义相位" % ", ".join(sorted(set(dup))))
+    return out
 
 def modules(zdir=None):
     """平台模块名录（C5）：ast 解析 `MODULE = module_meta(…)` 声明行。
@@ -263,15 +292,16 @@ def problems(gs, missing, mods=None, mods_missing=None,
     · 名录整体为空 ⇒ 报（零值守卫）。
     """
     out = []
+    out += phases_problems()
     if missing:
         out.append("以下闸门没有 GATE = gate.meta(…) 声明行 —— 名录不收"
                    "无名之辈（手写名录会漂，声明即登记）：%s"
                    % ", ".join(missing))
     for g in gs:
-        if g.get("runs_at", "commit") not in PHASES:
+        if g.get("runs_at", "commit") not in phases():
             out.append("`%s` 的 runs_at=%r 不是已知相位（%s）—— 频率是声明"
                        "字段，写错值会让执行面漏掉它"
-                       % (g["file"], g.get("runs_at"), " | ".join(PHASES)))
+                       % (g["file"], g.get("runs_at"), " | ".join(phases())))
     for g in gs:
         if g["name_dependent"] and not _touches_renamed(g):
             out.append("`%s` 标了 name_dependent，但消费的旋钮没有一个默认名"
@@ -308,6 +338,16 @@ def problems(gs, missing, mods=None, mods_missing=None,
                          + knobs.registry_vs_readme_problems())
     out += list(knob_problems)
     return out
+
+
+def _with_phases(val):
+    """自证帮手：临时设 REFLECT_PHASES，返回 (phases(), problems())，恢复现场。"""
+    old = os.environ.get("REFLECT_PHASES", "")
+    os.environ["REFLECT_PHASES"] = val
+    try:
+        return phases(), phases_problems()
+    finally:
+        os.environ["REFLECT_PHASES"] = old
 
 
 def red_need(gs=None):
@@ -520,6 +560,13 @@ def _cases():
         ("★ 空名录 + 空模块 ⇒ 必须报（零值守卫）",
          lambda: problems([], [], mods=[], mods_missing=[],
                           knob_problems=[], undeclared=[]) != []),
+        # issue #21：相位旋钮 —— 下游自定义相位（如 S26 的 lab）不再 fork PHASES
+        ("REFLECT_PHASES=lab ⇒ phases() 追加、内置两个不动",
+         lambda: _with_phases("lab")[0] == ("commit", "start-of-work", "lab")),
+        ("★ REFLECT_PHASES 重报内置相位 ⇒ phases_problems 必须报",
+         lambda: any("内置相位" in x for x in _with_phases("commit,lab")[1])),
+        ("REFLECT_PHASES 未设 ⇒ 只有内置两个（现状不变，兼容红线）",
+         lambda: _with_phases("")[0] == ("commit", "start-of-work")),
     ]
 
 
