@@ -16,9 +16,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # 钉小版本 + check-latest（uTLS-Gone issue #4 的实战经验）：
+      # runner 镜像缓存会滞后安全发布 —— 只写大版本（如 "3"）默认 check-latest: false，
+      # 实测解析到旧镜像里打包的 patch；写大版本 ≠ 拿到修复版。显式钉小版本并强制
+      # 解析最新 patch，让「CI 运行时」与「安全公告」对齐（issue #19 部署链真值漂移
+      # 的一个具体实例：CI 配置是运行时版本的唯一产地，必须是被闸门看见的事实）。
       - uses: actions/setup-python@v5
         with:
-          python-version: "3"
+          python-version: "3.13"
+          check-latest: true
       - name: 事实块与台账一致 + 发现式名录的全部闸门全绿
         run: |
           # 名录对账（缺声明 / 孤儿 / 旗标错 / 写而不跑的自证 / 幻影旋钮）
