@@ -16,7 +16,10 @@ jobs:
           fetch-depth: 0          # 判据要 diff 推送前后两个点
       - uses: actions/setup-python@v5
         with:
-          python-version: "3"
+          # 同 gates.yml：钉小版本 + check-latest（uTLS-Gone issue #4）——
+          # 只写 "3" 会被 runner 旧镜像解析到过期 patch。
+          python-version: "3.13"
+          check-latest: true
       - name: 三语 README 必须同批更新（名单：REFLECT_READMES，默认三语 trio）
         env:
           BEFORE: ${{ github.event.before }}
