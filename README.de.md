@@ -560,6 +560,13 @@ drei gemeinsam aktualisieren.**
 - CI (`.github/workflows/readme-sync.yml`) fährt **dieselbe Prüfung** — weil ein lokaler Hook
   `git push --no-verify` nicht aufhalten kann. Ein Versprechen, das nur bindet, wenn es bequem
   ist, ist genau das „nie ausgeführte Gate", dessenwegen dieses Repo existiert.
+- Die CI-Laufzeit wird von Hand gepinnt, nicht vom Runner-Image gewählt: `python-version: "3.13"`
+  mit `check-latest: true` (Feldbericht aus uTLS-Gone Issue #4: eine bloße Major wie `"3"`
+  löst zu dem Patch auf, den das zwischengespeicherte Runner-Image gepackt hat — der hinkt
+  Security-Releases hinterher; eine Major schreiben ≠ den reparierten Patch bekommen).
+  Auf welchem Interpreter die Gates laufen, ist selbst eine Tatsache der Deploy-Kette
+  (Thema von Issue #19): ihre einzige Quelle muss die sichtbare CI-Konfiguration sein,
+  nicht das Packdatum des Images.
 - Andere Sprachen, andere Namen: `REFLECT_READMES=a.md,b.md,c.md` — Hook, Gate und CI lesen
   denselben Knopf.
 - Einzelneintrag-Liste: `REFLECT_READMES=maintaince.md` (eine Disziplin-Datei, kein Trio) ⇒

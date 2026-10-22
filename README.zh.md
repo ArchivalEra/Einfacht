@@ -419,6 +419,11 @@ issue #3 ③）—— runner / CI 不论检查器叫什么都能 grep 同一个�
   三份都在、都非空、每份都含 trio 全部文件名（语言切换器断了 = 入口断了）。
 - CI（`.github/workflows/readme-sync.yml`）跑**同一条判据** —— 本地 hook 拦不住
   `git push --no-verify`；只在自己方便时生效的承诺，正是本仓为消灭它而生的那种"从未跑过的闸门"。
+- CI 的运行时是**手工钉的**，不是 runner 镜像替你选的：`python-version: "3.13"` 加
+  `check-latest: true`（uTLS-Gone issue #4 的实测情报：只写 `"3"` 这种大版本，解析到的是
+  runner 缓存镜像里打包的 patch —— 它滞后于安全发布；写大版本 ≠ 拿到修复版）。
+  闸门跑在哪个解释器上，本身就是部署链的一环事实（issue #19 的主题）：它的唯一产地
+  必须是看得见的 CI 配置，不是镜像的打包日期。
 - 换语言、换名字：`REFLECT_READMES=a.md,b.md,c.md` —— hook、闸门、CI 读同一个旋钮。
 - 单条目名单：`REFLECT_READMES=maintaince.md`（一份纪律文件，不是 trio）⇒ 结构检查里的
   **互链判据退化** —— 只有一份语言时「切换器必须指全全部语言」自动成立，闸门会**明说

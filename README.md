@@ -514,6 +514,12 @@ deliberately brutal: **every push must update all three together.**
 - CI (`.github/workflows/readme-sync.yml`) runs the **same judgment** — because a local hook cannot
   stop `git push --no-verify`. A promise that binds only when convenient is exactly the
   "gate that never executed" this repo exists to kill.
+- The CI runtime is pinned by hand, not left to the runner image: `python-version: "3.13"` with
+  `check-latest: true` (field report from uTLS-Gone issue #4: a bare major like `"3"` resolves to
+  whatever patch the cached runner image shipped — which lags security releases; writing a major
+  ≠ getting the fixed patch). Which interpreter the gates run on is itself a fact of the
+  deployment chain (issue #19's theme): its only source must be the CI config you can see,
+  not the image's packaging date.
 - Different languages, different file names: `REFLECT_READMES=a.md,b.md,c.md` — the hook, the gate
   and CI all read the same knob.
 - Single-entry list: `REFLECT_READMES=maintaince.md` (a discipline file, not a trio) ⇒ the
