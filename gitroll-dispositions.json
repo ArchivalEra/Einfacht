@@ -1,0 +1,98 @@
+{
+  "_comment": "GitRoll 扫描告警处置台账（issue #22）。每条记录：规则 / 严重度 / 处置（fix 或 accept）/ 理由。这不是新机制——只是一个可查的记录文件，让下次扫描能对账（哪些是接受的、哪些已修）。**故意不接进闸门**：台账本身也会腐烂，接进闸门只会多一个需要维护的判据。",
+  "_scan": {
+    "tool": "GitRoll",
+    "scan_id": "tKhFBH21deh9C6cLi7rf",
+    "date": "2026-10-31",
+    "total": 75,
+    "by_severity": {"CRITICAL": 51, "MAJOR": 14, "MINOR": 10},
+    "report": "https://gitroll.io/result/repo/tKhFBH21deh9C6cLi7rf"
+  },
+  "entries": [
+    {
+      "rule": "Regex operator precedence may not be what you intended",
+      "severity": "BUG",
+      "files": ["zreflect/check_envfile.py"],
+      "decision": "fix",
+      "why": "**误报**——`^[\"']|[\"']$` 中 `|` 优先级本就最低，等价于 `(^[\"'])|\t([\"']$)`，正是「剥首尾引号」的本意。实测 `\"hello\"` → `hello`、`a\"b` → `a\"b`（内嵌引号不动）。仍按建议加括号显式化，纯可读性，零行为变化；加了两条自证锁住这个行为。"
+    },
+    {
+      "rule": "Cognitive Complexity above threshold",
+      "severity": "CRITICAL",
+      "files": [
+        "zreflect/registry.py", "zreflect/check_stale.py",
+        "zreflect/check_pins.py", "zreflect/check_ab.py",
+        "zreflect/check_envfile.py", "zreflect/check_facts.py",
+        "zreflect/check_facts_replay.py", "zreflect/gate.py",
+        "zreflect/doctor.py"
+      ],
+      "decision": "fix",
+      "why": "**真债务**。拆成「一层判据 = 一个函数」：主函数只做分派与拼接。全部按 GitRoll 的阈值 15 收敛（ruff 更严的默认 10 不作为目标——那是风格偏好，不是扫描判据）。每处都做了改前/改后差分：problems 类函数在数千组输入上输出零差异；doctor 的 port-free 措辞漂移在差分中被抓出并复原。"
+    },
+    {
+      "rule": "Define a constant instead of duplicating this literal (selftest fixtures)",
+      "severity": "CRITICAL",
+      "files": [
+        "zreflect/check_ab.py", "zreflect/check_pins.py",
+        "zreflect/check_locks.py", "zreflect/registry.py",
+        "zreflect/render.py", "zreflect/check_envfile.py",
+        "zreflect/check_instruments.py", "zreflect/check_stale.py"
+      ],
+      "decision": "accept",
+      "why": "**自证夹具里的重复是有意的可读性**：`(\"REFLECT_DOC\", \"MYSTATE.md\")` 与 `problems({\"REFLECT_DOC\": \"MYSTATE.md\"})` 用同一个值，让读者一眼看出「期望它报这个」。提成常量后阅读要从用例体跳到文件顶部再回来——DRY 赢了，可读性输了。本仓一贯判断：为分数服务的重构最终会被绕过（同「会误报的闸门最终被整闸关掉」）。"
+    },
+    {
+      "rule": "Use concise character class syntax",
+      "severity": "MINOR",
+      "files": [
+        "zreflect/check_envfile.py", "zreflect/check_facts.py",
+        "zreflect/knobs.py", "zreflect/living.py"
+      ],
+      "decision": "accept",
+      "why": "**`\\w`/`\\d` 在 Python 里是 Unicode 感知的**，会匹配中文字符与全角/阿拉伯数字。逐处验证了行为差异（见 issue #22 分片 3 的实测）：`_TOKEN_RE` 的 lookbehind 换成 `\\w` 会让 `中文REFLECT_DOC引用` 里的真记号静默逃过幻影对账；`living.py` 的章节号换成 `\\d` 会把 `## ５ 章` 当编号，翻转历史/活状态判定。`re.ASCII` 替代方案也验证不可用（会改掉表意空格 `\\u3000` 的匹配）。保持显式 ASCII 类是唯一字节等价的写法。"
+    },
+    {
+      "rule": "Add a '+' operator to make the string concatenation explicit",
+      "severity": "MAJOR",
+      "files": ["zreflect/check_world.py"],
+      "decision": "accept",
+      "why": "**中文断行的有意拼接**。`\"...清单为空或不是对象 —— 空清单不是\" \"通过（零值守卫）...\"` 是同一句话在源码里折行，隐式字符串拼接是 Python 的惯用写法。扫描器的「忘了逗号？」启发式对 CJK 长句天然误报。"
+    },
+    {
+      "rule": "Remove this commented out code",
+      "severity": "MAJOR",
+      "files": [
+        "zreflect/check_facts_replay.py", "zreflect/check_readme_sync.py",
+        "zreflect/collect.py", "zreflect/doctor.py", "zreflect/registry.py"
+      ],
+      "decision": "accept",
+      "why": "**全是中文说明注释，没有一处是死代码**。GitRoll 的启发式把含 `()`、`：`、`[]` 的注释行当作代码片段。逐处核对过：它们是「为什么这么判」的说明（如「退化的互链判据要说出口（issue #8）」）。"
+    },
+    {
+      "rule": "Reraise this exception to stop the application",
+      "severity": "CRITICAL",
+      "files": ["zreflect/gate.py"],
+      "decision": "accept",
+      "why": "`raise SystemExit(...)` 在 `require_nonempty()`（零值守卫）与 `selftest()`（空用例清单）里是**设计用法**——守卫必须停住进程，`raise` 正是给调用方看的出口。改成 `return` 会让「空输入」变成「静默通过」，恰好废掉本仓最重要的一行。"
+    },
+    {
+      "rule": "Remove the unused function parameter",
+      "severity": "MAJOR",
+      "files": ["zreflect/collect.py", "zreflect/check_pins.py"],
+      "decision": "accept",
+      "why": "`unavailable(what, why)` 的 `what` 是**公开签名**的一部分，下游仓按这个签名调用；它是「哪样东西没读到」的诚实形状契约的一环，当前返回体只带 `why`。删参数 = 破坏调用方。已在 docstring 里写明理由。`check_pins.py` 的 `_git(*a)` 是夹具的通用签名，同样保留。"
+    },
+    {
+      "rule": "Remove this redundant continue / redundant exception class / comprehension to constructor",
+      "severity": "MINOR",
+      "files": ["zreflect/doctor.py", "zreflect/ledger.py"],
+      "decision": "fix",
+      "why": "冗余 `continue`（循环体末尾）、`urllib.error.URLError`（OSError 的子类）、generator-to-constructor。这三类是无争议的机械简化，自证全过。"
+    }
+  ],
+  "_summary": {
+    "fixed_rules": 3,
+    "accepted_rules": 6,
+    "note": "75 条实例里：可机械判定的（C901 / F / E9 / B）在 GitRoll 阈值 15 下已全清（`ruff --select=C901,F,E9,B --config lint.mccabe.max-complexity=15` 输出 All checks passed）；剩余的是按本文件明确接受的风格项。**不追求 75→0**：清零会同时清掉可读性与设计意图。"
+  }
+}

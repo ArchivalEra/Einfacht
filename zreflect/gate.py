@@ -231,6 +231,77 @@ def raises(fn):
 
 
 
+def _ast_for(fname):
+    """整文件 AST（按文件名缓存）。读不到 / 解析不了 ⇒ False（缓存负结果）。"""
+    import ast as _ast                                   # noqa: PLC0415
+    import linecache                                     # noqa: PLC0415
+    tree = _AST_CACHE.get((fname,))
+    if tree is not None:
+        return tree
+    try:
+        tree = _ast.parse("".join(linecache.getlines(fname)))
+    except (OSError, SyntaxError):
+        tree = False
+    _AST_CACHE[(fname,)] = tree
+    return tree
+
+
+def _lambda_nodes(tree, lineno):
+    """起始行 == lineno 的**全部** Lambda 节点（按 col_offset 升序）。
+
+    ⚠️ 为什么返回列表而不是单个：**同一行里可以有多条 lambda**（`return
+    [("a", lambda: …), ("b", lambda: …)]` 全在一行）—— 这时 code object 的
+    `co_firstlineno` 相同、`co_positions()` 也只给外层位置，**无法区分**是哪
+    一条。取 col_offset 最小的那条会让同行的其它断言全部按第一条判定
+    （实测踩到：`lambda: 1 == 2` 被同行的 `lambda: … or True` 带累判成恒真）。
+
+    因此返回同行全部候选；调用方对**每一条**都扫一遍，任一条恒真即报 ——
+    「同行内任一条断言恒真」本来就该被抓，多报不算误伤。
+    """
+    import ast as _ast                                   # noqa: PLC0415
+    nodes = [n for n in _ast.walk(tree)
+             if isinstance(n, _ast.Lambda) and n.lineno == lineno]
+    return sorted(nodes, key=lambda n: n.col_offset)
+
+
+def _const_truthy(node):
+    """这个常量节点恒为真吗（`or True` / `or 1` 的右操作数形状）。"""
+    import ast as _ast                                   # noqa: PLC0415
+    if not isinstance(node, _ast.Constant) or node.value is None:
+        return False
+    return node.value is not False and bool(node.value) is True
+
+
+def _const_falsy(node):
+    """这个常量节点恒为假吗（`and False` / `and 0` 的右操作数形状）。"""
+    import ast as _ast                                   # noqa: PLC0415
+    if not isinstance(node, _ast.Constant) or node.value is None:
+        return False
+    return node.value is False or node.value == 0
+
+
+def _short_circuit_reason(node):
+    """这个 AST 节点构成恒真短路吗 ⇒ 原因字符串；否则 None。"""
+    import ast as _ast                                   # noqa: PLC0415
+    if isinstance(node, _ast.BoolOp):
+        if isinstance(node.op, _ast.Or) and any(
+                _const_truthy(o) for o in node.values):
+            return "`or <真值常量>` —— 布尔或被常量短路，永远 PASS"
+        if isinstance(node.op, _ast.And) and any(
+                _const_falsy(o) for o in node.values):
+            return "`and <假值常量>` —— 布尔与被常量短路，永远 fail"
+    if isinstance(node, _ast.Compare) and len(node.comparators) == 1:
+        left, right = node.left, node.comparators[0]
+        # 排除裸函数调用两次的**合法**纯函数性检验
+        # （`render_gates(gs) == render_gates(gs)` 证明渲染确定性）。
+        if isinstance(left, _ast.Call) and isinstance(right, _ast.Call):
+            return None
+        if _ast.dump(left) == _ast.dump(right) and isinstance(
+                node.ops[0], (_ast.Eq, _ast.LtE, _ast.GtE)):
+            return "比较两侧是同一个表达式 —— 恒真（x == x）"
+    return None
+
+
 def never_falsifiable(fn):
     """**恒真断言探测**（issue #23）：这条自证用例有证伪能力吗？
 
@@ -253,59 +324,26 @@ def never_falsifiable(fn):
     发现」变成「自证当场红」。
     """
     import ast as _ast                                   # noqa: PLC0415
-    import linecache                                     # noqa: PLC0415
     code = getattr(fn, "__code__", None)
     if code is None:
         return None                                      # 非 Python 函数 ⇒ 不猜
-    fname, lineno = code.co_filename, code.co_firstlineno
-    # 整文件读一次并解析（缓存：同一模块的用例共享一次解析）
-    key = (fname,)
-    tree = _AST_CACHE.get(key)
-    if tree is None:
-        try:
-            src = "".join(linecache.getlines(fname))
-            tree = _ast.parse(src)
-        except (OSError, SyntaxError):
-            _AST_CACHE[key] = False
-            return None
-        _AST_CACHE[key] = tree
-    if tree is False:
-        return None
-    # 找**起始行 == lambda 定义行**的 Lambda 节点（嵌套的最内层优先）
-    best = None
-    for node in _ast.walk(tree):
-        if isinstance(node, _ast.Lambda) and node.lineno == lineno:
-            if best is None or node.col_offset < best.col_offset:
-                best = node
-    if best is None:
+    tree = _ast_for(code.co_filename)
+    if not tree:
+        return None                                      # 读不到 / 解析不了 ⇒ 不猜
+    nodes = _lambda_nodes(tree, code.co_firstlineno)
+    if not nodes:
         return None                                      # 定位不到 ⇒ 不猜
-
-    def _const_truthy(node):
-        return isinstance(node, _ast.Constant) and node.value is not None \
-            and node.value is not False and bool(node.value) is True \
-            or (isinstance(node, _ast.Constant) and node.value is True)
-
-    def _const_falsy(node):
-        return isinstance(node, _ast.Constant) and node.value is not None \
-            and (node.value is False or node.value == 0)
-
-    for node in _ast.walk(best):
-        if isinstance(node, _ast.BoolOp):
-            if isinstance(node.op, _ast.Or) and any(
-                    _const_truthy(o) for o in node.values):
-                return "`or <真值常量>` —— 布尔或被常量短路，永远 PASS"
-            if isinstance(node.op, _ast.And) and any(
-                    _const_falsy(o) for o in node.values):
-                return "`and <假值常量>` —— 布尔与被常量短路，永远 fail"
-        if isinstance(node, _ast.Compare) and len(node.comparators) == 1:
-            left, right = node.left, node.comparators[0]
-            # 排除裸函数调用两次的**合法**纯函数性检验
-            # （`render_gates(gs) == render_gates(gs)` 证明渲染确定性）。
-            if isinstance(left, _ast.Call) and isinstance(right, _ast.Call):
-                continue
-            if _ast.dump(left) == _ast.dump(right) and isinstance(
-                    node.ops[0], (_ast.Eq, _ast.LtE, _ast.GtE)):
-                return "比较两侧是同一个表达式 —— 恒真（x == x）"
+    if len(nodes) > 1:
+        # 同一行有多条 lambda：code object 无法告诉我们是哪一条（co_firstlineno
+        # 相同、co_positions 只给外层位置）。**不确定就不猜** —— 与「读不到就
+        # 明说」同一条纪律：这里宁可漏报也不误伤（本仓 99% 的断言都独占一行，
+        # 这个退化只影响把多条断言挤一行的写法）。
+        return None
+    for node in nodes:
+        for n in _ast.walk(node):
+            reason = _short_circuit_reason(n)
+            if reason:
+                return reason
     return None
 
 
