@@ -7,10 +7,10 @@
 - 本仓的文档数：[[md_files]]。
 - 本仓 Python 代码行数：[[py_lines]]。
 
-> ⚠️ 上面三行就是正确写法。若把最后一行写成「本仓有 486 行 Python」，
+> ⚠️ 上面三行就是正确写法。若把最后一行写成「本仓有 `486` 行 Python」，
 > `check_facts.py` 会报**正文裸数字** —— 因为那个数字从写下的那一刻起就开始腐烂：
 > 代码一增减，它就成了假话，而没人会记得回来改它。引用键名则永远不会过期。
-> （判据默认查 ≥ 100 的整数，`REFLECT_NAKED_MIN` 可调 —— `1`/`2` 这类小数字
+> （判据默认查 ≥ `100` 的整数，`REFLECT_NAKED_MIN` 可调 —— `1`/`2` 这类小数字
 > 遍地都是，查了全是噪音；围栏代码块 / 行内代码内的数字豁免，复跑命令天然带数字。）
 
 ## 现在是什么
@@ -66,10 +66,10 @@
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `md_files` | **7** | 2026-10-31T16:50:36+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `md_lines` | **2359** | 2026-10-31T16:50:36+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
-| `py_files` | **27** | 2026-10-31T16:50:36+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **5713** | 2026-10-31T16:50:36+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **7** | 2026-10-31T16:53:34+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `md_lines` | **2359** | 2026-10-31T16:53:34+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
+| `py_files` | **27** | 2026-10-31T16:53:34+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **5810** | 2026-10-31T16:53:34+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 4 条事实。
 <!-- /AUTO:FACTS -->
