@@ -560,6 +560,23 @@ install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
 | `REFLECT_RETRACTIONS` | `retractions.json` | 翻案台账（翻案闸门扫 `REFLECT_DOCS` 文档里的重现行） |
 | `REFLECT_QUESTIONS` | `questions` | 悬案目录（一题一文件；每份必须挂可跑的结算件） |
 
+### 扫描器不是判据，闸门才是（issue #22）
+
+静态扫描器（当前是 GitRoll）会给本仓打分。它的分数**不是**我们的判据 ——
+闸门才是。扫描结果的处置记在 `gitroll-dispositions.json`：最近一次扫描的
+每条规则、我们是修了还是接受了、以及**为什么**。这个文件**故意不接进任何
+闸门**：处置台账本身也会腐烂，给它加闸门只会多一个要维护的判据。
+
+当前离线划分：可机械判定的规则（认知复杂度 / 真 bug / 未用导入与名字）在扫描器
+**自己的阈值**下已经干净（`python3 -m ruff check zreflect/ --select=C901,F,E9,B
+--config lint.mccabe.max-complexity=15`）。其余按理由接受 —— 例如自证夹具里
+的重复字面量（重复正是让断言可读的东西）、中文断行的字符串拼接、零值守卫里的
+`raise SystemExit`、以及 `\w`/`\d` 简写（在 Python 里会匹配 CJK、静默改变行为，
+已逐处验证）。
+
+**我们不追求 75 → 0。** 一次连可读性与设计意图一起清掉的分数运动，会换来
+一个更差的仓和一个更好的数字。
+
 `GATE_REPO`（`zreflect/gate.py`）指向**被检查的仓库根** —— 自证靠它在夹具树上跑，
 不碰真仓库。
 

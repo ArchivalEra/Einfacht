@@ -89,6 +89,32 @@ def _shape_exempt(token):
 _SHA_NEAR = re.compile(r"sha|hash|校验|指纹|commit", re.I)
 
 
+def _known_values(facts):
+    """台账里出现过的整数值集（抄了但没引用的黑名单判据已单独查）。"""
+    known = set()
+    for entry in facts.values():
+        v = value_of(entry)
+        if isinstance(v, int) and not isinstance(v, bool):
+            known.add(v)
+    return known
+
+
+def _has_provenance(token, line):
+    """token 在（已剥形状串的）`line` 里是否有出处。
+
+    形状白名单 / 带 sha 上下文的裸 sha / 同行 `[[键名]]`，任一命中即有出处。
+    """
+    if _shape_exempt(token):
+        return True
+    # 裸 sha：只在该行有 sha/hash/commit 上下文时放行（那是 check_stale
+    # 的活；无上下文的 8 位数字是测量值，不是 sha —— 实测踩到：
+    # 99887766 被纯十六进制白名单误放）。
+    if (re.fullmatch(r"[0-9a-f]{7,64}", token)
+            and _SHA_NEAR.search(line)):
+        return True
+    return bool(CITE_RE.search(line))    # 同行有 [[键名]] ⇒ 视为引用式出处
+
+
 def _unaccounted_numbers(doc_text, facts, bare_min, nlines):
     """反向判据（issue #24）：正文里**没有出处**的 ≥阈值数字。
 
@@ -105,11 +131,7 @@ def _unaccounted_numbers(doc_text, facts, bare_min, nlines):
       · 该值**恰好等于**某条台账事实的值（黑名单判据已单独查「抄了但没引用」，
         这里不重复报）。
     """
-    known = set()
-    for entry in facts.values():
-        v = value_of(entry)
-        if isinstance(v, int) and not isinstance(v, bool):
-            known.add(v)
+    known = _known_values(facts)
     out = []
     # 先整行剥掉「形状串」（日期/时刻/版本/容量/百分比/路径/标识符）——
     # 否则 `2026-10-31` 会被切出 `2026` 这个假 token（`-` 不在 \w 里，
@@ -126,20 +148,35 @@ def _unaccounted_numbers(doc_text, facts, bare_min, nlines):
                 continue
             if val < bare_min or val in known:
                 continue
-            if _shape_exempt(token):
+            if _has_provenance(token, line):
                 continue
-            # 裸 sha：只在该行有 sha/hash/commit 上下文时放行（那是 check_stale
-            # 的活；无上下文的 8 位数字是测量值，不是 sha —— 实测踩到：
-            # 99887766 被纯十六进制白名单误放）。
-            if (re.fullmatch(r"[0-9a-f]{7,64}", token)
-                    and _SHA_NEAR.search(line)):
-                continue
-            if CITE_RE.search(line):
-                continue                 # 同行有 [[键名]] ⇒ 视为引用式出处
             out.append("正文第 %d 行出现**无出处**的数字 %s —— 它不在台账里，也没有 "
                        "[[键名]] 引用 / 出处标记。要么量进台账（带复跑命令）再引用，"
                        "要么确认它是无害形状（版本号/端口/日期）"
                        % (lineno, token))
+    return out
+
+
+def _cite_problems(prose, facts):
+    """正文里引用了不存在键的 `[[键名]]`。"""
+    out = []
+    for i, line in enumerate(prose.splitlines(), 1):
+        for k in CITE_RE.findall(line):
+            if k not in facts:
+                out.append("正文第 %d 行引用了**不存在**的键：`%s`" % (i, k))
+    return out
+
+
+def _copied_fact_problems(facts, nlines, bare_min):
+    """黑名单判据：台账里的值被手抄进正文，却没在同一行写 `[[键名]]`。"""
+    out = []
+    for k, entry in sorted(facts.items()):
+        v = value_of(entry)
+        if isinstance(v, bool) or not isinstance(v, int) or v < bare_min:
+            continue
+        for i, line in nlines:
+            if str(v) in line and ("[[%s]]" % k) not in line:
+                out.append("正文第 %d 行出现裸数字 %s（属于 `%s`）⇒ 改写成 [[%s]]" % (i, v, k, k))
     return out
 
 
@@ -148,7 +185,6 @@ def problems(ledger, doc_text, bare_min=None):
 
     `bare_min` 覆盖裸数字阈值（自证显式传）；默认读 `REFLECT_NAKED_MIN`。
     """
-    out = []
     bm = _bare_min() if bare_min is None else bare_min
     f = facts_of(ledger)
     if not f:
@@ -158,23 +194,14 @@ def problems(ledger, doc_text, bare_min=None):
         return ["文档里没有 %s / %s 标记 —— 找不到块 ≠ 块是对的（零值守卫）"
                 % (BLOCK_BEGIN, BLOCK_END)]
 
+    out = []
     if body_of(doc_text).strip() != body_of(render_block(ledger)).strip():
         out.append("文档里的块与台账不一致 ⇒ 跑 `python3 zreflect/facts.py --render-doc`")
 
-    prose = prose_of(doc_text)
-    for i, line in enumerate(prose.splitlines(), 1):
-        for k in CITE_RE.findall(line):
-            if k not in f:
-                out.append("正文第 %d 行引用了**不存在**的键：`%s`" % (i, k))
+    out += _cite_problems(prose_of(doc_text), f)
 
     nlines = _number_lines(doc_text)
-    for k, entry in sorted(f.items()):
-        v = value_of(entry)
-        if isinstance(v, bool) or not isinstance(v, int) or v < bm:
-            continue
-        for i, line in nlines:
-            if str(v) in line and ("[[%s]]" % k) not in line:
-                out.append("正文第 %d 行出现裸数字 %s（属于 `%s`）⇒ 改写成 [[%s]]" % (i, v, k, k))
+    out += _copied_fact_problems(f, nlines, bm)
     # 反向判据（issue #24）：从没进过台账的数字也要有出处。
     out += _unaccounted_numbers(doc_text, f, bm, nlines)
     return out
