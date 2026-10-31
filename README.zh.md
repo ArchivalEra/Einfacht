@@ -55,7 +55,7 @@
 | **发现式名录** | `zreflect/registry.py` | 闸门的**集合**是发现式的，**叙述**却是手写的 —— 手写叙述一定会漂：STATE.md 的散文清单写「十道」时实际有十三道；runner 的手写红名单在六道必红的里只点了四道；插件与 doctor 靠点名。现在闸门自声明（每个检查器一行 `GATE = gate.meta(…)`；ast 解析、不 import）；`facts.py --render-doc` 把 **AUTO:GATES 机器块**渲染进 STATE.md（AUTO:FACTS 的先例 —— 叙述派生、`--check` 拦漂移），红名单与插件名单同源派生 |
 | **台账写盘守卫** | `zreflect/guard.py` | 掉条 / 改口守卫的**接线**无自测：纯函数有自证，真正拦住写盘的那条路径没有 —— 本仓发布过一条从落地就死了的守卫（未定义变量，「只在真的该报警时才崩」）。`decide()` 决策与执行分离（纯函数；refuse/write/notes，16 条自证），`measure()` 只执行；`--accept-changes` 的解析也住在这里 |
 | **事实台账** | `zreflect/ledger.py` + `facts.py` | 数字被手抄、被静默覆盖 |
-| **事实闸门** | `zreflect/check_facts.py` | 文档块与台账不一致、正文裸数字、引用不存在的键 |
+| **事实闸门** | `zreflect/check_facts.py` | 文档块与台账不一致、正文裸数字、引用不存在的键。**裸数字双向拦**（issue #24）：① 台账里已有的值被手抄（黑名单）；② **正文里从未进过台账**的 ≥阈值数字在该行没有出处（白名单式反向判据）—— 后者此前是盲区（纪律只在数字已被量过时成立）。形状白名单（版本串 / 标识符 / ISO 日期 / 路径 / 容量 / 百分比）+ `[[键名]]` 引用 + 出处标记放行；裸 sha 只在同行有 sha/hash/commit 上下文时放行（那是 `check_stale` 的活） |
 | **复跑闸门** | `zreflect/check_facts_replay.py` | 「能复跑」此前是**没有执行者的断言**（issue #2 ①）：现在逐字执行台账每条 `cmd`（stdout 必须等于值；坏命令 / 超时 / 没 cmd 都报；要构建产物的条目写 `replay: false` 显式退出 —— 且仍可挂便宜**见证** `witness` + `witness_expect`，issue #5：来源每提交真跑；或挂**校准样本** `calibrate` + `calibrate_expect`，issue #6 ①：仪器对已知含 X 的样本每提交真跑） |
 | **仪器生命周期**（可插拔） | `zreflect/check_instruments.py` | 复跑契约抓「命令死了」（rc≠0），抓不到**仪器静默失真**：命令成功、值稳定、复跑永远通过，而它量的根本不是想量的（仪器不认 X 时 `grep -c X` 成功退出并返回 0）。可插拔：两个旋钮都未配 ⇒ 明说未启用、退 0。`REFLECT_INSTRUMENT_DAYS=天` 开恒常检测（`first_seen` 超过阈值 ⇒「这条 cmd 是在量，还是恒返回同一个数？」）；`REFLECT_INSTRUMENTS=instruments.json` 登记被证伪的**量法**（`{"methods": [{text, why, fixed_in}]}`）——台账任何 `cmd` 含被证伪片段即报 |
 | **声明式不变量**（可插拔） | `zreflect/check_invariants.py` | 「仓库文件必须/不得含某片段」做成**数据**而非代码（`REFLECT_INVARIANTS=invariants.json`，规格 `{"checks": [{path, must_contain?, must_not_contain?, why}]}`）—— 引擎通用、只读、不构建不跑网络 ⇒ 能进 pre-commit；`why` 必填（没理由的检查项没人敢删，会变成僵尸）。可插拔：未配 ⇒ 明说未启用、退 0。**grep 级**：片段出现在注释里也算「存在」—— 它证明的是「这段文字还在」，不是「代码里真在用」；声明式检查的强度上限 = 它匹配的文本形态。更强的保证是 `calibrate`（对产物量）或 `witness`（对来源量）的活 —— 两者正交别混：`calibrate` 守**量测仪器**，不变量守**仓库文件本身** |
@@ -74,7 +74,7 @@
 | 部件 | 文件 | 它挡住什么 |
 |---|---|---|
 | **活状态抽取** | `zreflect/living.py` | 闸门分不清「现在如此」和「当时如此」。历史章节、行内历史标记、**带明确出处的记录**三种出口，加上「默认从严」（无编号章节也是活状态）的判定，全在这一份；各检查器共用，词表只生产一次 |
-| **陈旧断言闸门** | `zreflect/check_stale.py` | 活状态里**没有出处**的 sha 断言、退役组件名悄悄回来 —— 那边实测过：换了构建，头部还挂着旧 sha 没人发现 |
+| **陈旧断言闸门** | `zreflect/check_stale.py` | 活状态里**没有出处**的 sha 断言、退役组件名悄悄回来。**行内「历史」标记不再豁免内容**（issue #25）：它只表示「不与今天对账」—— 这一行仍须给出可核出处（交付包名含 8 位日期 / 反引号 commit sha / `[[键名]]` 引用）。此前加「历史」二字就能让任意编造的 sha 变绿，而闸门的报错文案还在教人绕过自己。要真正豁免，登记进 `retractions.json` / `REFLECT_RETIRED`（单一产地） |
 | **采集器契约** | `zreflect/collect.py` | `measure()` 写成"会自己变的输入"（墙上时钟 / HEAD sha ⇒ `--check` 永不收敛）、读不到就编个 0、贵的测量不做缓存 —— 四条原则 + 机器块回收帮手 |
 | **git hooks** | `reflect-hooks/` | 闸门躺在仓库里**从未被执行**：pre-commit 重算机器块并跑全部闸门，pre-push 拒推不新鲜的块（**不自动改文件、不动历史**）。两者在一切之前先经**可拔插件** `einfacht-env.sh` 加载仓库本地的 `Einfacht.env`（issue #8）—— git 不把自定义环境变量传给 hooks，而「谁记得 export」换机器 / 换 CI / 换人就没了；文件才是钩子可复现的来源（形状见 `Einfacht.env.example`；钩子目录优先、仓库根次之；删掉插件 ⇒ 带守卫的 source 行跳过，钩子回落纯环境变量 + 默认名） |
 
