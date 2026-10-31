@@ -734,6 +734,27 @@ Defaults zurück (der Mechanismus ist nach Bauart aussteckbar).
 | `REFLECT_RETRACTIONS` | `retractions.json` | Ledger widerlegter Aussagen (das Retraktions-Gate scannt die `REFLECT_DOCS`-Docs auf deren Wiederauftauchen) |
 | `REFLECT_QUESTIONS` | `questions` | Verzeichnis offener Fragen (eine Frage pro Datei; jede muss einen lauffähigen Begleicher nennen) |
 
+### Scanner sind nicht das Urteil, die Gates sind es (Issue #22)
+
+Ein statischer Scanner (derzeit GitRoll) bewertet dieses Repo. Seine Punktzahl
+ist **nicht** unser Kriterium — die Gates sind es. Was wir mit einem Scan tun,
+steht in `gitroll-dispositions.json`: jede Regel des letzten Scans, ob wir sie
+behoben oder akzeptiert haben, und **warum**. Die Datei ist bewusst **nicht** in
+ein Gate verdrahtet: ein Dispositions-Ledger verrottet selbst, und ein Gate dafür
+würde nur ein weiteres Urteil schaffen, das gepflegt werden muss.
+
+Die aktuelle Aufteilung: mechanisch prüfbare Regeln (kognitive Komplexität,
+echte Bugs, unbenutzte Importe/Namen) sind **sauber** bei der eigenen Schwelle
+des Scanners (`python3 -m ruff check zreflect/ --select=C901,F,E9,B --config
+lint.mccabe.max-complexity=15`). Der Rest wird mit Begründung akzeptiert — z. B.
+wiederholte Literale in Selftest-Fixtures (die Wiederholung macht eine Behauptung
+lesbar), chinesische zeilenweise String-Konkatenation, `raise SystemExit` im
+Nullwert-Wächter, und die `\w`/`\d`-Kurzform (die in Python CJK trifft und
+Verhalten still ändert — pro Stelle verifiziert).
+
+**Wir jagen nicht 75 → 0.** Ein Punkte-Durchgang, der auch Lesbarkeit und
+Design-Absicht wegräumt, hinterlässt ein schlechteres Repo mit einer besseren Zahl.
+
 `GATE_REPO` (`zreflect/gate.py`) zeigt auf **die Wurzel des geprüften Repos** — Selftests laufen
 über es gegen Fixture-Bäume und fassen das echte Repo nie an.
 
