@@ -99,19 +99,13 @@ def _is_sourced(line):
     return bool(DATED_RECORD.search(line) or CITE_RE.search(line))
 
 
-def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
-    """返回问题清单（纯函数：自证要用）。`docs` = {文件名: 正文}。
+def _sha_assertion_problems(f, docs, hist):
+    """R1：活状态里靠近 sha / hash 字样的十六进制串必须有可核出处。
 
-    `hist_secs=None` ⇒ 用模块级的 `REFLECT_HISTORY_SECS`；自证显式传，才能测到它。
-    `stale_days=None` ⇒ 用 `REFLECT_STALE_DAYS`（未配 ⇒ 测龄规则未启用）。
+    三种归宿（台账事实 / 可核出处）；都不是 ⇒ 报。台账里一个 sha 类事实都没有
+    ⇒ 单独报「先量进台账」（空不是通过）。
     """
-    hist = HIST_SECS if hist_secs is None else hist_secs
     out = []
-    f = facts_of(ledger)
-    if not f:
-        return ["台账为空 —— 空不是通过（零值守卫）：先查 measure() 是不是坏了"]
-    if not docs:
-        return ["一份活状态文档都没扫到 —— 空输入不是通过（零值守卫）"]
     shas = _sha_facts(f)
     for name, body in sorted(docs.items()):
         for lineno, line, is_living in living_lines(body, hist):
@@ -132,19 +126,35 @@ def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
                                "（交付包名 / 反引号 commit sha）。注意："
                                "「历史」二字**不构成出处**（issue #25）"
                                % (name, lineno, tok[:16]))
-    # 测龄（issue #3 ②）：台账里的 measured_at 距今天的天数超阈值 ⇒ 报。
-    # 未配置 ⇒ 不查（明说未启用）；读不到时间戳 ⇒ 也报（读不到就明说，不许猜 0）。
-    sd = _stale_days() if stale_days is None else stale_days
-    if sd is not None:
-        for k in sorted(f):
-            d = age_days(f[k])
-            if d is None:
-                out.append("`%s` 的 measured_at 缺失或不可解析 —— 测龄判据无法评估"
-                           "（读不到就明说，不许猜）" % k)
-            elif d > sd:
-                out.append("`%s` 已 %.0f 天没测（阈值 %.0f 天）—— 重测并显式 "
-                           "`--accept-changes`" % (k, d, sd))
-    # R2 退役名：名单不配 = 未启用（run() 会明说，这里不打印 —— 纯函数保持安静）。
+    return out
+
+
+def _stale_age_problems(f, sd):
+    """测龄（issue #3 ②）：台账里的 measured_at 距今天的天数超阈值 ⇒ 报。
+
+    未配置（sd is None）⇒ 不查（明说未启用）；读不到时间戳 ⇒ 也报
+    （读不到就明说，不许猜 0）。
+    """
+    out = []
+    if sd is None:
+        return out
+    for k in sorted(f):
+        d = age_days(f[k])
+        if d is None:
+            out.append("`%s` 的 measured_at 缺失或不可解析 —— 测龄判据无法评估"
+                       "（读不到就明说，不许猜）" % k)
+        elif d > sd:
+            out.append("`%s` 已 %.0f 天没测（阈值 %.0f 天）—— 重测并显式 "
+                       "`--accept-changes`" % (k, d, sd))
+    return out
+
+
+def _retired_name_problems(docs, hist, retired):
+    """R2 退役名：独立成词出现在活状态 ⇒ 报。
+
+    名单不配 = 未启用（run() 会明说，这里不打印 —— 纯函数保持安静）。
+    """
+    out = []
     for name, body in sorted(docs.items()):
         for lineno, line, is_living in living_lines(body, hist):
             if not is_living or _is_sourced(line):
@@ -155,6 +165,26 @@ def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
                     out.append("%s:%d 退役名 `%s` 出现在活状态里 —— 要么它没退役，"
                                "要么这行带上历史标记" % (name, lineno, w))
     return out
+
+
+def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
+    """返回问题清单（纯函数：自证要用）。`docs` = {文件名: 正文}。
+
+    一层判据 = 一个函数，按 R1 → 测龄 → R2 的顺序拼接（顺序即报错顺序）。
+
+    `hist_secs=None` ⇒ 用模块级的 `REFLECT_HISTORY_SECS`；自证显式传，才能测到它。
+    `stale_days=None` ⇒ 用 `REFLECT_STALE_DAYS`（未配 ⇒ 测龄规则未启用）。
+    """
+    hist = HIST_SECS if hist_secs is None else hist_secs
+    f = facts_of(ledger)
+    if not f:
+        return ["台账为空 —— 空不是通过（零值守卫）：先查 measure() 是不是坏了"]
+    if not docs:
+        return ["一份活状态文档都没扫到 —— 空输入不是通过（零值守卫）"]
+    sd = _stale_days() if stale_days is None else stale_days
+    return (_sha_assertion_problems(f, docs, hist)
+            + _stale_age_problems(f, sd)
+            + _retired_name_problems(docs, hist, retired))
 
 
 def run(argv):

@@ -673,6 +673,27 @@ to plain env vars + default names (the mechanism is removable by design).
 | `REFLECT_RETRACTIONS` | `retractions.json` | refuted-claims ledger (the retraction gate scans the `REFLECT_DOCS` docs for their reappearance) |
 | `REFLECT_QUESTIONS` | `questions` | open-questions directory (one question per file; each must name a runnable settler) |
 
+### Scanners are not the judgement; the gates are (issue #22)
+
+A static scanner (GitRoll at the time of writing) rates this repo. Its score is
+**not** our criterion — the gates are. What we do with a scan is recorded in
+`gitroll-dispositions.json`: every rule from the last scan, whether we fixed it
+or accepted it, and **why**. The file is deliberately **not** wired into any
+gate: a dispositions ledger is itself something that rots, and adding a gate for
+it would only create another judgement to maintain.
+
+The current split: mechanically-checkable rules (cognitive complexity, real
+bugs, unused imports/names) are **clean** at the scanner's own threshold
+(`python3 -m ruff check zreflect/ --select=C901,F,E9,B --config
+lint.mccabe.max-complexity=15`). The rest are accepted with reasons — e.g.
+repeated literals inside selftest fixtures (the repetition is what makes an
+assertion readable), Chinese line-wrapped string concatenation, `raise SystemExit`
+in the zero-value guard, and `\w`/`\d` shorthand (which would match CJK in
+Python and silently change behaviour — verified per site).
+
+**We do not chase 75 → 0.** A score clearing pass that also clears readability
+and design intent is a worse repo with a better number.
+
 `GATE_REPO` (`zreflect/gate.py`) points at **the repo being checked** — selftests run against
 fixture trees through it and never touch the real repo.
 
