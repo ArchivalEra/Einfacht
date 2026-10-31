@@ -730,6 +730,9 @@ Defaults zurück (der Mechanismus ist nach Bauart aussteckbar).
 | `REFLECT_INSTRUMENTS` | leer (fehlt ⇒ aus) | Register widerlegter Meßmethoden (Issue #6 ①): `{"methods": [{text, why, fixed_in}]}` |
 | `REFLECT_INSTRUMENT_DAYS` | leer (fehlt ⇒ aus) | Schwelle der Konstanten-Erkennung in Tagen (Issue #6 ①): `first_seen` älter ⇒ „mißt dieses cmd, oder liefert es immer dieselbe Zahl?" |
 | `REFLECT_ENV_FILE` | `Einfacht.env` | Dateiname des Knopf-Trägers der Hooks (Issue #8), aufgelöst vom entfernbaren Plugin `einfacht-env.sh` (Hooks-Verzeichnis zuerst, Repo-Wurzel zweitens) |
+| `REFLECT_LANG` | leer | Name des Ausgabe-Sprachpakets (`zh`, `en`, …). **Leer = Null-Paket: der Kern gibt keine natürliche Sprache aus**, nur `code(param=value)` (Issue #26). Vertragszeichenketten (`OFF:`, `FATAL:`, `=== N PASS / M FAIL ===`) werden nie übersetzt — sie sind Literale am Ausgabeort |
+| `REFLECT_I18N` | `zreflect/lang` | Verzeichnis der Sprachpakete. Zwei Formen: `<lang>.json` (eine Datei) oder `<lang>/*.json` (eine Datei pro Gate-Namespace — zusammengeführt, letztere gewinnt) |
+| `REFLECT_I18N_ROOT` | leer | Quellverzeichnis, das das Coverage-Gate scannt (Kern-hat-keine-Sprache). Leer ⇒ dieses Gate sagt laut, dass es aus ist |
 | `REFLECT_ENV_HINT` | leer (an) | `off` ⇒ schweigt den **Hinweis beim Lauf ohne env**. Jedes Gate, dessen Knöpfe aus `Einfacht.env` kommen, druckt bei einem nackten manuellen Lauf ohne gesetzten Knopf *try running it with `Einfacht.env`* — mit der exakten Zeile `set -a; . …; set +a`. Ein Hinweis, kein Urteil: ändert keinen rc, berührt stdout nicht, und bleibt in Repos ohne Träger still |
 | `REFLECT_RETRACTIONS` | `retractions.json` | Ledger widerlegter Aussagen (das Retraktions-Gate scannt die `REFLECT_DOCS`-Docs auf deren Wiederauftauchen) |
 | `REFLECT_QUESTIONS` | `questions` | Verzeichnis offener Fragen (eine Frage pro Datei; jede muss einen lauffähigen Begleicher nennen) |
