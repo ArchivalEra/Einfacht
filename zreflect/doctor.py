@@ -68,7 +68,7 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import fatal, load_spec, main_selftest_or, meta, off, repo, selftest  # noqa: E402
+from gate import fatal, load_spec, main_selftest_or, meta, off, repo  # noqa: E402
 
 DEFAULT_SPEC = "doctor.json"
 DEFAULT_TIMEOUT = 2.0

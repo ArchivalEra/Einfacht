@@ -22,9 +22,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import module_meta, GATE_REPO, main_selftest_or, repo, selftest  # noqa: E402
+from gate import module_meta, GATE_REPO, main_selftest_or, repo  # noqa: E402
 from ledger import age_days, fact, facts_of, load, value_of  # noqa: E402
-from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
+from render import BLOCK_BEGIN, BLOCK_END, render_block  # noqa: E402
 import guard                                             # noqa: E402
 import registry                                          # noqa: E402
 
@@ -203,7 +203,7 @@ def _measure():
     if mod_name:
         try:
             _m = __import__(mod_name)
-            fn = getattr(_m, "measure")
+            fn = getattr(_m, "measure")   # noqa: B009 — 模块是变量，属性名固定是契约
             if os.path.abspath(GATE_REPO) == os.path.abspath(REPO_REAL):
                 return fn()
         except Exception as e:                            # noqa: BLE001

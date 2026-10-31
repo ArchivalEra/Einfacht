@@ -31,7 +31,6 @@ URL 与版本的对应关系是清单作者的主张，闸门不做网络验证�
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import sys
 
