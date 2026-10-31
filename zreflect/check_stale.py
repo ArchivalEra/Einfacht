@@ -35,7 +35,6 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
-from gate import selftest                                 # noqa: E402
 from ledger import age_days, facts_of, load, value_of     # noqa: E402
 from living import DATED_RECORD, HIST_MARK, living_lines  # noqa: E402
 
@@ -74,9 +73,30 @@ def _sha_facts(f):
     return out
 
 
+# 引用式出处（issue #25）：`[[键名]]` 指向台账 —— 与「历史」标记不同，
+# 它是**可复跑**的锚。
+CITE_RE = re.compile(r"\[\[[A-Za-z_][A-Za-z0-9_]*\]\]")
+
+
 def _is_sourced(line):
-    """这一行自己带了**明确**出处（历史标记 / 交付名 / 反引号 sha）。"""
-    return bool(HIST_MARK.search(line) or DATED_RECORD.search(line))
+    """这一行带了**明确的、可核的**出处吗？
+
+    issue #25 之前：`HIST_MARK`（「历史」二字）**单独**就算出处 ⇒ 任意断言
+    加「历史」即获整行豁免 —— 下游实测：同一句编造 sha，只多「历史」两个字，
+    就从红变绿。闸门的报错文案自己就写着「或带上历史标记/出处」，**在教用户
+    绕过自己**（`living.py:11-19` 早就自认这个漏检，但只写成注释）。
+
+    现在：「历史」**不豁免内容**，只表示「不与今天对账」；这一行仍必须给出
+    可核的出处之一：
+
+      · `DATED_RECORD` —— 交付包名（含 8 位日期）或**反引号里的** commit sha；
+      · `[[键名]]` —— 引用台账事实（可复跑）。
+
+    纯「历史」二字不再够 —— 它只是**提示**，不是证据。要真正豁免一条历史
+    断言，把它登记进 `retractions.json` / `REFLECT_RETIRED`（单一产地），
+    或给出交付名/sha 引用。
+    """
+    return bool(DATED_RECORD.search(line) or CITE_RE.search(line))
 
 
 def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
@@ -108,7 +128,9 @@ def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
                 if not any(tok == s or s.startswith(tok) or tok.startswith(s[:len(tok)])
                            for s in shas):
                     out.append("%s:%d sha 断言无出处：`%s` 不在台账里 —— "
-                               "改写成 [[键名]] 引用，或带上历史标记/出处"
+                               "改写成 [[键名]] 引用，或给出可核出处"
+                               "（交付包名 / 反引号 commit sha）。注意："
+                               "「历史」二字**不构成出处**（issue #25）"
                                % (name, lineno, tok[:16]))
     # 测龄（issue #3 ②）：台账里的 measured_at 距今天的天数超阈值 ⇒ 报。
     # 未配置 ⇒ 不查（明说未启用）；读不到时间戳 ⇒ 也报（读不到就明说，不许猜 0）。
@@ -178,8 +200,14 @@ def _cases():
         # ① 正常不报
         ("sha 与台账一致（16 位前缀也能对上）⇒ 不报",
          lambda: problems(led_sha, {"A.md": "部署 sha256 %s…（截断显示）\n" % ("a" * 16)}) == []),
-        ("带历史标记的 sha ⇒ 不报",
-         lambda: problems(led_plain, {"A.md": "旧 sha abcdef01（已翻案，见 R-1）\n"}) == []),
+        ("历史标记 + 反引号 sha（可核出处）⇒ 不报",
+         lambda: problems(led_plain, {"A.md": "旧 sha abcdef01（已翻案，见 `abc1234`）\n"}) == []),
+        # ② 反向判据（issue #25）：历史标记**不再是**免死金牌
+        ("★ 只有「历史」二字、无可核出处的假 sha ⇒ 必须报（issue #25）",
+         lambda: any("sha 断言无出处" in x for x in problems(
+             led_plain, {"A.md": "部署的 sha256 历史是 8287589ebdb53b4c 这串\n"}))),
+        ("★ [[键名]] 引用构成出处（可复跑锚）⇒ 不报",
+         lambda: problems(led_sha, {"A.md": "旧 sha256 [[site_sha]] 已翻案\n"}) == []),
         ("台账无 sha + 正文无 sha 断言 ⇒ 不报",
          lambda: problems(led_plain, {"A.md": "今天是好日子\n"}) == []),
         ("声明过的历史章节里的 sha ⇒ 不报",
