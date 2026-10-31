@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
+from i18n import M, bind                                   # noqa: E402
 from ledger import facts_of, load, value_of              # noqa: E402
 from living import DATED_RECORD   # noqa: E402
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
@@ -37,7 +38,7 @@ def _bare_min():
     try:
         return int(raw)
     except ValueError:
-        print("⚠ REFLECT_NAKED_MIN=%r 不是整数 ⇒ 用默认 %d" % (raw, BARE_MIN),
+        print("⚠ %s" % M("facts.bad_bare_min", value=raw, default=BARE_MIN),
               file=sys.stderr)
         return BARE_MIN
 
@@ -150,10 +151,8 @@ def _unaccounted_numbers(doc_text, facts, bare_min, nlines):
                 continue
             if _has_provenance(token, line):
                 continue
-            out.append("正文第 %d 行出现**无出处**的数字 %s —— 它不在台账里，也没有 "
-                       "[[键名]] 引用 / 出处标记。要么量进台账（带复跑命令）再引用，"
-                       "要么确认它是无害形状（版本号/端口/日期）"
-                       % (lineno, token))
+            out.append(M("facts.bare_number_unaccounted",
+                         line=lineno, number=token))
     return out
 
 
@@ -163,7 +162,7 @@ def _cite_problems(prose, facts):
     for i, line in enumerate(prose.splitlines(), 1):
         for k in CITE_RE.findall(line):
             if k not in facts:
-                out.append("正文第 %d 行引用了**不存在**的键：`%s`" % (i, k))
+                out.append(M("facts.missing_key_cite", line=i, key=k))
     return out
 
 
@@ -176,7 +175,7 @@ def _copied_fact_problems(facts, nlines, bare_min):
             continue
         for i, line in nlines:
             if str(v) in line and ("[[%s]]" % k) not in line:
-                out.append("正文第 %d 行出现裸数字 %s（属于 `%s`）⇒ 改写成 [[%s]]" % (i, v, k, k))
+                out.append(M("facts.copied_value", line=i, value=v, key=k))
     return out
 
 
@@ -189,14 +188,14 @@ def problems(ledger, doc_text, bare_min=None):
     f = facts_of(ledger)
     if not f:
         # 零值守卫：台账空着不是「没有违规」，是「什么都没量」。
-        return ["台账为空 —— 空不是通过（零值守卫）：先查 measure_example() 是不是坏了"]
+        return [M("facts.empty_ledger")]
     if BLOCK_BEGIN not in doc_text or BLOCK_END not in doc_text:
-        return ["文档里没有 %s / %s 标记 —— 找不到块 ≠ 块是对的（零值守卫）"
-                % (BLOCK_BEGIN, BLOCK_END)]
+        return [M("facts.no_block_markers",
+                  begin=BLOCK_BEGIN, end=BLOCK_END)]
 
     out = []
     if body_of(doc_text).strip() != body_of(render_block(ledger)).strip():
-        out.append("文档里的块与台账不一致 ⇒ 跑 `python3 zreflect/facts.py --render-doc`")
+        out.append(M("facts.block_mismatch"))
 
     out += _cite_problems(prose_of(doc_text), f)
 
@@ -211,68 +210,121 @@ def run(argv):
     doc = argv[0] if argv else os.environ.get("REFLECT_DOC", "STATE.md")
     p = doc if os.path.isabs(doc) else repo(doc)
     if not os.path.exists(p):
-        return fatal("文档不存在：%s —— 找不到文件不许算通过（零值守卫）" % p)
+        return fatal(M("facts.doc_missing", path=p))
     facts_name = os.environ.get("REFLECT_FACTS", "FACTS.json")
     led_path = repo(facts_name)
     if not os.path.exists(led_path):
-        return fatal("缺事实台账（%s）。先跑 python3 zreflect/facts.py 量一遍。" % facts_name)
+        return fatal(M("facts.ledger_missing", name=facts_name))
     led = load(led_path)
     probs = problems(led, open(p, encoding="utf-8").read())
-    return finish("事实闸门", probs,
-                  "事实闸门：OK（%d 条事实，块一致、无裸数字、无坏引用）" % len(facts_of(led)))
+    return finish(M("facts.title"), probs,
+                  M("facts.ok", count=len(facts_of(led))))
 
 
 LED = {"facts": {"count": {"value": 4752, "cmd": "c"}}}
 
 
+def _load_real_pack(lang, fname):
+    """读磁盘上真实发布的语言包分片（自证用；缺失 ⇒ {} 让断言当场红）。"""
+    import json                                          # noqa: PLC0415
+    p = repo("zreflect", "lang", lang, fname)
+    try:
+        with open(p, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
 def _cases():
-    good = "这里没有裸数字。\n" + render_block(LED)
+    # 夹具的文档正文用**英文**（它们是被扫描的输入，不是本体的输出 —— 「速度是
+    # 4752 次」这类中文样本会让零语言闸门把夹具当消息）。判据本身与语言无关：
+    # 裸数字 / 引用 / 形状白名单都只看 token 形态。
+    good = "no bare numbers here.\n" + render_block(LED)
+    numberless = {"facts": {"n": {"value": 3, "cmd": "c"}}}
+    fifty = {"facts": {"n": {"value": 50, "cmd": "c"}}}
+
+    def codes(ledger, doc, **kw):
+        return [p.code for p in problems(ledger, doc, **kw)]
+
+    # 「诊断话必须说清怎么修」这类判据在 null 包里验不了（null 包只有 code +
+    # 参数）。所以读**磁盘上真实发布的 zh 包** —— 注入假表只能证明「我写的模板
+    # 渲染得出我写的话」（循环论证）；读真包才把「迁移没丢语义」变成可证伪的
+    # 断言（zh 包按契约存的是逐字的被移除文本）。
+    real_zh = _load_real_pack("zh", "facts.json")
+
+    def pack_placeholders(code):
+        """真实 zh 包里某条 code 的占位名集合（缺条目 ⇒ 空集，断言当场红）。"""
+        import re                                        # noqa: PLC0415
+        return set(re.findall(r"%\((\w+)\)", real_zh.get(code, "")))
+
+    def said(ledger, doc, **kw):
+        with bind("zh", {"zh": real_zh}):
+            return [str(p) for p in problems(ledger, doc, **kw)]
+
     return [
         # ① 正常不报
-        ("块一致 + 无裸数字 ⇒ 不报", lambda: problems(LED, good) == []),
-        ("正文引用存在的键 ⇒ 不报",
-         lambda: problems(LED, "见 [[count]]\n" + render_block(LED)) == []),
-        ("小整数（< 100）不算裸数字", lambda: problems(
-            {"facts": {"n": {"value": 3, "cmd": "c"}}}, "有 3 个\n" + render_block({"facts": {"n": {"value": 3, "cmd": "c"}}})) == []),
+        ("facts.block_ok",
+         lambda: problems(LED, good) == []),
+        ("facts.live_cite_ok",
+         lambda: problems(LED, "see [[count]]\n" + render_block(LED)) == []),
+        ("facts.small_int_exempt",
+         lambda: problems(numberless, "there are 3\n"
+                          + render_block(numberless)) == []),
         # ② 该报的必须报
-        ("★ 块与台账不一致 ⇒ 必须报",
-         lambda: any("不一致" in x for x in problems(LED, "x\n" + render_block({"facts": {}})))),
-        ("★ 正文裸数字 ⇒ 必须报",
-         lambda: any("裸数字" in x for x in problems(LED, "速度是 4752 次\n" + render_block(LED)))),
-        ("★ 引用不存在的键 ⇒ 必须报",
-         lambda: any("不存在" in x for x in problems(LED, "见 [[nope]]\n" + render_block(LED)))),
+        ("★ facts.block_mismatch",
+         lambda: codes(LED, "x\n" + render_block({"facts": {}}))
+         == ["facts.block_mismatch"]),
+        ("★ facts.copied_value",
+         lambda: codes(LED, "speed is 4752 times\n" + render_block(LED))
+         == ["facts.copied_value"]),
+        ("★ facts.missing_key_cite",
+         lambda: codes(LED, "see [[nope]]\n" + render_block(LED))
+         == ["facts.missing_key_cite"]),
         # ② 反向判据（issue #24）：从没进过台账的数字也要有出处
-        ("★ 正文出现从未进过台账的数字 ⇒ 必须报（issue #24）",
-         lambda: any("无出处" in x and "99887766" in x for x in problems(
-             LED, "新量了 99887766 但没进台账。\n" + render_block(LED)))),
-        ("数字紧跟 [[键名]] ⇒ 视为引用式出处，不报",
-         lambda: problems(LED, "见 [[count]] = 99887766\n" + render_block(LED)) == []),
-        ("版本串/标识符/日期等形状 ⇒ 白名单放行（否则闸门被误报淹没）",
-         lambda: problems(LED, "v11.3.0 与 sha256 与 2026-10-31\n"
+        ("★ facts.bare_number_unaccounted",
+         lambda: codes(LED, "measured 99887766 but not in ledger.\n"
+                        + render_block(LED))
+         == ["facts.bare_number_unaccounted"]
+         and any("99887766" in str(p) for p in problems(
+             LED, "measured 99887766 but not in ledger.\n" + render_block(LED))),
+         ),
+        ("facts.cite_counts_as_provenance",
+         lambda: problems(LED, "see [[count]] = 99887766\n"
                           + render_block(LED)) == []),
-        ("★ 裸 sha 只在有 sha 上下文时放行（无上下文的 8 位数是测量值）",
-         lambda: any("无出处" in x for x in problems(
-             LED, "随便写的 99887766\n" + render_block(LED)))),
+        ("facts.pack_entry_wired",
+         # 真实 zh 包里「无出处」这条必须存在、且**接收该 code 实际发的那两个参数**
+         # （删掉这条 code / 改坏占位名 ⇒ 这条红）。断言只用 ASCII 锚点（code 名 +
+         # 占位名）—— 中文锚点会把自己变成「本体里的自然语言」，正是零语言闸门
+         # 要消灭的形状；语义是否仍说「怎么修」由 zh 包 diff 审查承担。
+         lambda: pack_placeholders("facts.bare_number_unaccounted") == {"line", "number"}),
+        ("facts.shape_whitelist",
+         lambda: problems(LED, "v11.3.0 and sha256 and 2026-10-31\n"
+                          + render_block(LED)) == []),
+        ("★ facts.bare_sha_needs_context",
+         lambda: codes(LED, "just wrote 99887766\n" + render_block(LED))
+         == ["facts.bare_number_unaccounted"]),
         # ③ 空输入必须报
-        ("★ 空台账 ⇒ 必须报（空不是通过）", lambda: problems({"facts": {}}, good) != []),
-        ("★ 文档没有块标记 ⇒ 必须报", lambda: problems(LED, "完全没有块的文档") != []),
+        ("★ facts.empty_ledger",
+         lambda: codes({"facts": {}}, good) == ["facts.empty_ledger"]),
+        ("★ facts.no_block_markers",
+         lambda: codes(LED, "a document with no block at all")
+         == ["facts.no_block_markers"]),
         # ④ 裸数字判据扩展（issue #3 ④）
-        ("围栏代码块内的裸数字 ⇒ 豁免（复跑命令天然带数字）",
-         lambda: problems(LED, "```\n速度是 4752 次\n```\n" + render_block(LED)) == []),
-        ("行内代码里的裸数字 ⇒ 豁免",
-         lambda: problems(LED, "见 `4752` 次\n" + render_block(LED)) == []),
-        ("阈值默认 100：小于它的值不算裸数字 ⇒ 不报",
-         lambda: problems({"facts": {"n": {"value": 50, "cmd": "c"}}},
-                          "有 50 只\n" + render_block(
-                              {"facts": {"n": {"value": 50, "cmd": "c"}}})) == []),
-        ("★ 阈值可配：bare_min=10 时 50 必须报（该报的必须报）",
-         lambda: any("裸数字" in x for x in problems(
-             {"facts": {"n": {"value": 50, "cmd": "c"}}},
-             "有 50 只\n" + render_block({"facts": {"n": {"value": 50, "cmd": "c"}}}),
-             bare_min=10))),
-        ("★ 围栏外同行仍必须报（豁免只罩代码，不罩断言）",
-         lambda: any("裸数字" in x for x in problems(
-             LED, "```\n4752\n```\n速度是 4752 次\n" + render_block(LED)))),
+        ("facts.fenced_exempt",
+         lambda: problems(LED, "```\nspeed is 4752 times\n```\n"
+                          + render_block(LED)) == []),
+        ("facts.inline_code_exempt",
+         lambda: problems(LED, "see `4752` times\n" + render_block(LED)) == []),
+        ("facts.below_threshold_exempt",
+         lambda: problems(fifty, "there are 50\n" + render_block(fifty)) == []),
+        ("★ facts.threshold_knob",
+         lambda: codes(fifty, "there are 50\n" + render_block(fifty), bare_min=10)
+         == ["facts.copied_value"]
+         and "50" in str(problems(fifty, "there are 50\n" + render_block(fifty),
+                                  bare_min=10)[0])),
+        ("★ facts.bare_number_outside_fence",
+         lambda: codes(LED, "```\n4752\n```\nspeed is 4752 times\n"
+                        + render_block(LED)) == ["facts.copied_value"]),
     ]
 
 

@@ -68,6 +68,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import fatal, load_spec, main_selftest_or, meta, off, repo  # noqa: E402
+from i18n import M                                        # noqa: E402
 
 DEFAULT_SPEC = "doctor.json"
 DEFAULT_TIMEOUT = 2.0
@@ -203,26 +204,23 @@ def spec_problems(checks):
     未知 kind / 缺 why）+ 分派。消息措辞与顺序保持原样。
     """
     if not isinstance(checks, list) or not checks:
-        return ["doctor 清单为空或不是数组 —— 空清单不是通过"
-                "（零值守卫）：清单要有理由才存在"]
+        return [M("doctor.empty_spec")]
     out = []
     for c in checks:
         if not isinstance(c, dict):
-            out.append("检查项不是对象：%r" % (c,))
+            out.append(M("doctor.not_object", check=c))
             continue
         kind = str(c.get("kind") or "").strip()
         why = str(c.get("why") or "").strip()
         if not kind:
-            out.append("检查项缺 kind（必填）：%r" % (c,))
+            out.append(M("doctor.missing_kind", check=c))
             continue
         if kind not in _PROBES:
-            out.append("未知 kind `%s`（支持：%s）—— 未知判据"
-                       "等于静默通过"
-                       % (kind, ", ".join(sorted(_PROBES))))
+            out.append(M("doctor.unknown_kind",
+                         kind=kind, supported=", ".join(sorted(_PROBES))))
             continue
         if not why:
-            out.append("`%s` 缺 why（必填：没有理由的检查项"
-                       "没人敢删，会变成僵尸）" % label(c))
+            out.append(M("doctor.missing_why", check=label(c)))
         out += _KIND_SHAPE[kind](c)
     return out
 
@@ -368,15 +366,15 @@ def _cases():
          == ["docker:o113（假 DOWN）"]),
         ("★ 清单空 ⇒ 必须报（零值守卫）",
          lambda: spec_problems([]) != []),
-        ("★ 缺 kind ⇒ 必须报",
-         lambda: any("缺 kind" in x
-                     for x in spec_problems([{"why": "w"}]))),
-        ("★ 未知 kind ⇒ 必须报（未知判据 = 静默通过）",
-         lambda: any("未知 kind" in x for x in spec_problems(
-             [{"kind": "smtp", "why": "w"}]))),
-        ("★ 缺 why ⇒ 必须报（僵尸守卫）",
-         lambda: any("缺 why" in x for x in spec_problems(
-             [{"kind": "http", "url": "http://x/"}]))),
+        ("★ doctor.missing_kind",
+         lambda: [p.code for p in spec_problems([{"why": "w"}])
+                  ] == ["doctor.missing_kind"]),
+        ("★ doctor.unknown_kind（未知判据 = 静默通过）",
+         lambda: [p.code for p in spec_problems(
+             [{"kind": "smtp", "why": "w"}])] == ["doctor.unknown_kind"]),
+        ("★ doctor.missing_why（僵尸守卫）",
+         lambda: [p.code for p in spec_problems(
+             [{"kind": "http", "url": "http://x/"}])] == ["doctor.missing_why"]),
         ("★ http 缺 url ⇒ 必须报",
          lambda: any("缺 url" in x for x in spec_problems(
              [{"kind": "http", "why": "w"}]))),

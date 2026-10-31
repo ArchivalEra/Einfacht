@@ -38,6 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
 from gate import repo                                     # noqa: E402
+from i18n import M                                        # noqa: E402
 
 DEFAULT_SPEC = "upstream-lock.json"
 
@@ -77,33 +78,35 @@ def check(spec, hasher=_sha, root=None):
     problems, skips = [], []
     locked = spec.get("locked") or spec.get("sources") or []
     if not locked:
-        problems.append("locked 清单为空（零值守卫：空断言面不是通过）")
+        problems.append(M("locks.empty"))
         return problems, skips
     for s in locked:
         for f in ("name", "url", "file"):
             if not s.get(f):
-                problems.append("锁定条目缺字段 %s: %r（没有理由的锁定是僵尸）" % (f, s))
-        if problems and problems[-1].startswith("锁定条目缺字段"):
+                problems.append(M("locks.entry_missing_field",
+                                  field=f, entry=s))
+        if problems and problems[-1].code == "locks.entry_missing_field":
             continue
         path = s["file"]
         if not os.path.isabs(path):
             path = os.path.join(root, path)
         if not os.path.exists(path):
             if s.get("optional"):
-                skips.append("%s: 本机缺席（optional ⇒ 明说，不是通过）" % s["name"])
+                skips.append(M("locks.absent_optional", name=s["name"]))
             else:
-                problems.append("%s: 锁定的文件/目录不存在：%s" % (s["name"], path))
+                problems.append(M("locks.file_missing",
+                                  name=s["name"], path=path))
             continue
         want = s.get("sha256")
         if not want:
             if (s.get("form") or "file") == "dir":
                 continue                      # 目录形态：只查存在
-            problems.append("%s: 文件形态的锁定条目没有 sha256（那不叫钉版）" % s["name"])
+            problems.append(M("locks.no_sha256", name=s["name"]))
             continue
         got = hasher(path)
         if got != want:
-            problems.append("%s: sha256 不符（清单 %s… 实测 %s…）⇒ 上游字节漂了"
-                            % (s["name"], want[:12], got[:12]))
+            problems.append(M("locks.sha_mismatch",
+                              name=s["name"], declared=want[:12], actual=got[:12]))
     return problems, skips
 
 
@@ -112,18 +115,17 @@ def main(argv):
     path = spec_path if os.path.isabs(spec_path) else repo(spec_path)
     if not os.path.isfile(path):
         if explicit:
-            return fatal("显式指定的规格 %s 不存在（--spec）—— 先写规格（或撤掉指定）"
-                         % spec_path)
-        return off("未启用（%s 不存在 ⇒ 明说未启用退 0，可插拔）" % spec_path)
+            return fatal(M("locks.explicit_spec_missing", name=spec_path))
+        return off(M("locks.off", name=spec_path))
     spec, err = load_spec(path)
     if err:
-        return fatal("规格 %s 坏：%s" % (spec_path, err))
+        return fatal(M("locks.spec_broken", name=spec_path, error=err))
     problems, skips = check(spec)
     for x in skips:
-        print("SKIP: %s" % x, file=sys.stderr)
-    return finish("锁定源闸门", problems,
-                  "锁定源闸门：OK（%d 个锁定源全部一致）"
-                  % len(spec.get("locked") or spec.get("sources") or []))
+        print("SKIP: %s" % x, file=sys.stderr)   # 契约前缀在发射点字面量
+    return finish(M("locks.title"), problems,
+                  M("locks.ok", count=len(spec.get("locked")
+                                         or spec.get("sources") or [])))
 
 
 def _cases():
@@ -151,22 +153,23 @@ def _cases():
     no_sha = {"locked": [{"name": "glpk", "version": "5.0", "url": "u", "file": g}]}
     empty = {"locked": []}
     return [
-        ("规格名解析：--spec > 默认名（显式带回 True）",
+        ("locks.resolve_spec",
          lambda: resolve_spec(["--spec", "x.json"], "K.json") == ("x.json", True)
          and resolve_spec([], "K.json") == ("K.json", True)
          and resolve_spec([]) == ("upstream-lock.json", False)),
         # ① 正常不报
-        ("锁定一致/目录形态/optional 缺席 ⇒ 不报",
+        ("locks.ok",
          lambda: check(spec, root=d)[0] == [] and check(spec, root=d)[1] != []),
         # ② 该报的必须报
-        ("★ sha256 不符 ⇒ 必须报（字节漂了）",
-         lambda: any("sha256 不符" in x for x in check(bad_hash, root=d)[0])),
-        ("★ 锁定文件缺席（非 optional）⇒ 必须报",
-         lambda: any("不存在" in x for x in check(missing, root=d)[0])),
-        ("★ 文件形态没有 sha256 ⇒ 必须报（那不叫钉版）",
-         lambda: any("没有 sha256" in x for x in check(no_sha, root=d)[0])),
+        ("★ locks.sha_mismatch",
+         lambda: [p.code for p in check(bad_hash, root=d)[0]] == ["locks.sha_mismatch"]),
+        ("★ locks.file_missing",
+         lambda: [p.code for p in check(missing, root=d)[0]] == ["locks.file_missing"]),
+        ("★ locks.no_sha256",
+         lambda: [p.code for p in check(no_sha, root=d)[0]] == ["locks.no_sha256"]),
         # ③ 空输入必须报
-        ("★ locked 为空 ⇒ 必须报（零值守卫）", lambda: check(empty, root=d)[0] != []),
+        ("★ locks.empty（零值守卫）",
+         lambda: [p.code for p in check(empty, root=d)[0]] == ["locks.empty"]),
     ]
 
 

@@ -1,0 +1,6 @@
+{
+ "knobs.phantom_token": "记号 `%(token)s` 出现在 zreflect/*.py 里但不在旋钮登记表 —— 要么是 typo（会被所有程序静默忽略），要么是幻影旋钮（文档承诺了、代码不读，配了静默无效）。登记才算数",
+ "knobs.readme_phantom": "%(file)s 提到未登记旋钮 `%(token)s` —— 幻影 or typo；登记进 zreflect/knobs.py 才算数",
+ "knobs.declared_not_read": "`%(file)s` 声明消费 %(knobs)s，但源码里读不到这些旋钮 —— 声明与实现不符（AUTO:GATES 表会撒谎）",
+ "knobs.readme_missing_rows": "%(file)s 的配置表缺这些已登记旋钮的说明行：%(knobs)s —— 登记了却没人知道怎么配（文档缺口）"
+}

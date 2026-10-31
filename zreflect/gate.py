@@ -392,9 +392,19 @@ def main_selftest_or(args, name, cases, run):
 
     `cases` 可以是清单，也可以是**工厂 callable**（需要搭临时夹具的
     自证 —— ab/locks/pins 体例 —— 传函数，由这里调用）。
+
+    **这里是语言包的进程级激活点**（issue #26）：`REFLECT_LANG` 未设 ⇒ null 包
+    （本体零语言）；设了但包不在 ⇒ `MissingPack` ⇒ FATAL rc 2（不做「没装就
+    回落」）。每个闸门都经这里 ⇒ 一处接线，全部受益。
     """
     if "--selftest" in args:
         return selftest(name, cases() if callable(cases) else cases)
+    try:
+        import i18n                                      # noqa: PLC0415
+        i18n.activate()
+    except Exception as e:                               # noqa: BLE001
+        print("FATAL: 语言包装配失败：%s" % e, file=sys.stderr)
+        return 2
     return run([a for a in args if a != "--selftest"])
 
 

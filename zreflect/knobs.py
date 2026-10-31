@@ -35,6 +35,7 @@ import re
 import sys
 
 from gate import module_meta, GATE_REPO                                # noqa: E402
+from i18n import M                                        # noqa: E402
 
 # 名字 → (kind, 默认值, 一句话语义)。默认值 = 旋钮未配时各消费方的回落名。
 REGISTRY = {
@@ -66,6 +67,9 @@ REGISTRY = {
     "REFLECT_LOCKS": ("file", "upstream-lock.json", "锁定源清单闸门的规格名"),
     "REFLECT_MEASURE_MODULE": ("value", "", "采集模块名（换仓只改 env 一行；空 = 用占位 measure_example）"),
     "REFLECT_PHASES": ("value", "", "追加自定义相位（逗号分隔，如 lab）；内置 commit/start-of-work 不可删不可重名"),
+    "REFLECT_LANG": ("value", "", "输出语言包名（如 zh/en）；空 = null 包（本体零语言）"),
+    "REFLECT_I18N": ("dir", "zreflect/lang", "语言包目录（默认随套件分发的 zreflect/lang）"),
+    "REFLECT_I18N_ROOT": ("dir", "", "语言覆盖闸门扫描的源码目录；空 = 该闸门未启用"),
 }
 
 KINDS = ("file", "list", "dir", "number", "flag", "value")
@@ -108,10 +112,7 @@ def scan_surface_problems(py_dir=None):
             continue
     for tok in sorted(toks):
         if tok not in REGISTRY:
-            out.append("记号 `%s` 出现在 zreflect/*.py 里但不在旋钮登记表"
-                       "（zreflect/knobs.py）—— 要么是 typo（会被所有程序"
-                       "静默忽略），要么是幻影旋钮（文档承诺了、代码不读，"
-                       "配了静默无效）。登记才算数" % tok)
+            out.append(M("knobs.phantom_token", token=tok))
     return out
 
 
@@ -135,8 +136,7 @@ def readme_problems(files=None, readmes=None):
             text = open(p, encoding="utf-8", errors="replace").read()
         for tok in sorted(set(_TOKEN_RE.findall(text))):
             if tok not in REGISTRY:
-                out.append("%s 提到未登记旋钮 `%s` —— 幻影 or typo；"
-                           "登记进 zreflect/knobs.py 才算数" % (name, tok))
+                out.append(M("knobs.readme_phantom", file=name, token=tok))
     return out
 
 
@@ -166,9 +166,8 @@ def declared_vs_read_problems(gates):
         read = set(_TOKEN_RE.findall(text))
         ghost = sorted(k for k in declared if k not in read)
         if ghost:
-            out.append("`%s` 声明消费 %s，但源码里读不到这些旋钮 —— "
-                       "声明与实现不符（AUTO:GATES 表会撒谎）"
-                       % (g["file"], ", ".join(ghost)))
+            out.append(M("knobs.declared_not_read",
+                         file=g["file"], knobs=", ".join(ghost)))
     return out
 
 
@@ -201,9 +200,8 @@ def registry_vs_readme_problems(readmes=None, tables=None):
             continue                    # 非配置表形态：不误报
         missing = sorted(k for k in REGISTRY if k not in have)
         if missing:
-            out.append("%s 的配置表缺这些已登记旋钮的说明行：%s —— "
-                       "登记了却没人知道怎么配（文档缺口）"
-                       % (name, ", ".join(missing)))
+            out.append(M("knobs.readme_missing_rows",
+                         file=name, knobs=", ".join(missing)))
     return out
 
 
@@ -238,8 +236,8 @@ def _cases():
         ("★ 扫描面出现未登记记号 ⇒ 必须报（幻影 / typo，登记才算数）",
          lambda: any(phantom in x
                      for x in scan_surface_problems(py_dir=d))),
-        ("★ README 提到未登记旋钮 ⇒ 必须报（文档侧幻影）",
-         lambda: any("未登记旋钮" in x for x in readme_problems(files={
+        ("★ knobs.readme_phantom",
+         lambda: any(x.code == "knobs.readme_phantom" for x in readme_problems(files={
              "README.md": "见 " + "REFLECT_" + "GHOSTY" + "。",
              "README.zh.md": "x", "README.de.md": "x"}))),
         # ③ 空输入必须报
