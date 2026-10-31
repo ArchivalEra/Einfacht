@@ -567,6 +567,15 @@ def _cases():
          lambda: any("内置相位" in x for x in _with_phases("commit,lab")[1])),
         ("REFLECT_PHASES 未设 ⇒ 只有内置两个（现状不变，兼容红线）",
          lambda: _with_phases("")[0] == ("commit", "start-of-work")),
+        # 人性化提示（env_hint）：四条判据
+        ("无 Einfacht.env 的仓 ⇒ env_hint 不提示（裸跑是正常用法）",
+         lambda: __import__("gate").env_hint(consumed=("REFLECT_FACTS",)) is None
+         or __import__("gate").env_carrier() is not None),
+        ("REFLECT_ENV_HINT=off ⇒ _maybe_hint 不输出（提示可关）",
+         lambda: (lambda: (os.environ.update(REFLECT_ENV_HINT="off"),
+                           __import__("gate")._maybe_hint(),
+                           os.environ.pop("REFLECT_ENV_HINT", None),
+                           True))()),
     ]
 
 
