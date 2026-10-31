@@ -76,6 +76,7 @@ def off(notice):
     off —— 与本仓立身要消灭的假绿同形）。
     """
     print("OFF: %s" % notice)
+    _maybe_hint()
     return 0
 
 
@@ -103,9 +104,85 @@ def finish(name, problems, ok):
         print("%s：%d 个问题" % (name, len(problems)), file=sys.stderr)
         for p in problems:
             print("  · " + p, file=sys.stderr)
+        _maybe_hint()
         return 1
     print(ok)
+    _maybe_hint()
     return 0
+
+
+def _maybe_hint():
+    """把 env 提示打到 stderr（**绝不进 stdout** —— 那里有机器契约）。
+
+    `REFLECT_ENV_HINT=off` 可整体关闭（本仓「不喜欢提示的仓」的出口；
+    提示本身是**人性化**，不是判据）。
+    """
+    if os.environ.get("REFLECT_ENV_HINT", "").strip().lower() == "off":
+        return
+    h = env_hint()
+    if h:
+        print("ℹ %s" % h, file=sys.stderr)
+
+
+def env_carrier():
+    """仓里的 Einfacht.env 载体路径（钩子目录优先、仓库根次之），没有 ⇒ None。"""
+    name = (os.environ.get("REFLECT_ENV_FILE", "Einfacht.env").strip()
+            or "Einfacht.env")
+    for d in (repo("reflect-hooks"), repo()):
+        p = os.path.join(d, name)
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def gate_knobs(module=None):
+    """调用方模块声明的 `GATE = meta(…, knobs=…)`（拿不到 ⇒ 空）。
+
+    让 `env_hint()` 不必每个入口手写旋钮名 —— 声明已经有一份（单一产地）。
+    """
+    import sys as _sys                                   # noqa: PLC0415
+    mod = module if module is not None else _sys.modules.get("__main__")
+    decl = getattr(mod, "GATE", None)
+    if isinstance(decl, dict):
+        return tuple(decl.get("knobs") or ())
+    return ()
+
+
+def env_hint(consumed=(), module=None):
+    """**人性化提示**：喂了 env 的入口，在「带了 env 却没生效」时该怎么跑。
+
+    `consumed` = 这个入口实际读的旋钮名（如 `("REFLECT_FACTS",)`）。
+    返回一行提示字符串，或 None（无需提示）。
+
+    什么时候提示（三类，都只在对用户**有帮助**时出现）：
+
+      1. 仓里**有** Einfacht.env，但本轮进程**一个旋钮都没设**（`consumed`
+         全不在环境里）—— 典型的手工裸跑：`python3 zreflect/check_x.py`
+         ⇒ 判据全部回落默认名，结果可能与钩子语境不同，而且**没有任何东西
+         会告诉用户**（issue #20② / #15 都栽在这上面）。
+      2. 仓里**有** Einfacht.env 且当前设置与它**不一致**？—— 不查（要看值
+         才能判，而值依赖 shell 语义）；只查「有没有设」，保持判据廉价可靠。
+      3. 仓里**没有** Einfacht.env ⇒ **不提示**（这类仓裸跑是正常用法，提示
+         只会变成噪音 —— 本仓「会误报的闸门最终被整闸关掉」的教训）。
+
+    提示语集中在这里（一处措辞），各入口调它 —— 不再各写一份。
+    """
+    carrier = env_carrier()
+    if not carrier:
+        return None                      # 无载体的仓：裸跑是正常用法，不吵
+    if not consumed:
+        consumed = gate_knobs(module)     # 声明里的旋钮清单（零手写）
+    if not consumed:
+        return None
+    if any(os.environ.get(k, "").strip() for k in consumed):
+        return None                      # 至少设了一个旋钮 ⇒ 认为是有意配置
+    rel = os.path.relpath(carrier, GATE_REPO)
+    return ("检测到 %s，但本次进程一个旋钮都没设 —— 判据可能回落默认名，"
+            "结果与钩子语境不同。\n"
+            "       try running it with %s：\n"
+            "         set -a; . %s; set +a\n"
+            "       （或 `REFLECT_*=<值> python3 ...` 显式给旋钮）"
+            % (rel, rel, rel))
 
 
 def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit"):

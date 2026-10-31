@@ -53,6 +53,7 @@ REGISTRY = {
     "REFLECT_RETRACTIONS": ("file", "retractions.json", "翻案台账"),
     "REFLECT_QUESTIONS": ("dir", "questions", "悬案目录"),
     "REFLECT_ENV_FILE": ("value", "Einfacht.env", "钩子旋钮载体的文件名"),
+    "REFLECT_ENV_HINT": ("flag", "", "off ⇒ 关闭「裸跑时提示用 Einfacht.env」的人性化提示（提示不是判据）"),
     "REFLECT_INVARIANTS": ("file", "", "声明式不变量规格；空 = 明说未启用"),
     "REFLECT_INSTRUMENTS": ("file", "", "量法登记位；空 = 该规则明说未启用"),
     "REFLECT_INSTRUMENT_DAYS": ("number", "", "恒常检测阈值天；空 = 该规则明说未启用"),

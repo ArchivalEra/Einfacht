@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
 from ledger import facts_of, load, value_of              # noqa: E402
-from living import DATED_RECORD, HIST_MARK   # noqa: E402
+from living import DATED_RECORD   # noqa: E402
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
 
 # 正文引用数字的写法：`[[键名]]`。刻意选一个不可能是自然语言的形状 ——
