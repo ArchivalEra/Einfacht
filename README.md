@@ -669,6 +669,9 @@ to plain env vars + default names (the mechanism is removable by design).
 | `REFLECT_INSTRUMENTS` | empty (absent ⇒ off) | falsified-measurement-method registry (issue #6 ①): `{"methods": [{text, why, fixed_in}]}` |
 | `REFLECT_INSTRUMENT_DAYS` | empty (absent ⇒ off) | constant-value detection threshold in days (issue #6 ①): a ledger entry whose `first_seen` is older ⇒ "is this cmd measuring, or always returning the same number?" |
 | `REFLECT_ENV_FILE` | `Einfacht.env` | file name of the hooks' knob carrier (issue #8), resolved by the removable plugin `einfacht-env.sh` (hooks dir first, repo root second) |
+| `REFLECT_LANG` | empty | output language pack name (`zh`, `en`, …). **Empty = the null pack: the core emits no natural language**, only `code(param=value)` (issue #26). Comment strings (`OFF:`, `FATAL:`, `=== N PASS / M FAIL ===`) are never translated — they are literals at the emission point |
+| `REFLECT_I18N` | `zreflect/lang` | directory holding language packs. Two shapes: `<lang>.json` (one file) or `<lang>/*.json` (one file per gate namespace — merged, later wins) |
+| `REFLECT_I18N_ROOT` | empty | source dir scanned by the coverage gate (core-has-no-language check). Empty ⇒ that gate says out loud it is off |
 | `REFLECT_ENV_HINT` | empty (on) | `off` ⇒ silences the **running-without-env hint**. Every gate whose knobs come from `Einfacht.env` prints, on a bare manual run with none of them set, *try running it with `Einfacht.env`* — with the exact `set -a; . …; set +a` line. A hint, not a judgement: it never changes rc, never touches stdout, and stays quiet in repos that have no carrier (bare runs are normal there) |
 | `REFLECT_RETRACTIONS` | `retractions.json` | refuted-claims ledger (the retraction gate scans the `REFLECT_DOCS` docs for their reappearance) |
 | `REFLECT_QUESTIONS` | `questions` | open-questions directory (one question per file; each must name a runnable settler) |
