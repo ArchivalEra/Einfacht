@@ -14,6 +14,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
+from i18n import M                                       # noqa: E402
 from ledger import load                                  # noqa: E402
 from living import HIST_MARK, living_lines               # noqa: E402
 
@@ -37,14 +38,15 @@ def problems(retractions, docs, hist_secs=None):
     out = []
     if retractions is None or "retractions" not in (retractions or {}):
         # 零值守卫：结构都不对，就别谈「没有违规」。
-        return ["`retractions.json` 缺 `retractions` 键 —— 结构不对 ≠ 没有问题"]
+        return [M("retractions.missing_key")]
     if not docs:
         # 零值守卫：一份文档都没扫到 ⇒ 「没发现重现行」是空话。
-        return ["一份活状态文档都没扫到 —— 空输入不是通过（零值守卫）"]
+        return [M("retractions.no_docs")]
     for r in retractions.get("retractions") or []:
         for fld in REQUIRED:
             if not (r.get(fld) if isinstance(r, dict) else None):
-                out.append("翻案条目缺 `%s`：%r" % (fld, r.get("id") if isinstance(r, dict) else r))
+                out.append(M("retractions.entry_missing_field", field=fld,
+                             entry=r.get("id") if isinstance(r, dict) else r))
         text = (r or {}).get("text") or ""
         if not text:
             continue
@@ -53,8 +55,8 @@ def problems(retractions, docs, hist_secs=None):
                 if not is_living:
                     continue
                 if text in line and not HIST_MARK.search(line):
-                    out.append("%s:%d 出现已被推翻的断言「%s」（%s）：要么删掉，要么带更正标记"
-                               % (name, i, text, r.get("id", "?")))
+                    out.append(M("retractions.resurfaced", name=name, line=i,
+                                 text=text, entry=r.get("id", "?")))
     return out
 
 
@@ -62,49 +64,59 @@ def run(argv):
     # 名字可配（issue #1 ②）：不写死，换仓库只改环境变量
     rp = repo(os.environ.get("REFLECT_RETRACTIONS", "retractions.json"))
     if not os.path.exists(rp):
-        return fatal("缺 %s" % rp)
+        return fatal(M("retractions.file_missing", name=rp))
     docs = {}
     for name in (argv or DOCS):
         p = repo(name)
         if os.path.exists(p):
             docs[name] = open(p, encoding="utf-8", errors="replace").read()
-    rc = guard_nonempty("check_retractions", docs, "被扫描的活状态文档")
+    rc = guard_nonempty("check_retractions", docs, M("retractions.scanned_docs"))
     if rc:
         return rc
     led = load(rp)
     probs = problems(led, docs)
     n = len(led.get("retractions") or [])
-    return finish("翻案重现检测", probs,
-                  "翻案重现检测：OK（%d 条翻案，扫了 %d 份文档）" % (n, len(docs)))
+    return finish(M("retractions.title"), probs,
+                  M("retractions.ok", count=n, documents=len(docs)))
 
 
 def _cases():
-    ok_r = {"retractions": [{"id": "R-1", "text": "这东西是绿的", "why": "其实红",
-                             "evidence": "跑 x", "fixed_in": "文档 y"}]}
-    doc_ok = "（记录）这东西是绿的 —— 已翻案，见 R-1\n"
+    ok_r = {"retractions": [{"id": "R-1", "text": "this thing is green",
+                             "why": "actually red", "evidence": "run x",
+                             "fixed_in": "doc y"}]}
+    doc_ok = "(record) this thing is green — retracted, see R-1\n"
     return [
         # ① 正常不报
-        ("带更正标记 ⇒ 不报", lambda: problems(ok_r, {"A.md": doc_ok}) == []),
-        ("完全没有这条断言 ⇒ 不报", lambda: problems(ok_r, {"A.md": "干净的文档\n"}) == []),
-        ("空翻案列表 + 有文档 ⇒ 不报（还没翻过案是合法状态）",
+        ("retractions.marked",
+         lambda: problems(ok_r, {"A.md": doc_ok}) == []),
+        ("retractions.assertion_absent",
+         lambda: problems(ok_r, {"A.md": "clean document\n"}) == []),
+        ("retractions.no_retractions",
          lambda: problems({"retractions": []}, {"A.md": "x\n"}) == []),
-        ("声明过的历史章节里的重现行 ⇒ 不报（那里天然是「当时」）",
-         lambda: problems(ok_r, {"A.md": "## 5 历史\n这东西是绿的。\n"},
+        ("retractions.declared_history_section",
+         lambda: problems(ok_r, {"A.md": "## 5 history\nthis thing is green.\n"},
                           hist_secs=("5",)) == []),
         # ② 该报的必须报
-        ("★ 断言重新出现且无标记 ⇒ 必须报",
-         lambda: any("R-1" in x for x in problems(ok_r, {"A.md": "这东西是绿的。\n"}))),
-        ("★ 未声明历史章节 ⇒ 里面的重现行照报（默认从严）",
-         lambda: any("R-1" in x for x in problems(
-             ok_r, {"A.md": "## 5 历史\n这东西是绿的。\n"}, hist_secs=()))),
-        ("★ 条目缺字段 ⇒ 必须报",
-         lambda: any("缺 `evidence`" in x for x in problems(
+        ("★ retractions.resurfaced",
+         lambda: [p.code for p in problems(
+             ok_r, {"A.md": "this thing is green.\n"})] == ["retractions.resurfaced"]),
+        ("★ retractions.resurfaced_undeclared_history",
+         lambda: [p.code for p in problems(
+             ok_r, {"A.md": "## 5 history\nthis thing is green.\n"}, hist_secs=())]
+         == ["retractions.resurfaced"]),
+        ("★ retractions.entry_missing_field",
+         lambda: [p.code for p in problems(
              {"retractions": [{"id": "R-2", "text": "t", "why": "w", "fixed_in": "f"}]},
-             {"A.md": "x\n"}))),
+             {"A.md": "x\n"})] == ["retractions.entry_missing_field"]),
         # ③ 空输入必须报
-        ("★ 一份文档都没扫到 ⇒ 必须报", lambda: problems(ok_r, {}) != []),
-        ("★ 缺 retractions 键 ⇒ 必须报", lambda: problems({}, {"A.md": "x\n"}) != []),
-        ("★ 文件整体为 None ⇒ 必须报", lambda: problems(None, {"A.md": "x\n"}) != []),
+        ("★ retractions.no_docs",
+         lambda: [p.code for p in problems(ok_r, {})] == ["retractions.no_docs"]),
+        ("★ retractions.missing_key",
+         lambda: [p.code for p in problems({}, {"A.md": "x\n"})]
+         == ["retractions.missing_key"]),
+        ("★ retractions.missing_key_none",
+         lambda: [p.code for p in problems(None, {"A.md": "x\n"})]
+         == ["retractions.missing_key"]),
     ]
 
 
@@ -112,5 +124,4 @@ GATE = meta("翻案重现检测", "被推翻的断言不许悄悄回来当现状
             knobs=("REFLECT_RETRACTIONS", "REFLECT_DOCS", "REFLECT_HISTORY_SECS"), name_dependent=True)
 
 if __name__ == "__main__":
-    sys.exit(main_selftest_or(sys.argv[1:], "check_retractions（翻案重现检测）",
-                              _cases, run))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_retractions", _cases, run))

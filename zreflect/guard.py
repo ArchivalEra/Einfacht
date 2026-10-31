@@ -32,6 +32,7 @@ from __future__ import annotations
 import os
 
 from gate import GATE_REPO
+from i18n import M
 from ledger import changed_keys, dropped_keys, short_value
 
 
@@ -118,39 +119,37 @@ def decide(old_facts, new_facts, accepted=False, allow_drop=False):
     # 守卫一：掉条（键没了）
     dropped = dropped_keys(old_facts, new_facts)
     if dropped and not allow_drop:
-        problems.append("本次会从台账里**掉掉 %d 条事实**（输入不在？）：%s"
-                        % (len(dropped), ", ".join(dropped)))
-        problems.append("台账不写。要么把输入准备好，要么显式 --allow-drop"
-                        "（并把掉掉的键记进 HISTORY）。")
+        problems.append(M("guard.refuse_dropped",
+                          count=len(dropped), keys=", ".join(dropped)))
+        problems.append(M("guard.refuse_dropped_advice"))
         return "refuse", problems, notes
     if dropped:
-        notes["err"].append("⚠ --allow-drop：本次掉掉 %d 条：%s"
-                            % (len(dropped), ", ".join(dropped)))
+        notes["err"].append(M("guard.note_allow_drop",
+                              count=len(dropped), keys=", ".join(dropped)))
 
     # 守卫二：改口（值换了）
     changed = changed_keys(old_facts, new_facts)
     remaining = filter_accepted(changed, accepted)
     if remaining:
-        problems.append("本次重测会**改掉 %d 条事实的值**（未经接受的改口）："
-                        % len(remaining))
+        problems.append(M("guard.refuse_changed", count=len(remaining)))
         for k, o, n in remaining:
-            problems.append("%-24s %s → %s" % (k, short_value(o), short_value(n)))
+            problems.append(M("guard.changed_row",
+                              key=k, before=short_value(o), after=short_value(n)))
         if accepted:
-            problems.append("已按 --accept-changes 接受 %d 条：%s —— 其余仍拒绝。"
-                            % (len(changed) - len(remaining),
-                               ", ".join(sorted(accepted))))
-        problems.append("台账不写。逐条确认这些变化**是实测出来的**（不是输入不在"
-                        "/量错了）之后，再显式 --accept-changes"
-                        "（或 --accept-changes=k1,k2 逐条放行）。")
+            problems.append(M("guard.accepted_boundary",
+                              accepted=len(changed) - len(remaining),
+                              keys=", ".join(sorted(accepted))))
+        problems.append(M("guard.refuse_changed_advice"))
         return "refuse", problems, notes
     if changed:
-        notes["out"].append("⚠ --accept-changes：本次接受 %d 条改口：" % len(changed))
+        notes["out"].append(M("guard.note_accept_changes", count=len(changed)))
         for k, o, n in changed:
-            notes["out"].append("%-24s %s → %s" % (k, short_value(o), short_value(n)))
+            notes["out"].append(M("guard.changed_row",
+                                  key=k, before=short_value(o), after=short_value(n)))
 
     # 零值守卫：一条都没量到 ⇒ 不是「没有改口」，是什么都没量。
     if not new_facts:
-        problems.append("一条事实都没量到。空台账不是通过（零值守卫）。")
+        problems.append(M("guard.empty_ledger"))
         return "refuse", problems, notes
     return "write", problems, notes
 
@@ -170,25 +169,29 @@ def _cases():
          lambda: decide({"a": {"value": 1, "cmd": "旧"}},
                         {"a": {"value": 1, "cmd": "新"}})[0] == "write"),
         # ② 该报的必须报
-        ("★ 掉条且未放行 ⇒ refuse，点名掉掉的键",
-         lambda: (lambda v, p, n: v == "refuse" and any("b" in x for x in p)
-                  )(*decide(old, dropped))),
-        ("★ 掉条 + --allow-drop ⇒ write，且明说掉了什么（放行不许静默）",
-         lambda: (lambda v, p, n: v == "write" and any("allow-drop" in x and "b" in x
-                                                       for x in n["err"])
+        ("★ guard.refuse_dropped（点名掉掉的键）",
+         lambda: (lambda v, p, n: v == "refuse"
+                  and p[0].code == "guard.refuse_dropped"
+                  and "b" in p[0].params["keys"])(*decide(old, dropped))),
+        ("★ guard.note_allow_drop（放行不许静默：掉了什么必须明说）",
+         lambda: (lambda v, p, n: v == "write"
+                  and n["err"][0].code == "guard.note_allow_drop"
+                  and n["err"][0].params["keys"] == "b"
                   )(*decide(old, dropped, allow_drop=True))),
-        ("★ 改口未接受 ⇒ refuse，带旧值→新值",
-         lambda: (lambda v, p, n: v == "refuse" and any("2" in x and "9" in x
-                                                        for x in p)
+        ("★ guard.changed_row（带旧值→新值）",
+         lambda: (lambda v, p, n: v == "refuse"
+                  and any(x.code == "guard.changed_row"
+                          and x.params["before"] == "2"
+                          and x.params["after"] == "9" for x in p)
                   )(*decide(old, new_val))),
-        ("★ 改口逐条接受：列出的放行 ⇒ write 且明说接受了什么",
-         lambda: (lambda v, p, n: v == "write" and any("accept-changes" in x
-                                                        for x in n["out"])
+        ("★ guard.note_accept_changes（明说接受了什么）",
+         lambda: (lambda v, p, n: v == "write"
+                  and any(x.code == "guard.note_accept_changes" for x in n["out"])
                   )(*decide(old, new_val, accepted={"b"}))),
         ("★ 改口逐条接受：未列出的必须仍拒（该报的必须报）",
          lambda: decide(old, new_val, accepted={"zzz"})[0] == "refuse"),
-        ("★ 逐条接受时拒绝信息要点名已接受与仍拒绝的边界",
-         lambda: any("其余仍拒绝" in x for x in decide(
+        ("★ guard.accepted_boundary（点名已接受与仍拒绝的边界）",
+         lambda: any(x.code == "guard.accepted_boundary" for x in decide(
              old, {"a": {"value": 8}, "b": {"value": 9}},
              accepted={"a"})[1])),
         ("★ 裸旗全收 ⇒ write", lambda: decide(old, new_val, accepted=None)[0] == "write"),

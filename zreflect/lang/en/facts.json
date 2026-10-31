@@ -1,0 +1,13 @@
+{
+ "facts.title": "Facts gate",
+ "facts.ok": "Facts gate: OK (%(count)d facts; block consistent, no bare numbers, no bad citations)",
+ "facts.empty_ledger": "ledger is empty — empty is not a pass (zero-value guard): check whether measure_example() is broken",
+ "facts.no_block_markers": "document has no %(begin)s / %(end)s markers — not finding the block is not the same as the block being correct (zero-value guard)",
+ "facts.block_mismatch": "the block in the document does not match the ledger ⇒ run `python3 zreflect/facts.py --render-doc`",
+ "facts.missing_key_cite": "line %(line)d cites a key that does **not exist**: `%(key)s`",
+ "facts.copied_value": "line %(line)d has a bare number %(value)s (belongs to `%(key)s`) ⇒ rewrite it as [[%(key)s]]",
+ "facts.bare_number_unaccounted": "line %(line)d has a number %(number)s with **no provenance** — it is not in the ledger and has no [[key]] citation / provenance marker. Either measure it into the ledger (with a replay command) and cite it, or confirm it is a harmless shape (version / port / date)",
+ "facts.bad_bare_min": "REFLECT_NAKED_MIN=%(value)r is not an integer ⇒ using the default %(default)d",
+ "facts.doc_missing": "document does not exist: %(path)s — a missing file must not count as a pass (zero-value guard)",
+ "facts.ledger_missing": "fact ledger (%(name)s) is missing. Run python3 zreflect/facts.py to measure first."
+}

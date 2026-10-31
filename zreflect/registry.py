@@ -405,6 +405,17 @@ def problems(gs, missing, mods=None, mods_missing=None,
     return out
 
 
+def _pinned_under(lang):
+    """自证帮手：在指定 REFLECT_LANG 下渲染 AUTO 块（用于证明它不随语言变）。"""
+    old = os.environ.get("REFLECT_LANG", "")
+    os.environ["REFLECT_LANG"] = lang
+    try:
+        gs, _ = gates()
+        return render_gates(gs)
+    finally:
+        os.environ["REFLECT_LANG"] = old
+
+
 def _with_phases(val):
     """自证帮手：临时设 REFLECT_PHASES，返回 (phases(), problems())，恢复现场。"""
     old = os.environ.get("REFLECT_PHASES", "")
@@ -451,7 +462,15 @@ def plugins(hooks_dir=None):
 
 def render_gates(gs):
     """闸门名录 → AUTO:GATES 机器块（含首尾标记）。**纯函数**：
-    同一名录渲染两次逐字节相同。"""
+    同一名录渲染两次逐字节相同。
+
+    ⚠️ **PINNED**（issue #26，D' 的洞见）：本块的文本**永远用固定语言**，
+    不跟随 `REFLECT_LANG`。理由：它写进 `STATE.md` 并被 `facts.py --check`
+    逐字节对账 —— 若随语言变，`REFLECT_LANG=de --render-doc` 之后
+    `REFLECT_LANG=zh --check` 必然红，**同一提交在不同语言环境下结果不同**
+    （`collect.py` 原则 2 的同族病：不引入会自己变的输入）。
+    实测过：不 PINNED 就会不收敛。
+    """
     lines = [GATES_BEGIN,
              "> 本区块由 `zreflect/facts.py --render-doc` 从发现式名录"
              "（zreflect/registry.py 的声明行）渲染，**不要手改**。",
@@ -643,6 +662,9 @@ def _cases():
         ("插件：einfacht-env.sh 发现式收编（doctor 不再靠点名）",
          lambda: "reflect-hooks/einfacht-env.sh" in plugins()
          and "zreflect/doctor.py" not in plugins()),
+        ("★ PINNED：AUTO 块不随 REFLECT_LANG 变（跨环境 --check 必须收敛）",
+         lambda: _pinned_under("en") == _pinned_under("zh")
+         and _pinned_under("de") == _pinned_under("")),
         ("render_gates 是纯函数且含每道闸门（含首尾标记）",
          lambda: render_gates(gs) == render_gates(gs)
          and "甲闸门" in render_gates(gs)

@@ -1,0 +1,10 @@
+{
+ "guard.refuse_dropped": "本次会从台账里**掉掉 %(count)d 条事实**（输入不在？）：%(keys)s",
+ "guard.refuse_dropped_advice": "台账不写。要么把输入准备好，要么显式 --allow-drop（并把掉掉的键记进 HISTORY）。",
+ "guard.note_allow_drop": "⚠ --allow-drop：本次掉掉 %(count)d 条：%(keys)s",
+ "guard.refuse_changed": "本次重测会**改掉 %(count)d 条事实的值**（未经接受的改口）：",
+ "guard.changed_row": "%(key)-24s %(before)s → %(after)s",
+ "guard.accepted_boundary": "已按 --accept-changes 接受 %(accepted)d 条：%(keys)s —— 其余仍拒绝。",
+ "guard.refuse_changed_advice": "台账不写。逐条确认这些变化**是实测出来的**（不是输入不在/量错了）之后，再显式 --accept-changes（或 --accept-changes=k1,k2 逐条放行）。",
+ "guard.empty_ledger": "一条事实都没量到。空台账不是通过（零值守卫）。"
+}

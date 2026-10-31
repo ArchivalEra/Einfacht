@@ -35,6 +35,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
+from i18n import M                                        # noqa: E402
 from ledger import age_days, facts_of, load, value_of     # noqa: E402
 from living import DATED_RECORD, living_lines  # noqa: E402
 
@@ -115,17 +116,13 @@ def _sha_assertion_problems(f, docs, hist):
             if not toks:
                 continue
             if not shas:
-                out.append("%s:%d sha 断言无出处：台账里**没有任何 sha 类事实**，"
-                           "先把它量进台账（带复跑命令），再引用" % (name, lineno))
+                out.append(M("stale.sha_no_facts", name=name, lineno=lineno))
                 continue
             for tok in toks:
                 if not any(tok == s or s.startswith(tok) or tok.startswith(s[:len(tok)])
                            for s in shas):
-                    out.append("%s:%d sha 断言无出处：`%s` 不在台账里 —— "
-                               "改写成 [[键名]] 引用，或给出可核出处"
-                               "（交付包名 / 反引号 commit sha）。注意："
-                               "「历史」二字**不构成出处**（issue #25）"
-                               % (name, lineno, tok[:16]))
+                    out.append(M("stale.sha_unsourced", name=name, lineno=lineno,
+                                 actual=tok[:16]))
     return out
 
 
@@ -141,11 +138,12 @@ def _stale_age_problems(f, sd):
     for k in sorted(f):
         d = age_days(f[k])
         if d is None:
-            out.append("`%s` 的 measured_at 缺失或不可解析 —— 测龄判据无法评估"
-                       "（读不到就明说，不许猜）" % k)
+            out.append(M("stale.measured_at_missing", key=k))
         elif d > sd:
-            out.append("`%s` 已 %.0f 天没测（阈值 %.0f 天）—— 重测并显式 "
-                       "`--accept-changes`" % (k, d, sd))
+            # 取整在发射点：原文案是 %.0f，null 包（无语言包）里也照同一口径显示，
+            # 否则裸 repr 会吐出 2495.6510176482525 这种噪声。
+            out.append(M("stale.too_old", key=k, days=round(d),
+                         threshold=round(sd)))
     return out
 
 
@@ -162,8 +160,8 @@ def _retired_name_problems(docs, hist, retired):
             for w in retired:
                 if re.search(r"(?<![0-9A-Za-z_-])%s(?![0-9A-Za-z_.-])" % re.escape(w),
                              line, re.I):
-                    out.append("%s:%d 退役名 `%s` 出现在活状态里 —— 要么它没退役，"
-                               "要么这行带上历史标记" % (name, lineno, w))
+                    out.append(M("stale.retired_name", name=name, lineno=lineno,
+                                 entry=w))
     return out
 
 
@@ -178,9 +176,9 @@ def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
     hist = HIST_SECS if hist_secs is None else hist_secs
     f = facts_of(ledger)
     if not f:
-        return ["台账为空 —— 空不是通过（零值守卫）：先查 measure() 是不是坏了"]
+        return [M("stale.ledger_empty")]
     if not docs:
-        return ["一份活状态文档都没扫到 —— 空输入不是通过（零值守卫）"]
+        return [M("stale.no_docs")]
     sd = _stale_days() if stale_days is None else stale_days
     return (_sha_assertion_problems(f, docs, hist)
             + _stale_age_problems(f, sd)
@@ -193,24 +191,22 @@ def run(argv):
         p = repo(name)
         if os.path.exists(p):
             docs[name] = open(p, encoding="utf-8", errors="replace").read()
-    rc = guard_nonempty("check_stale", docs, "被扫描的活状态文档")
+    rc = guard_nonempty("check_stale", docs, M("stale.scanned_docs"))
     if rc:
         return rc
     facts_name = os.environ.get("REFLECT_FACTS", "FACTS.json")
     if not os.path.exists(repo(facts_name)):
-        return fatal("缺事实台账（%s）。先跑 python3 zreflect/facts.py 量一遍。"
-                     % facts_name)
+        return fatal(M("stale.ledger_missing", name=facts_name))
     probs = problems(load(repo(facts_name)), docs)
     if not probs:
         if not RETIRED:
-            print("R2（退役名）：REFLECT_RETIRED 未配置 ⇒ 本条规则未启用（要启用："
-                  "REFLECT_RETIRED=名1,名2）", file=sys.stderr)
+            print(M("stale.retired_rule_off"), file=sys.stderr)
         if _stale_days() is None:
-            print("测龄：REFLECT_STALE_DAYS 未配置 ⇒ 本条规则未启用（要启用："
-                  "REFLECT_STALE_DAYS=天）", file=sys.stderr)
-    rc = finish("陈旧断言检测", probs,
-                "陈旧断言检测：OK（扫了 %d 份文档；退役名 %s）"
-                % (len(docs), "未配置" if not RETIRED else "%d 个" % len(RETIRED)))
+            print(M("stale.age_rule_off"), file=sys.stderr)
+    rc = finish(M("stale.title"), probs,
+                M("stale.ok", count=len(docs),
+                  declared=M("stale.retired_none") if not RETIRED
+                  else M("stale.retired_count", count=len(RETIRED))))
     if rc == 1 and "--list" in argv:
         return 0                      # --list 只列不改、永远 0（人工巡检模式）
     return rc
@@ -219,7 +215,7 @@ def run(argv):
 def _cases():
     led_sha = {"facts": {"site_sha": {"value": "a" * 64, "cmd": "sha256sum x", "source": "s"}}}
     led_plain = {"facts": {"n": {"value": 7, "cmd": "echo 7", "source": "s"}}}
-    bare = "部署 sha256 deadbeefdeadbeef00cafe00\n"
+    bare = "deployed sha256 deadbeefdeadbeef00cafe00\n"
     fresh = (datetime.now(timezone.utc) - timedelta(days=1)).strftime(
         "%Y-%m-%dT%H:%M:%S%z")
     led_fresh = {"facts": {"n": {"value": 7, "cmd": "echo 7", "source": "s",
@@ -228,55 +224,67 @@ def _cases():
                                "measured_at": "2020-01-01T00:00:00+0000"}}}
     return [
         # ① 正常不报
-        ("sha 与台账一致（16 位前缀也能对上）⇒ 不报",
-         lambda: problems(led_sha, {"A.md": "部署 sha256 %s…（截断显示）\n" % ("a" * 16)}) == []),
-        ("历史标记 + 反引号 sha（可核出处）⇒ 不报",
-         lambda: problems(led_plain, {"A.md": "旧 sha abcdef01（已翻案，见 `abc1234`）\n"}) == []),
+        ("stale.ok",
+         lambda: problems(led_sha,
+                          {"A.md": "deployed sha256 %s... (truncated)\n" % ("a" * 16)}) == []),
+        ("stale.sourced_history_sha",
+         lambda: problems(led_plain, {"A.md": "old sha abcdef01 (retracted, see `abc1234`)\n"})
+         == []),
         # ② 反向判据（issue #25）：历史标记**不再是**免死金牌
-        ("★ 只有「历史」二字、无可核出处的假 sha ⇒ 必须报（issue #25）",
-         lambda: any("sha 断言无出处" in x for x in problems(
-             led_plain, {"A.md": "部署的 sha256 历史是 8287589ebdb53b4c 这串\n"}))),
-        ("★ [[键名]] 引用构成出处（可复跑锚）⇒ 不报",
-         lambda: problems(led_sha, {"A.md": "旧 sha256 [[site_sha]] 已翻案\n"}) == []),
-        ("台账无 sha + 正文无 sha 断言 ⇒ 不报",
-         lambda: problems(led_plain, {"A.md": "今天是好日子\n"}) == []),
-        ("声明过的历史章节里的 sha ⇒ 不报",
-         lambda: problems(led_plain, {"A.md": "## 5 历史\n" + bare}, hist_secs=("5",)) == []),
-        ("退役名未配置 ⇒ 不报（但 run() 会明说未启用）",
-         lambda: problems(led_plain, {"A.md": "还在用老组件\n"}, retired=()) == []),
-        ("退役名只在指路（分支/文件名）⇒ 不报",
-         lambda: problems(led_plain, {"A.md": "见 NOTES-osmesa.md 与 osmesa-分支\n"},
+        ("★ stale.sha_no_facts·history_mark",
+         lambda: [p.code for p in problems(
+             led_plain, {"A.md": "deployed sha256 history is 8287589ebdb53b4c\n"})]
+         == ["stale.sha_no_facts"]),
+        ("stale.cite_anchor",
+         lambda: problems(led_sha, {"A.md": "old sha256 [[site_sha]] retracted\n"}) == []),
+        ("stale.no_sha_assertion",
+         lambda: problems(led_plain, {"A.md": "a fine day\n"}) == []),
+        ("stale.declared_history_section",
+         lambda: problems(led_plain, {"A.md": "## 5 history\n" + bare}, hist_secs=("5",))
+         == []),
+        ("stale.retired_unconfigured",
+         lambda: problems(led_plain, {"A.md": "still using the old component\n"},
+                          retired=()) == []),
+        ("stale.retired_reference",
+         lambda: problems(led_plain, {"A.md": "see NOTES-osmesa.md and the osmesa-branch\n"},
                           retired=("osmesa",)) == []),
         # ② 该报的必须报
-        ("★ sha 不在台账且无出处 ⇒ 必须报",
-         lambda: any("不在台账里" in x for x in problems(
-             led_sha, {"A.md": bare}))),
-        ("★ 台账里没有任何 sha 事实但正文断言了 sha ⇒ 必须报",
-         lambda: any("没有任何 sha 类事实" in x for x in problems(
-             led_plain, {"A.md": bare}))),
-        ("★ 未声明历史章节 ⇒ 里面的 sha 照查（默认从严）",
-         lambda: any("sha 断言无出处" in x for x in problems(
-             led_plain, {"A.md": "## 5 历史\n" + bare}, hist_secs=()))),
-        ("★ 退役名独立成词出现在活状态 ⇒ 必须报",
-         lambda: any("退役名" in x for x in problems(
-             led_plain, {"A.md": "后端还在用 osmesa\n"}, retired=("osmesa",)))),
-        ("★ 无编号章节也是活状态（默认从严）⇒ 藏进去的退役名必须报",
-         lambda: any("退役名" in x for x in problems(
-             led_plain, {"A.md": "## 常见问题\n还在用 osmesa\n"}, retired=("osmesa",)))),
+        ("★ stale.sha_unsourced",
+         lambda: [p.code for p in problems(led_sha, {"A.md": bare})]
+         == ["stale.sha_unsourced"]),
+        ("★ stale.sha_no_facts",
+         lambda: [p.code for p in problems(led_plain, {"A.md": bare})]
+         == ["stale.sha_no_facts"]),
+        ("★ stale.sha_no_facts·undeclared_section",
+         lambda: [p.code for p in problems(
+             led_plain, {"A.md": "## 5 history\n" + bare}, hist_secs=(""))
+         ] == ["stale.sha_no_facts"]),
+        ("★ stale.retired_name",
+         lambda: [p.code for p in problems(
+             led_plain, {"A.md": "backend still uses osmesa\n"}, retired=("osmesa",))]
+         == ["stale.retired_name"]),
+        ("★ stale.retired_name·unnumbered_section",
+         lambda: [p.code for p in problems(
+             led_plain, {"A.md": "## FAQ\nstill using osmesa\n"}, retired=("osmesa",))]
+         == ["stale.retired_name"]),
         # ③ 空输入必须报
-        ("★ 台账空 ⇒ 必须报", lambda: problems({"facts": {}}, {"A.md": "x\n"}) != []),
-        ("★ 一份文档都没扫到 ⇒ 必须报", lambda: problems(led_plain, {}) != []),
+        ("★ stale.ledger_empty",
+         lambda: [p.code for p in problems({"facts": {}}, {"A.md": "x\n"})]
+         == ["stale.ledger_empty"]),
+        ("★ stale.no_docs",
+         lambda: [p.code for p in problems(led_plain, {})] == ["stale.no_docs"]),
         # ② 测龄（issue #3 ②）
-        ("测龄低于阈值 ⇒ 不报",
+        ("stale.age_fresh",
          lambda: problems(led_fresh, {"A.md": "x\n"}, stale_days=30) == []),
-        ("阈值未配置 ⇒ 不报（规则明说未启用）",
+        ("stale.age_rule_off",
          lambda: problems(led_old, {"A.md": "x\n"}, stale_days=None) == []),
-        ("★ 测龄超阈值 ⇒ 必须报",
-         lambda: any("没测" in x for x in problems(
-             led_old, {"A.md": "x\n"}, stale_days=30))),
-        ("★ measured_at 缺失 + 阈值开启 ⇒ 必须报（读不到就明说）",
-         lambda: any("measured_at" in x for x in problems(
-             led_plain, {"A.md": "x\n"}, stale_days=30))),
+        ("★ stale.too_old",
+         lambda: [p.code for p in problems(
+             led_old, {"A.md": "x\n"}, stale_days=30)] == ["stale.too_old"]),
+        ("★ stale.measured_at_missing",
+         lambda: [p.code for p in problems(
+             led_plain, {"A.md": "x\n"}, stale_days=30)]
+         == ["stale.measured_at_missing"]),
     ]
 
 
@@ -286,5 +294,4 @@ GATE = meta("陈旧断言检测", "sha 出处 / 退役名 / 测龄",
             name_dependent=True)
 
 if __name__ == "__main__":
-    sys.exit(main_selftest_or(sys.argv[1:], "check_stale（陈旧断言：sha 出处 + 退役名）",
-                              _cases, run))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_stale", _cases, run))
