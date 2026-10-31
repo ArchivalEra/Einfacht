@@ -26,6 +26,8 @@ import json
 import os
 import sys
 
+_AST_CACHE = {}
+
 # 被检查的仓库根：默认是本包的上一级，可用 GATE_REPO 覆盖（测试夹具靠它）。
 GATE_REPO = os.environ.get("GATE_REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -151,6 +153,85 @@ def raises(fn):
     return False
 
 
+
+def never_falsifiable(fn):
+    """**恒真断言探测**（issue #23）：这条自证用例有证伪能力吗？
+
+    下游实测的事故：一条 `or True` 的断言在 `--selftest` 里永远是 PASS ——
+    `gates-selftest` 判的是「返回 0 + 打摘要行」，真断言与恒真断言在这个面上
+    完全同形。`AGENTS.md` 纪律 4 说「断言要能证伪」，但此前没有机器判据。
+
+    判据（AST，零执行、零副作用）：**整文件解析 + 按 co_firstlineno 定位**
+    lambda 节点（不用 inspect.getsourcelines —— 它对列表里的 lambda 只给首行，
+    重建脆弱，实测三次失明）。找到节点后扫恒真短路：
+
+      · `or <真值常量>` / `and <假值常量>` —— 布尔被常量短路，永远 PASS/fail；
+      · `x == x` 型自我比较（**排除**裸函数调用两次的合法纯函数性检验）。
+
+    返回原因字符串（不可证伪）或 None（看起来有牙）。
+
+    诚实边界：静态形状判据 —— 抓得到显式短路与自我比较，抓不到更隐蔽的恒真
+    （同一变量换写法）。更强的保证是变异测试（每条断言注入破坏器），代价过大；
+    见 issue #23 的讨论。本判据的价值：把已知的几种无意识写法从「人工复查才
+    发现」变成「自证当场红」。
+    """
+    import ast as _ast                                   # noqa: PLC0415
+    import linecache                                     # noqa: PLC0415
+    code = getattr(fn, "__code__", None)
+    if code is None:
+        return None                                      # 非 Python 函数 ⇒ 不猜
+    fname, lineno = code.co_filename, code.co_firstlineno
+    # 整文件读一次并解析（缓存：同一模块的用例共享一次解析）
+    key = (fname,)
+    tree = _AST_CACHE.get(key)
+    if tree is None:
+        try:
+            src = "".join(linecache.getlines(fname))
+            tree = _ast.parse(src)
+        except (OSError, SyntaxError):
+            _AST_CACHE[key] = False
+            return None
+        _AST_CACHE[key] = tree
+    if tree is False:
+        return None
+    # 找**起始行 == lambda 定义行**的 Lambda 节点（嵌套的最内层优先）
+    best = None
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Lambda) and node.lineno == lineno:
+            if best is None or node.col_offset < best.col_offset:
+                best = node
+    if best is None:
+        return None                                      # 定位不到 ⇒ 不猜
+
+    def _const_truthy(node):
+        return isinstance(node, _ast.Constant) and node.value is not None \
+            and node.value is not False and bool(node.value) is True \
+            or (isinstance(node, _ast.Constant) and node.value is True)
+
+    def _const_falsy(node):
+        return isinstance(node, _ast.Constant) and node.value is not None \
+            and (node.value is False or node.value == 0)
+
+    for node in _ast.walk(best):
+        if isinstance(node, _ast.BoolOp):
+            if isinstance(node.op, _ast.Or) and any(
+                    _const_truthy(o) for o in node.values):
+                return "`or <真值常量>` —— 布尔或被常量短路，永远 PASS"
+            if isinstance(node.op, _ast.And) and any(
+                    _const_falsy(o) for o in node.values):
+                return "`and <假值常量>` —— 布尔与被常量短路，永远 fail"
+        if isinstance(node, _ast.Compare) and len(node.comparators) == 1:
+            left, right = node.left, node.comparators[0]
+            # 排除裸函数调用两次的**合法**纯函数性检验
+            # （`render_gates(gs) == render_gates(gs)` 证明渲染确定性）。
+            if isinstance(left, _ast.Call) and isinstance(right, _ast.Call):
+                continue
+            if _ast.dump(left) == _ast.dump(right) and isinstance(
+                    node.ops[0], (_ast.Eq, _ast.LtE, _ast.GtE)):
+                return "比较两侧是同一个表达式 —— 恒真（x == x）"
+    return None
+
+
 def selftest(name, cases):
     """跑三档用例。每个 case = (标签, callable) -> bool。
 
@@ -169,6 +250,13 @@ def selftest(name, cases):
         )
     bad = 0
     for label, fn in cases:
+        # issue #23：恒真断言探测 —— 一条 `or True` 的断言与真断言
+        # 在「返回 0 + 打摘要行」这个面上同形，必须单独判。
+        why = never_falsifiable(fn)
+        if why:
+            print("fail | %s（断言不可证伪：%s）" % (label, why))
+            bad += 1
+            continue
         try:
             ok = bool(fn())
         except SystemExit as e:
