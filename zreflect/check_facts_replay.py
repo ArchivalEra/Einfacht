@@ -55,7 +55,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import fatal, finish, main_selftest_or, meta, off, repo, selftest  # noqa: E402
+from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
 from ledger import facts_of, load, value_of              # noqa: E402
 from runner import default_timeout, quote, run_cmd       # noqa: E402
 

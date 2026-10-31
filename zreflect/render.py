@@ -127,7 +127,7 @@ def _selftest():
     import os                                            # noqa: PLC0415
     import sys                                           # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from gate import module_meta, selftest                            # noqa: PLC0415
+    from gate import selftest                            # noqa: PLC0415
     return selftest("render（数字的唯一产地）", _cases())
 
 
