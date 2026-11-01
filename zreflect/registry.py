@@ -35,7 +35,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import module_meta, fatal, repo, selftest                    # noqa: E402
+from gate import module_meta, fatal, repo, selftest, main_selftest_or     # noqa: E402
 from i18n import M                                        # noqa: E402
 from knobs import REGISTRY                                # noqa: E402
 
@@ -365,9 +365,10 @@ def _knob_problems(knob_problems, gs):
         import knobs                                     # noqa: PLC0415
         knob_problems = (knobs.scan_surface_problems()
                          + knobs.readme_problems()
-                         # C4 对账：声明↔实读、REGISTRY↔README 表
+                         # C4 对账：声明↔实读、REGISTRY↔README 表、zh↔en 包
                          + knobs.declared_vs_read_problems(gs)
-                         + knobs.registry_vs_readme_problems())
+                         + knobs.registry_vs_readme_problems()
+                         + knobs.pack_sync_problems())
     return list(knob_problems)
 
 
@@ -507,10 +508,17 @@ def _main_run(argv):
     return 1 if res["failed"] else 0
 
 
+def cli_selftest_missing_lines(missing):
+    """`--selftest-modules` 的逐行点名（纯函数：自证用，零 print）。"""
+    return [M("registry.selftest_no_entry_cli", file=m) for m in missing]
+
+
 def _main_selftest_modules():
     mods, missing = selftest_modules()
-    for m in missing:
-        print(M("registry.selftest_no_entry", files=m), file=sys.stderr)
+    for line in cli_selftest_missing_lines(missing):
+        # CLI 逐行点名与 roster 的汇总句是**两处不同输出**（此前各一句措辞），
+        # 迁移时保持两条 code，不把 CLI 行改成汇总句的样子。
+        print(line, file=sys.stderr)
     if missing:
         return 1
     print("\n".join(mods))
@@ -680,6 +688,11 @@ def _cases():
              [], [], mods=["zreflect/x.py"],
              mods_missing=["zreflect/y.py"],
              knob_problems=[]))),
+        # CLI 逐行点名也必须能产出（否则它是「写而不跑」的装饰 —— 本仓纪律）。
+        ("★ registry.selftest_no_entry_cli",
+         lambda: [m.code for m in cli_selftest_missing_lines(
+             ["zreflect/y.py"])] == ["registry.selftest_no_entry_cli"]
+         and cli_selftest_missing_lines([]) == []),
         ("★ registry.undeclared_module",
          lambda: any(p.code == "registry.undeclared_module" for p in problems(
              [], [], mods=["zreflect/x.py"], mods_missing=[],
@@ -713,5 +726,10 @@ MODULE = module_meta("发现式名录", "闸门/模块/插件的声明派生：�
 
 
 if __name__ == "__main__":
-    sys.exit(selftest("registry（发现式名录的数据面）", _cases())
-             if "--selftest" in sys.argv else main(sys.argv[1:]))
+    # 收尾统一走 `main_selftest_or`：它先做语言包激活（`activate_or_fatal`），
+    # 再分流 `--selftest` 与 `main()`。此前这里自己抄了一份 activate+FATAL，
+    # 而 gate 自己的 `__main__` 又是第三种写法（连 FATAL 都没有）—— 同一件事
+    # 三份拷贝，口径必然漂。
+    sys.exit(main_selftest_or(sys.argv[1:],
+                              "registry（发现式名录的数据面）",
+                              _cases, main))

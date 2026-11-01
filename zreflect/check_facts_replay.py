@@ -56,7 +56,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
-from i18n import M, bind                                 # noqa: E402
+from i18n import M, bind, load_pack                      # noqa: E402
 from ledger import facts_of, load, value_of              # noqa: E402
 from runner import default_timeout, quote, run_cmd       # noqa: E402
 
@@ -184,15 +184,15 @@ def run(argv):
 LED = {"facts": {"n": {"value": 12, "cmd": "c"}}}
 
 
-def _load_real_pack(lang, fname):
-    """读磁盘上真实发布的语言包分片（自证用；缺失 ⇒ {} 让断言当场红）。"""
-    import json                                          # noqa: PLC0415
-    p = repo("zreflect", "lang", lang, fname)
-    try:
-        with open(p, encoding="utf-8") as fh:
-            return json.load(fh)
-    except (OSError, ValueError):
-        return {}
+def _load_real_pack(lang, fname=None):
+    """读磁盘上真实发布的语言包（自证用；缺失 ⇒ {} 让断言当场红）。
+
+    走 `i18n.load_pack` 的**合并视图**（`fname` 仅为兼容旧调用点保留，
+    已不再分流 —— 与真装载器看同一张表）。此前用 `repo()` 即 GATE_REPO
+    相对，跨仓夹具里读不到包 —— 实测 `GATE_REPO=$(mktemp -d)` 下本条自证
+    21 PASS / 2 FAIL。
+    """
+    return load_pack(lang)
 
 
 def _cases():

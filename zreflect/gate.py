@@ -404,18 +404,20 @@ def selftest(name, cases):
     return 1 if bad else 0
 
 
-def main_selftest_or(args, name, cases, run):
-    """`--selftest` 走自证，否则走 `run(args)`。每个检查器都用它收尾。
+def activate_or_fatal():
+    """进程级语言包激活点。成功返回 0；装配失败打印 FATAL 并返回 2。
 
-    `cases` 可以是清单，也可以是**工厂 callable**（需要搭临时夹具的
-    自证 —— ab/locks/pins 体例 —— 传函数，由这里调用）。
+    **必须在 `--selftest` 之前调用**（issue #26 复盘）：此前 `main_selftest_or`
+    先判 `--selftest` 再 `activate()`，于是 `REFLECT_LANG=zh <gate> --selftest`
+    把消息按 null 包渲染成裸 code，而 `REFLECT_LANG=de <gate> --selftest` 对一个
+    **不存在的包静默 rc=0** —— 与「设了但包不在 ⇒ FATAL rc 2，不静默回落」直接
+    矛盾（实测：render / ledger / runner / registry 四条入口全中）。
 
-    **这里是语言包的进程级激活点**（issue #26）：`REFLECT_LANG` 未设 ⇒ null 包
-    （本体零语言）；设了但包不在 ⇒ `MissingPack` ⇒ FATAL rc 2（不做「没装就
-    回落」）。每个闸门都经这里 ⇒ 一处接线，全部受益。
+    收起成函数是为了让**不走 `main_selftest_or` 的入口**（render/ledger 的
+    `_selftest()`、registry 的 `__main__`、gate 自己的 `__main__`）不必各抄一份
+    activate+FATAL（此前 registry 抄了一份，gate 自己那份干脆没有 FATAL，
+    直接裸 traceback 退 1）。
     """
-    if "--selftest" in args:
-        return selftest(name, cases() if callable(cases) else cases)
     import i18n                                          # noqa: PLC0415
     try:
         i18n.activate()
@@ -424,6 +426,25 @@ def main_selftest_or(args, name, cases, run):
         print("FATAL: %s" % i18n.M("gate.pack_assembly_failed", error=e),
               file=sys.stderr)
         return 2
+    return 0
+
+
+def main_selftest_or(args, name, cases, run):
+    """`--selftest` 走自证，否则走 `run(args)`。每个检查器都用它收尾。
+
+    `cases` 可以是清单，也可以是**工厂 callable**（需要搭临时夹具的
+    自证 —— ab/locks/pins 体例 —— 传函数，由这里调用）。
+
+    **这里是语言包的进程级激活点**（issue #26）：`REFLECT_LANG` 未设 ⇒ null 包
+    （本体零语言）；设了但包不在 ⇒ `MissingPack` ⇒ FATAL rc 2（不做「没装就
+    回落」）。每个闸门都经这里 ⇒ 一处接线，全部受益。激活**先于** `--selftest`
+    分流，理由见 `activate_or_fatal`。
+    """
+    rc = activate_or_fatal()
+    if rc:
+        return rc
+    if "--selftest" in args:
+        return selftest(name, cases() if callable(cases) else cases)
     return run([a for a in args if a != "--selftest"])
 
 
@@ -470,7 +491,11 @@ MODULE = module_meta("闸门平台", "rc 契约 + 零值守卫 + 三档自证 + 
 
 if __name__ == "__main__":
     import i18n                                          # noqa: PLC0415
-    i18n.activate()
+    # 此前这里裸 `i18n.activate()`：包不在 ⇒ MissingPack **traceback rc=1**，
+    # 而不是 rc 契约的 FATAL rc=2（实测踩到）。走同一个激活入口。
+    rc = activate_or_fatal()
+    if rc:
+        sys.exit(rc)
     print(i18n.M("gate.platform_root", root=GATE_REPO))
     print(i18n.M("gate.platform_usage"))
     sys.exit(0)
