@@ -66,10 +66,10 @@
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `md_files` | **7** | 2026-10-31T23:57:10+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `md_lines` | **2441** | 2026-10-31T23:57:10+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
-| `py_files` | **29** | 2026-10-31T23:57:10+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **6940** | 2026-10-31T23:57:10+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **7** | 2026-11-01T09:17:51+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `md_lines` | **2441** | 2026-11-01T09:17:51+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
+| `py_files` | **29** | 2026-11-01T09:17:51+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **6967** | 2026-11-01T09:17:51+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 4 条事实。
 <!-- /AUTO:FACTS -->

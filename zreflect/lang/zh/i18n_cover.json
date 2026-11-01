@@ -1,0 +1,9 @@
+{
+ "i18n_cover.title": "语言覆盖闸门",
+ "i18n_cover.ok": "语言覆盖闸门：OK（%(files)d 个文件本体零语言；语言包可选）",
+ "i18n_cover.off": "语言覆盖闸门：%(knob)s 未配置 ⇒ 本闸门未启用（可插拔模块；配了才检查「本体零语言」）",
+ "i18n_cover.empty_scan": "扫描面为空 —— 没找到源码不是「零语言通过」（零值守卫）",
+ "i18n_cover.scan_empty_dir": "扫描面 %(root)s 为空 —— 没找到源码不是「零语言通过」",
+ "i18n_cover.parse_error": "%(file)s 解析不了：%(error)s —— 解析失败不许当通过",
+ "i18n_cover.bare_text": "%(file)s:%(lineno)d 本体里有裸中文文本 %(text)r —— 用户可见的消息必须走 M(<字面量 code>, **params)；自证标签按 1C 必须是 id"
+}
