@@ -284,7 +284,7 @@ NULL = object()                 # 「显式要 null 包」的哨兵（区别于�
 _DEFAULT = [Catalog.null()]     # 进程默认（`activate` 写；`bind` 不动它）
 
 
-def resolve(lang):
+def _resolve_lang(lang):
     """`lang` → 生效的语言名（None = null 包）。**唯一的体检点**。
 
     `NULL` ⇒ 显式 null（不吃环境变量）；`None` ⇒ 回落 `REFLECT_LANG`；
@@ -297,12 +297,12 @@ def resolve(lang):
     return os.environ.get("REFLECT_LANG", "").strip() or None
 
 
-def acquire(lang=None, tables=None):
+def _acquire(lang=None, tables=None):
     """`lang` → 一个装配好的 `Catalog`（`NULL` / `None` 都可能是 null 包）。"""
-    return Catalog.load(resolve(lang), tables)
+    return Catalog.load(_resolve_lang(lang), tables)
 
 
-def current():
+def _current():
     """当前生效的 Catalog（进程默认）。"""
     return _DEFAULT[0]
 
@@ -310,7 +310,7 @@ def current():
 def M(code, **params):
     """构造一条消息，用**当前** Catalog。`code` 必须是字面量（覆盖闸门会拒
     变量 code —— 否则目录无法被证明完备）。"""
-    return current().msg(code, **params)
+    return _current().msg(code, **params)
 
 
 class _Bound:
@@ -341,7 +341,7 @@ def bind(catalog):
     """
     if isinstance(catalog, Catalog):
         return _Bound(catalog)
-    return _Bound(acquire(catalog))
+    return _Bound(_acquire(catalog))
 
 
 def activate(lang=None, tables=None):
@@ -353,7 +353,7 @@ def activate(lang=None, tables=None):
     `lang=NULL` 与 `bind` 同义：显式 null 包（不吃 `REFLECT_LANG`）。
     包不在 / 坏了 ⇒ `MissingPack`（由 `gate.activate_or_fatal` 转 FATAL rc 2）。
     """
-    cat = acquire(lang, tables)
+    cat = _acquire(lang, tables)
     _DEFAULT[0] = cat
     return cat.lang
 
@@ -492,19 +492,32 @@ def _activate_ok(lang, tables):
 
 
 def _null_consistent():
-    """`NULL` 哨兵在 `bind` / `resolve` / `activate` 三个入口语义一致。"""
+    """`NULL` 哨兵在 `bind` / `resolve` / `activate` 三个入口语义一致。
+
+    ⚠️ **必须先把 `REFLECT_LANG` 设上再验**：此前这条在默认（未设）环境下
+    即使 `resolve(NULL)` 错误地回落环境变量也照样绿 —— 那是「跑在什么环境就
+    考什么」的洗白形态（实测：env 未设 → True，env=zh → False）。断言自己
+    造出**能让它红**的环境，而不是等外部环境赏脸。
+    """
     prev = _DEFAULT[0]
+    saved_env = os.environ.get("REFLECT_LANG")
     try:
-        if resolve(NULL) is not None:
+        # 造出「有环境变量」这个能让 NULL 逻辑出错的条件
+        os.environ["REFLECT_LANG"] = "zh"
+        if _resolve_lang(NULL) is not None:
             return False
         with bind(NULL) as cat:
             if cat.lang is not None or cat.table is not None:
                 return False
             if str(M("probe.code", key="x")) != "probe.code(key='x')":
                 return False
-        return activate(NULL) is None and current().lang is None
+        return activate(NULL) is None and _current().lang is None
     finally:
         _DEFAULT[0] = prev
+        if saved_env is None:
+            os.environ.pop("REFLECT_LANG", None)
+        else:
+            os.environ["REFLECT_LANG"] = saved_env
 
 
 def _broken_pack_raises():
