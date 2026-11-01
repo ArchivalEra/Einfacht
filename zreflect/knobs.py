@@ -431,6 +431,14 @@ def _cases():
          lambda: [p.code for p in pack_sync_problems(loader=lambda l: {
              "zh": {"a": "x %(k)s"}, "en": {"a": "x %(j)s"}}[l])
          ] == ["knobs.pack_placeholder_mismatch"]),
+        # 多键方向也必须能报（此前只测了缺键 —— 「多出来一个键」同样会让
+        # 另一侧的用户看到裸 code，是同一个洞的另一面）。
+        # 参考侧是 `sorted(...)[0]`（这里 = "en"），所以「zh 多一个键」才走
+        # extra_keys；反过来会被报成 en 缺键（同一个洞，两种措辞）。
+        ("★ knobs.pack_extra_keys",
+         lambda: [p.code for p in pack_sync_problems(loader=lambda l: {
+             "zh": {"a": "x", "b": "y"}, "en": {"a": "x"}}[l])
+         ] == ["knobs.pack_extra_keys"]),
         # ③ 空输入必须报
         ("★ knobs.pack_sync_empty",
          lambda: [p.code for p in pack_sync_problems(loader=lambda l: {})]
