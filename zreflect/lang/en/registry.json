@@ -1,0 +1,15 @@
+{
+ "registry.builtin_phase_repeated": "%(phases)s in REFLECT_PHASES are built-in phases (commit / start-of-work cannot be duplicated and need not be re-declared) — drop them and keep only the custom phases",
+ "registry.empty_phase": "phase %(phase)s has no runnable gates — zero-value guard: an empty list is not a pass (is the predicate or a declaration broken?)",
+ "registry.empty_roster": "not a single gate was found — zero-value guard: an empty input is not a pass",
+ "registry.missing_declaration": "these gates have no GATE = gate.meta(…) declaration line — the roster refuses nameless entries (handwritten rosters drift; a declaration is a registration): %(files)s",
+ "registry.name_dependent_wrong": "`%(file)s` is flagged name_dependent but none of the knobs it consumes has a default name in the rename fixture list — the flag is wrong (either drop the flag or add the new default name to registry.RENAMED_DEFAULTS)",
+ "registry.no_module_selftest": "no platform module self-test could be discovered — zero-value guard: an empty input is not a pass",
+ "registry.phase_off": "  off    %(file)s (off — never checked, not a pass)",
+ "registry.phase_summary": "phase %(phase)s: ran %(ran)d / off %(off)d / failed %(failed)d",
+ "registry.roster_problems": "the roster has problems (%(count)d)",
+ "registry.selftest_no_entry": "these modules declare selftest=True but have no --selftest entry point — a self-test written but never run is decoration: %(files)s",
+ "registry.undeclared_module": "these .py files are neither gates (no GATE declaration) nor declared platform modules (no MODULE = module_meta(…)) — a platform module must declare itself, even with selftest=False (state plainly that it needs no self-test): %(files)s",
+ "registry.unknown_phase": "`%(file)s` declares runs_at=%(runs_at)r which is not a known phase (%(phases)s) — the frequency is a declaration field; a bad value makes the execution surface skip it",
+ "registry.usage": "usage: registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]"
+}

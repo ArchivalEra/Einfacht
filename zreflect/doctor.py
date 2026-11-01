@@ -80,24 +80,25 @@ def _http_verdict(status, headers, check):
     """HTTP 响应是否满足判据。headers 键已小写化。"""
     want = check.get("expect_status")
     if want is not None and status != want:
-        return False, "状态 %s ≠ 期望 %s" % (status, want)
+        return False, M("doctor.http_status_mismatch", actual=status, expected=want)
     for k, v in (check.get("expect_headers") or {}).items():
         got = headers.get(k.lower())
         if got != v:
-            return False, "头 %s=%r ≠ 期望 %r" % (k, got, v)
+            return False, M("doctor.http_header_mismatch",
+                            header=k, actual=got, expected=v)
     return True, ""
 
 
 def _docker_verdict(stdout):
     ok = stdout.strip() == "true"
     return ok, "" if ok else \
-        "容器不在 running（inspect 说 %r）" % stdout.strip()
+        M("doctor.container_not_running", actual=stdout.strip())
 
 
 def _port_free_verdict(connect_succeeded):
     """connect 成功 = 被占；拒绝 = 空着。"""
     return (not connect_succeeded,
-            "" if not connect_succeeded else "端口被占（连上了）")
+            "" if not connect_succeeded else M("doctor.port_in_use"))
 
 
 # —— 真实传输（薄层；自证不跑它们，自证必须无网无 docker）——
@@ -113,7 +114,7 @@ def _http_probe(check, timeout):
             return ok, why
     # URLError 是 OSError 的子类，不必单列。
     except (OSError, ValueError) as e:
-        return False, "GET 失败：%s" % e
+        return False, M("doctor.get_failed", error=e)
 
 
 def _docker_probe(check, timeout):
@@ -123,7 +124,7 @@ def _docker_probe(check, timeout):
              check["container"]],
             capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired) as e:
-        return False, "docker inspect 失败：%s" % e
+        return False, M("doctor.docker_inspect_failed", error=e)
     return _docker_verdict(r.stdout)
 
 
@@ -134,7 +135,7 @@ def _port_free_probe(check, timeout):
     except ConnectionRefusedError:
         return True, ""                       # 拒绝连接 = 空着
     except OSError as e:
-        return False, "探测既非占用也非空闲（%s）—— 不许静默通过" % e
+        return False, M("doctor.probe_inconclusive", error=e)
     return _port_free_verdict(True)
 
 
@@ -155,26 +156,25 @@ def _http_shape_problems(c):
     """http 检查项的字段判据（缺 url / expect_status 非整数 / expect_headers 形状）。"""
     out = []
     if not str(c.get("url") or "").strip():
-        return ["`%s` 缺 url（必填）" % label(c)]
+        return [M("doctor.http_missing_url", check=label(c))]
     es = c.get("expect_status")
     if es is not None and (isinstance(es, bool) or not isinstance(es, int)):
-        return ["`%s` 的 expect_status 必须是整数" % label(c)]
+        return [M("doctor.http_status_not_int", check=label(c))]
     eh = c.get("expect_headers")
     if eh is not None and (not isinstance(eh, dict) or any(
             not isinstance(k, str) or not isinstance(v, str)
             for k, v in eh.items())):
-        return ["`%s` 的 expect_headers 必须是"
-                " {头名: 值} 字符串对象" % label(c)]
+        return [M("doctor.http_headers_not_object", check=label(c))]
     return out
 
 
 def _docker_shape_problems(c):
     """docker 检查项的字段判据（缺 container / state 只支持 running）。"""
     if not str(c.get("container") or "").strip():
-        return ["`%s` 缺 container（必填）" % label(c)]
+        return [M("doctor.docker_missing_container", check=label(c))]
     if str(c.get("state") or "").strip() != "running":
-        return ["`%s` 的 state 只支持 running（给的是 %r）"
-                % (label(c), c.get("state"))]
+        return [M("doctor.docker_bad_state",
+                  check=label(c), actual=c.get("state"))]
     return []
 
 
@@ -183,8 +183,7 @@ def _port_free_shape_problems(c):
     port = c.get("port")
     if (not isinstance(port, int) or isinstance(port, bool)
             or not 1 <= port <= 65535):
-        return ["`%s` 的 port 必须是 1-65535 的整数"
-                "（给的是 %r）" % (label(c), port)]
+        return [M("doctor.port_not_in_range", check=label(c), actual=port)]
     return []
 
 
