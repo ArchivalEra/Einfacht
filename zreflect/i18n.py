@@ -192,12 +192,11 @@ def load_pack(lang):
                 with open(p, encoding="utf-8") as fh:
                     part = json.load(fh)
             except (OSError, ValueError) as e:
-                raise MissingPack(
-                    "语言包 %s 的分片 %s 读不了（%s）—— 坏分片不许静默跳过："
-                    "那会让那部分消息退回裸 code 而退出码仍是 0"
-                    % (lang, p, e)) from e
+                raise MissingPack("i18n.shard_unreadable", lang=lang,
+                                   path=p, error=e) from e
             if not isinstance(part, dict):
-                raise MissingPack("语言包 %s 里的 %s 不是对象" % (lang, n))
+                raise MissingPack("i18n.shard_not_object", lang=lang,
+                                   name=n)
             table.update(part)
     single = os.path.join(base, "%s.json" % lang)
     if os.path.exists(single):
@@ -205,11 +204,11 @@ def load_pack(lang):
             with open(single, encoding="utf-8") as fh:
                 part = json.load(fh)
         except (OSError, ValueError) as e:
-            raise MissingPack(
-                "语言包 %s 的单文件 %s 读不了（%s）—— 坏包不许静默跳过"
-                % (lang, single, e)) from e
+            raise MissingPack("i18n.single_unreadable", lang=lang,
+                               path=single, error=e) from e
         if not isinstance(part, dict):
-            raise MissingPack("语言包 %s 的 %s 不是对象" % (lang, single))
+            raise MissingPack("i18n.single_not_object", lang=lang,
+                               path=single)
         table.update(part)
     return table
 
@@ -228,7 +227,7 @@ def _table_for(lang, tables):
     if tables is not None:
         got = tables.get(lang) if lang else None
         if got is None and lang:
-            raise MissingPack("自证注入的 tables 里没有 %r" % lang)
+            raise MissingPack("i18n.injected_lang_absent", lang=lang)
         if got is not None:
             _validate(got, lang)
         return got
@@ -237,32 +236,42 @@ def _table_for(lang, tables):
     table = load_pack(lang)
     if not table:
         base = pack_dir()
-        raise MissingPack(
-            "语言包 %s 不在（%s 或 %s/ 都没有）。装一个，或撤掉 REFLECT_LANG "
-            "—— 本仓不做「没装就回落中文」：那会让半装的语言包看起来像装好了"
-            % (lang, os.path.join(base, "%s.json" % lang),
-               os.path.join(base, lang)))
+        raise MissingPack("i18n.pack_absent", lang=lang,
+                           single=os.path.join(base, "%s.json" % lang),
+                           directory=os.path.join(base, lang))
     _validate(table, lang)
     return table
 
 
 class MissingPack(Exception):
-    """语言包装配问题（缺失 / 损坏 / 形状非法）。调用方转 FATAL rc 2。"""
+    """语言包装配问题（缺失 / 损坏 / 形状非法）。调用方转 FATAL rc 2。
+
+    **携带 `(code, params)` 而不是拼好的句子**（issue #26 的硬要求：`REFLECT_LANG=en`
+    时给用户看的任何东西都不许是中文）。包不可用 ⇒ 任何语言包都渲染不了 ⇒
+    按 **null 包形状**输出 `code(params…)`，那是唯一诚实的表示。此前是中文
+    散文，于是 `REFLECT_LANG=en` 的 FATAL 行里仍冒中文（实测）。
+
+    `str(e)` 因此是**机器可读**的 code 形状；`e.code` / `e.params` 可用于
+    判据（自证按 `.code` 断言，不按文案）。
+    """
+
+    def __init__(self, code, **params):
+        self.code = code
+        self.params = params
+        super().__init__(_render(code, params, None))
 
 
 def _validate(table, lang):
     """校验语言包形状：值不许伪装成机器行（契约结构上不可被翻译）。"""
     if not isinstance(table, dict) or not table:
-        raise MissingPack("语言包 %s 为空或不是对象 —— 空包不是「已翻译」"
-                          "（零值守卫）" % lang)
+        raise MissingPack("i18n.pack_empty", lang=lang)
     for code, value in table.items():
         if not isinstance(value, str):
-            raise MissingPack("语言包 %s 的 `%s` 不是字符串" % (lang, code))
+            raise MissingPack("i18n.value_not_string", lang=lang, key=code)
         # 只判**行首**：契约串的危险是「伪装成整行」，不是正文里提到它。
         if any(s.match(value) for s in _CONTRACT_SHAPES):
-            raise MissingPack("语言包 %s 的 `%s` 值看起来像机器契约行（%r）—— "
-                              "契约串在发射点用字面量，语言包不许产出它们"
-                              % (lang, code, value[:40]))
+            raise MissingPack("i18n.value_masquerades_contract", lang=lang,
+                               key=code, value=value[:40])
 
 
 class _Binding:
