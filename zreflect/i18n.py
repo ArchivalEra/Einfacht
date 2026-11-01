@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import os
 import re
+from types import MappingProxyType
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))        # .../zreflect
 _TOOL_REPO = os.path.dirname(_TOOL_DIR)                       # 承载套件的仓根
@@ -124,7 +125,11 @@ class Catalog:
                                   single=os.path.join(base, "%s.json" % lang),
                                   directory=os.path.join(base, lang))
         _validate(table, lang)
-        return cls(lang, table)
+        # ⚠️ 存**不可变副本**：`__slots__` + `__setattr__` 只挡住「换掉引用」，
+        # 挡不住原地改字典 —— 实测 `cat.table['locks.ok']='HAHA'` 成功，且后续
+        # 渲染全错。`Catalog` 是**值**，它的数据必须真不可变
+        # （`MappingProxyType` 是只读视图，且不复制、不增开销）。
+        return cls(lang, MappingProxyType(dict(table)))
 
     def render(self, code, params):
         """把 (code, params) 渲成文本；这张表里没有该 code ⇒ null 形状。
@@ -451,10 +456,29 @@ def _cases():
         ("★ i18n.pack_dir_three_rules", lambda: _pack_dir_rules_ok()),
         # `NULL` 哨兵在 `bind` / `resolve` / `activate` 三个入口语义一致。
         ("★ i18n.null_sentinel_consistent", lambda: _null_consistent()),
+        # **`Catalog` 的数据必须真不可变**：`__slots__` + `__setattr__` 只挡
+        # 属性赋值，挡不住原地改字典（实测 `cat.table[...]=...` 成功且渲染全错）。
+        ("★ i18n.catalog_data_immutable", lambda: _catalog_immutable()),
         # ③ 空输入必须报
         ("★ i18n.empty_code",
          lambda: _as_null(lambda: str(M("")) == "")),
     ]
+
+
+def _catalog_immutable():
+    """`Catalog` 的表不许被原地修改（属性赋值与字典写入都必须失败）。"""
+    cat = Catalog.load("en", {"en": {"a.b": "ok"}})
+    try:
+        cat.lang = "zh"
+        return False                  # 属性赋值居然成功 = 这条红
+    except AttributeError:
+        pass
+    try:
+        cat.table["a.b"] = "changed"
+        return False                  # 原地改字典成功 = 这条红
+    except TypeError:
+        pass
+    return str(cat.msg("a.b")) == "ok"
 
 
 def _activate_ok(lang, tables):
