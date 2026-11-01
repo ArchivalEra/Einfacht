@@ -1,0 +1,3 @@
+{
+ "i18n.module_banner": "i18n ist ein Modul (wird von jedem Tor und jedem Plattformmodul konsumiert); --selftest zeigt den Selbsttest."
+}

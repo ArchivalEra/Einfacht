@@ -1,0 +1,9 @@
+{
+ "i18n_cover.title": "Sprachabdeckungs-Tor",
+ "i18n_cover.ok": "Sprachabdeckungs-Tor: OK (%(files)d Dateien haben einen sprachfreien Kern; Sprachpakete optional)",
+ "i18n_cover.off": "Sprachabdeckungs-Tor: %(knob)s nicht konfiguriert ⇒ dieses Tor ist aus (steckbar; konfigurieren, um den sprachfreien Kern zu prüfen)",
+ "i18n_cover.empty_scan": "Scan-Fläche ist leer — keine Quelle gefunden ist kein sprachfreies Bestehen (Nullwert-Wächter)",
+ "i18n_cover.scan_empty_dir": "Scan-Fläche %(root)s ist leer — keine Quelle gefunden ist kein sprachfreies Bestehen",
+ "i18n_cover.parse_error": "%(file)s lässt sich nicht parsen: %(error)s — ein Parse-Fehler darf nicht als Bestehen zählen",
+ "i18n_cover.bare_text": "%(file)s:%(lineno)d nackter natural-sprachlicher Text im Kern %(text)r — benutzersichtbare Meldungen müssen über M(<Literal-code>, **params) laufen; Selbsttest-Labels müssen laut Entscheidung 1C ids sein"
+}
