@@ -138,20 +138,25 @@ def pack_dir():
         也因此跨仓夹具（`GATE_REPO=$(mktemp -d)`）能正常装载 —— 实测踩到过：
         锚成 GATE_REPO 相对时，夹具里每个闸门都 MissingPack（0/15 全红）。
         语言包是**工具**的属性，不是被检查仓库的。
-      · **设了相对路径** ⇒ 相对**被检查仓根**（与 `REFLECT_DOCS` 等所有
-        名字型旋钮同一口径 —— env 里写的「相对仓库根的名字」才对得上）。
+      · **设了相对路径** ⇒ 相对**被检查仓根**（`GATE_REPO`）。与 `REFLECT_DOCS`
+        等所有名字型旋钮同一口径 —— env 里写的「相对仓库根的名字」才对得上。
+        ⚠️ 这条此前**没落地**：代码 join 到 `_TOOL_REPO`，而三语 README 与本文
+        都说「相对被检查仓根」。实测：`GATE_REPO=$T REFLECT_I18N=lang` 解析成
+        `/…/Einfacht/lang` 而不是 `$T/lang` ⇒ FATAL。文档与代码不一致时，
+        以「与其他旋钮同口径」为准（文档那条是对的）。
       · **设了绝对路径** ⇒ 原样用。
 
-    「未设用工具、设了用被检查仓」的矛盾曾经真的是一处洞：把 README 里那个
-    默认值 `zreflect/lang` 显式设上，解析成 `zreflect/zreflect/lang` ⇒ FATAL
-    （实测）。所以默认值在文档里写**空**，值只由本函数产生。
+    注意「未设用工具、设了用被检查仓」不是矛盾：未设是「跟着套件走」（零配置
+    可用的场景），设了是「我在自己的仓里放了一份」（与其他旋钮一致的语义）。
     """
     raw = os.environ.get("REFLECT_I18N", "").strip()
     if not raw:
         return os.path.join(_TOOL_REPO, BUILTIN_PACKS)
     if os.path.isabs(raw):
         return raw
-    return os.path.join(_TOOL_REPO, raw)
+    # 懒导入：本模块被 `gate` 懒导入，模块级反向 import 会成环。
+    import gate                                          # noqa: PLC0415
+    return os.path.join(gate.GATE_REPO, raw)
 
 
 def load_pack(lang):
@@ -167,8 +172,15 @@ def load_pack(lang):
     （10 PASS / 1 FAIL）。别处也不许再自己 `open(...json...)`（曾经四处产地
     各写各的，改口径只修到两处）。
 
-    缺失 / 坏 JSON ⇒ `{}`（不抛出）：自证里「读真包」的断言靠空表当场红，
-    比让整条自证崩掉更好定位。**真装载走 `_table_for`**，它才抛 `MissingPack`。
+    ⚠️ **坏 JSON 不许静默跳过**：此前每个分片 `except ...: continue`，于是
+    一个坏掉的 `registry.json` 只让那部分 code 变成裸 code，**rc 仍 0** ——
+    正是本仓立身要消灭的「半装的语言包看起来像装好了」（实测：写坏一个分片，
+    装载仍成功、`registry.empty_phase` 打出裸 code、退出码 0）。现在坏分片
+    直接抛 `MissingPack`，装配失败走 FATAL。
+
+    缺失 / 空 ⇒ `{}`（不抛）：自证里「读真包」的断言靠空表当场红，比让整条
+    自证崩掉更好定位。**真装载走 `_table_for`**，它才判「整包不在」。区分的是
+    「没有」与「有但坏了」：后者是配置事故，必须响。
     """
     import json                                          # noqa: PLC0415
     base = pack_dir()
@@ -178,22 +190,30 @@ def load_pack(lang):
         for n in sorted(os.listdir(d)):
             if not n.endswith(".json"):
                 continue
+            p = os.path.join(d, n)
             try:
-                with open(os.path.join(d, n), encoding="utf-8") as fh:
+                with open(p, encoding="utf-8") as fh:
                     part = json.load(fh)
-            except (OSError, ValueError):
-                continue
-            if isinstance(part, dict):
-                table.update(part)
+            except (OSError, ValueError) as e:
+                raise MissingPack(
+                    "语言包 %s 的分片 %s 读不了（%s）—— 坏分片不许静默跳过："
+                    "那会让那部分消息退回裸 code 而退出码仍是 0"
+                    % (lang, p, e)) from e
+            if not isinstance(part, dict):
+                raise MissingPack("语言包 %s 里的 %s 不是对象" % (lang, n))
+            table.update(part)
     single = os.path.join(base, "%s.json" % lang)
     if os.path.exists(single):
         try:
             with open(single, encoding="utf-8") as fh:
                 part = json.load(fh)
-        except (OSError, ValueError):
-            part = None
-        if isinstance(part, dict):
-            table.update(part)
+        except (OSError, ValueError) as e:
+            raise MissingPack(
+                "语言包 %s 的单文件 %s 读不了（%s）—— 坏包不许静默跳过"
+                % (lang, single, e)) from e
+        if not isinstance(part, dict):
+            raise MissingPack("语言包 %s 的 %s 不是对象" % (lang, single))
+        table.update(part)
     return table
 
 
@@ -296,8 +316,16 @@ def activate(lang=None, tables=None):
     与 `bind()` 的区别：`bind` 是**作用域**（进出即还原，给需要隔离的场景）；
     `activate` 是**进程默认**（CLI 入口用，一次到位，不用每处写 `with`）。
 
+    `lang=NULL` 与 `bind` 同义：**显式 null 包**（不吃 `REFLECT_LANG`）。
+    ⚠️ 此前漏了这个分支：`activate(NULL)` 把哨兵当语言名去 `join`，
+    直接 `TypeError`（实测）。两个入口的哨兵语义必须一样，否则调用方
+    在 `bind`/`activate` 之间换一下就是个坑。
+
     `tables=` 与 `bind` 同义：**注入内存表 ⇒ 零文件 I/O**（自证专用）。
     """
+    if lang is NULL:
+        _ACTIVE[0] = (None, None)
+        return None
     resolved = lang if lang is not None else \
         (os.environ.get("REFLECT_LANG", "").strip() or None)
     _ACTIVE[0] = (resolved, _table_for(resolved, tables))
@@ -422,10 +450,56 @@ def _cases():
         # 空包不是「已翻译」（零值守卫第一档）。
         ("★ i18n.empty_pack_rejected",
          lambda: _raises(lambda: _table_for("xx", {"xx": {}}))),
+        # **坏分片必须当场抛**（本仓立身那条：半装的语言包不许看起来像装好了）。
+        # 反向证据：造一个坏 JSON 的包目录，`load_pack` 必须抛而不是静默跳过 ——
+        # 静默跳过的后果是那部分消息退回裸 code 而退出码仍是 0（实测踩到）。
+        ("★ i18n.broken_shard_raises",
+         lambda: _broken_pack_raises()),
+        # `activate(NULL)` 与 `bind(NULL)` 语义必须一致（此前 activate 把哨兵
+        # 当语言名 join，直接 TypeError）。
+        ("★ i18n.activate_accepts_null",
+         lambda: _activate_null_ok()),
         # ③ 空输入必须报
         ("★ i18n.empty_code",
          lambda: with_null(lambda: str(M("")) == "")),
     ]
+def _broken_pack_raises():
+    """坏分片必须抛 `MissingPack`，不许静默跳过（自证用临时目录，用完即删）。"""
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(d, "xx"))
+        with open(os.path.join(d, "xx", "bad.json"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("{ not json")
+        prev = os.environ.get("REFLECT_I18N")
+        os.environ["REFLECT_I18N"] = d
+        try:
+            try:
+                load_pack("xx")
+            except MissingPack:
+                return True
+            return False           # 静默跳过 = 这条断言红
+        finally:
+            if prev is None:
+                os.environ.pop("REFLECT_I18N", None)
+            else:
+                os.environ["REFLECT_I18N"] = prev
+    finally:
+        shutil.rmtree(d, True)
+
+
+def _activate_null_ok():
+    """`activate(NULL)` 必须干净返回 None，并且真的落到 null 包。"""
+    prev = _ACTIVE[0]
+    try:
+        got = activate(NULL)
+        return got is None and _ACTIVE[0] == (None, None)
+    finally:
+        _ACTIVE[0] = prev
+
+
 def _selftest():
     import sys                                           # noqa: PLC0415
     from gate import main_selftest_or                    # noqa: PLC0415
