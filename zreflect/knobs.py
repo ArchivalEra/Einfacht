@@ -348,6 +348,24 @@ def _discovery_sees_planted_lang():
         shutil.rmtree(d, True)
 
 
+def _looks_like_pack(path):
+    """这个 json **内容上**像不像语言包？（单文件形状的判据）
+
+    语言包的特征：键是 `x.y` 形的 code，值是字符串（通常含 `%(…)` 占位符）。
+    不是语言包的 json（配置 / 笔记 / 元数据）不该被当成一种语言。
+    """
+    import json                                          # noqa: PLC0415
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return False        # 坏文件不算语言包（坏包由 load_pack 对已装语言报）
+    if not isinstance(data, dict) or not data:
+        return False
+    dotted = sum(1 for k in data if isinstance(k, str) and "." in k)
+    return dotted >= max(1, len(data) // 2)
+
+
 def installed_langs():
     """语言包目录里实际装了哪些语言（**发现式**，不写名单）。
 
@@ -368,7 +386,11 @@ def installed_langs():
                 if any(x.endswith(".json") for x in os.listdir(p)):
                     out.add(n)
             elif n.endswith(".json"):
-                out.add(n[:-len(".json")])
+                # ⚠️ 单文件形状（`<lang>.json`）与「pack 根随便一个 json」同形 ——
+                # 只按文件名收会把 `config.json` 当成 `config` 语言，凭空报缺键
+                # （实测）。语言包的判据是**内容**：code 形键（`x.y`）或占位符值。
+                if _looks_like_pack(p):
+                    out.add(n[:-len(".json")])
     except OSError as e:
         # ⚠️ **不许编 0**（AGENTS 纪律 7：读不到就明说，绝不编造）。此前这里
         # `return []`，于是「权限坏掉 / 目录读不了」与「一个包都没装」塌缩成
