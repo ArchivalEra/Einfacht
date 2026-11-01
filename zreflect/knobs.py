@@ -369,9 +369,18 @@ def installed_langs():
                     out.add(n)
             elif n.endswith(".json"):
                 out.add(n[:-len(".json")])
-    except OSError:
-        return []
+    except OSError as e:
+        # ⚠️ **不许编 0**（AGENTS 纪律 7：读不到就明说，绝不编造）。此前这里
+        # `return []`，于是「权限坏掉 / 目录读不了」与「一个包都没装」塌缩成
+        # 同一个假值 ⇒ 对账器全绿、roster 全绿 —— 那是「部署了 ≠ 在跑」家族
+        # 里最坏的一种（实测：chmod 000 的包目录，pack_sync_problems() == []）。
+        raise PacksUnreadable(str(e))
     return sorted(out)
+
+
+class PacksUnreadable(RuntimeError):
+    """包目录本身读不了（权限 / I-O）。**区分于「没装包」**：后者合法，前者是事故。"""
+
 
 
 def a_pack_lang():
@@ -383,6 +392,130 @@ def a_pack_lang():
     """
     langs = installed_langs()
     return langs[0] if langs else None
+
+
+_CODE_RE = re.compile(r'M\("([a-z][a-z0-9_.]+)"')
+# `_Semantic(...)` 产的也是用户可见消息（延迟渲染），一并计入。
+_SEM_RE = re.compile(r'_Semantic\("([a-z][a-z0-9_.]+)"')
+
+# 自证 / 文档专用的 code：它们**从不**渲染给用户（只出现在 `--selftest`
+# 的断言里，或作为 docstring 的示例）。用**显式前缀**声明，而不是手写名录 ——
+# 新增这类 code 只要用这个前缀即可（发现式，不漂）。
+_SELFTEST_CODE_PREFIXES = ("probe.", "gate.off.body")
+
+
+def used_codes(py_dir=None):
+    """本体源码里**实际会发给用户**的消息 code（`M("…")` / `_Semantic("…")`）。
+
+    **发现式**：扫源码，不写名录。这是「包完整性」判据的参照面 —— 没有它，
+    「两个包同时缺同一条」会全绿（zh↔en 的差集比较看不见共缺）。
+
+    **剥 docstring**：文档里的示例（`M(…)` 形态）不是输出，不剥会把文档
+    示例当真消息（实测踩到假阳性）。
+    `_SELFTEST_CODE_PREFIXES` 里的前缀是自证专用 code（同样不发给用户）。
+    """
+    import ast                                           # noqa: PLC0415
+    d = py_dir if py_dir is not None else _zdir()
+    out = set()
+    try:
+        names = sorted(os.listdir(d))
+    except OSError:
+        return set()
+    for n in names:
+        if not n.endswith(".py"):
+            continue
+        try:
+            src = open(os.path.join(d, n), encoding="utf-8",
+                       errors="replace").read()
+        except OSError:
+            continue
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            continue
+        # docstring 常量（豁免：示例不是输出）
+        docs = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
+                doc = ast.get_docstring(node, clean=False)
+                if doc:
+                    docs.add(doc)
+        text_wanted = argparse_strip(src, docs)
+        out |= set(_CODE_RE.findall(text_wanted))
+        out |= set(_SEM_RE.findall(text_wanted))
+    return {c for c in out
+            if not any(c.startswith(p) for p in _SELFTEST_CODE_PREFIXES)}
+
+
+def argparse_strip(src, docs):
+    """把 docstring 正文从源码里抹掉（只做粗粒度替换，够用于扫面）。"""
+    for doc in docs:
+        if doc:
+            src = src.replace(doc, "")
+    return src
+
+
+def _unreadable_dir_is_loud():
+    """包目录读不了 ⇒ 必须报 `pack_unreadable`，不许当「零包」（合法态）。"""
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    if os.geteuid() == 0:
+        return True        # root 无视权限位，这条测不出来（明说不适用）
+    d = tempfile.mkdtemp()
+    try:
+        os.chmod(d, 0)
+        prev = os.environ.get("REFLECT_I18N")
+        os.environ["REFLECT_I18N"] = d
+        try:
+            try:
+                installed_langs()
+            except PacksUnreadable:
+                return True
+            return False
+        finally:
+            if prev is None:
+                os.environ.pop("REFLECT_I18N", None)
+            else:
+                os.environ["REFLECT_I18N"] = prev
+    finally:
+        os.chmod(d, 0o755)
+        shutil.rmtree(d, True)
+
+
+def pack_coverage_problems(codes=None, langs=None, loader=None, discovery=None):
+    """C4 对账④：**源码用到的每个 code 都必须在每个已装包里**。
+
+    zh↔en 的差集比较（`pack_sync_problems`）看不见「两边一起缺」——
+    实测：从 zh 和 en 同时删掉 `locks.ok`，`pack_sync_problems()` 返回 `[]`，
+    而 `REFLECT_LANG=zh` 的用户在屏幕上看到 `locks.ok(count=3)`（裸 code），
+    退出码正常。那是**本仓立身的静默退化**，是 C4 的经典失效模式
+    （「两份必须一致」只保证一致，不保证完整）。
+
+    参照面是**源码**（`used_codes()`），不是另一个包 —— 这样两个包一起漂
+    也照样被抓。零包是合法态 ⇒ 无包可查，返回空。
+    """
+    load = loader if loader is not None else load_pack
+    codes = used_codes() if codes is None else set(codes)
+    if langs is None:
+        try:
+            langs = installed_langs()
+        except PacksUnreadable as e:
+            return [M("knobs.pack_unreadable", lang="*", error=e)]
+    langs = list(langs)
+    if not codes or not langs:
+        return []                       # 零包 / 零 code：没有可比的两侧
+    out = []
+    for lang in sorted(langs):
+        try:
+            table = load(lang)
+        except Exception as e:                           # noqa: BLE001
+            return [M("knobs.pack_unreadable", lang=lang, error=e)]
+        missing = sorted(codes - set(table))
+        if missing:
+            out.append(M("knobs.pack_missing_code",
+                         lang=lang, count=len(missing),
+                         codes=", ".join(missing[:8])))
+    return out
 
 
 def pack_sync_problems(langs=None, loader=None, discovery=None):
@@ -401,7 +534,10 @@ def pack_sync_problems(langs=None, loader=None, discovery=None):
     """
     load = loader if loader is not None else load_pack
     if langs is None:
-        langs = (discovery or installed_langs)()
+        try:
+            langs = (discovery or installed_langs)()
+        except PacksUnreadable as e:
+            return [M("knobs.pack_unreadable", lang="*", error=e)]
     langs = list(langs)
     tables = {}
     for lang in langs:
@@ -566,6 +702,22 @@ def _cases():
          # 对象把答案递过去（实测：那样即使把 installed_langs 换回手写
          # 名单，这条仍 PASS）。
          lambda: _discovery_sees_planted_lang()),
+        # ④ **包完整性**（C4 对账④）：源码用到的 code 必须在每个已装包里。
+        # 这条抓的是「两边一起缺」——此前 `pack_sync_problems` 只比差集，
+        # 双向共缺会全绿，用户看到裸 code（实测：两包同删 locks.ok ⇒ 全绿）。
+        ("knobs.coverage_real_repo_clean",
+         lambda: pack_coverage_problems() == []),
+        ("★ knobs.pack_missing_code",
+         lambda: [p.code for p in pack_coverage_problems(
+             codes={"a.b", "c.d"}, langs=("zh", "en"),
+             loader=lambda l: ({"a.b": "x", "c.d": "y"} if l == "en"
+                               else {"a.b": "x"}))
+         ] == ["knobs.pack_missing_code"]),
+        # **不可读目录 ≠ 没装包**（AGENTS 纪律 7：读不到就明说，绝不编 0）。
+        # 此前 `installed_langs()` 在 OSError 时 return []，于是权限坏掉
+        # 与「零包」塌缩成同一个假值 ⇒ 对账全绿（实测 chmod 000 ⇒ []）。
+        ("★ knobs.pack_unreadable_on_oserror",
+         lambda: _unreadable_dir_is_loud()),
         # ③ 空输入必须报
         ("★ knobs.pack_sync_empty",
          lambda: [p.code for p in pack_sync_problems(

@@ -277,16 +277,16 @@ def _validate(table, lang):
 class _Binding:
     """`bind()` 的上下文：装/卸语言包（可重入）。"""
 
-    def __init__(self, lang, tables, forced_null=False):
+    def __init__(self, lang, tables):
         self.lang = lang
         self.tables = tables
-        self.forced_null = forced_null
         self.prev = None
 
     def __enter__(self):
         self.prev = _ACTIVE[0]
-        _ACTIVE[0] = (None, None) if self.forced_null \
-            else (self.lang, _table_for(self.lang, self.tables))
+        # `lang=None`（含 NULL 解析后的 None）⇒ `_table_for` 本来就返回 None
+        # ⇒ null 包。不需要额外的 `forced_null` 开关（那是两套机制做一件事）。
+        _ACTIVE[0] = (self.lang, _table_for(self.lang, self.tables))
         return self
 
     def __exit__(self, *exc):
@@ -300,6 +300,20 @@ _ACTIVE = [(None, None)]           # (lang, table)
 NULL = object()                   # 「显式要 null 包」的哨兵（区别于「没传」）
 
 
+def _resolve(lang):
+    """`lang` → 生效的语言名（None = null 包）。**唯一的体检点**。
+
+    `NULL` ⇒ 显式 null（不吃环境变量）；`None` ⇒ 回落 `REFLECT_LANG`；
+    字符串 ⇒ 原样。`bind()` / `activate()` 都走这里 —— 此前同一行表达式
+    在两边各写一遍，两处规则迟早漂（C4）。
+    """
+    if lang is NULL:
+        return None
+    if lang is not None:
+        return lang
+    return os.environ.get("REFLECT_LANG", "").strip() or None
+
+
 def bind(lang=None, tables=None):
     """装一个语言包（上下文管理器）。
 
@@ -310,10 +324,7 @@ def bind(lang=None, tables=None):
 
     `tables={lang: {code: template}}` ⇒ 纯内存（**自证专用**：零文件 I/O）。
     """
-    if lang is NULL:
-        return _Binding(None, {}, forced_null=True)
-    return _Binding(lang if lang is not None else
-                    (os.environ.get("REFLECT_LANG", "").strip() or None), tables)
+    return _Binding(_resolve(lang), tables)
 
 
 def activate(lang=None, tables=None):
@@ -329,29 +340,14 @@ def activate(lang=None, tables=None):
 
     `tables=` 与 `bind` 同义：**注入内存表 ⇒ 零文件 I/O**（自证专用）。
     """
-    if lang is NULL:
-        _ACTIVE[0] = (None, None)
-        return None
-    resolved = lang if lang is not None else \
-        (os.environ.get("REFLECT_LANG", "").strip() or None)
+    resolved = _resolve(lang)
     _ACTIVE[0] = (resolved, _table_for(resolved, tables))
     return resolved
 
 
-def active_lang():
-    """当前生效的语言（None = null 包）。"""
-    return _ACTIVE[0][0]
-
-
-def render_msg(msg):
-    """按**当前**语言重新渲染一条消息（`Message` 的 str 值可能是旧语言下渲的）。"""
-    return _render(msg.code, msg.params, _ACTIVE[0][1])
-
-
-def tr(code, **params):
-    """便捷：直接拿当前语言的字符串（给不走 `Message` 的输出点用）。"""
-    return _render(code, params, _ACTIVE[0][1])
-
+# 已删除 `active_lang()` / `render_msg()` / `tr()`（全仓零调用）：它们是
+# 「万一以后要用」的接口，不是被需要的接口。`Message` 的值本来就是当前
+# 语言下渲好的（`__new__` 用 `_ACTIVE[0][1]`），需要重渲的场景不存在。
 
 # ── 自证 ──────────────────────────────────────────────────────────────────────
 def after_activate(lang, code, params, expect, tables=None):

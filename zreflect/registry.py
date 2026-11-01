@@ -368,7 +368,10 @@ def _knob_problems(knob_problems, gs):
                          # C4 对账：声明↔实读、REGISTRY↔README 表、zh↔en 包
                          + knobs.declared_vs_read_problems(gs)
                          + knobs.registry_vs_readme_problems()
-                         + knobs.pack_sync_problems())
+                         + knobs.pack_sync_problems()
+                         # C4 对账④：**源码用到的 code 必须在每个已装包里**
+                         # （zh↔en 差集看不见「两边一起缺」，那是静默退化）
+                         + knobs.pack_coverage_problems())
     return list(knob_problems)
 
 
