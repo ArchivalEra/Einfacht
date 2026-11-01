@@ -286,16 +286,15 @@ def _semantic_packs_intact(langs=None):
     # 零值守卫：一个包都没装 ⇒ 不是「完整」，是没装
     if not tables or not any(tables.values()):
         return False
-    ref_lang = sorted(tables)[0]
-    ref = tables[ref_lang]
+    # ① 每个包都必须含**全部**语义 code（条目掉了 ⇒ 那边用户看到裸 code）。
     for lang in sorted(tables):
-        other = tables[lang]
-        for c in codes:
-            if c not in other or c not in ref:
-                return False
-            if sorted(_PLACEHOLDER_RE.findall(ref[c])) != \
-                    sorted(_PLACEHOLDER_RE.findall(other[c])):
-                return False
+        if any(c not in tables[lang] for c in codes):
+            return False
+    # ② 占位符名一致性**走同一个对账器**（与 `pack_sync_problems` 同一份判据：
+    # 两处各写一遍循环，规则就会漂 —— C4）。
+    if pack_sync_problems(langs=sorted(tables),
+                          loader=lambda l: tables[l]):
+        return False
     # 每个包里都真渲染出句子（不是回落成 code）
     for lang in sorted(tables):
         with bind(lang, {lang: tables[lang]}):

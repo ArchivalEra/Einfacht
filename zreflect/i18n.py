@@ -3,7 +3,7 @@
 
 设计前提（用户定的场景）：用户拉下 Einfacht 套件后，**从一堆包里挑一个语言包**——
 英语、中文、或任何别的。本体本身**不做语言表达**，输出的是消息 code 与参数。
-没装语言包时，输出 `code(k=v)` 这种**结构化、可读、无自然语言**的形式。
+没装语言包时，输出 `code(key=v)` 这种**结构化、可读、无自然语言**的形式。
 
 换句话说：**中文不是源语言**，中文只是可选包之一。这砍掉了传统 i18n 的两个组件：
 
@@ -19,9 +19,9 @@ interface（两个入口，A' 的 `Message(str)` 形状 —— 四份 design-it-
 `Message` 是 **str 的子类**，它的值就是渲染结果，同时可读 `.code` / `.params`。
 于是所有现有 `str` 消费者（`if problems` / `len(...)` / `"  · " + p`）**零改动**：
 
-    >>> p = M("replay.no_cmd", k="py_lines")
+    >>> p = M("replay.no_cmd", key="py_lines")
     >>> bool([p]), "  · " + p
-    (True, '  · replay.no_cmd(k=py_lines)')
+    (True, '  · replay.no_cmd(key=py_lines)')
     >>> p.code
     'replay.no_cmd'
 
@@ -375,8 +375,11 @@ def _raises(fn):
 
 def _cases():
     fake = {
-        "replay.no_cmd": "`%(k)s` has no replay command",
-        "replay.mismatch": "`%(k)s` replay != ledger: %(got)s vs %(want)s",
+        # ⚠️ 占位名必须与**真包**一致（`key` / `actual` / `expected`）：
+        # 写成 `k` / `got` / `want` 会让这条自证为一个真包根本不用的命名方案
+        # 背书（实测：真 zh 包下 `M("replay.no_cmd", k=…)` 直接 KeyError）。
+        "replay.no_cmd": "`%(key)s` has no replay command",
+        "replay.mismatch": "`%(key)s` replay != ledger: %(actual)s vs %(expected)s",
     }
     bad_shape = {"ok": "OFF: not configured"}          # 伪装成机器行
     empty = {}
@@ -417,8 +420,8 @@ def _cases():
          lambda: with_null(lambda: str(M("gate.off.body")) == "gate.off.body")),
         ("i18n.null_with_params",
          lambda: with_null(
-             lambda: str(M("replay.no_cmd", k="py_lines"))
-             == "replay.no_cmd(k='py_lines')")),
+             lambda: str(M("replay.no_cmd", key="py_lines"))
+             == "replay.no_cmd(key='py_lines')")),
         ("i18n.null_params_sorted",
          lambda: with_null(lambda: str(M("x", bb=2, aa=1)) == "x(aa=1, bb=2)")),
         # `repr` 必须处理引号嵌套：值里带单引号时，手拼 `'%s'` 会产出畸形串。
@@ -428,7 +431,7 @@ def _cases():
         ("i18n.null_long_value_truncated",
          lambda: len(said(cmd="f" * 200)) < 80),
         ("i18n.pack_applied",
-         lambda: with_en(lambda: str(M("replay.no_cmd", k="f.py"))
+         lambda: with_en(lambda: str(M("replay.no_cmd", key="f.py"))
                          == "`f.py` has no replay command")),
         ("i18n.message_is_str",
          lambda: (lambda m: (bool([m]), "  · " + m, len([m]))[0] is True)(M("a"))),
@@ -436,13 +439,13 @@ def _cases():
         # null 包下构造：`Message` 是**构造时渲染**的，拿捏造的 code 去撞真
         # zh 包会 KeyError（实测 `REFLECT_LANG=zh` 下这两条红）。
         ("i18n.code_readable",
-         lambda: with_null(lambda: M("replay.no_cmd", k=1).code
+         lambda: with_null(lambda: M("replay.no_cmd", key=1).code
                            == "replay.no_cmd")),
         ("i18n.params_readable",
-         lambda: with_null(lambda: M("replay.no_cmd", k="py_lines").params
-                           == {"k": "py_lines"})),
+         lambda: with_null(lambda: M("replay.no_cmd", key="py_lines").params
+                           == {"key": "py_lines"})),
         ("i18n.activate_sets_default",
-         lambda: after_activate("en", "replay.no_cmd", dict(k="f.py"),
+         lambda: after_activate("en", "replay.no_cmd", dict(key="f.py"),
                                 "`f.py` has no replay command",
                                 {"en": fake})),
         # ② 该报的必须报
