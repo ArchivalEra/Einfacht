@@ -38,6 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
 from gate import repo                                     # noqa: E402
+from i18n import M                                        # noqa: E402
 
 DEFAULT_SPEC = "ab.json"
 
@@ -78,7 +79,7 @@ def _dig(obj, dotted):
 
 def _pair_field_problems(pr):
     """pair 条目必填字段（name / a / b / why）缺失 ⇒ 报。"""
-    return ["pair 缺字段 %s: %r（why 必填——没理由的对比没人敢删）" % (f, pr)
+    return [M("ab.pair_missing_field", field=f, entry=pr)
             for f in ("name", "a", "b", "why") if not pr.get(f)]
 
 
@@ -90,8 +91,9 @@ def _declared(obj, key):
 def _confound_problems(pr, key, da, db):
     """除 allow 轴外任何键的值不一致 ⇒ 混淆变量（A/B 作废）。"""
     allow = set(pr.get("allow") or [])
-    return ["%s: 混淆变量——%s 键 %r: A=%r B=%r（非 allow 轴不一致 ⇒ A/B 作废）"
-            % (pr["name"], key or "(根)", k, da.get(k), db.get(k))
+    return [M("ab.confound", name=pr["name"],
+              key=key or M("ab.root_label"), field=k,
+              value_a=da.get(k), value_b=db.get(k))
             for k in sorted(set(da) | set(db))
             if k not in allow and da.get(k) != db.get(k)]
 
@@ -99,15 +101,21 @@ def _confound_problems(pr, key, da, db):
 def _pair_problems(pr, root, loader):
     """单组 A/B 对比：字段 / 可读性 / 声明面类型 / 混淆变量。返回 (problems, skips)。"""
     problems, skips = _pair_field_problems(pr), []
+    if problems:
+        # 必填字段缺失 ⇒ 到此为止（后续 a/b/key 的读取会 KeyError ——
+        # 「缺字段」本身就是这次要报的东西，别让它变成崩溃）。
+        return problems, skips
     key = pr.get("key") or ""
     ra, ea = loader(_join(root, pr["a"]))
     rb, eb = loader(_join(root, pr["b"]))
     if ra is None or rb is None:
-        skips.append("%s: 工件读不到（%s / %s）⇒ 本次未核对" % (pr["name"], ea or "", eb or ""))
+        skips.append(M("ab.artifact_unreadable", name=pr["name"],
+                       error_a=ea or "", error_b=eb or ""))
         return problems, skips
     da, db = _declared(ra, key), _declared(rb, key)
     if not isinstance(da, dict) or not isinstance(db, dict):
-        problems.append("%s: key=%r 在两件中至少一件不是 dict" % (pr["name"], key or "(根)"))
+        problems.append(M("ab.not_a_dict", name=pr["name"],
+                          key=key or M("ab.root_label")))
         return problems, skips
     return problems + _confound_problems(pr, key, da, db), skips
 
@@ -116,7 +124,7 @@ def check(spec, root, loader=_load):
     """纯逻辑（自证注入 loader）。返回 (problems, skips)。"""
     pairs = spec.get("pairs") or []
     if not pairs:
-        return ["pairs 为空（零值守卫：空断言面不是通过）"], []
+        return [M("ab.empty")], []
     problems, skips = [], []
     for pr in pairs:
         probs, sks = _pair_problems(pr, root, loader)
@@ -134,18 +142,16 @@ def main(argv):
     path = spec_path if os.path.isabs(spec_path) else repo(spec_path)
     if not os.path.isfile(path):
         if explicit:
-            return fatal("显式指定的规格 %s 不存在（--spec / REFLECT_AB）—— "
-                         "先写规格（或撤掉指定）" % spec_path)
-        return off("未启用（%s 不存在 ⇒ 明说未启用退 0，可插拔）" % spec_path)
+            return fatal(M("ab.explicit_spec_missing", name=spec_path))
+        return off(M("ab.off", name=spec_path))
     spec, err = load_spec(path)
     if err:
-        return fatal("规格 %s 坏：%s" % (spec_path, err))
+        return fatal(M("ab.spec_broken", name=spec_path, error=err))
     problems, skips = check(spec, repo())
     for x in skips:
-        print("SKIP: %s" % x, file=sys.stderr)
-    return finish("A/B 闸门", problems,
-                  "A/B 闸门：OK（%d 组对比无混淆变量）"
-                  % len(spec.get("pairs") or []))
+        print("SKIP: %s" % x, file=sys.stderr)   # 契约前缀在发射点字面量
+    return finish(M("ab.title"), problems,
+                  M("ab.ok", count=len(spec.get("pairs") or [])))
 
 
 def _cases():
@@ -161,36 +167,43 @@ def _cases():
         json.dump(obj, open(p, "w"))
         return rel
     spec = {"pairs": [
-        {"name": "分配器 A/B", "a": "a.json", "b": "b.json", "key": "declared",
-         "allow": ["malloc"], "why": "被测轴 = 分配器"}]}
+        {"name": "allocator A/B", "a": "a.json", "b": "b.json", "key": "declared",
+         "allow": ["malloc"], "why": "axis under test = allocator"}]}
     # a/b：除 malloc 外全等
     wf("a.json", {"declared": {"simd": True, "malloc": "mimalloc", "v128": 4752}})
     wf("b.json", {"declared": {"simd": True, "malloc": "dlmalloc", "v128": 4752}})
     wf("mut-a.json", {"declared": {"simd": True, "malloc": "mimalloc", "v128": 4752}})
     wf("mut-b.json", {"declared": {"simd": False, "malloc": "mimalloc", "v128": 4752}})
-    wf("nokey.json", {"declared": "不是 dict"})
+    wf("nokey.json", {"declared": "not-a-dict"})
     empty = {"pairs": []}
     confound_spec = {"pairs": [{"name": "m", "a": "mut-a.json", "b": "mut-b.json",
                                 "key": "declared", "allow": ["malloc"], "why": "w"}]}
     return [
-        ("规格名解析：--spec > 旋钮 > 默认名（显式带回 True）",
+        ("ab.resolve_spec",
          lambda: resolve_spec(["--spec", "x.json"], "K.json") == ("x.json", True)
          and resolve_spec([], "K.json") == ("K.json", True)
          and resolve_spec([], "") == ("ab.json", False)
          and resolve_spec([], "  ") == ("ab.json", False)),
         # ① 正常不报
-        ("仅 allow 轴不同 ⇒ 不报（A/B 该有的形状）", lambda: check(spec, d)[0] == []),
+        ("ab.ok", lambda: check(spec, d)[0] == []),
         # ② 该报的必须报
-        ("★ 非 allow 轴不同 ⇒ 必须报（混淆变量）",
-         lambda: any("混淆变量" in x for x in check(confound_spec, d)[0])),
-        ("★ 工件读不到 ⇒ SKIP 明说", lambda: any(
-            "读不到" in x for x in check(
-             {"pairs": [{"name": "x", "a": "nope-a.json", "b": "nope-b.json", "why": "w"}]}, d)[1])),
-        ("★ key 指向非 dict ⇒ 必须报", lambda: any(
-             "不是 dict" in x for x in check(
+        ("★ ab.confound",
+         lambda: [p.code for p in check(confound_spec, d)[0]] == ["ab.confound"]),
+        ("★ ab.artifact_unreadable",
+         lambda: [p.code for p in check(
+             {"pairs": [{"name": "x", "a": "nope-a.json", "b": "nope-b.json",
+                         "why": "w"}]}, d)[1]] == ["ab.artifact_unreadable"]),
+        ("★ ab.not_a_dict",
+         lambda: [p.code for p in check(
              {"pairs": [{"name": "x", "a": "nokey.json", "b": "nokey.json",
-                         "key": "declared", "why": "w"}]}, d)[0])),
-        ("★ pairs 为空 ⇒ 必须报（零值守卫）", lambda: check(empty, d)[0] != []),
+                         "key": "declared", "why": "w"}]}, d)[0]] == ["ab.not_a_dict"]),
+        ("★ ab.pair_missing_field",
+         lambda: [p.code for p in check(
+             {"pairs": [{"a": "a.json", "b": "b.json", "why": "w"}]}, d)[0]]
+         == ["ab.pair_missing_field"]),
+        # ③ 空输入必须报
+        ("★ ab.empty",
+         lambda: [p.code for p in check(empty, d)[0]] == ["ab.empty"]),
     ]
 
 
@@ -198,4 +211,4 @@ GATE = meta("A/B 闸门", "A/B 同旗标不变式（非 allow 轴差异 = 混淆
             knobs=("REFLECT_AB",))
 
 if __name__ == "__main__":
-    sys.exit(main_selftest_or(sys.argv[1:], "check_ab（A/B 同旗标不变式）", _cases, main))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_ab", _cases, main))

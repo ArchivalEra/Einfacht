@@ -56,11 +56,12 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
+from i18n import M, bind                                 # noqa: E402
 from ledger import facts_of, load, value_of              # noqa: E402
 from runner import default_timeout, quote, run_cmd       # noqa: E402
 
 
-def _replay_one(k, raw_entry, run, t, out, stats):
+def _replay_one(k, raw_entry, run, seconds, out, stats):
     """复跑**一条**事实，把结果写进 out / stats（issue #22 复杂度拆分）。
 
     每个分支只做一件事：跳过（replay=False）/ 缺 cmd / 超时 / 坏 rc / 值不符。
@@ -71,30 +72,23 @@ def _replay_one(k, raw_entry, run, t, out, stats):
         stats["skipped"] += 1
         return
     if not cmd:
-        out.append("`%s` 没有复跑命令 —— 没 cmd 的事实就是散文（裸值契约的前提"
-                   "是它有 cmd）" % k)
+        out.append(M("replay.no_cmd", key=k))
         return
     stats["attempts"] += 1
     rc, stdout = run(cmd)
     if rc is None:
-        out.append("`%s` 复跑**超时**（%.0fs）：`%s` —— 要起服务/要构建的条目应写 "
-                   "replay=False，别拿超时当数据。注：重启后冷启动首跑可能超时"
-                   "（文件系统冷，热缓存后往往秒回）—— 重跑一次再判，或调大 "
-                   "REFLECT_REPLAY_TIMEOUT" % (k, t, cmd))
+        out.append(M("replay.timeout", key=k, seconds=seconds, command=cmd))
         return
     if rc != 0:
-        out.append("`%s` 复跑**命令报错**（rc=%s）：`%s` —— 坏 cmd 印在活状态文档里，"
-                   "就是每行都绿着的假断言" % (k, rc, cmd))
+        out.append(M("replay.command_failed", key=k, return_code=rc,
+                     command=cmd))
         return
     stats["ran"] += 1
     got = stdout.strip()
     want = str(value_of(entry))
     if got != want:
-        out.append("`%s` 复跑输出与台账不符：stdout=%s vs 台账=%s —— 修法是"
-                   "**重测**：python3 zreflect/facts.py，改口逐条"
-                   " `--accept-changes=k1,k2` 放行；重测后仍不符，才是"
-                   "cmd 违反裸值契约（stdout 只能打值本身）"
-                   % (k, quote(got), quote(want)))
+        out.append(M("replay.mismatch", key=k,
+                     actual=quote(got), expected=quote(want)))
         return
     stats["ok"] += 1
 
@@ -113,89 +107,92 @@ def replay_all(ledger, runner=None):
              "calibrate_attempts": 0, "calibrated": 0}
     if not f:
         # 零值守卫：台账空着不是「没有违规」，是「什么都没量」。
-        stats["problems"] = ["台账为空 —— 空不是通过（零值守卫）：先查 measure() 是不是坏了"]
+        stats["problems"] = [M("replay.empty_ledger")]
         return stats
-    t = default_timeout()
+    seconds = default_timeout()
     for k in sorted(f):
-        _replay_one(k, f[k], run, t, out, stats)
+        _replay_one(k, f[k], run, seconds, out, stats)
     if stats["attempts"] and stats["ran"] == 0:
-        out.append("%d 条尝试复跑**一条都没跑成**（全部 rc≠0/超时）—— 环境或 shell "
-                   "整体坏了的时候，逐条报错会伪装成「数据都查过了」（零值守卫）"
-                   % stats["attempts"])
+        out.append(M("replay.none_ran", attempts=stats["attempts"]))
     # 探针档（#5 见证 / #6 ① 仪器校准）：与 replay 正交 ——
     # 贵事实的来源/仪器每提交真跑，判据同裸值契约。
-    for kind, noun, ok_key in (("witness", "见证", "witnessed"),
-                                  ("calibrate", "仪器校准", "calibrated")):
+    # 两档各自有**独立字面量 code**（`replay.witness_*` / `replay.calibrate_*`）：
+    # i18n 契约要求 code 是字面量（拼出来的 code 让语言包目录无法被证明完备），
+    # 而且语言包里「见证」与「校准」是两句不同的话 —— 把名词塞进参数会让
+    # 模板词序在非中文语言里崩掉。
+    for kind, ok_key in (("witness", "witnessed"), ("calibrate", "calibrated")):
         for k in sorted(f):
             entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
-            pc = str(entry.get(kind) or "").strip()
-            if not pc:
+            probe = str(entry.get(kind) or "").strip()
+            if not probe:
                 continue
             expect = entry.get(kind + "_expect")
             stats[kind + "_attempts"] += 1
-            rc, stdout = run(pc)
+            rc, stdout = run(probe)
             if rc is None:
-                out.append("`%s` %s**超时**（%.0fs）：`%s` —— %s"
-                           % (k, noun, t, pc,
-                              "见证该便宜，挂贵的见证等于没挂"
-                              if kind == "witness" else
-                              "校准该便宜，挂贵的校准等于没挂"))
+                out.append(M("replay.witness_timeout", key=k, seconds=seconds,
+                             command=probe) if kind == "witness"
+                           else M("replay.calibrate_timeout", key=k,
+                                  seconds=seconds, command=probe))
                 continue
             if rc != 0:
-                out.append("`%s` %s**命令报错**（rc=%s）：`%s` —— %s"
-                           % (k, noun, rc, pc,
-                              "见证命令本身死了（见证要便宜、无害、只读）"
-                              if kind == "witness" else
-                              "校准命令本身死了（校准要便宜、无害、只读）"))
+                out.append(M("replay.witness_command_failed", key=k,
+                             return_code=rc, command=probe) if kind == "witness"
+                           else M("replay.calibrate_command_failed", key=k,
+                                  return_code=rc, command=probe))
                 continue
             got = stdout.strip()
             want = str(expect) if expect is not None else ""
             if got != want:
-                if kind == "witness":
-                    out.append("`%s` 见证不符：witness=%s vs 期望=%s —— 来源/上下文"
-                               "漂移（产出它的工具/输入变了），值本身没变也**算事故**"
-                               % (k, quote(got), quote(want)))
-                else:
-                    out.append("`%s` 仪器校准不符：calibrate=%s vs 期望=%s —— "
-                               "仪器失真（命令成功、值稳定、复跑永远通过，而它量的"
-                               "可能根本不是想量的；先用已知含 X 的样本证明仪器"
-                               "看得见 X，再计数）" % (k, quote(got), quote(want)))
+                out.append(M("replay.witness_mismatch", key=k,
+                             actual=quote(got), expected=quote(want))
+                           if kind == "witness"
+                           else M("replay.calibrate_mismatch", key=k,
+                                  actual=quote(got), expected=quote(want)))
                 continue
             stats[ok_key] += 1
     if not stats["attempts"] and stats["skipped"] and not stats["witness_attempts"] \
             and not stats["calibrate_attempts"]:
-        out.append("全部 %d 条事实都声明 replay=False 且无见证、无校准 ⇒ 本闸门什么都没查 —— "
-                   "至少留一条能复跑的；贵事实挂 witness（issue #5）让它"
-                   "的来源每提交被核；整仓都不适用就设 REFLECT_REPLAY=off 明说"
-                   "（全豁免不是通过）" % stats["skipped"])
+        out.append(M("replay.all_skipped", count=stats["skipped"]))
     stats["problems"] = out
     return stats
 
 
 def run(argv):
     if os.environ.get("REFLECT_REPLAY", "").strip().lower() == "off":
-        return off("复跑闸门：REFLECT_REPLAY=off ⇒ 本闸门未启用（明说，不假装查过 —— "
-                   "个别要构建产物的条目请用 replay=False 逐个退出，别关整道闸）")
-    t = default_timeout()
+        return off(M("replay.off"))
+    seconds = default_timeout()
+    raw_timeout = os.environ.get("REFLECT_REPLAY_TIMEOUT", "10")
     try:
-        float(os.environ.get("REFLECT_REPLAY_TIMEOUT", "10"))
+        float(raw_timeout)
     except ValueError:
-        print("⚠ REFLECT_REPLAY_TIMEOUT=%r 不是数 ⇒ 用默认 %.0fs" % (os.environ.get("REFLECT_REPLAY_TIMEOUT"), t),
-              file=sys.stderr)
+        print("⚠ %s" % M("replay.bad_timeout", value=raw_timeout,
+                         default=seconds), file=sys.stderr)
     name = os.environ.get("REFLECT_FACTS", "FACTS.json")
     p = repo(name)
     if not os.path.exists(p):
-        return fatal("缺事实台账（%s）。先跑 python3 zreflect/facts.py 量一遍。" % name)
+        return fatal(M("replay.ledger_missing", name=name))
     r = replay_all(load(p))
-    tail = "，%d 条声明 replay=False 未跑" % r["skipped"] if r["skipped"] else ""
-    wtail = "，见证 %d 条" % r["witnessed"] if r["witnessed"] else ""
-    ctail = "，校准 %d 条" % r["calibrated"] if r["calibrated"] else ""
-    return finish("复跑闸门", r["problems"],
-                  "复跑闸门：OK（%d 条事实逐字复跑，stdout 与台账一致%s%s%s）"
-                  % (r["ok"], tail, wtail, ctail))
+    tail = str(M("replay.ok_skipped", count=r["skipped"])) if r["skipped"] else ""
+    wtail = str(M("replay.ok_witnessed", count=r["witnessed"])) if r["witnessed"] else ""
+    ctail = str(M("replay.ok_calibrated", count=r["calibrated"]) if r["calibrated"] else "")
+    return finish(M("replay.title"), r["problems"],
+                  M("replay.ok", count=r["ok"], skipped=tail,
+                    witnessed=wtail, calibrated=ctail))
 
 
 LED = {"facts": {"n": {"value": 12, "cmd": "c"}}}
+
+
+def _load_real_pack(lang, fname):
+    """读磁盘上真实发布的语言包分片（自证用；缺失 ⇒ {} 让断言当场红）。"""
+    import json                                          # noqa: PLC0415
+    p = repo("zreflect", "lang", lang, fname)
+    try:
+        with open(p, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
 
 
 def _cases():
@@ -206,79 +203,107 @@ def _cases():
                                     "witness": "echo tool-ok",
                                     "witness_expect": "tool-ok"}}}
     cal = {"facts": {"objcheck": {"value": "fma-present", "cmd": "scan-artifact",
-                                     "replay": False,
-                                     "calibrate": "echo known-positive",
-                                     "calibrate_expect": "known-positive"}}}
+                                   "replay": False,
+                                   "calibrate": "echo known-positive",
+                                   "calibrate_expect": "known-positive"}}}
+    # 「消息必须指向修法」这类判据（重测指引 / 冷启动提示）在 null 包里无法验证
+    # —— null 包只有 code + 参数，没有句子。所以这里读**磁盘上真实发布的 zh 包**
+    # （`zreflect/lang/zh/facts_replay.json`），把渲染结果当断言面。
+    #
+    # 为什么读真包而不是注入假表：注入假表只能证明「我写的模板渲染得出我写的话」——
+    # 循环论证。读真包才把「迁移没有丢语义」变成可证伪的断言：冷启动提示若从
+    # zh 包里掉了，这条自证当场红。（zh 包按契约存的是**逐字的被移除文本**，
+    # 所以它同时是「迁移保真」的证据。）
+    real_zh = _load_real_pack("zh", "facts_replay.json")
+
+    def codes(ledger, runner):
+        return [p.code for p in replay_all(ledger, runner=runner)["problems"]]
+
+    def said(ledger, runner):
+        """在真实 zh 语言包下渲染后的文本。"""
+        with bind("zh", {"zh": real_zh}):
+            return [str(p) for p in replay_all(ledger, runner=runner)["problems"]]
+
+    def params(ledger, runner, code):
+        return [p.params for p in replay_all(ledger, runner=runner)["problems"]
+                if p.code == code]
+
     return [
         # ① 正常不报
-        ("stdout 与台账值一致（带尾换行）⇒ 不报",
+        ("replay.ok_trailing_newline",
          lambda: replay_all(LED, runner=lambda c: (0, "12\n"))["problems"] == []),
-        ("字符串值；stdout 首尾空白被去掉后相等 ⇒ 不报",
+        ("replay.ok_string_value",
          lambda: replay_all({"facts": {"s": {"value": "v1", "cmd": "c"}}},
                             runner=lambda c: (0, " v1\n"))["problems"] == []),
-        ("声明 replay=False 的条目被跳过，其余一致 ⇒ 不报",
+        ("replay.ok_skip_declared",
          lambda: replay_all(multi, runner=lambda c: (0, "1"))["problems"] == []),
         # ② 该报的必须报
-        ("★ stdout ≠ 台账值 ⇒ 必须报，且报错指向重测（issue #4 ③）",
-         lambda: any("不符" in x and "重测" in x and "accept-changes" in x for x in
-                     replay_all(LED, runner=lambda c: (0, "13"))["problems"])),
-        ("★ stdout 打了「含该值的整行」⇒ 必须报（裸值契约：机器只认整段 stdout）",
-         lambda: any("不符" in x for x in
-                     replay_all(LED, runner=lambda c: (0, "count=12 total"))["problems"])),
-        ("★ cmd 返回码非 0 ⇒ 必须报（issue #2 ① 的无管道复现：cat 不存在 rc=1）",
-         lambda: any("命令报错" in x for x in
-                     replay_all(LED, runner=lambda c: (1, ""))["problems"])),
-        ("★ 超时 ⇒ 必须报（挂在 pre-commit 里永远等不到，不许算通过）",
-         lambda: any("超时" in x for x in
-                     replay_all(LED, runner=lambda c: (None, ""))["problems"])),
-        ("★ 事实没有 cmd ⇒ 必须报（没复跑命令的事实就是散文）",
-         lambda: any("没有复跑命令" in x for x in replay_all(
-             {"facts": {"n": {"value": 1, "source": "s"}}}, runner=lambda c: (0, "1"))["problems"])),
+        ("★ replay.mismatch_repair_hint",
+         # 真实 zh 包里「不符」这条必须仍带修法锚点：`--accept-changes`（ASCII，
+         # 是修法的可判定部分）+ `facts.py`（重测命令）。纯中文语义锚点会把自己
+         # 变成「本体里的自然语言」—— 那正是零语言闸门要消灭的形状。
+         lambda: codes(LED, lambda c: (0, "13")) == ["replay.mismatch"]
+         and any("accept-changes" in s and "facts.py" in s
+                 for s in said(LED, lambda c: (0, "13")))
+         and params(LED, lambda c: (0, "13"), "replay.mismatch")[0]["key"] == "n"),
+        ("★ replay.mismatch_full_line",
+         lambda: codes(LED, lambda c: (0, "count=12 total")) == ["replay.mismatch"]),
+        ("★ replay.command_failed",
+         lambda: codes(LED, lambda c: (1, ""))
+         == ["replay.command_failed", "replay.none_ran"]
+         and params(LED, lambda c: (1, ""), "replay.command_failed")[0]["return_code"] == 1),
+        ("★ replay.timeout_cold_start_hint",
+         # 冷启动提示的语义锚点：`REFLECT_REPLAY_TIMEOUT` 旋钮名（ASCII）必须
+         # 仍在模板里 —— 删掉冷启动提示句（它原先就带着这个旋钮名）⇒ 这条红。
+         lambda: codes(LED, lambda c: (None, "")) == ["replay.timeout", "replay.none_ran"]
+         and any("REFLECT_REPLAY_TIMEOUT" in s for s in said(LED, lambda c: (None, "")))),
+        ("★ replay.no_cmd",
+         lambda: codes({"facts": {"n": {"value": 1, "source": "s"}}},
+                       lambda c: (0, "1")) == ["replay.no_cmd"]),
         # ③ 空输入必须报
-        ("★ 空台账 ⇒ 必须报（空不是通过）",
-         lambda: replay_all({"facts": {}}, runner=lambda c: (0, ""))["problems"] != []),
-        ("★ 一条都没跑成（全部 rc≠0）⇒ 必须报（零值守卫，issue #2 ① 的 selftest 要求）",
-         lambda: any("一条都没跑成" in x for x in replay_all(
-             {"facts": {"a": {"value": 1, "cmd": "x"}, "b": {"value": 2, "cmd": "y"}}},
-             runner=lambda c: (1, ""))["problems"])),
-        ("★ 全部事实都声明 replay=False ⇒ 必须报（全豁免 ≠ 通过）",
-         lambda: any("什么都没查" in x for x in replay_all(
-             {"facts": {"a": {"value": 1, "cmd": "x", "replay": False}}},
-             runner=lambda c: (0, "1"))["problems"])),
+        ("★ replay.empty_ledger",
+         lambda: codes({"facts": {}}, lambda c: (0, "")) == ["replay.empty_ledger"]),
+        ("★ replay.none_ran",
+         lambda: codes({"facts": {"a": {"value": 1, "cmd": "x"},
+                                  "b": {"value": 2, "cmd": "y"}}},
+                       lambda c: (1, "")) == ["replay.command_failed",
+                                              "replay.command_failed",
+                                              "replay.none_ran"]
+         and params({"facts": {"a": {"value": 1, "cmd": "x"},
+                               "b": {"value": 2, "cmd": "y"}}},
+                    lambda c: (1, ""), "replay.none_ran")[0]["attempts"] == 2),
+        ("★ replay.all_skipped",
+         lambda: codes({"facts": {"a": {"value": 1, "cmd": "x", "replay": False}}},
+                       lambda c: (0, "1")) == ["replay.all_skipped"]),
         # ③ 见证档（issue #5）
-        ("贵事实挂见证：见证过 ⇒ 不报",
+        ("replay.witness_ok",
          lambda: replay_all(wit, runner=lambda c: (0, "tool-ok"))["problems"] == []),
-        ("贵事实挂见证 ⇒ 计入 witnessed（run() 输出用）",
+        ("replay.witness_counted",
          lambda: replay_all(wit, runner=lambda c: (0, "tool-ok"))["witnessed"] == 1),
-        ("★ 见证不符 ⇒ 必须报（来源漂移，值没变也算事故）",
-         lambda: any("见证不符" in x for x in
-                       replay_all(wit, runner=lambda c: (0, "tool-CHANGED"))["problems"])),
-        ("★ 见证命令 rc≠0 ⇒ 必须报（见证命令本身死了）",
-         lambda: any("见证**命令报错" in x for x in
-                       replay_all(wit, runner=lambda c: (1, ""))["problems"])),
-        ("★ 见证超时 ⇒ 必须报（见证该便宜，挂贵的见证等于没挂）",
-         lambda: any("见证**超时" in x for x in
-                       replay_all(wit, runner=lambda c: (None, ""))["problems"])),
-        ("★ 全部 replay=False 但都挂见证 ⇒ 不报「什么都没查」（守卫跟着调）",
-         lambda: not any("什么都没查" in x for x in
-                           replay_all(wit, runner=lambda c: (0, "tool-ok"))["problems"])),
+        ("★ replay.witness_mismatch",
+         lambda: codes(wit, lambda c: (0, "tool-CHANGED"))
+         == ["replay.witness_mismatch"]),
+        ("★ replay.witness_command_failed",
+         lambda: codes(wit, lambda c: (1, "")) == ["replay.witness_command_failed"]),
+        ("★ replay.witness_timeout",
+         lambda: codes(wit, lambda c: (None, "")) == ["replay.witness_timeout"]),
+        ("replay.witness_satisfies_guard",
+         lambda: "replay.all_skipped" not in
+         codes(wit, lambda c: (0, "tool-ok"))),
         # ④ 仪器校准档（issue #6 ①）
-        ("贵事实挂校准：校准过 ⇒ 不报",
+        ("replay.calibrate_ok",
          lambda: replay_all(cal, runner=lambda c: (0, "known-positive"))["problems"] == []),
-        ("贵事实挂校准 ⇒ 计入 calibrated（run() 输出用）",
+        ("replay.calibrate_counted",
          lambda: replay_all(cal, runner=lambda c: (0, "known-positive"))["calibrated"] == 1),
-        ("★ 校准不符 ⇒ 必须报（仪器失真：命令成功、值稳定也照报）",
-         lambda: any("仪器校准不符" in x for x in
-                       replay_all(cal, runner=lambda c: (0, "wrong"))["problems"])),
-        ("★ 校准命令 rc≠0 ⇒ 必须报",
-         lambda: any("校准**命令报错" in x for x in
-                       replay_all(cal, runner=lambda c: (1, ""))["problems"])),
-        ("★ 校准超时 ⇒ 必须报（校准该便宜，挂贵的校准等于没挂）",
-         lambda: any("校准**超时" in x for x in
-                       replay_all(cal, runner=lambda c: (None, ""))["problems"])),
-        ("★ 全部 replay=False 但只挂校准 ⇒ 不报「什么都没查」",
-         lambda: not any("什么都没查" in x for x in
-                           replay_all(cal, runner=lambda c: (0, "known-positive"))["problems"])),
+        ("★ replay.calibrate_mismatch",
+         lambda: codes(cal, lambda c: (0, "wrong")) == ["replay.calibrate_mismatch"]),
+        ("★ replay.calibrate_command_failed",
+         lambda: codes(cal, lambda c: (1, "")) == ["replay.calibrate_command_failed"]),
+        ("★ replay.calibrate_timeout",
+         lambda: codes(cal, lambda c: (None, "")) == ["replay.calibrate_timeout"]),
+        ("replay.calibrate_satisfies_guard",
+         lambda: "replay.all_skipped" not in
+         codes(cal, lambda c: (0, "known-positive"))),
     ]
 
 

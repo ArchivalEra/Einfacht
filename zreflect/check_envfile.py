@@ -53,6 +53,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
 import knobs                                              # noqa: E402
 from knobs import REGISTRY                         # noqa: E402
+from i18n import M                                 # noqa: E402
 
 ENV_FILE = (os.environ.get("REFLECT_ENV_FILE", "Einfacht.env")
             .strip() or "Einfacht.env")
@@ -120,10 +121,7 @@ def _phantom_token_problems(scanned, registry):
     out = []
     for tok in sorted(scanned):
         if tok not in registry:
-            out.append("记号 `%s` 出现在 zreflect/*.py 里但不在旋钮登记表"
-                       "（zreflect/knobs.py）—— 要么是 typo（会被所有程序"
-                       "静默忽略），要么是幻影旋钮（文档承诺了、代码不读，"
-                       "配了静默无效）。登记才算数" % tok)
+            out.append(M("envfile.unknown_knob", knob=tok))
     return out
 
 
@@ -141,12 +139,10 @@ def _existence_targets(kind, value):
 def _export_problems(name, value, registry, file_exists, dir_exists):
     """单个 export 的判据：空值 / 未登记 / 指向缺失（顺序即报告顺序）。"""
     if not value:
-        return ["`%s` 的值是空的 —— 空值会让钩子的"
-                " [ -f ] 守卫静默跳过（空不是通过）" % name]
+        return [M("envfile.empty_value", key=name)]
     kind = registry.get(name, (None,))[0]
     if kind is None:
-        return ["旋钮名 `%s` 不在登记表（zreflect/knobs.py）—— 打错"
-                "一位会被所有程序静默忽略，值永远到不了钩子" % name]
+        return [M("envfile.unregistered_knob", key=name)]
     targets = _existence_targets(kind, value)
     if targets is None:
         return []
@@ -155,22 +151,22 @@ def _export_problems(name, value, registry, file_exists, dir_exists):
     for t in paths:
         hit = dir_exists(t) if is_dir else file_exists(t)
         if not hit:
-            out.append("旋钮 `%s`（%s）指向的%s不存在：%s"
-                       " —— 钩子的 [ -f ] 守卫会静默跳过"
-                       "（路径相对仓库根）"
-                       % (name, registry.get(name, ("", "", "?"))[2],
-                          "目录" if is_dir else "文件", t))
+            # 「文件 / 目录」是语法名词而非旋钮值：拆成两个 code，模板里
+            # 不出现中文常量（本体零语言），旋钮名与路径仍走参数。
+            out.append(M("envfile.dir_missing" if is_dir
+                         else "envfile.file_missing",
+                         key=name,
+                         entry=registry.get(name, ("", "", "?"))[2],
+                         target=t))
     return out
 
 
 def _syntax_problems(syntax_ok):
     """sh -n 结论 → 问题：False = 文件语法坏；None = 仪器本身坏了。"""
     if syntax_ok is False:
-        return ["%s 过不了 sh -n（语法坏）⇒ 钩子要到提交"
-                "时刻才响亮地死，且报错指向不明" % ENV_FILE]
+        return [M("envfile.syntax_broken", name=ENV_FILE)]
     if syntax_ok is None:
-        return ["sh -n 跑不了（sh 不在？）—— 语法检查这个"
-                "仪器本身坏了，先修检查器，不许静默跳过"]
+        return [M("envfile.syntax_tool_broken")]
     return []
 
 
@@ -184,9 +180,7 @@ def problems(exports, registry, file_exists, dir_exists, syntax_ok=None,
     `syntax_ok` = sh -n 的结论（True / False；None = 仪器本身跑不了）。
     """
     if not exports:
-        return ["%s 里没有任何生效的 export（空文件或只剩注释）"
-                " —— 看起来配了、其实什么都没加载"
-                "（「部署了 ≠ 在跑」家族）" % ENV_FILE]
+        return [M("envfile.no_effective_export", name=ENV_FILE)]
     # 幻影 / typo 对账（扫描面）+ 每个 export 的载体判据 + sh 语法。
     out = _phantom_token_problems(scanned, registry)
     for name in sorted(exports):
@@ -214,22 +208,15 @@ def run(argv=None):
         # README 幻影）与载体是否存在无关，已搬到 knobs.py 并由
         # registry.problems() 收口（此前它焊在这里之后，本仓没有
         # Einfacht.env ⇒ 从未执行，实测踩到）。
-        return off("env 文件闸门：%s 不存在（钩子目录与仓库根都没有）"
-                   " ⇒ 本闸门未启用（可插拔模块；钩子回落纯环境变量"
-                   " + 默认名。要启用：cp reflect-hooks/"
-                   "Einfacht.env.example reflect-hooks/%s）"
-                   "。注：名册自洽性（幻影旋钮）不随本闸门关闭 —— 见 "
-                   "registry.problems() / knobs.py" % (ENV_FILE, ENV_FILE))
+        return off(M("envfile.off", name=ENV_FILE))
     try:
         with open(p, encoding="utf-8", errors="replace") as fh:
             text = fh.read()
     except OSError as e:
-        return fatal("%s 读不了：%s" % (p, e))
+        return fatal(M("envfile.unreadable", path=p, error=e))
     scanned = known_knobs()
     if not scanned:
-        return fatal("在 %s 里没发现任何 REFLECT_* 记号 —— 对账扫描"
-                     "失败（zreflect/ 不在？），本闸门的仪器坏了"
-                     % repo("zreflect"))
+        return fatal(M("envfile.scan_empty", path=repo("zreflect")))
     # 语法检查（仪器）：sh -n 只解析不执行。语法错 ⇒ 是要报
     # 的问题；跑不了 ⇒ 仪器坏了（syntax_ok=None，如实报）。
     syntax = None
@@ -245,10 +232,9 @@ def run(argv=None):
                      lambda t: os.path.exists(repo(t)),
                      lambda t: os.path.isdir(repo(t)),
                      syntax_ok=syntax, scanned=scanned)
-    return finish("env 文件闸门", probs,
-                  "env 文件闸门：OK（%s：%d 条生效 export，名字全在登记表、"
-                  "文件旋钮指向都在）"
-                  % (os.path.relpath(p, repo()), len(exports)))
+    return finish(M("envfile.title"), probs,
+                  M("envfile.ok", path=os.path.relpath(p, repo()),
+                    count=len(exports)))
 
 
 def _cases():
@@ -269,69 +255,69 @@ def _cases():
     typo = "REFLECT_" + "DOCSS"
     return [
         # ① 正常不报
-        ("生效 export 全合法（含数字旋钮）⇒ 不报",
+        ("envfile.ok",
          lambda: problems(good_env, registry, fe, de, syntax_ok=True,
                           scanned=registry.keys()) == []),
-        ("非 REFLECT_ 前缀的 export ⇒ 不报（不是本闸门的活）",
+        ("envfile.non_reflect_export",
          lambda: problems({"PATH": "/usr/bin"}, registry, fe, de,
                           syntax_ok=True, scanned=registry.keys()) == []),
-        ("扫描面对账干净（全在登记表）⇒ 不报",
+        ("envfile.scan_clean",
          lambda: problems(good_env, registry, fe, de, syntax_ok=True,
                           scanned=set(registry) | {"REFLECT_FACTS"}) == []),
-        ("三语 README 的旋钮提名 ⊆ 登记 ⇒ 不报（判据归 knobs）",
+        ("envfile.readme_nominations_registered",
          lambda: knobs.readme_problems(files={
-             "README.md": "用 REFLECT_DOC 与 REFLECT_READMES。",
+             "README.md": "REFLECT_DOC REFLECT_READMES",
              "README.zh.md": "x", "README.de.md": "x"}) == []),
         # ② 该报的必须报
-        ("★ 扫描面出现未登记记号 ⇒ 必须报（幻影 / typo，登记才算数）",
-         lambda: any("不在旋钮登记表" in x for x in problems(
+        ("★ envfile.unknown_knob",
+         lambda: any(getattr(p,"code","") == "envfile.unknown_knob" for p in problems(
              good_env, registry, fe, de, syntax_ok=True,
              scanned=set(registry) | {typo}))),
-        ("★ 旋钮名打错一位 ⇒ 必须报（静默忽略家族）",
-         lambda: any("不在登记表" in x for x in problems(
+        ("★ envfile.unregistered_knob",
+         lambda: any(getattr(p,"code","") == "envfile.unregistered_knob" for p in problems(
              {typo: "STATE.md"}, registry, fe, de, syntax_ok=True,
              scanned=registry.keys()))),
-        ("★ 文件旋钮指向缺失文件 ⇒ 必须报（[ -f ] 静默跳过家族）",
-         lambda: any("不存在" in x and "REFLECT_DOC" in x for x in problems(
+        ("★ envfile.file_missing",
+         lambda: any(getattr(p,"code","") == "envfile.file_missing" for p in problems(
              {"REFLECT_DOC": "MYSTATE.md"}, registry, fe, de,
              syntax_ok=True, scanned=registry.keys()))),
-        ("★ 清单旋钮有一份缺失 ⇒ 必须报（点名缺失的那份）",
-         lambda: any("README.missing.md" in x for x in problems(
+        ("★ envfile.file_missing.list_target",
+         lambda: any(getattr(p,"code","") == "envfile.file_missing" and p.params.get("target") == "README.missing.md" for p in problems(
              {"REFLECT_READMES": "README.md,README.missing.md"},
              registry, fe, de, syntax_ok=True, scanned=registry.keys()))),
-        ("★ 目录旋钮指向文件 ⇒ 必须报（目录探针不命中）",
-         lambda: any("目录" in x for x in problems(
+        ("★ envfile.dir_missing",
+         lambda: any(getattr(p,"code","") == "envfile.dir_missing" for p in problems(
              {"REFLECT_QUESTIONS": "STATE.md"}, registry, fe, de,
              syntax_ok=True, scanned=registry.keys()))),
-        ("★ 值为空 ⇒ 必须报（空值让守卫静默跳过）",
-         lambda: any("值是空的" in x for x in problems(
+        ("★ envfile.empty_value",
+         lambda: any(getattr(p,"code","") == "envfile.empty_value" for p in problems(
              {"REFLECT_DOC": ""}, registry, fe, de, syntax_ok=True,
              scanned=registry.keys()))),
-        ("★ sh -n 不过 ⇒ 必须报",
-         lambda: any("sh -n" in x for x in problems(
+        ("★ envfile.syntax_broken",
+         lambda: any(getattr(p,"code","") == "envfile.syntax_broken" for p in problems(
              good_env, registry, fe, de, syntax_ok=False,
              scanned=registry.keys()))),
-        ("★ sh -n 跑不了 ⇒ 必须报（仪器坏了不许静默跳过）",
-         lambda: any("跑不了" in x for x in problems(
+        ("★ envfile.syntax_tool_broken",
+         lambda: any(getattr(p,"code","") == "envfile.syntax_tool_broken" for p in problems(
              good_env, registry, fe, de, syntax_ok=None,
              scanned=registry.keys()))),
         # ③ 空输入必须报
-        ("★ 空 export 集（空文件 / 只剩注释）⇒ 必须报",
+        ("★ envfile.no_effective_export（零值守卫）",
          lambda: problems({}, registry, fe, de, syntax_ok=True,
                           scanned=registry.keys()) != []),
         # 边界（判据归 knobs.py；此处保留一条串联证明搬运没丢语义）：
         # 假记号不许从别的前缀里切出来（翻案示例文本曾被切成假旋钮名）。
         # ⚠️ 样例用拼接构造：本文件在扫描面内，字面量写出来会被对账收编。
-        ("★ 前缀词里的记号不许被切出假旋钮名",
+        ("★ envfile.prefix_word_not_sliced",
          lambda: knobs.readme_problems(files={
-             "README.md": "> ZCODE_" + typo + " 这条是已翻案的示例。",
+             "README.md": "> ZCODE_" + typo,
              "README.zh.md": "x", "README.de.md": "x"}) == []),
         # 引号剥离（_QUOTES_RE 的显式优先级只为写明白，行为逐字不变）：
         # 复跑：python3 zreflect/check_envfile.py --selftest
-        ("首尾引号被剥（\"hello\" ⇒ hello）",
+        ("envfile.strip_quotes",
          lambda: parse_exports("D=\"hello\"")["D"] == "hello"
          and parse_exports("D='hello'")["D"] == "hello"),
-        ("★ 中间引号不许被剥（a\"b ⇒ a\"b；只剥首尾）",
+        ("★ envfile.inner_quotes_kept",
          lambda: parse_exports("D=a\"b")["D"] == "a\"b"
          and parse_exports("D='a\"b'")["D"] == "a\"b"),
     ]

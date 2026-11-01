@@ -43,6 +43,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
 from gate import repo                                     # noqa: E402
+from i18n import M                                        # noqa: E402
 
 DEFAULT_SPEC = "pins.json"
 
@@ -74,7 +75,7 @@ def _run(cmd):
 
 def _required_field_problems(p):
     """pin 条目必填字段（name / worktree）缺失 ⇒ 报（why/name 必填的家族规矩）。"""
-    return ["pin 缺字段 %s: %r（why/name 必填的家族规矩）" % (f, p)
+    return [M("pins.pin_missing_field", field=f, entry=p)
             for f in ("name", "worktree") if not p.get(f)]
 
 
@@ -87,10 +88,11 @@ def _head_problems(p, root, run):
     """读 worktree HEAD。返回 (问题清单, head 或 None)；None ⇒ 本 pin 到此为止。"""
     wt = _resolve_worktree(root, p)
     if not os.path.isdir(wt):
-        return ["%s: worktree %s 不存在（指针在、树不在）" % (p["name"], p["worktree"])], None
+        return [M("pins.worktree_missing", name=p["name"],
+                  path=p["worktree"])], None
     rc, head = run("git -C %s rev-parse HEAD" % wt)
     if rc != 0:
-        return ["%s: worktree HEAD 读不到（不是 git 树？）" % p["name"]], None
+        return [M("pins.head_unreadable", name=p["name"])], None
     return [], head
 
 
@@ -102,17 +104,17 @@ def _tree_pin_problems(p, head, run):
     problems, skips = [], []
     rc, out = run(p["stamp_read"])
     if rc != 0 or not out:
-        skips.append("%s: stamp 读不到（未供给？）" % p["name"])
+        skips.append(M("pins.stamp_unreadable", name=p["name"]))
         return problems, skips
     parts = out.split()
     if len(parts) < 3:
-        problems.append("%s: stamp 形态坏（要 name/branch/commit/dirty）: %r" % (p["name"], out[:40]))
+        problems.append(M("pins.stamp_malformed", name=p["name"], actual=out[:40]))
         return problems, skips
     if parts[2] != head:
-        problems.append("%s: 派生副本 commit %s ≠ worktree HEAD %s（供给后指针 bump 了？）"
-                        % (p["name"], parts[2][:12], head[:12]))
+        problems.append(M("pins.commit_mismatch", name=p["name"],
+                          declared=parts[2][:12], actual=head[:12]))
     if len(parts) > 3 and parts[3] not in ("0", ""):
-        problems.append("%s: 派生副本带本地改动（dirty=%s）" % (p["name"], parts[3]))
+        problems.append(M("pins.dirty", name=p["name"], count=parts[3]))
     return problems, skips
 
 
@@ -122,17 +124,21 @@ def _version_pin_problems(p, run):
     rc, out = run(p.get("version_read", ""))
     first = out.splitlines()[0] if out else ""
     if rc != 0 or not first:
-        skips.append("%s: 版本命令读不到" % p["name"])
+        skips.append(M("pins.version_unreadable", name=p["name"]))
         return problems, skips
     if p.get("expect_version") and p["expect_version"] not in first:
-        problems.append("%s: 版本漂移（期望 %s，实测 %s）"
-                        % (p["name"], p["expect_version"], first[:48]))
+        problems.append(M("pins.version_drift", name=p["name"],
+                          declared=p["expect_version"], actual=first[:48]))
     return problems, skips
 
 
 def _pin_problems(p, root, run):
     """单个 pin 的三条断言（字段 / HEAD / kind 分派）。返回 (problems, skips)。"""
     problems, skips = _required_field_problems(p), []
+    if problems:
+        # 必填字段缺失 ⇒ 到此为止（后面的 HEAD / kind 读取都要 name/worktree，
+        # 缺字段本身就是要报的事，别让它退化成 KeyError）。
+        return problems, skips
     head_probs, head = _head_problems(p, root, run)
     problems += head_probs
     if head is None:
@@ -143,7 +149,7 @@ def _pin_problems(p, root, run):
     elif kind == "version":
         tree_probs, tree_skips = _version_pin_problems(p, run)
     else:
-        tree_probs = ["%s: 未知 kind %r（tree | version）" % (p["name"], kind)]
+        tree_probs = [M("pins.unknown_kind", name=p["name"], field=kind)]
         tree_skips = []
     return problems + tree_probs, skips + tree_skips
 
@@ -156,7 +162,7 @@ def check(spec, run=_run, root=None):
     root = repo() if root is None else root
     pins = spec.get("pins") or []
     if not pins:
-        return ["pins 为空（零值守卫：空断言面不是通过）"], []
+        return [M("pins.empty")], []
     problems, skips = [], []
     for p in pins:
         probs, sks = _pin_problems(p, root, run)
@@ -170,17 +176,16 @@ def main(argv):
     path = spec_path if os.path.isabs(spec_path) else repo(spec_path)
     if not os.path.isfile(path):
         if explicit:
-            return fatal("显式指定的规格 %s 不存在（--spec / REFLECT_PINS）—— "
-                         "先写规格（或撤掉指定）" % spec_path)
-        return off("未启用（%s 不存在 ⇒ 明说未启用退 0，可插拔）" % spec_path)
+            return fatal(M("pins.explicit_spec_missing", name=spec_path))
+        return off(M("pins.off", name=spec_path))
     spec, err = load_spec(path)
     if err:
-        return fatal("规格 %s 坏：%s" % (spec_path, err))
+        return fatal(M("pins.spec_broken", name=spec_path, error=err))
     problems, skips = check(spec)
     for x in skips:
-        print("SKIP: %s" % x, file=sys.stderr)
-    return finish("pin 闸门", problems,
-                  "pin 闸门：OK（%d 个 pin 全部一致）" % len(spec.get("pins") or []))
+        print("SKIP: %s" % x, file=sys.stderr)   # 契约前缀在发射点字面量
+    return finish(M("pins.title"), problems,
+                  M("pins.ok", count=len(spec.get("pins") or [])))
 
 
 def _cases():
@@ -217,25 +222,41 @@ def _cases():
                            "stamp_read": "false"}]}
     nopin_spec = {"pins": []}
     return [
-        ("规格名解析：--spec > 旋钮 > 默认名（显式带回 True）",
+        ("pins.resolve_spec",
          lambda: resolve_spec(["--spec", "x.json"], "K.json") == ("x.json", True)
          and resolve_spec([], "K.json") == ("K.json", True)
          and resolve_spec([], "") == ("pins.json", False)),
         # ① 正常不报
-        ("stamp/版本全一致 ⇒ 不报", lambda: check(spec, run=_run, root=d) == ([], [])),
+        ("pins.ok", lambda: check(spec, run=_run, root=d) == ([], [])),
         # ② 该报的必须报
-        ("★ 派生副本 commit ≠ HEAD ⇒ 必须报（供给后指针 bump）",
-         lambda: any("≠" in x for x in check(bad_spec, run=_run, root=d)[0])),
-        ("★ 派生副本 dirty ⇒ 必须报（手改派生树）",
-         lambda: any("dirty" in x for x in check(dirty_spec, run=_run, root=d)[0])),
-        ("★ 版本漂移 ⇒ 必须报", lambda: any("版本漂移" in x for x in check(ver_spec, run=_run, root=d)[0])),
-        ("★ stamp 读不到 ⇒ SKIP（明说，不是通过）",
-         lambda: any("SKIP" in x or "读不到" in x for x in check(skip_spec, run=_run, root=d)[1])),
-        ("★ pins 为空 ⇒ 必须报（零值守卫）", lambda: check(nopin_spec, root=d)[0] != []),
-        ("★ worktree 不存在 ⇒ 必须报（指针在、树不在）",
-         lambda: any("不存在" in x for x in check(
+        ("★ pins.commit_mismatch",
+         lambda: [p.code for p in check(bad_spec, run=_run, root=d)[0]]
+         == ["pins.commit_mismatch"]),
+        ("★ pins.dirty",
+         lambda: [p.code for p in check(dirty_spec, run=_run, root=d)[0]]
+         == ["pins.dirty"]),
+        ("★ pins.version_drift",
+         lambda: [p.code for p in check(ver_spec, run=_run, root=d)[0]]
+         == ["pins.version_drift"]),
+        ("★ pins.stamp_unreadable",
+         lambda: [p.code for p in check(skip_spec, run=_run, root=d)[1]]
+         == ["pins.stamp_unreadable"]),
+        ("★ pins.worktree_missing",
+         lambda: [p.code for p in check(
              {"pins": [{"name": "x", "kind": "tree", "worktree": "nope",
-                        "stamp_read": "true"}]}, run=_run, root=d)[0])),
+                        "stamp_read": "true"}]}, run=_run, root=d)[0]]
+         == ["pins.worktree_missing"]),
+        ("★ pins.pin_missing_field",
+         lambda: [p.code for p in check(
+             {"pins": [{"name": "x", "kind": "tree", "stamp_read": "true"}]},
+             run=_run, root=d)[0]] == ["pins.pin_missing_field"]),
+        ("★ pins.unknown_kind",
+         lambda: [p.code for p in check(
+             {"pins": [{"name": "x", "kind": "weird", "worktree": wt}]},
+             run=_run, root=d)[0]] == ["pins.unknown_kind"]),
+        # ③ 空输入必须报
+        ("★ pins.empty",
+         lambda: [p.code for p in check(nopin_spec, root=d)[0]] == ["pins.empty"]),
     ]
 
 
@@ -243,4 +264,4 @@ GATE = meta("pin 闸门", "派生树 pin 一致性（stamp commit / dirty / 版�
             knobs=("REFLECT_PINS",))
 
 if __name__ == "__main__":
-    sys.exit(main_selftest_or(sys.argv[1:], "check_pins（派生树 pin 一致性）", _cases, main))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_pins", _cases, main))

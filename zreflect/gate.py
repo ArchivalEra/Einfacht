@@ -37,22 +37,28 @@ def repo(*parts):
     return os.path.join(GATE_REPO, *parts)
 
 
-def require_nonempty(name, seq, what="输入"):
+def require_nonempty(name, seq, what=None):
     """零值守卫：收集阶段什么都没收到 ⇒ 报错，**不许当「干净」**。
 
     这是本包最重要的一行。绝大多数「闸门假装通过」的事故，根因都是这里没守：
     遍历一个不存在的目录得到空集，然后「没有发现违规」——两句都是真的，结论是错的。
+
+    `what` = 被收集物的称呼（默认走语言包 `gate.input_label`）。
     """
+    import i18n                                          # noqa: PLC0415
+    if what is None:
+        what = i18n.M("gate.input_label")
     items = list(seq)
     if not items:
-        raise SystemExit(
-            "FATAL: %s：%s 是空的。空输入不是「全部通过」—— 要么收集逻辑坏了，"
-            "要么路径给错了。先修输入，别关闸门。" % (name, what)
-        )
+        # `FATAL:` 是机器契约前缀 —— 在**发射点**字面量（不进语言包）。
+        # `what` 可能是调用方给的 Message（如 `M("stale.scanned_docs")`）：
+        # 先 str() 拍平，否则 null 包里会渲染成嵌套的 `repr(Message)`。
+        raise SystemExit("FATAL: %s" % i18n.M("gate.require_nonempty",
+                                              name=name, what=str(what)))
     return items
 
 
-def guard_nonempty(name, seq, what="输入"):
+def guard_nonempty(name, seq, what=None):
     """`require_nonempty` 的 rc 版：空 ⇒ 打印 FATAL、返回 2；非空 ⇒ None。
 
     给「直接跑」的检查器用（它们要的是退出码，不是异常）。
@@ -91,17 +97,20 @@ def load_spec(path):
 
     返回错误而不是 raise：调用方要把旋钮名 / 路径放进自己的 FATAL 措辞。
     """
+    import i18n                                          # noqa: PLC0415
     try:
         with open(path, encoding="utf-8") as fh:
             return json.load(fh), None
     except (OSError, ValueError) as e:
-        return None, "%s 读不了 / 不是合法 JSON：%s" % (path, e)
+        return None, i18n.M("gate.spec_unreadable", path=path, error=e)
 
 
 def finish(name, problems, ok):
     """问题循环 + OK 行 —— rc 契约（1 = 发现问题 / 0 = 绿）的唯一产地。"""
+    import i18n                                          # noqa: PLC0415
     if problems:
-        print("%s：%d 个问题" % (name, len(problems)), file=sys.stderr)
+        print(i18n.M("gate.problems_header",
+                     name=name, count=len(problems)), file=sys.stderr)
         for p in problems:
             print("  · " + p, file=sys.stderr)
         _maybe_hint()
@@ -177,12 +186,8 @@ def env_hint(consumed=(), module=None):
     if any(os.environ.get(k, "").strip() for k in consumed):
         return None                      # 至少设了一个旋钮 ⇒ 认为是有意配置
     rel = os.path.relpath(carrier, GATE_REPO)
-    return ("检测到 %s，但本次进程一个旋钮都没设 —— 判据可能回落默认名，"
-            "结果与钩子语境不同。\n"
-            "       try running it with %s：\n"
-            "         set -a; . %s; set +a\n"
-            "       （或 `REFLECT_*=<值> python3 ...` 显式给旋钮）"
-            % (rel, rel, rel))
+    import i18n                                          # noqa: PLC0415
+    return i18n.M("gate.env_hint", file=rel)
 
 
 def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit"):
@@ -281,15 +286,16 @@ def _const_falsy(node):
 
 
 def _short_circuit_reason(node):
-    """这个 AST 节点构成恒真短路吗 ⇒ 原因字符串；否则 None。"""
+    """这个 AST 节点构成恒真短路吗 ⇒ 原因消息；否则 None。"""
     import ast as _ast                                   # noqa: PLC0415
+    import i18n                                          # noqa: PLC0415
     if isinstance(node, _ast.BoolOp):
         if isinstance(node.op, _ast.Or) and any(
                 _const_truthy(o) for o in node.values):
-            return "`or <真值常量>` —— 布尔或被常量短路，永远 PASS"
+            return i18n.M("gate.never_falsifiable_or")
         if isinstance(node.op, _ast.And) and any(
                 _const_falsy(o) for o in node.values):
-            return "`and <假值常量>` —— 布尔与被常量短路，永远 fail"
+            return i18n.M("gate.never_falsifiable_and")
     if isinstance(node, _ast.Compare) and len(node.comparators) == 1:
         left, right = node.left, node.comparators[0]
         # 排除裸函数调用两次的**合法**纯函数性检验
@@ -298,7 +304,7 @@ def _short_circuit_reason(node):
             return None
         if _ast.dump(left) == _ast.dump(right) and isinstance(
                 node.ops[0], (_ast.Eq, _ast.LtE, _ast.GtE)):
-            return "比较两侧是同一个表达式 —— 恒真（x == x）"
+            return i18n.M("gate.never_falsifiable_self_compare")
     return None
 
 
@@ -355,32 +361,43 @@ def selftest(name, cases):
       ② 该报的必须报（反向断言 —— 否则这个检查器可能是装饰）
       ③ 空输入必须报（零值守卫）
     """
+    import i18n                                          # noqa: PLC0415
     if not cases:
         # 0/0 洞（本文件开头记载的第三种事故）：空用例清单的自证什么都没查，
         # 却打印「0 PASS / 0 FAIL」绿着退场 —— runner 的 grep 照样认它。
         # 空清单是写自证时的形状错误，当场响，不许绿。
-        raise SystemExit(
-            "FATAL: %s 的自证用例清单为空 —— 三档用例齐全是硬规矩"
-            "（0/0 不是通过，是「这个自证什么都没查」）" % name
-        )
+        raise SystemExit("FATAL: %s"
+                         % i18n.M("gate.selftest_empty_cases", name=name))
     bad = 0
     for label, fn in cases:
         # issue #23：恒真断言探测 —— 一条 `or True` 的断言与真断言
         # 在「返回 0 + 打摘要行」这个面上同形，必须单独判。
         why = never_falsifiable(fn)
         if why:
-            print("fail | %s（断言不可证伪：%s）" % (label, why))
+            # `fail | ` 是自证机器行前缀 —— 发射点字面量，不进语言包
+            print("fail | %s" % i18n.M("gate.case_unfalsifiable",
+                                       label=label, why=why))
             bad += 1
             continue
         try:
             ok = bool(fn())
         except SystemExit as e:
-            ok, label = False, "%s（未预期的 SystemExit：%s）" % (label, e)
+            print("fail | %s" % i18n.M("gate.case_unexpected_systemexit",
+                                       label=label, error=e))
+            bad += 1
+            continue
         except Exception as e:                      # noqa: BLE001
-            ok, label = False, "%s（异常 %r）" % (label, e)
+            print("fail | %s" % i18n.M("gate.case_raised",
+                                       label=label, error=e))
+            bad += 1
+            continue
         print("%s | %s" % ("PASS" if ok else "fail", label))
         bad += 0 if ok else 1
-    print("=== %s 自证：%d PASS / %d fail ===" % (name, len(cases) - bad, bad))
+    # 人读摘要行。`=== ` 前缀与收尾 ` ===` 都是机器行形状 —— 两侧留在
+    # **发射点**字面量（语言包值不许以 `^===` 开头，见 i18n._validate）。
+    print("=== %s ===" % i18n.M("gate.selftest_summary",
+                                name=name, passed=len(cases) - bad,
+                                failed=bad))
     # 机器摘要行（issue #3 ③）：与检查器名无关的固定格式，runner/CI 直接
     # grep；gates-selftest.sh 会校验每个自证都有这一行（缺了 ⇒ 红）。
     print("=== %d PASS / %d FAIL ===" % (len(cases) - bad, bad))
@@ -392,9 +409,21 @@ def main_selftest_or(args, name, cases, run):
 
     `cases` 可以是清单，也可以是**工厂 callable**（需要搭临时夹具的
     自证 —— ab/locks/pins 体例 —— 传函数，由这里调用）。
+
+    **这里是语言包的进程级激活点**（issue #26）：`REFLECT_LANG` 未设 ⇒ null 包
+    （本体零语言）；设了但包不在 ⇒ `MissingPack` ⇒ FATAL rc 2（不做「没装就
+    回落」）。每个闸门都经这里 ⇒ 一处接线，全部受益。
     """
     if "--selftest" in args:
         return selftest(name, cases() if callable(cases) else cases)
+    import i18n                                          # noqa: PLC0415
+    try:
+        i18n.activate()
+    except Exception as e:                               # noqa: BLE001
+        # 装配失败时 `_ACTIVE` 仍是上一档（通常是 null 包）⇒ M() 照样渲染得出来
+        print("FATAL: %s" % i18n.M("gate.pack_assembly_failed", error=e),
+              file=sys.stderr)
+        return 2
     return run([a for a in args if a != "--selftest"])
 
 
@@ -440,6 +469,8 @@ MODULE = module_meta("闸门平台", "rc 契约 + 零值守卫 + 三档自证 + 
 
 
 if __name__ == "__main__":
-    print("闸门平台。被检查的仓库根：%s" % GATE_REPO)
-    print("用法：在你的检查器里 `from gate import selftest, require_nonempty`。")
+    import i18n                                          # noqa: PLC0415
+    i18n.activate()
+    print(i18n.M("gate.platform_root", root=GATE_REPO))
+    print(i18n.M("gate.platform_usage"))
     sys.exit(0)

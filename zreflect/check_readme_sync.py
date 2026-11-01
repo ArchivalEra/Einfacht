@@ -31,6 +31,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import finish, main_selftest_or, meta, repo  # noqa: E402
+from i18n import M                                     # noqa: E402
 
 READMES = "README.md,README.zh.md,README.de.md"
 
@@ -45,24 +46,24 @@ def problems_structure(files, langs):
     out = []
     if not langs:
         # 零值守卫：清单为空 ⇒ 「README 组都齐」是一句无法判定的话。
-        return ["REFLECT_READMES 是空的 —— 拿空清单判「README 组」是空话（零值守卫）"]
+        return [M("readme.names_empty_structure")]
     # 单条目 ⇒ 互链判据退化（issue #8）：只有一份语言时「切换器必须
     # 指全全部语言」自动成立，自引用是退化要求。存在 / 非空判据照常，
     # 互链不查（退化判据由 run() 明说不适用 —— 不许假装查过）。
     switcher_applies = len(langs) > 1
     for name in langs:
         if name not in files:
-            out.append("缺 README：%s —— 三语是同一条断言的三份拷贝，缺一份 = 断言散了架" % name)
+            out.append(M("readme.file_missing", name=name))
             continue
         body = files[name] or ""
         if not body.strip():
-            out.append("%s 存在但为空 —— 空文件不是一门语言" % name)
+            out.append(M("readme.file_empty", name=name))
         if not switcher_applies:
             continue
         for other in langs:
             if other not in body:
-                out.append("%s 里没有对 %s 的引用 —— 语言切换器必须指全全部语言，"
-                           "否则读者从这一份走不到另一份" % (name, other))
+                out.append(M("readme.switcher_incomplete",
+                             name=name, expected=other))
     return out
 
 
@@ -70,14 +71,12 @@ def problems_push(changed, langs):
     """推送集判据（纯函数）。`changed` = 本次推送改动过的文件路径集合。"""
     out = []
     if not langs:
-        return ["REFLECT_READMES 是空的 —— 「三语同批」没有判据对象（零值守卫）"]
+        return [M("readme.names_empty_push")]
     if not changed:
-        return ["本次推送的改动集是空的 —— 空输入不是通过（零值守卫）："
-                "「每次推送必须更新全部 README」无法在一堆空上成立"]
+        return [M("readme.changed_empty")]
     for name in langs:
         if name not in changed:
-            out.append("%s 不在这次要推送的改动文件里 ⇒ README 必须**同批**更新"
-                       "（苛刻是有意的：缺一份 = 另两份从这一刻起过期）" % name)
+            out.append(M("readme.not_in_push", name=name))
     return out
 
 
@@ -88,15 +87,15 @@ def run(argv):
         if src == "-":
             lines = sys.stdin.read().splitlines()
         elif not os.path.exists(src):
-            print("FATAL: 改动清单文件不存在：%s —— 找不到清单不许算通过（零值守卫）" % src,
+            print("FATAL: %s" % M("readme.changed_file_missing", name=src),
                   file=sys.stderr)
             return 2
         else:
             lines = open(src, encoding="utf-8", errors="replace").read().splitlines()
         changed = {l.strip().strip('"') for l in lines if l.strip()}
         probs = problems_push(changed, langs)
-        return finish("三语 README 闸门", probs,
-                      "三语 README 闸门：OK（推送改动集含全部 %d 份 README）" % len(langs))
+        return finish(M("readme.title"), probs,
+                      M("readme.ok_push", count=len(langs)))
     files = {}
     for name in langs:
         p = repo(name)
@@ -105,17 +104,14 @@ def run(argv):
     if len(langs) == 1:
         # 退化的互链判据要说出口（issue #8）—— 与其他闸门声明
         # 「未启用」同款：单条目时互链自动成立，不许假装查过。
-        print("三语 README 闸门：REFLECT_READMES 只有一份（%s）⇒ 切换器互链"
-              "判据不适用（单条目时「必须指全全部语言」自动成立，自引用是"
-              "退化要求）；存在 / 非空判据照常" % langs[0], file=sys.stderr)
+        print(M("readme.switcher_not_applicable", name=langs[0]),
+              file=sys.stderr)
     probs = problems_structure(files, langs)
     if len(langs) == 1:
-        return finish("三语 README 闸门", probs,
-                      "三语 README 闸门：OK（%s 存在且非空；切换器互链判据不适用）"
-                      % langs[0])
-    return finish("三语 README 闸门", probs,
-                  "三语 README 闸门：OK（%d 份 README 都在、非空、切换器互链完好）"
-                  % len(langs))
+        return finish(M("readme.title"), probs,
+                      M("readme.ok_single", name=langs[0]))
+    return finish(M("readme.title"), probs,
+                  M("readme.ok_structure", count=len(langs)))
 
 
 LANGS = ("README.md", "README.zh.md", "README.de.md")
@@ -128,45 +124,53 @@ def _trio():
 def _cases():
     return [
         # ① 正常不报
-        ("三份齐全且互链 ⇒ 不报", lambda: problems_structure(_trio(), LANGS) == []),
-        ("推送改动集含全部三份 ⇒ 不报",
+        ("readme.trio_linked",
+         lambda: problems_structure(_trio(), LANGS) == []),
+        ("readme.push_all_present",
          lambda: problems_push(set(LANGS) | {"code.py"}, LANGS) == []),
         # ① 正常不报（单条目：互链判据退化，issue #8）
-        ("单条目且无自引用 ⇒ 不报（互链 vacuous，issue #8）",
-         lambda: problems_structure({"maintaince.md": "# 纪律\n\n正文里没有任何链接。"},
+        ("readme.single_no_self_reference",
+         lambda: problems_structure({"maintaince.md": "# rules\n\nno links here."},
                                     ("maintaince.md",)) == []),
-        ("单条目推送改动集含它 ⇒ 不报",
+        ("readme.single_push_contains_it",
          lambda: problems_push({"maintaince.md", "a.py"}, ("maintaince.md",)) == []),
         # ② 该报的必须报
-        ("★ 少一份 README ⇒ 必须报（缺的那份点名）",
-         lambda: any("README.de.md" in x for x in problems_structure(
-             {k: v for k, v in _trio().items() if k != "README.de.md"}, LANGS))),
-        ("★ 某份里缺对第三份的切换器链接 ⇒ 必须报",
-         lambda: any("切换器" in x for x in problems_structure(
-             dict(_trio(), **{"README.md": "只有 [README.md](README.md) 和 "
-                                  "[README.zh.md](README.zh.md)"}), LANGS))),
-        ("★ README 存在但为空 ⇒ 必须报（空文件不是一门语言）",
-         lambda: any("为空" in x for x in problems_structure(
-             dict(_trio(), **{"README.zh.md": "   \n"}), LANGS))),
-        ("★ 推送改动集缺一份 ⇒ 必须报（苛刻是有意的）",
-         lambda: any("README.de.md" in x for x in problems_push(
-             {"README.md", "README.zh.md", "zreflect/facts.py"}, LANGS))),
+        ("★ readme.file_missing",
+         lambda: [p.code for p in problems_structure(
+             {k: v for k, v in _trio().items() if k != "README.de.md"}, LANGS)]
+         == ["readme.file_missing"]),
+        ("★ readme.switcher_incomplete",
+         lambda: [p.code for p in problems_structure(
+             dict(_trio(), **{"README.md": "only [README.md](README.md) and "
+                                  "[README.zh.md](README.zh.md)"}), LANGS)]
+         == ["readme.switcher_incomplete"]),
+        ("★ readme.file_empty",
+         lambda: "readme.file_empty" in [p.code for p in problems_structure(
+             dict(_trio(), **{"README.zh.md": "   \n"}), LANGS)]),
+        ("★ readme.not_in_push",
+         lambda: [p.code for p in problems_push(
+             {"README.md", "README.zh.md", "zreflect/facts.py"}, LANGS)]
+         == ["readme.not_in_push"]),
         # ② 该报的必须报（单条目：存在 / 非空 / 同批 三判据都不退化，issue #8）
-        ("★ 单条目但文件缺失 ⇒ 必须报（存在判据不退化）",
-         lambda: any("缺 README" in x and "maintaince.md" in x
-                     for x in problems_structure({}, ("maintaince.md",)))),
-        ("★ 单条目但为空 ⇒ 必须报（非空判据不退化）",
-         lambda: any("为空" in x for x in problems_structure(
-             {"maintaince.md": "  \n"}, ("maintaince.md",)))),
-        ("★ 单条目推送集不含它 ⇒ 必须报（同批判据不退化）",
-         lambda: any("maintaince.md" in x for x in problems_push(
-             {"other.md"}, ("maintaince.md",)))),
+        ("★ readme.single_file_missing",
+         lambda: [p.code for p in problems_structure({}, ("maintaince.md",))]
+         == ["readme.file_missing"]),
+        ("★ readme.single_file_empty",
+         lambda: "readme.file_empty" in [p.code for p in problems_structure(
+             {"maintaince.md": "  \n"}, ("maintaince.md",))]),
+        ("★ readme.single_not_in_push",
+         lambda: [p.code for p in problems_push({"other.md"}, ("maintaince.md",))]
+         == ["readme.not_in_push"]),
         # ③ 空输入必须报
-        ("★ 空清单（REFLECT_READMES=空）⇒ 结构判据必须报（零值守卫）",
-         lambda: problems_structure(_trio(), ()) != []),
-        ("★ 空清单 ⇒ 推送判据必须报", lambda: problems_push({"README.md"}, ()) != []),
-        ("★ 空改动集 ⇒ 推送判据必须报（空不是通过）",
-         lambda: problems_push(set(), LANGS) != []),
+        ("★ readme.names_empty_structure",
+         lambda: [p.code for p in problems_structure(_trio(), ())]
+         == ["readme.names_empty_structure"]),
+        ("★ readme.names_empty_push",
+         lambda: [p.code for p in problems_push({"README.md"}, ())]
+         == ["readme.names_empty_push"]),
+        ("★ readme.changed_empty",
+         lambda: [p.code for p in problems_push(set(), LANGS)]
+         == ["readme.changed_empty"]),
     ]
 
 
@@ -174,6 +178,4 @@ GATE = meta("三语 README 闸门", "语言版本是同一条断言的三份拷�
             knobs=("REFLECT_READMES",), name_dependent=True)
 
 if __name__ == "__main__":
-    sys.exit(main_selftest_or(sys.argv[1:],
-                              "check_readme_sync（三语 README：结构互链 + 每次推送必须同批）",
-                              _cases, run))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_readme_sync", _cases, run))
