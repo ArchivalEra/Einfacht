@@ -307,7 +307,11 @@ def _semantic_packs_intact(langs=None):
 def _discovery_sees_planted_lang():
     """往真包目录里种一个半残的语言，默认 discovery 必须看得见它。
 
-    用临时 `REFLECT_I18N`（只含 zh + 种下的 de）—— 不碰真仓的 lang/。
+    用临时 `REFLECT_I18N`（基准包 + 种下的半残包）—— 不碰真仓的 lang/。
+
+    ⚠️ 种下的语言名**必须与基准包不同名**：此前写死种 `de`，而基准是
+    `a_pack_lang()`；一旦真仓装了 `de`（sorted() 使 `de` 成为基准），
+    种下的半残包会**覆盖**基准包 ⇒ 这条自证在装了德语后假红（实测）。
     """
     import shutil                                        # noqa: PLC0415
     import tempfile                                      # noqa: PLC0415
@@ -328,17 +332,20 @@ def _discovery_sees_planted_lang():
         with open(os.path.join(d, base, "all.json"), "w",
                   encoding="utf-8") as fh:
             json.dump(zh, fh, ensure_ascii=False)
-        # 种一个**半残**的 de：只有一半的键 —— 不发现它就会漏判
-        os.makedirs(os.path.join(d, "de"), exist_ok=True)
+        # 种一个**半残**的假语言：只有一半的键 —— 不发现它就会漏判。
+        # 名字取 `probe-lang`，**绝不可能**和真语言同名（`de`/`en`/`zh`…）。
+        planted = "probe-lang"
+        os.makedirs(os.path.join(d, planted), exist_ok=True)
         half = dict(list(zh.items())[: len(zh) // 2])
-        with open(os.path.join(d, "de", "all.json"), "w", encoding="utf-8") as fh:
+        with open(os.path.join(d, planted, "all.json"), "w",
+                  encoding="utf-8") as fh:
             json.dump(half, fh, ensure_ascii=False)
         prev = os.environ.get("REFLECT_I18N")
         os.environ["REFLECT_I18N"] = d
         try:
             got = installed_langs()
             probs = pack_sync_problems()       # 默认 discovery
-            return "de" in got and probs != []
+            return planted in got and probs != []
         finally:
             if prev is None:
                 os.environ.pop("REFLECT_I18N", None)
