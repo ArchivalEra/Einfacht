@@ -422,7 +422,8 @@ def activate_or_fatal():
     try:
         i18n.activate()
     except Exception as e:                               # noqa: BLE001
-        # 装配失败时 `_ACTIVE` 仍是上一档（通常是 null 包）⇒ M() 照样渲染得出来
+        # 装配失败时进程默认仍是上一档 `Catalog`（通常是 null 包）⇒ M() 照样
+        # 渲染得出来（`MissingPack` 的 `str()` 本身就是 null 形状的 code）。
         print("FATAL: %s" % i18n.M("gate.pack_assembly_failed", error=e),
               file=sys.stderr)
         return 2

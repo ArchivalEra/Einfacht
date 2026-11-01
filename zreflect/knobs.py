@@ -36,7 +36,7 @@ import sys
 
 import gate                                            # noqa: E402
 from gate import module_meta                          # noqa: E402
-from i18n import M, bind, load_pack, pack_dir, NULL                # noqa: E402
+from i18n import M, bind, load_pack, pack_dir, NULL, Catalog      # noqa: E402
 
 class _Semantic(str):
     """旋钮的一行语义（`REGISTRY` 第三项）：**延迟渲染**的用户可见文本。
@@ -297,7 +297,7 @@ def _semantic_packs_intact(langs=None):
         return False
     # 每个包里都真渲染出句子（不是回落成 code）
     for lang in sorted(tables):
-        with bind(lang, {lang: tables[lang]}):
+        with bind(Catalog.load(lang, {lang: tables[lang]})):
             if any(str(w) == w.code for _k, _d, w in REGISTRY.values()
                    if isinstance(w, _Semantic)):
                 return False
@@ -600,7 +600,7 @@ def null_pack():
     「跑在什么环境就考什么」—— 实测 `REFLECT_LANG=zh gates-selftest.sh` 下
     这类用例全红。
     """
-    return bind(NULL, {})
+    return bind(NULL)
 
 
 def _semantics_are_codes_under(cm):
