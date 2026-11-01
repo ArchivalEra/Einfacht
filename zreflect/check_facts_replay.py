@@ -56,7 +56,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
-from i18n import M, bind, load_pack
+from i18n import M, bind, load_pack, Catalog
 from knobs import a_pack_lang                      # noqa: E402
 from ledger import facts_of, load, value_of              # noqa: E402
 from runner import default_timeout, quote, run_cmd       # noqa: E402
@@ -218,7 +218,7 @@ def _cases():
         """在该语言包下渲染后的文本（零包 ⇒ 空列表，判据见 pack_entry_wired）。"""
         if not pack_lang:
             return []
-        with bind(pack_lang, {pack_lang: real_pack}):
+        with bind(Catalog.load(pack_lang, {pack_lang: real_pack})):
             return [str(p) for p in replay_all(ledger, runner=runner)["problems"]]
 
     def _hint_has(ledger, runner, *anchors):
