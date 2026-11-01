@@ -34,7 +34,8 @@ import os
 import re
 import sys
 
-from gate import module_meta, GATE_REPO                                # noqa: E402
+import gate                                            # noqa: E402
+from gate import module_meta                          # noqa: E402
 from i18n import M, bind, load_pack, pack_dir, NULL                # noqa: E402
 
 class _Semantic(str):
@@ -182,7 +183,7 @@ def readme_problems(files=None, readmes=None):
                 continue
             text = files[name]
         else:
-            p = os.path.join(GATE_REPO, name)
+            p = os.path.join(gate.GATE_REPO, name)
             if not os.path.exists(p):
                 continue
             text = open(p, encoding="utf-8", errors="replace").read()
@@ -211,7 +212,7 @@ def declared_vs_read_problems(gates):
         if not declared:
             continue
         try:
-            text = open(os.path.join(GATE_REPO, g["file"]), encoding="utf-8",
+            text = open(os.path.join(gate.GATE_REPO, g["file"]), encoding="utf-8",
                         errors="replace").read()
         except OSError:
             continue
@@ -243,7 +244,7 @@ def registry_vs_readme_problems(readmes=None, tables=None):
                 continue
             text = tables[name]
         else:
-            p = os.path.join(GATE_REPO, name)
+            p = os.path.join(gate.GATE_REPO, name)
             if not os.path.exists(p):
                 continue
             text = open(p, encoding="utf-8", errors="replace").read()
@@ -259,42 +260,85 @@ def registry_vs_readme_problems(readmes=None, tables=None):
 
 # ── 自证：名册自身的形状守卫（登记表坏 = 所有消费方的判据数据坏）──────────────
 
-def _real_pack(lang):
-    """读磁盘上真实发布的语言包**整包**（自证用；缺失 ⇒ {} 让断言当场红）。
-
-    一律走 `i18n.load_pack`，并且**不指定命名空间分片**：真装载器是把
-    `<lang>/*.json` 与 `<lang>.json` 合并成一张表，自证必须看同一张表 ——
-    此前这里自己拼路径、只读单个分片，于是文档认可的单文件包被判红
-    （实测 10 PASS / 1 FAIL），且路径锚错让默认值解析成
-    `zreflect/zreflect/lang`。
-    """
-    return load_pack(lang)
-
-
-def _semantic_packs_intact():
-    """每条旋钮语义在 zh / en 包里都有条目，且占位符名一致、zh 下真渲染出句子。
+def _semantic_packs_intact(langs=None):
+    """**每个已装的语言包**都必须含全部旋钮语义，占位符名与基准侧一致，
+    且在它自己的包下真渲染出句子（不是回落的裸 code）。
 
     这是 `_Semantic` 延迟渲染的**可证伪**证据：语义从本体搬到包里若掉了条目，
     这里当场红（而不是等人看见 `knobs.sem.reflect_facts` 这种裸 code）。
+
+    `langs=None` ⇒ 用 `installed_langs()`（与对账器同一发现口径）。
+    ⚠️ 此前硬写 `zh` / `en` 两个：下游仓只装一个包（**正是产品的主场景**：
+    「从一堆包里挑一个」）时这条自证直接红（实测：只有 zh 的包目录
+    ⇒ 16 PASS / 1 FAIL），产品没问题，是判据过窄。
     """
-    zh = _real_pack("zh")
-    en = _real_pack("en")
+    langs = installed_langs() if langs is None else list(langs)
     codes = [w.code for _k, _d, w in REGISTRY.values()
              if isinstance(w, _Semantic)]
     if not codes:
         return False                        # 语义全没了 = 名册坏，不许绿
-    for c in codes:
-        if c not in zh or c not in en:
-            return False
-        if sorted(_PLACEHOLDER_RE.findall(zh[c])) != \
-                sorted(_PLACEHOLDER_RE.findall(en[c])):
-            return False
-    with bind("zh", {"zh": zh}):
-        # zh 下渲染的必须是那句话（含中文），不是回落的裸 code。
-        if any(str(w) == w.code for _k, _d, w in REGISTRY.values()
-               if isinstance(w, _Semantic)):
-            return False
+    tables = {}
+    for lang in langs:
+        try:
+            tables[lang] = load_pack(lang)
+        except Exception:                                # noqa: BLE001
+            return False            # 坏包 ⇒ 语义完整性无从证明，不许绿
+    # 零值守卫：一个包都没装 ⇒ 不是「完整」，是没装
+    if not tables or not any(tables.values()):
+        return False
+    ref_lang = sorted(tables)[0]
+    ref = tables[ref_lang]
+    for lang in sorted(tables):
+        other = tables[lang]
+        for c in codes:
+            if c not in other or c not in ref:
+                return False
+            if sorted(_PLACEHOLDER_RE.findall(ref[c])) != \
+                    sorted(_PLACEHOLDER_RE.findall(other[c])):
+                return False
+    # 每个包里都真渲染出句子（不是回落成 code）
+    for lang in sorted(tables):
+        with bind(lang, {lang: tables[lang]}):
+            if any(str(w) == w.code for _k, _d, w in REGISTRY.values()
+                   if isinstance(w, _Semantic)):
+                return False
     return True
+
+
+def _discovery_sees_planted_lang():
+    """往真包目录里种一个半残的语言，默认 discovery 必须看得见它。
+
+    用临时 `REFLECT_I18N`（只含 zh + 种下的 de）—— 不碰真仓的 lang/。
+    """
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    import json                                          # noqa: PLC0415
+    zh = load_pack("zh")
+    if not zh:
+        return False                    # 连基准包都读不到 ⇒ 环境坏，不许绿
+    d = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(d, "zh"))
+        with open(os.path.join(d, "zh", "all.json"), "w", encoding="utf-8") as fh:
+            json.dump(zh, fh, ensure_ascii=False)
+        # 种一个**半残**的 de：只有一半的键 —— 不发现它就会漏判
+        os.makedirs(os.path.join(d, "de"))
+        half = dict(list(zh.items())[: len(zh) // 2])
+        with open(os.path.join(d, "de", "all.json"), "w", encoding="utf-8") as fh:
+            json.dump(half, fh, ensure_ascii=False)
+        prev = os.environ.get("REFLECT_I18N")
+        os.environ["REFLECT_I18N"] = d
+        try:
+            got = installed_langs()
+            probs = pack_sync_problems()       # 默认 discovery
+            return "de" in got and probs != []
+        finally:
+            if prev is None:
+                os.environ.pop("REFLECT_I18N", None)
+            else:
+                os.environ["REFLECT_I18N"] = prev
+    finally:
+        shutil.rmtree(d, True)
 
 
 def installed_langs():
@@ -303,6 +347,10 @@ def installed_langs():
     C4「手写名录一定会漂」在这里同样成立：此前 `langs=("zh", "en")` 是写死的，
     于是往 `zreflect/lang/` 里加一个 `de/`（半装、缺键）时对账器**完全不看它**
     ——「装了但没对账」正是本仓要消灭的那类静默。现在是扫目录。
+
+    **判据不是「有那个目录」，而是「那里真有 .json 包文件」**：早先按目录名
+    收，目录里随便放个 `straynotes/` 或一个 `extra.json` 也会被当成语言，
+    凭空报出「缺键」并让 roster 红（实测）。语言包的判据是「有包文件」。
     """
     base = pack_dir()
     out = set()
@@ -310,7 +358,8 @@ def installed_langs():
         for n in sorted(os.listdir(base)):
             p = os.path.join(base, n)
             if os.path.isdir(p):
-                out.add(n)
+                if any(x.endswith(".json") for x in os.listdir(p)):
+                    out.add(n)
             elif n.endswith(".json"):
                 out.add(n[:-len(".json")])
     except OSError:
@@ -318,27 +367,39 @@ def installed_langs():
     return sorted(out)
 
 
-def pack_sync_problems(langs=None, loader=None):
+def pack_sync_problems(langs=None, loader=None, discovery=None):
     """C4 对账③：各语言包的**键集**与**占位符名**必须一致。
 
     此前无任何东西强制这件事 —— 手工把一条 code 加进 zh 却忘了 en，
     `REFLECT_LANG=en` 的用户就静默看到裸 code（本仓立身要消灭的静默退化）。
     实测现状两份是相等的，但「相等」是运气不是判据。
 
-    `langs=None` ⇒ **从磁盘发现**（`installed_langs()`）；`loader` 可注入
-    （自证用假包）；默认走 `i18n.load_pack`（**合并视图**，与真装载器看同一
-    张表 —— 只读单个分片会与装载器分叉）。
+    `langs=None` ⇒ 用 `discovery()` 发现（默认 `installed_langs()`）。
+    `discovery` 可注入，**好让自证真的考 discovery** —— 此前那条用例显式传
+    `langs=(…)`，把发现整个绕开了：把 discovery 换回手写名单，自证照样绿
+    （实测）。断言没覆盖它声称保护的东西。
+    `loader` 可注入（自证用假包）；默认走 `i18n.load_pack`（**合并视图**，
+    与真装载器看同一张表 —— 只读单个分片会与装载器分叉）。
     """
     load = loader if loader is not None else load_pack
-    langs = installed_langs() if langs is None else list(langs)
+    if langs is None:
+        langs = (discovery or installed_langs)()
+    langs = list(langs)
     tables = {}
     for lang in langs:
-        tables[lang] = load(lang)
+        try:
+            tables[lang] = load(lang)
+        except Exception as e:                           # noqa: BLE001
+            # **这里必须捕获**：`load_pack` 对坏分片抛 `MissingPack`，
+            # `pack_sync_problems` 又可能在 `activate_or_fatal()` **之外**被调用
+            # （`registry --gates` 的 roster 对账就是），于是异常一路冒到顶层
+            # 变成裸 traceback rc=1 —— 逃出本仓的 rc 契约（配置坏 = FATAL rc 2）。
+            # 实测踩到：`REFLECT_LANG` 未设 + 坏分片 ⇒ rc=1 traceback，
+            # 同一个输入加 `REFLECT_LANG=zh` 才是 rc=2。
+            return [M("knobs.pack_unreadable", lang=lang, error=e)]
     out = []
-    if not tables:
-        return [M("knobs.pack_sync_empty", langs=", ".join(langs))]
-    # 零值守卫：全空 ⇒ 不是「一致」，是没装上
-    if not any(tables.values()):
+    # 零值守卫：一张表都没有 / 全都空 ⇒ 不是「一致」，是没装上。
+    if not tables or not any(tables.values()):
         return [M("knobs.pack_sync_empty", langs=", ".join(langs))]
     ref_lang = sorted(tables)[0]
     ref = tables[ref_lang]
@@ -364,9 +425,10 @@ def pack_sync_problems(langs=None, loader=None):
                 # 参数名不能叫 `code`：`M(code, **params)` 的首参就叫 code，
                 # 同名 kwarg 会 `TypeError: M() got multiple values`（实测踩到）。
                 out.append(M("knobs.pack_placeholder_mismatch",
-                             lang=lang, key=code, reference=ref_lang,
-                             want=", ".join(a) or "-",
-                             got=", ".join(b) or "-"))
+                             lang=lang, key=code,
+                             reference_lang=ref_lang,
+                             expected_params=", ".join(a) or "-",
+                             actual_params=", ".join(b) or "-"))
     return out
 
 
@@ -468,15 +530,14 @@ def _cases():
         # 发现式（不写名单）：磁盘上多装一个半残的包也必须被对账器看见。
         # 此前 `langs=("zh","en")` 写死 ⇒ 加一个缺键的 `de/` 时它**完全不看**
         # ——「装了但没对账」正是本仓要消灭的那类静默。
+        # 发现式（不写名单）：必须**通过 discovery 通道**验，否则把
+        # `installed_langs()` 换回手写 `("zh","en")` 时自证照样绿（实测）
+        # —— 断言没覆盖它声称保护的东西（rule 4）。
         ("★ knobs.pack_sync_sees_every_installed_lang",
-         lambda: [p.code for p in pack_sync_problems(
-             langs=("de", "en", "zh"), loader=lambda l: {
-                 "zh": {"a": "x"}, "en": {"a": "x"}, "de": {"a": "x"}}[l])
-         ] == [] and
-         [p.code for p in pack_sync_problems(
-             langs=("de", "en", "zh"), loader=lambda l: {
-                 "zh": {"a": "x"}, "en": {"a": "x"}, "de": {}}[l])
-         ] != []),
+         # 走 **默认 discovery**（不传 `discovery=`）—— 传了就等于替被测
+         # 对象把答案递过去（实测：那样即使把 installed_langs 换回手写
+         # 名单，这条仍 PASS）。
+         lambda: _discovery_sees_planted_lang()),
         # ③ 空输入必须报
         ("★ knobs.pack_sync_empty",
          lambda: [p.code for p in pack_sync_problems(
