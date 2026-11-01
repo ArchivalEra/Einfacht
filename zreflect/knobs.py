@@ -35,44 +35,96 @@ import re
 import sys
 
 from gate import module_meta, GATE_REPO                                # noqa: E402
-from i18n import M                                        # noqa: E402
+from i18n import M, bind                                  # noqa: E402
+
+class _Semantic(str):
+    """旋钮的一行语义（`REGISTRY` 第三项）：**延迟渲染**的用户可见文本。
+
+    `REGISTRY` 在 import 时构造，而语言包在入口 `main_selftest_or` 里才
+    `activate()` —— 若这里直接 `M(...)`，值会在构造时就渲染并**永远停在
+    null 包**上（实测形状：zh 用户看到的是 code 而不是语义）。所以保存 code，
+    `__str__` 时按**当前**语言重渲（消费方只用 `%(entry)s` 格式化它，
+    见 check_envfile 的 file_missing / dir_missing 消息）。
+    """
+
+    __slots__ = ("code",)
+
+    def __new__(cls, code):
+        obj = str.__new__(cls, code)
+        obj.code = code
+        return obj
+
+    def __str__(self):
+        return str(M(self.code))
+
 
 # 名字 → (kind, 默认值, 一句话语义)。默认值 = 旋钮未配时各消费方的回落名。
+# 语义按本体零语言（issue #26）：code 进语言包，本体不写自然语言。
 REGISTRY = {
-    "REFLECT_FACTS": ("file", "FACTS.json", "事实台账"),
-    "REFLECT_DOC": ("file", "STATE.md", "活状态文档（机器块渲染进它）"),
+    "REFLECT_FACTS": ("file", "FACTS.json",
+                      _Semantic("knobs.sem.reflect_facts")),
+    "REFLECT_DOC": ("file", "STATE.md",
+                    _Semantic("knobs.sem.reflect_doc")),
     "REFLECT_DOCS": ("list", "STATE.md,AGENTS.md,README.md,README.zh.md,README.de.md",
-                     "翻案 / 陈旧闸门扫描的活状态文档清单"),
-    "REFLECT_HISTORY_SECS": ("value", "", "append-only 历史章节编号（如 5,9,10）"),
-    "REFLECT_RETIRED": ("value", "", "退役组件名清单；空 = 该规则明说未启用"),
-    "REFLECT_NAKED_MIN": ("number", "100", "裸数字阈值（小于它的整数不查）"),
-    "REFLECT_STALE_DAYS": ("number", "", "测龄报警天数；空 = 该规则明说未启用"),
-    "REFLECT_REPLAY": ("flag", "", "off ⇒ 复跑闸门明说未启用"),
-    "REFLECT_REPLAY_TIMEOUT": ("number", "10", "逐字执行器的默认超时秒数"),
+                     _Semantic("knobs.sem.reflect_docs")),
+    "REFLECT_HISTORY_SECS": ("value", "",
+                             _Semantic("knobs.sem.reflect_history_secs")),
+    "REFLECT_RETIRED": ("value", "",
+                        _Semantic("knobs.sem.reflect_retired")),
+    "REFLECT_NAKED_MIN": ("number", "100",
+                          _Semantic("knobs.sem.reflect_naked_min")),
+    "REFLECT_STALE_DAYS": ("number", "",
+                           _Semantic("knobs.sem.reflect_stale_days")),
+    "REFLECT_REPLAY": ("flag", "",
+                       _Semantic("knobs.sem.reflect_replay")),
+    "REFLECT_REPLAY_TIMEOUT": ("number", "10",
+                               _Semantic("knobs.sem.reflect_replay_timeout")),
     "REFLECT_READMES": ("list", "README.md,README.zh.md,README.de.md",
-                        "三语 README 名单（结构互链 + 每次推送同批）"),
-    "REFLECT_RETRACTIONS": ("file", "retractions.json", "翻案台账"),
-    "REFLECT_QUESTIONS": ("dir", "questions", "悬案目录"),
-    "REFLECT_ENV_FILE": ("value", "Einfacht.env", "钩子旋钮载体的文件名"),
-    "REFLECT_ENV_HINT": ("flag", "", "off ⇒ 关闭「裸跑时提示用 Einfacht.env」的人性化提示（提示不是判据）"),
-    "REFLECT_INVARIANTS": ("file", "", "声明式不变量规格；空 = 明说未启用"),
-    "REFLECT_INSTRUMENTS": ("file", "", "量法登记位；空 = 该规则明说未启用"),
-    "REFLECT_INSTRUMENT_DAYS": ("number", "", "恒常检测阈值天；空 = 该规则明说未启用"),
-    "REFLECT_DOCTOR": ("file", "doctor.json", "doctor 规格（开工预检，非闸门）"),
-    "REFLECT_DOCTOR_TIMEOUT": ("number", "2", "每条 doctor 探测的秒数"),
-    "REFLECT_WORLD": ("file", "world.json", "world 声明（验证对象清单）；缺文件 = 未启用"),
-    "REFLECT_WORLD_LINE": ("value", "", "world 线覆盖（CI / 特殊跑法）"),
-    "REFLECT_AB": ("file", "ab.json", "A/B 同旗标闸门的规格名"),
-    "REFLECT_PINS": ("file", "pins.json", "派生树 pin 一致性闸门的规格名"),
-    "REFLECT_LOCKS": ("file", "upstream-lock.json", "锁定源清单闸门的规格名"),
-    "REFLECT_MEASURE_MODULE": ("value", "", "采集模块名（换仓只改 env 一行；空 = 用占位 measure_example）"),
-    "REFLECT_PHASES": ("value", "", "追加自定义相位（逗号分隔，如 lab）；内置 commit/start-of-work 不可删不可重名"),
-    "REFLECT_LANG": ("value", "", "输出语言包名（如 zh/en）；空 = null 包（本体零语言）"),
-    "REFLECT_I18N": ("dir", "zreflect/lang", "语言包目录（默认随套件分发的 zreflect/lang）"),
-    "REFLECT_I18N_ROOT": ("dir", "", "语言覆盖闸门扫描的源码目录；空 = 该闸门未启用"),
+                        _Semantic("knobs.sem.reflect_readmes")),
+    "REFLECT_RETRACTIONS": ("file", "retractions.json",
+                            _Semantic("knobs.sem.reflect_retractions")),
+    "REFLECT_QUESTIONS": ("dir", "questions",
+                          _Semantic("knobs.sem.reflect_questions")),
+    "REFLECT_ENV_FILE": ("value", "Einfacht.env",
+                         _Semantic("knobs.sem.reflect_env_file")),
+    "REFLECT_ENV_HINT": ("flag", "",
+                         _Semantic("knobs.sem.reflect_env_hint")),
+    "REFLECT_INVARIANTS": ("file", "",
+                           _Semantic("knobs.sem.reflect_invariants")),
+    "REFLECT_INSTRUMENTS": ("file", "",
+                            _Semantic("knobs.sem.reflect_instruments")),
+    "REFLECT_INSTRUMENT_DAYS": ("number", "",
+                                _Semantic("knobs.sem.reflect_instrument_days")),
+    "REFLECT_DOCTOR": ("file", "doctor.json",
+                       _Semantic("knobs.sem.reflect_doctor")),
+    "REFLECT_DOCTOR_TIMEOUT": ("number", "2",
+                               _Semantic("knobs.sem.reflect_doctor_timeout")),
+    "REFLECT_WORLD": ("file", "world.json",
+                      _Semantic("knobs.sem.reflect_world")),
+    "REFLECT_WORLD_LINE": ("value", "",
+                           _Semantic("knobs.sem.reflect_world_line")),
+    "REFLECT_AB": ("file", "ab.json",
+                   _Semantic("knobs.sem.reflect_ab")),
+    "REFLECT_PINS": ("file", "pins.json",
+                     _Semantic("knobs.sem.reflect_pins")),
+    "REFLECT_LOCKS": ("file", "upstream-lock.json",
+                      _Semantic("knobs.sem.reflect_locks")),
+    "REFLECT_MEASURE_MODULE": ("value", "",
+                               _Semantic("knobs.sem.reflect_measure_module")),
+    "REFLECT_PHASES": ("value", "",
+                       _Semantic("knobs.sem.reflect_phases")),
+    "REFLECT_LANG": ("value", "",
+                     _Semantic("knobs.sem.reflect_lang")),
+    "REFLECT_I18N": ("dir", "zreflect/lang",
+                     _Semantic("knobs.sem.reflect_i18n")),
+    "REFLECT_I18N_ROOT": ("dir", "",
+                          _Semantic("knobs.sem.reflect_i18n_root")),
 }
 
 KINDS = ("file", "list", "dir", "number", "flag", "value")
+
+# 占位符记号（`%(name)s`）—— 自证对账 zh / en 的占位符名是否一致。
+_PLACEHOLDER_RE = re.compile(r"%\((\w+)\)")
 
 # 旋钮记号：REFLECT_ + 大写。**左边界必需** —— 不加时，翻案示例文本
 # （`ZCODE_` 前缀 + 一个记号）会被从中间切成假记号，三语 README 对账
@@ -206,6 +258,44 @@ def registry_vs_readme_problems(readmes=None, tables=None):
 
 
 # ── 自证：名册自身的形状守卫（登记表坏 = 所有消费方的判据数据坏）──────────────
+
+def _real_pack(lang, fname):
+    """读磁盘上真实发布的语言包分片（自证用；缺失 ⇒ {} 让断言当场红）。"""
+    import json                                          # noqa: PLC0415
+    p = os.path.join(GATE_REPO, "zreflect", "lang", lang, fname)
+    try:
+        with open(p, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def _semantic_packs_intact():
+    """每条旋钮语义在 zh / en 包里都有条目，且占位符名一致、zh 下真渲染出句子。
+
+    这是 `_Semantic` 延迟渲染的**可证伪**证据：语义从本体搬到包里若掉了条目，
+    这里当场红（而不是等人看见 `knobs.sem.reflect_facts` 这种裸 code）。
+    """
+    zh = _real_pack("zh", "knobs.json")
+    en = _real_pack("en", "knobs.json")
+    codes = [w.code for _k, _d, w in REGISTRY.values()
+             if isinstance(w, _Semantic)]
+    if not codes:
+        return False                        # 语义全没了 = 名册坏，不许绿
+    for c in codes:
+        if c not in zh or c not in en:
+            return False
+        if sorted(_PLACEHOLDER_RE.findall(zh[c])) != \
+                sorted(_PLACEHOLDER_RE.findall(en[c])):
+            return False
+    with bind("zh", {"zh": zh}):
+        # zh 下渲染的必须是那句话（含中文），不是回落的裸 code。
+        if any(str(w) == w.code for _k, _d, w in REGISTRY.values()
+               if isinstance(w, _Semantic)):
+            return False
+    return True
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -216,40 +306,49 @@ def _cases():
         'X = os.environ.get("REFLECT_FACTS")\n')
     # 幻影记号用拼接构造：本文件在扫描面内（zreflect/*.py），字面量写出来
     # 会被自己的 scan_surface_problems() 收编（本仓老坑）。
+    # 夹具（假源码 / 假 README）的正文用**英文** —— 它们是被扫描的输入，
+    # 不是本体输出（同 facts.py 体例：中文夹具会被零语言闸门当消息）。
     phantom = "REFLECT_" + "GHOSTX"
     open(os.path.join(d, "phantom.py"), "w").write(
-        '# 注释里提到 ' + phantom + ' 这个不存在的旋钮\n')
+        '# a comment mentions the nonexistent knob ' + phantom + '\n')
     return [
         # ① 正常不报
-        ("登记表每条 = (合法 kind, 字符串默认值, 非空语义)",
+        ("knobs.registry_entry_shape",
          lambda: all(k in KINDS and isinstance(dflt, str) and w.strip()
                      for k, dflt, w in REGISTRY.values()) and len(REGISTRY) >= 20),
-        ("扫描面只有已登记旋钮 ⇒ 不报（真源码树）",
+        ("knobs.scan_clean",
          lambda: scan_surface_problems() == []),
-        ("README 旋钮提名 ⊆ 登记 ⇒ 不报",
+        ("knobs.readme_nominations_registered",
          lambda: readme_problems(files={
-             "README.md": "用 REFLECT_FACTS 与 REFLECT_DOC。",
+             "README.md": "uses REFLECT_FACTS and REFLECT_DOC.",
              "README.zh.md": "x", "README.de.md": "x"}) == []),
-        ("真仓扫描面干净（无幻影旋钮）", lambda: scan_surface_problems() == []),
-        ("真仓三语 README 无未登记旋钮", lambda: readme_problems() == []),
+        ("knobs.real_tree_scan_clean", lambda: scan_surface_problems() == []),
+        ("knobs.real_readmes_clean", lambda: readme_problems() == []),
+        ("knobs.semantic_renders_as_code_by_default",
+         lambda: all(str(w) == w.code for _k, _d, w in REGISTRY.values())),
+        # 语义延迟渲染的**正向证据**：真 zh 包里每条语义都有条目，且在 zh 包
+        # 下渲染出的是那句话（不是 code）。读磁盘真包 = 证明迁移没丢语义
+        # （注入假表只能证明「我写的模板渲染出我写的字」—— 循环论证）。
+        # 复跑：REFLECT_LANG=zh python3 zreflect/knobs.py --selftest
+        ("knobs.semantics_present_in_real_packs",
+         lambda: _semantic_packs_intact()),
         # ② 该报的必须报
-        ("★ 扫描面出现未登记记号 ⇒ 必须报（幻影 / typo，登记才算数）",
-         lambda: any(phantom in x
-                     for x in scan_surface_problems(py_dir=d))),
+        ("★ knobs.phantom_token",
+         lambda: any(p.code == "knobs.phantom_token"
+                     and p.params.get("token") == phantom
+                     for p in scan_surface_problems(py_dir=d))),
+        ("★ knobs.phantom_token",
+         lambda: any(p.code == "knobs.phantom_token"
+                     and p.params.get("token") == phantom
+                     for p in scan_surface_problems(py_dir=d))),
         ("★ knobs.readme_phantom",
          lambda: any(x.code == "knobs.readme_phantom" for x in readme_problems(files={
-             "README.md": "见 " + "REFLECT_" + "GHOSTY" + "。",
+             "README.md": "see " + "REFLECT_" + "GHOSTY" + ".",
              "README.zh.md": "x", "README.de.md": "x"}))),
         # ③ 空输入必须报
-        ("★ 登记表为空 = 名册坏（零值守卫）", lambda: bool(REGISTRY)),
-        ("REFLECT_PHASES 已登记（issue #21 相位旋钮）", lambda: "REFLECT_PHASES" in REGISTRY),
+        ("★ knobs.registry_empty", lambda: bool(REGISTRY)),
+        ("knobs.phases_registered", lambda: "REFLECT_PHASES" in REGISTRY),
     ]
-
-
-def selftest():
-    sys.path.insert(0, __file__.rsplit("/", 1)[0])
-    from gate import selftest as _st                     # noqa: PLC0415
-    return _st("knobs（旋钮登记：REFLECT_* 的唯一名册）", _cases())
 
 
 MODULE = module_meta("旋钮登记", "REFLECT_* 的唯一名册 + 名册自洽性判据", selftest=True)
@@ -260,9 +359,9 @@ if __name__ == "__main__":
     from gate import main_selftest_or                    # noqa: PLC0415
 
     def _run(argv):
-        print("knobs 是模块（被各闸门消费）；--selftest 看自证。",
-              file=sys.stderr)
+        print(M("knobs.module_only"), file=sys.stderr)
         return 2
+    # 自证标题是**开发者界面**（check_i18n 的豁免面 ②），按设计保留一种语言。
     sys.exit(main_selftest_or(sys.argv[1:],
                               "knobs（旋钮登记：REFLECT_* 的唯一名册）",
                               _cases, _run))

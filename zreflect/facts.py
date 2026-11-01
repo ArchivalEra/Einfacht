@@ -23,6 +23,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import module_meta, GATE_REPO, main_selftest_or, repo  # noqa: E402
+from i18n import M                                        # noqa: E402
 from ledger import age_days, fact, facts_of, load, value_of  # noqa: E402
 from render import BLOCK_BEGIN, BLOCK_END, render_block  # noqa: E402
 import guard                                             # noqa: E402
@@ -60,13 +61,13 @@ def measure_example():
             elif f.endswith(".md"):
                 n_md += 1
     facts["py_files"] = fact(n_py, "find . -name '*.py' -not -path './.git/*' | wc -l",
-                             "repo", "示例事实：换掉 measure_example()")
+                             "repo", M("facts.note.example_fact"))
     facts["md_files"] = fact(n_md, "find . -name '*.md' -not -path './.git/*' | wc -l", "repo")
     # 这条刻意大于 BARE_MIN（check_facts 的裸数字阈值 = 100），好在 STATE.md 里
     # 演示「手抄这个数字会被闸门拦下」。太小的数字遍地都是，查了全是噪音 ⇒ 不查。
     facts["py_lines"] = fact(lines_py, "find . -name '*.py' -not -path './.git/*' "
                              "-exec cat {} + | wc -l", "repo",
-                             "刻意 ≥100，用来示范裸数字判据")
+                             M("facts.note.bare_number_demo"))
     # ⑥ 块排除模式（issue #4 ⑥）：md_lines 数**块以外**的行 —— 机器块
     # 就渲染在这些文档里，数进去 ⇒ 渲染一遍值就过期 ⇒ 复跑恒定失败
     # （而 check_facts 比的是「块↔台账」，两边一起陈旧 ⇒ 全绿）。
@@ -83,13 +84,13 @@ def measure_example():
                              text=True, check=True,
                              cwd=GATE_REPO).stdout.strip()),
         md_lines_cmd, "repo",
-        "不含机器块：块就渲染在文档里，数进去会让渲染一遍值就过期")
+        M("facts.note.excludes_machine_block"))
 
     # 例：**量不到就不写**。把 UPSTREAM_VERSION 设上才有这条事实。
     v = os.environ.get("UPSTREAM_VERSION", "").strip()
     if v:
         facts["upstream_version"] = fact(v, "echo \"$UPSTREAM_VERSION\"", "env",
-                                         "量不到就不写 —— 宁缺勿假")
+                                         M("facts.note.measure_or_omit"))
     return facts
 
 
@@ -108,7 +109,7 @@ def _machine_blocks(ledger):
     gs, missing = registry.gates()
     probs = registry.problems(gs, missing)
     if probs:
-        return None, "名录对账不过，拒绝渲染：\n  · " + "\n  · ".join(probs)
+        return None, M("facts.registry_mismatch", entries="\n  · ".join(probs))
     return ((BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
             (registry.GATES_BEGIN, registry.GATES_END,
              registry.render_gates(gs))), None
@@ -119,7 +120,7 @@ def write_doc(path_rel, ledger):
     悄悄追加会让「块过期」变成「有两份块」，那是更难查的坏法。"""
     p = path_rel if os.path.isabs(path_rel) else repo(path_rel)
     if not os.path.exists(p):
-        print("FATAL: %s 不存在。先手工放一次机器块标记。" % p,
+        print("FATAL: %s" % M("facts.doc_missing_render", path=p),
               file=sys.stderr)
         return 2
     blocks, err = _machine_blocks(ledger)
@@ -130,8 +131,9 @@ def write_doc(path_rel, ledger):
     new = text
     for begin, end, body in blocks:
         if begin not in new or end not in new:
-            print("FATAL: %s 缺 %s / %s 标记（第一次落地时要手工放一次）"
-                  % (path_rel, begin, end), file=sys.stderr)
+            print("FATAL: %s" % M("facts.markers_missing_render",
+                                  path=path_rel, begin=begin, end=end),
+                  file=sys.stderr)
             return 2
         pre, _, rest = new.partition(begin)
         _, _, post = rest.partition(end)
@@ -143,22 +145,22 @@ def write_doc(path_rel, ledger):
     # 合法嵌套 —— md_lines 的 awk 判据 —— 故不做替换前的计数断言）。
     for begin, end, _ in blocks:
         if begin not in new or end not in new:
-            print("FATAL: %s 的标记字面量混进了正文（%s）—— 渲染会吞块，"
-                  "拒绝写盘；标记只许出现在机器块首尾"
-                  % (path_rel, begin), file=sys.stderr)
+            print("FATAL: %s" % M("facts.marker_swallowed_body",
+                                  path=path_rel, begin=begin),
+                  file=sys.stderr)
             return 2
     if new != text:
         open(p, "w", encoding="utf-8").write(new)
-        print("已刷新 %s 的机器块" % path_rel)
+        print(M("facts.render_written", path=path_rel))
     else:
-        print("%s 的机器块无变化" % path_rel)
+        print(M("facts.render_unchanged", path=path_rel))
     return 0
 
 
 def check_doc(path_rel, ledger):
     p = path_rel if os.path.isabs(path_rel) else repo(path_rel)
     if not os.path.exists(p):
-        print("FATAL: 文档 %s 不存在（--check 不能因为找不到文件就算通过）" % p, file=sys.stderr)
+        print("FATAL: %s" % M("facts.doc_missing_check", path=p), file=sys.stderr)
         return 2
     blocks, err = _machine_blocks(ledger)
     if err:
@@ -167,16 +169,17 @@ def check_doc(path_rel, ledger):
     text = open(p, encoding="utf-8").read()
     for begin, end, body in blocks:
         if begin not in text or end not in text:
-            print("FATAL: %s 缺 %s / %s 标记" % (path_rel, begin, end),
+            print("FATAL: %s" % M("facts.markers_missing_check",
+                                  path=path_rel, begin=begin, end=end),
                   file=sys.stderr)
             return 2
         cur = text.split(begin, 1)[1].split(end, 1)[0]
         fresh = body.split(begin, 1)[1].split(end, 1)[0]
         if cur != fresh:
-            print("FATAL: %s 的 %s 块与现算不一致 ⇒ 跑 --render-doc"
-                  % (path_rel, begin), file=sys.stderr)
+            print("FATAL: %s" % M("facts.block_stale", path=path_rel, begin=begin),
+                  file=sys.stderr)
             return 1
-    print("%s 的机器块与现算一致" % path_rel)
+    print(M("facts.block_consistent", path=path_rel))
     return 0
 
 
@@ -184,10 +187,10 @@ def _age_human(entry):
     """`measured_at` 的人话（issue #3 ②）：今天 / N 天前 / 未记录。"""
     d = age_days(entry)
     if d is None:
-        return "未记录测量时间"
+        return M("facts.age.unrecorded")
     if d < 1:
-        return "今天测的"
-    return "%d 天前测的" % int(d)
+        return M("facts.age.today")
+    return M("facts.age.days_ago", days=int(d))
 
 
 def _measure():
@@ -207,12 +210,10 @@ def _measure():
             if os.path.abspath(GATE_REPO) == os.path.abspath(REPO_REAL):
                 return fn()
         except Exception as e:                            # noqa: BLE001
-            print("⚠ REFLECT_MEASURE_MODULE=%s 不可用（%r）⇒ 回落占位 measure_example()"
-                  % (mod_name, e), file=sys.stderr)
+            print("⚠ %s" % M("facts.measure_module_unusable",
+                             module=mod_name, error=repr(e)), file=sys.stderr)
     elif os.path.abspath(GATE_REPO) == os.path.abspath(REPO_REAL):
-        print("⚠ measure_example() used; set REFLECT_MEASURE_MODULE for real repo"
-              "（换仓只改 Einfacht.env 一行；回落占位时台账会空）",
-              file=sys.stderr)
+        print("⚠ %s" % M("facts.measure_placeholder_used"), file=sys.stderr)
     return measure_example()
 
 
@@ -262,13 +263,13 @@ def measure(argv):
     import json                                         # noqa: PLC0415
     import time                                         # noqa: PLC0415
     doc = {"schema": 1, "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-           "_why": "事实台账：每条 = 一个**测出来**的值 + 复跑命令 + 出处。"
-                   "别手改，跑 zreflect/facts.py。",
+           "_why": M("facts.ledger_why"),
            "facts": facts}
     with open(OUT, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, indent=1, ensure_ascii=False)
         fh.write("\n")
-    print("已写出 %s（%d 条事实）" % (os.path.relpath(OUT, GATE_REPO), len(facts)))
+    print(M("facts.measure_written",
+            path=os.path.relpath(OUT, GATE_REPO), count=len(facts)))
     for k, v in sorted(facts.items()):
         print("  %-20s %s（%s）" % (k, v["value"], _age_human(v)))
     return 0
@@ -285,8 +286,8 @@ def get_value(ledger, key):
     """
     f = facts_of(ledger)
     if key not in f:
-        return False, "台账里没有键 `%s`（现有：%s）" % (
-            key, ", ".join(sorted(f)) or "空")
+        return False, M("facts.unknown_key", key=key,
+                        existing=", ".join(sorted(f)) or M("facts.none"))
     return True, value_of(f[key])
 
 
@@ -299,13 +300,9 @@ def _load_or_die():
         # issue #20 ② 补充 2：旧提示「先在仓库根跑一遍量测」正是写出野文件
         # 的那个动作 —— 提示文本本身也是「默认值产地」的一部分，不许教人
         # 踩坑。改说「先确认 REFLECT_FACTS 指向哪里」。
-        print("FATAL: 还没有台账 %s（路径 = REFLECT_FACTS，当前解析为 %s）\n"
-              "       先确认本仓的台账路径：检查 Einfacht.env / facts 壳脚本里"
-              " REFLECT_FACTS 设了什么，\n"
-              "       再带着同样的环境跑一遍量测：python3 zreflect/facts.py"
-              "（裸跑会用代码默认值 —— 目标可能与钩子语境不同）\n"
-              "       然后再 --render-doc 把机器块写进文档。"
-              % (os.path.basename(OUT), os.path.relpath(OUT, GATE_REPO)),
+        print("FATAL: %s" % M("facts.no_ledger_yet",
+                              name=os.path.basename(OUT),
+                              path=os.path.relpath(OUT, GATE_REPO)),
               file=sys.stderr)
         raise SystemExit(2)
     return load(OUT)
@@ -321,7 +318,7 @@ def main(argv):
         return check_doc(argv[1] if len(argv) > 1 else DOC, _load_or_die())
     if argv and argv[0] == "--get":
         if len(argv) < 2:
-            print("FATAL: --get 需要一个键名：--get KEY", file=sys.stderr)
+            print("FATAL: %s" % M("facts.get_needs_key"), file=sys.stderr)
             return 2
         ok, v = get_value(_load_or_die(), argv[1])
         if not ok:
@@ -336,15 +333,16 @@ def main(argv):
         rc = 0
         for k in keys:
             if k not in f:
-                print("没有这条事实：%s（现有：%s）" % (k, ", ".join(sorted(f))), file=sys.stderr)
+                print(M("facts.show_unknown_key", key=k,
+                        existing=", ".join(sorted(f))), file=sys.stderr)
                 rc = 1
                 continue
             e = f[k] if isinstance(f[k], dict) else {"value": f[k]}
             print("%-20s %s" % (k, e.get("value")))
-            print("    出处  %s" % e.get("source", "?"))
-            print("    复跑  %s" % e.get("cmd", "?"))
+            print(M("facts.show.source", value=e.get("source", "?")))
+            print(M("facts.show.cmd", value=e.get("cmd", "?")))
             if e.get("note"):
-                print("    备注  %s" % e["note"])
+                print(M("facts.show.note", value=e["note"]))
         return rc
     return measure(argv)
 
@@ -365,23 +363,24 @@ def _tmp_doc(content, name="doc.md"):
 CASES = [
     # ③ 空输入必须报（守卫的决策接线在 zreflect/guard.py 的自证里；
     #    掉条 / 改口的纯函数在 ledger.py 的自证里 —— 各归各）
-    ("★ 空文档（没有块标记）⇒ check_doc 必须报，不许算通过",
-     lambda: check_doc(_tmp_doc("空空如也\n"), {"facts": {"a": 1}}) == 2),
-    ("★ 文档文件不存在 ⇒ check_doc 必须报（不许因为找不到就算通过）",
+    ("★ facts.check_doc_no_markers",
+     lambda: check_doc(_tmp_doc("empty document\n"), {"facts": {"a": 1}}) == 2),
+    ("★ facts.check_doc_file_missing",
      lambda: check_doc(os.path.join(_tmp_doc("", "x.md"), "..",
                                     "no_such_%d.md" % os.getpid()),
                        {"facts": {"a": 1}}) == 2),
     # ② 测龄人话（issue #3 ②）
-    ("年龄：缺失 measured_at ⇒ 明说未记录",
-     lambda: _age_human({"value": 1}) == "未记录测量时间"),
-    ("年龄：刚刚测的 ⇒ 今天",
-     lambda: _age_human({"measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}) == "今天测的"),
+    ("facts.age_unrecorded",
+     lambda: _age_human({"value": 1}).code == "facts.age.unrecorded"),
+    ("facts.age_today",
+     lambda: _age_human({"measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}).code
+     == "facts.age.today"),
     # ④ 官方只读出口（issue #4 ④）
-    ("--get：键存在（字典形状）⇒ (True, 裸值)",
+    ("facts.get_dict_shape",
      lambda: get_value({"facts": {"n": {"value": 12, "cmd": "c"}}}, "n") == (True, 12)),
-    ("--get：键存在（裸值形状）⇒ (True, 值)",
+    ("facts.get_bare_shape",
      lambda: get_value({"facts": {"n": 7}}, "n") == (True, 7)),
-    ("★ --get：键不存在 ⇒ (False, 错误句)（空输入不是通过）",
+    ("★ facts.get_unknown_key",
      lambda: get_value({"facts": {"n": 1}}, "zzz")[0] is False),
 ]
 

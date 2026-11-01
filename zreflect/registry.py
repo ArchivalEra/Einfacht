@@ -36,6 +36,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import module_meta, fatal, repo, selftest                    # noqa: E402
+from i18n import M                                        # noqa: E402
 from knobs import REGISTRY                                # noqa: E402
 
 GATES_BEGIN = "<!-- AUTO:GATES -->"
