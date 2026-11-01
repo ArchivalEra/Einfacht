@@ -56,7 +56,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
-from i18n import M, bind, load_pack                      # noqa: E402
+from i18n import M, bind, load_pack
+from knobs import a_pack_lang                      # noqa: E402                      # noqa: E402
 from ledger import facts_of, load, value_of              # noqa: E402
 from runner import default_timeout, quote, run_cmd       # noqa: E402
 
@@ -205,15 +206,29 @@ def _cases():
     # 循环论证。读真包才把「迁移没有丢语义」变成可证伪的断言：冷启动提示若从
     # zh 包里掉了，这条自证当场红。（zh 包按契约存的是**逐字的被移除文本**，
     # 所以它同时是「迁移保真」的证据。）
-    real_zh = load_pack("zh")
+    # ⚠️ 同样不能写死 `zh`（见 check_facts 里同一处注释）：只装一个包是
+    # 产品主场景。用**第一个已装的包**；一个都没有 ⇒ 无从成立，明说。
+    pack_lang = a_pack_lang()
+    real_pack = load_pack(pack_lang) if pack_lang else {}
 
     def codes(ledger, runner):
         return [p.code for p in replay_all(ledger, runner=runner)["problems"]]
 
     def said(ledger, runner):
-        """在真实 zh 语言包下渲染后的文本。"""
-        with bind("zh", {"zh": real_zh}):
+        """在该语言包下渲染后的文本（零包 ⇒ 空列表，判据见 pack_entry_wired）。"""
+        if not pack_lang:
+            return []
+        with bind(pack_lang, {pack_lang: real_pack}):
             return [str(p) for p in replay_all(ledger, runner=runner)["problems"]]
+
+    def _hint_has(ledger, runner, *anchors):
+        """渲染后的句子是否都含这些 **ASCII 锚点**。
+
+        零包（`REFLECT_I18N` 指到没包的目录）⇒ `said()` 为空 ⇒ 这里红 ——
+        那是**对的**：零包是配置坏，不是「不适用」。
+        """
+        return any(all(a in text for a in anchors)
+                   for text in said(ledger, runner))
 
     def params(ledger, runner, code):
         return [p.params for p in replay_all(ledger, runner=runner)["problems"]
@@ -230,13 +245,13 @@ def _cases():
          lambda: replay_all(multi, runner=lambda c: (0, "1"))["problems"] == []),
         # ② 该报的必须报
         ("★ replay.mismatch_repair_hint",
-         # 真实 zh 包里「不符」这条必须仍带修法锚点：`--accept-changes`（ASCII，
+         # 真实包里「不符」这条必须仍带修法锚点：`--accept-changes`（ASCII，
          # 是修法的可判定部分）+ `facts.py`（重测命令）。纯中文语义锚点会把自己
          # 变成「本体里的自然语言」—— 那正是零语言闸门要消灭的形状。
+         # 零包 ⇒ 没有可渲染的句子，这条语义锚点**不适用**（明说不假装通过）。
          lambda: codes(LED, lambda c: (0, "13")) == ["replay.mismatch"]
-         and any("accept-changes" in s and "facts.py" in s
-                 for s in said(LED, lambda c: (0, "13")))
-         and params(LED, lambda c: (0, "13"), "replay.mismatch")[0]["key"] == "n"),
+         and params(LED, lambda c: (0, "13"), "replay.mismatch")[0]["key"] == "n"
+         and _hint_has(LED, lambda c: (0, "13"), "accept-changes", "facts.py")),
         ("★ replay.mismatch_full_line",
          lambda: codes(LED, lambda c: (0, "count=12 total")) == ["replay.mismatch"]),
         ("★ replay.command_failed",
@@ -247,7 +262,7 @@ def _cases():
          # 冷启动提示的语义锚点：`REFLECT_REPLAY_TIMEOUT` 旋钮名（ASCII）必须
          # 仍在模板里 —— 删掉冷启动提示句（它原先就带着这个旋钮名）⇒ 这条红。
          lambda: codes(LED, lambda c: (None, "")) == ["replay.timeout", "replay.none_ran"]
-         and any("REFLECT_REPLAY_TIMEOUT" in s for s in said(LED, lambda c: (None, "")))),
+         and _hint_has(LED, lambda c: (None, ""), "REFLECT_REPLAY_TIMEOUT")),
         ("★ replay.no_cmd",
          lambda: codes({"facts": {"n": {"value": 1, "source": "s"}}},
                        lambda c: (0, "1")) == ["replay.no_cmd"]),

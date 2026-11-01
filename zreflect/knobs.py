@@ -313,13 +313,19 @@ def _discovery_sees_planted_lang():
     import shutil                                        # noqa: PLC0415
     import tempfile                                      # noqa: PLC0415
     import json                                          # noqa: PLC0415
-    zh = load_pack("zh")
+    # 基准包用**第一个已装的**，不写死 zh：只装一个包（产品主场景）时，
+    # 写死 zh 会让这条自证假红（实测 en-only ⇒ 16 PASS / 1 FAIL）。
+    base = a_pack_lang()
+    if not base:
+        return False        # 零包 = 配置坏（`REFLECT_I18N` 指到没包的目录），不许绿
+    zh = load_pack(base)
     if not zh:
-        return False                    # 连基准包都读不到 ⇒ 环境坏，不许绿
+        return False
     d = tempfile.mkdtemp()
     try:
-        os.makedirs(os.path.join(d, "zh"))
-        with open(os.path.join(d, "zh", "all.json"), "w", encoding="utf-8") as fh:
+        os.makedirs(os.path.join(d, base))
+        with open(os.path.join(d, base, "all.json"), "w",
+                  encoding="utf-8") as fh:
             json.dump(zh, fh, ensure_ascii=False)
         # 种一个**半残**的 de：只有一半的键 —— 不发现它就会漏判
         os.makedirs(os.path.join(d, "de"))
@@ -365,6 +371,17 @@ def installed_langs():
     except OSError:
         return []
     return sorted(out)
+
+
+def a_pack_lang():
+    """取一个**已装**的语言包名（自证「读真包」类判据用）；一个都没装 ⇒ None。
+
+    这些判据验的是「渲染保真」（消息模板里占位符对不对、句子还在不在），
+    **语言是谁不重要** —— 所以不能写死 `zh`。下游仓只装一个包是产品主场景
+    （「从一堆包里挑一个」），写死 zh 会让 `REFLECT_I18N=<只有en>` 的自证假红。
+    """
+    langs = installed_langs()
+    return langs[0] if langs else None
 
 
 def pack_sync_problems(langs=None, loader=None, discovery=None):

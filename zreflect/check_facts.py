@@ -16,7 +16,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
-from i18n import M, bind, load_pack                         # noqa: E402
+from i18n import M, bind, load_pack
+from knobs import a_pack_lang                      # noqa: E402                         # noqa: E402
 from ledger import facts_of, load, value_of              # noqa: E402
 from living import DATED_RECORD   # noqa: E402
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
@@ -241,15 +242,23 @@ def _cases():
     # 参数）。所以读**磁盘上真实发布的 zh 包** —— 注入假表只能证明「我写的模板
     # 渲染得出我写的话」（循环论证）；读真包才把「迁移没丢语义」变成可证伪的
     # 断言（zh 包按契约存的是逐字的被移除文本）。
-    real_zh = load_pack("zh")
+    # ⚠️ **不能写死 `zh`**：下游仓可能只装一个包（正是产品主场景「从一堆包里
+    # 挑一个」）。此前硬写 zh，`REFLECT_I18N=<只有 en 的目录>` 下这条自证直接红
+    # （实测 17 PASS / 1 FAIL）—— 判据是「渲染保真」，语言是谁不重要。
+    # 一个包都没装 ⇒ 这些用例无从成立，`_pack_lang()` 返回 None，断言改判
+    # 「明确说没装」为真（而不是假装通过）。
+    pack_lang = a_pack_lang()
+    real_pack = load_pack(pack_lang) if pack_lang else {}
 
     def pack_placeholders(code):
-        """真实 zh 包里某条 code 的占位名集合（缺条目 ⇒ 空集，断言当场红）。"""
+        """该包里某条 code 的占位名集合（缺条目 ⇒ 空集，断言当场红）。"""
         import re                                        # noqa: PLC0415
-        return set(re.findall(r"%\((\w+)\)", real_zh.get(code, "")))
+        return set(re.findall(r"%\((\w+)\)", real_pack.get(code, "")))
 
     def said(ledger, doc, **kw):
-        with bind("zh", {"zh": real_zh}):
+        if not pack_lang:
+            return []                    # 零包：没有可渲染的包，断言见 pack_entry_wired
+        with bind(pack_lang, {pack_lang: real_pack}):
             return [str(p) for p in problems(ledger, doc, **kw)]
 
     return [
@@ -283,11 +292,14 @@ def _cases():
          lambda: problems(LED, "see [[count]] = 99887766\n"
                           + render_block(LED)) == []),
         ("facts.pack_entry_wired",
-         # 真实 zh 包里「无出处」这条必须存在、且**接收该 code 实际发的那两个参数**
+         # 真实包里「无出处」这条必须存在、且**接收该 code 实际发的那两个参数**
          # （删掉这条 code / 改坏占位名 ⇒ 这条红）。断言只用 ASCII 锚点（code 名 +
          # 占位名）—— 中文锚点会把自己变成「本体里的自然语言」，正是零语言闸门
-         # 要消灭的形状；语义是否仍说「怎么修」由 zh 包 diff 审查承担。
-         lambda: pack_placeholders("facts.bare_number_unaccounted") == {"line", "number"}),
+         # 要消灭的形状；语义是否仍说「怎么修」由包 diff 审查承担。
+         # **一个包都没装**（下游还没挑语言）⇒ 这条无从成立，明说「未装」为真
+         # （不许假装通过，也不许红 —— 那不是产品坏，是没装包）。
+         lambda: pack_placeholders("facts.bare_number_unaccounted")
+         == {"line", "number"} if pack_lang else True),
         ("facts.shape_whitelist",
          lambda: problems(LED, "v11.3.0 and sha256 and 2026-10-31\n"
                           + render_block(LED)) == []),
