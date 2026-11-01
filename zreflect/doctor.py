@@ -246,7 +246,7 @@ def down_labels(checks, probe=None, timeout=None):
     for c in checks:
         ok, detail = probe(c, t)
         if not ok:
-            downs.append("%s（%s）" % (label(c), detail))
+            downs.append(M("doctor.down_label", label=label(c), detail=detail))
     return downs
 
 
@@ -275,25 +275,21 @@ def run(argv=None):
             if float(raw_timeout) <= 0:
                 raise ValueError
         except ValueError:
-            return fatal("REFLECT_DOCTOR_TIMEOUT=%r 不是正数"
-                         "秒 —— 超时是探针的解耦绳，不许坏" % raw_timeout)
+            return fatal(M("doctor.bad_timeout", value=raw_timeout))
     p = _spec_path()
     if p is None:
-        return off("doctor 预检：未配置（REFLECT_DOCTOR 未配且默认 "
-                   "%s 不在）⇒ 本预检未启用（小插件；要启用："
-                   "cp zreflect/%s.example %s）"
-                   % (DEFAULT_SPEC, DEFAULT_SPEC, DEFAULT_SPEC))
+        return off(M("doctor.off", name=DEFAULT_SPEC,
+                     path=os.path.join("zreflect", DEFAULT_SPEC)
+                     + ".example"))
     if not os.path.exists(p):
-        return fatal("REFLECT_DOCTOR 已配置但规格文件不在 —— "
-                     "先写规格（或撤掉该旋钮）")
+        return fatal(M("doctor.spec_missing"))
     spec, err = load_spec(p)
     if err:
         return fatal(err)
     checks = spec.get("checks") if isinstance(spec, dict) else None
     probs = spec_problems(checks)
     if probs:
-        print("doctor 预检：规格 %d 个问题" % len(probs),
-              file=sys.stderr)
+        print(M("doctor.spec_problems", count=len(probs)), file=sys.stderr)
         for x in probs:
             print("  · " + x, file=sys.stderr)
         return 2
@@ -309,18 +305,19 @@ def _cases():
     ok_probe = lambda c, t: (True, "")           # noqa: E731
 
     def down_probe(c, t):
-        return (False, "假 DOWN")
+        return (False, "fake DOWN")
 
+    # 夹具（spec 正文）用英文：它们是被校验的**输入**，不是本体输出。
     good = [
         {"kind": "http", "url": "http://127.0.0.1:8761/",
          "expect_status": 200,
          "expect_headers": {"Cross-Origin-Opener-Policy":
                             "same-origin"},
-         "why": "验收底线"},
+         "why": "acceptance baseline"},
         {"kind": "docker", "container": "o113",
-         "state": "running", "why": "构建车道"},
+         "state": "running", "why": "build lane"},
         {"kind": "port-free", "port": 8868,
-         "why": "实验独占端口"},
+         "why": "experiment-only port"},
     ]
 
     def timeout_threaded():
@@ -336,60 +333,83 @@ def _cases():
 
     return [
         # ① 正常不报
-        ("合法清单 + 全活 ⇒ 无问题、无 DOWN",
+        ("doctor.valid_spec_all_alive",
          lambda: spec_problems(good) == []
          and down_labels(good, probe=ok_probe) == []),
-        ("http 状态 + 头都满足 ⇒ 满足",
+        ("doctor.http_verdict_ok",
          lambda: _http_verdict(
              200, {"cross-origin-opener-policy": "same-origin"},
              good[0]) == (True, "")),
-        ("docker running ⇒ 满足",
+        ("doctor.docker_verdict_ok",
          lambda: _docker_verdict("true\n") == (True, "")),
-        ("端口拒绝连接 = 空着 ⇒ 满足",
+        ("doctor.port_free_verdict_ok",
          lambda: _port_free_verdict(False) == (True, "")),
         # ② 该报的必须报
-        ("★ http 状态不符 ⇒ 必须报",
-         lambda: _http_verdict(500, {}, good[0])[0] is False),
-        ("★ http 头缺失 ⇒ 必须报",
-         lambda: _http_verdict(200, {}, good[0])[0] is False),
-        ("★ http 头值不符 ⇒ 必须报",
+        ("★ doctor.http_status_mismatch",
+         lambda: _http_verdict(500, {}, good[0])[0] is False
+         and _http_verdict(500, {}, good[0])[1].code
+         == "doctor.http_status_mismatch"),
+        ("★ doctor.http_header_missing",
+         lambda: _http_verdict(200, {}, good[0])[0] is False
+         and _http_verdict(200, {}, good[0])[1].code
+         == "doctor.http_header_mismatch"),
+        ("★ doctor.http_header_value_mismatch",
          lambda: _http_verdict(
              200, {"cross-origin-opener-policy": "credentials"},
              good[0])[0] is False),
-        ("★ docker 不 running ⇒ 必须报",
-         lambda: _docker_verdict("false")[0] is False),
-        ("★ 端口被占（连上了）⇒ 必须报",
-         lambda: _port_free_verdict(True)[0] is False),
-        ("★ 一条 DOWN ⇒ 标签点名（裸值契约）",
-         lambda: down_labels([good[1]], probe=down_probe)
-         == ["docker:o113（假 DOWN）"]),
-        ("★ 清单空 ⇒ 必须报（零值守卫）",
-         lambda: spec_problems([]) != []),
+        ("★ doctor.container_not_running",
+         lambda: _docker_verdict("false")[0] is False
+         and _docker_verdict("false")[1].code
+         == "doctor.container_not_running"),
+        ("★ doctor.port_in_use",
+         lambda: _port_free_verdict(True)[0] is False
+         and _port_free_verdict(True)[1].code == "doctor.port_in_use"),
+        ("★ doctor.down_label_names_the_target",
+         lambda: [p.code for p in down_labels([good[1]], probe=down_probe)
+                  ] == ["doctor.down_label"]
+         and down_labels([good[1]], probe=down_probe)[0].params["label"]
+         == "docker:o113"),
+        ("★ doctor.empty_spec",
+         lambda: [p.code for p in spec_problems([])] == ["doctor.empty_spec"]),
         ("★ doctor.missing_kind",
          lambda: [p.code for p in spec_problems([{"why": "w"}])
                   ] == ["doctor.missing_kind"]),
-        ("★ doctor.unknown_kind（未知判据 = 静默通过）",
+        ("★ doctor.unknown_kind",
          lambda: [p.code for p in spec_problems(
              [{"kind": "smtp", "why": "w"}])] == ["doctor.unknown_kind"]),
-        ("★ doctor.missing_why（僵尸守卫）",
+        ("★ doctor.missing_why",
          lambda: [p.code for p in spec_problems(
              [{"kind": "http", "url": "http://x/"}])] == ["doctor.missing_why"]),
-        ("★ http 缺 url ⇒ 必须报",
-         lambda: any("缺 url" in x for x in spec_problems(
-             [{"kind": "http", "why": "w"}]))),
-        ("★ docker 坏 state ⇒ 必须报",
-         lambda: any("只支持 running" in x for x in spec_problems(
+        ("★ doctor.http_missing_url",
+         lambda: [p.code for p in spec_problems(
+             [{"kind": "http", "why": "w"}])] == ["doctor.http_missing_url"]),
+        ("★ doctor.docker_bad_state",
+         lambda: [p.code for p in spec_problems(
              [{"kind": "docker", "container": "c",
-               "state": "paused", "why": "w"}]))),
-        ("★ port-free 坏 port ⇒ 必须报",
-         lambda: any("port 必须是" in x for x in spec_problems(
+               "state": "paused", "why": "w"}])] == ["doctor.docker_bad_state"]),
+        ("★ doctor.port_not_in_range",
+         lambda: [p.code for p in spec_problems(
              [{"kind": "port-free", "port": 70000,
-               "why": "w"}]))),
-        ("★ 每条探测带超时（探针收到配置的超时值）",
+               "why": "w"}])] == ["doctor.port_not_in_range"]),
+        ("★ doctor.http_status_not_int",
+         lambda: [p.code for p in spec_problems(
+             [{"kind": "http", "url": "http://x/",
+               "expect_status": "200", "why": "w"}])
+             ] == ["doctor.http_status_not_int"]),
+        ("★ doctor.http_headers_not_object",
+         lambda: [p.code for p in spec_problems(
+             [{"kind": "http", "url": "http://x/",
+               "expect_headers": ["a"], "why": "w"}])
+             ] == ["doctor.http_headers_not_object"]),
+        ("★ doctor.docker_missing_container",
+         lambda: [p.code for p in spec_problems(
+             [{"kind": "docker", "state": "running", "why": "w"}])
+             ] == ["doctor.docker_missing_container"]),
+        ("★ doctor.timeout_passed_to_every_probe",
          lambda: timeout_threaded()),
         # ③ 空输入必须报
-        ("★ checks 是 None ⇒ 必须报（零值守卫）",
-         lambda: spec_problems(None) != []),
+        ("★ doctor.empty_spec_none",
+         lambda: [p.code for p in spec_problems(None)] == ["doctor.empty_spec"]),
     ]
 
 
