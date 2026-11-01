@@ -214,7 +214,12 @@ def _cases():
 
 
 def _selftest():
-    from gate import selftest                          # noqa: PLC0415
+    from gate import activate_or_fatal, selftest          # noqa: PLC0415
+    # 激活**先于**自证：包设了却不在 ⇒ FATAL rc 2（此前这条入口从不激活，
+    # 于是 REFLECT_LANG=de 下一个不存在的包被静默接受）。
+    rc = activate_or_fatal()
+    if rc:
+        return rc
     return selftest("ledger（两道守卫）", _cases())
 
 

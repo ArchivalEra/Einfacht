@@ -365,6 +365,8 @@ def _cases():
          lambda: _port_free_verdict(True)[0] is False
          and _port_free_verdict(True)[1].code == "doctor.port_in_use"),
         ("★ doctor.down_label_names_the_target",
+         # 只钉**用例名宣称**的那件事（label 指向目标）；`detail` 是夹具
+         # probe 的透传，钉进整字典会让这条断言随夹具改字而红。
          lambda: [p.code for p in down_labels([good[1]], probe=down_probe)
                   ] == ["doctor.down_label"]
          and down_labels([good[1]], probe=down_probe)[0].params["label"]

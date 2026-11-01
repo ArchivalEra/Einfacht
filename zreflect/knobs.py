@@ -35,7 +35,7 @@ import re
 import sys
 
 from gate import module_meta, GATE_REPO                                # noqa: E402
-from i18n import M, bind                                  # noqa: E402
+from i18n import M, bind, load_pack, NULL                         # noqa: E402
 
 class _Semantic(str):
     """旋钮的一行语义（`REGISTRY` 第三项）：**延迟渲染**的用户可见文本。
@@ -115,7 +115,7 @@ REGISTRY = {
                        _Semantic("knobs.sem.reflect_phases")),
     "REFLECT_LANG": ("value", "",
                      _Semantic("knobs.sem.reflect_lang")),
-    "REFLECT_I18N": ("dir", "zreflect/lang",
+    "REFLECT_I18N": ("dir", "",
                      _Semantic("knobs.sem.reflect_i18n")),
     "REFLECT_I18N_ROOT": ("dir", "",
                           _Semantic("knobs.sem.reflect_i18n_root")),
@@ -259,15 +259,16 @@ def registry_vs_readme_problems(readmes=None, tables=None):
 
 # ── 自证：名册自身的形状守卫（登记表坏 = 所有消费方的判据数据坏）──────────────
 
-def _real_pack(lang, fname):
-    """读磁盘上真实发布的语言包分片（自证用；缺失 ⇒ {} 让断言当场红）。"""
-    import json                                          # noqa: PLC0415
-    p = os.path.join(GATE_REPO, "zreflect", "lang", lang, fname)
-    try:
-        with open(p, encoding="utf-8") as fh:
-            return json.load(fh)
-    except (OSError, ValueError):
-        return {}
+def _real_pack(lang):
+    """读磁盘上真实发布的语言包**整包**（自证用；缺失 ⇒ {} 让断言当场红）。
+
+    一律走 `i18n.load_pack`，并且**不指定命名空间分片**：真装载器是把
+    `<lang>/*.json` 与 `<lang>.json` 合并成一张表，自证必须看同一张表 ——
+    此前这里自己拼路径、只读单个分片，于是文档认可的单文件包被判红
+    （实测 10 PASS / 1 FAIL），且路径锚错让默认值解析成
+    `zreflect/zreflect/lang`。
+    """
+    return load_pack(lang)
 
 
 def _semantic_packs_intact():
@@ -276,8 +277,8 @@ def _semantic_packs_intact():
     这是 `_Semantic` 延迟渲染的**可证伪**证据：语义从本体搬到包里若掉了条目，
     这里当场红（而不是等人看见 `knobs.sem.reflect_facts` 这种裸 code）。
     """
-    zh = _real_pack("zh", "knobs.json")
-    en = _real_pack("en", "knobs.json")
+    zh = _real_pack("zh")
+    en = _real_pack("en")
     codes = [w.code for _k, _d, w in REGISTRY.values()
              if isinstance(w, _Semantic)]
     if not codes:
@@ -294,6 +295,80 @@ def _semantic_packs_intact():
                if isinstance(w, _Semantic)):
             return False
     return True
+
+
+def pack_sync_problems(langs=("zh", "en"), loader=None):
+    """C4 对账③：各语言包的**键集**与**占位符名**必须一致。
+
+    此前无任何东西强制这件事 —— 手工把一条 code 加进 zh 却忘了 en，
+    `REFLECT_LANG=en` 的用户就静默看到裸 code（本仓立身要消灭的静默退化）。
+    实测现状两份是相等的，但「相等」是运气不是判据。
+
+    `loader` 可注入（自证用假包）；默认走 `i18n.load_pack`（**合并视图**，
+    与真装载器看同一张表 —— 只读单个分片会与装载器分叉）。
+    """
+    load = loader if loader is not None else load_pack
+    tables = {}
+    for lang in langs:
+        tables[lang] = load(lang)
+    out = []
+    if not tables:
+        return [M("knobs.pack_sync_empty", langs=", ".join(langs))]
+    # 零值守卫：全空 ⇒ 不是「一致」，是没装上
+    if not any(tables.values()):
+        return [M("knobs.pack_sync_empty", langs=", ".join(langs))]
+    ref_lang = sorted(tables)[0]
+    ref = tables[ref_lang]
+    for lang in sorted(tables):
+        if lang == ref_lang:
+            continue
+        other = tables[lang]
+        only_ref = sorted(set(ref) - set(other))
+        only_other = sorted(set(other) - set(ref))
+        if only_ref:
+            out.append(M("knobs.pack_missing_keys",
+                         lang=lang, reference=ref_lang,
+                         keys=", ".join(only_ref[:8])))
+        if only_other:
+            out.append(M("knobs.pack_extra_keys",
+                         lang=lang, reference=ref_lang,
+                         keys=", ".join(only_other[:8])))
+        # 占位符名一致：差一个 ⇒ 渲染时 KeyError（或更糟，静默少显示一段）
+        for code in sorted(set(ref) & set(other)):
+            a = sorted(_PLACEHOLDER_RE.findall(ref[code]))
+            b = sorted(_PLACEHOLDER_RE.findall(other[code]))
+            if a != b:
+                # 参数名不能叫 `code`：`M(code, **params)` 的首参就叫 code，
+                # 同名 kwarg 会 `TypeError: M() got multiple values`（实测踩到）。
+                out.append(M("knobs.pack_placeholder_mismatch",
+                             lang=lang, key=code, reference=ref_lang,
+                             want=", ".join(a) or "-",
+                             got=", ".join(b) or "-"))
+    return out
+
+
+def null_pack():
+    """一个**显式 null 包**的 context manager（自证专用）。
+
+    自证里的形状判据（「没装包时应该是 code」）必须自带 null 作用域：入口
+    `activate()` 会把 `REFLECT_LANG` 设成 zh/en，断言若不自带作用域，就变成
+    「跑在什么环境就考什么」—— 实测 `REFLECT_LANG=zh gates-selftest.sh` 下
+    这类用例全红。
+    """
+    return bind(NULL, {})
+
+
+def _semantics_are_codes_under(cm):
+    """在 `cm` 语言包作用域下，每条旋钮语义都渲染成 code（且非空）。"""
+    sem = [(k, w) for k, _d, w in REGISTRY.values()
+           if isinstance(w, _Semantic)]
+    if not sem:
+        return False                        # 零值守卫：语义全没了 ⇒ 名册坏
+    cm.__enter__()
+    try:
+        return all(str(w) == w.code for _k, w in sem)
+    finally:
+        cm.__exit__(None, None, None)
 
 
 def _cases():
@@ -325,18 +400,20 @@ def _cases():
         ("knobs.real_tree_scan_clean", lambda: scan_surface_problems() == []),
         ("knobs.real_readmes_clean", lambda: readme_problems() == []),
         ("knobs.semantic_renders_as_code_by_default",
-         lambda: all(str(w) == w.code for _k, _d, w in REGISTRY.values())),
+         # 自带 **null 作用域**：这条测的是「没装包时是 code」，与入口激活了
+         # 什么包无关。此前直接读 `str(w)`，`REFLECT_LANG=zh` 下渲染成句子
+         # 于是全红（实测）—— 断言没声明作用域 = 跑在什么环境就考什么。
+         lambda: _semantics_are_codes_under(null_pack())),
         # 语义延迟渲染的**正向证据**：真 zh 包里每条语义都有条目，且在 zh 包
         # 下渲染出的是那句话（不是 code）。读磁盘真包 = 证明迁移没丢语义
         # （注入假表只能证明「我写的模板渲染出我写的字」—— 循环论证）。
         # 复跑：REFLECT_LANG=zh python3 zreflect/knobs.py --selftest
         ("knobs.semantics_present_in_real_packs",
          lambda: _semantic_packs_intact()),
+        # zh / en 键集与占位符名一致（C4 对账③）。真包绿 = 迁移没落一边；
+        # 反向断言见 ② 档（假包必须报）。
+        ("knobs.real_packs_in_sync", lambda: pack_sync_problems() == []),
         # ② 该报的必须报
-        ("★ knobs.phantom_token",
-         lambda: any(p.code == "knobs.phantom_token"
-                     and p.params.get("token") == phantom
-                     for p in scan_surface_problems(py_dir=d))),
         ("★ knobs.phantom_token",
          lambda: any(p.code == "knobs.phantom_token"
                      and p.params.get("token") == phantom
@@ -345,7 +422,19 @@ def _cases():
          lambda: any(x.code == "knobs.readme_phantom" for x in readme_problems(files={
              "README.md": "see " + "REFLECT_" + "GHOSTY" + ".",
              "README.zh.md": "x", "README.de.md": "x"}))),
+        # 对账器本身必须能红（否则它只是一条恒绿的装饰）
+        ("★ knobs.pack_missing_keys",
+         lambda: [p.code for p in pack_sync_problems(loader=lambda l: {
+             "zh": {"a": "x"}, "en": {"a": "x", "b": "y"}}[l])
+         ] == ["knobs.pack_missing_keys"]),
+        ("★ knobs.pack_placeholder_mismatch",
+         lambda: [p.code for p in pack_sync_problems(loader=lambda l: {
+             "zh": {"a": "x %(k)s"}, "en": {"a": "x %(j)s"}}[l])
+         ] == ["knobs.pack_placeholder_mismatch"]),
         # ③ 空输入必须报
+        ("★ knobs.pack_sync_empty",
+         lambda: [p.code for p in pack_sync_problems(loader=lambda l: {})]
+         == ["knobs.pack_sync_empty"]),
         ("★ knobs.registry_empty", lambda: bool(REGISTRY)),
         ("knobs.phases_registered", lambda: "REFLECT_PHASES" in REGISTRY),
     ]

@@ -32,5 +32,9 @@
  "knobs.sem.reflect_retractions": "the retractions ledger",
  "knobs.sem.reflect_stale_days": "measurement-age alarm in days; empty = that rule is explicitly off",
  "knobs.sem.reflect_world": "world declaration (list of things to verify); missing file = off",
- "knobs.sem.reflect_world_line": "world line override (CI / special run modes)"
+ "knobs.sem.reflect_world_line": "world line override (CI / special run modes)",
+ "knobs.pack_sync_empty": "pack reconciliation: neither the zh nor the en pack could be read (or both are empty) — an empty table is not 'consistent' (zero-value guard): %(langs)s",
+ "knobs.pack_missing_keys": "pack %(lang)s is missing keys present in %(reference)s (users on %(lang)s would see bare codes): %(keys)s",
+ "knobs.pack_extra_keys": "pack %(lang)s has keys absent from %(reference)s (the other side then shows bare codes): %(keys)s",
+ "knobs.pack_placeholder_mismatch": "pack %(lang)s's `%(key)s` placeholder names differ from %(reference)s (%(reference)s: %(want)s / %(lang)s: %(got)s) — rendering would KeyError"
 }

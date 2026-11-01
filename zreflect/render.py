@@ -140,7 +140,12 @@ def _selftest():
     import os                                            # noqa: PLC0415
     import sys                                           # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from gate import selftest                            # noqa: PLC0415
+    from gate import activate_or_fatal, selftest         # noqa: PLC0415
+    # 激活**先于**自证：包设了却不在 ⇒ FATAL rc 2（此前这条入口从不激活，
+    # `REFLECT_LANG=de render.py --selftest` 对不存在的包静默 rc=0）。
+    rc = activate_or_fatal()
+    if rc:
+        return rc
     return selftest("render（数字的唯一产地）", _cases())
 
 

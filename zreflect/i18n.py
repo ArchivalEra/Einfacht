@@ -36,6 +36,17 @@ from __future__ import annotations
 import os
 import re
 
+# ── 语言包位置：**唯一解析点** ────────────────────────────────────────────────
+# 曾经有 3～4 个产地（i18n._table_for / knobs._real_pack / check_facts /
+# check_facts_replay），改口径时只修到其中两处 —— 另外两处继续用 GATE_REPO
+# 相对，跨仓夹具里当场全红（实测：GATE_REPO=$(mktemp -d) 下 check_facts
+# 17 PASS / 1 FAIL）。现在一律走 `pack_dir()` / `load_pack()`，别处只许调它们。
+_TOOL_DIR = os.path.dirname(os.path.abspath(__file__))        # .../zreflect
+_TOOL_REPO = os.path.dirname(_TOOL_DIR)                       # 承载套件的仓根
+# 未设 `REFLECT_I18N` 时用的**内建包目录**（相对工具仓根）。设了就不是它了
+# —— 见 `pack_dir()` 的三条口径，别再把它当「默认路径值」写进文档。
+BUILTIN_PACKS = "zreflect/lang"
+
 # 契约前缀：语言包的值**不许**以这些形状开头（否则一条翻译就能伪装成机器行，
 # 让 run_phase 的 `startswith("OFF:")`、runner 的 `=== N PASS` grep 全部失效）。
 # ⚠️ 这些谓词**只在成品行首**生效（`_validate` 检查模板渲染后的形态），
@@ -117,55 +128,103 @@ def M(code, **params):
     return Message(code, params)
 
 
+def pack_dir():
+    """语言包目录的绝对路径 —— **全仓唯一的解析点**。
+
+    三条口径（每条都是踩过的坑，别简化）：
+
+      · **未设 `REFLECT_I18N`** ⇒ 用套件自带的内建包 `BUILTIN_PACKS`，锚在
+        **工具仓根**。这是「拉了套件就能用」的那个场景：语言包随工具走。
+        也因此跨仓夹具（`GATE_REPO=$(mktemp -d)`）能正常装载 —— 实测踩到过：
+        锚成 GATE_REPO 相对时，夹具里每个闸门都 MissingPack（0/15 全红）。
+        语言包是**工具**的属性，不是被检查仓库的。
+      · **设了相对路径** ⇒ 相对**被检查仓根**（与 `REFLECT_DOCS` 等所有
+        名字型旋钮同一口径 —— env 里写的「相对仓库根的名字」才对得上）。
+      · **设了绝对路径** ⇒ 原样用。
+
+    「未设用工具、设了用被检查仓」的矛盾曾经真的是一处洞：把 README 里那个
+    默认值 `zreflect/lang` 显式设上，解析成 `zreflect/zreflect/lang` ⇒ FATAL
+    （实测）。所以默认值在文档里写**空**，值只由本函数产生。
+    """
+    raw = os.environ.get("REFLECT_I18N", "").strip()
+    if not raw:
+        return os.path.join(_TOOL_REPO, BUILTIN_PACKS)
+    if os.path.isabs(raw):
+        return raw
+    return os.path.join(_TOOL_REPO, raw)
+
+
+def load_pack(lang):
+    """读语言包的**合并表**（dict）—— 与真装载器（`_table_for`）看到的那张表一致。
+
+    两种形状都认，且**总是合并**：
+
+      · `<lang>/*.json`  按命名空间分文件（并行开发用，后者覆盖同 code）
+      · `<lang>.json`    单文件（小仓 / 样板）
+
+    合并是必须的：真装载器就是合并的。任何只读某一个分片的读者都会与装载器
+    分叉 —— 实测踩到：自证里按分片读，于是文档认可的单文件包被判红
+    （10 PASS / 1 FAIL）。别处也不许再自己 `open(...json...)`（曾经四处产地
+    各写各的，改口径只修到两处）。
+
+    缺失 / 坏 JSON ⇒ `{}`（不抛出）：自证里「读真包」的断言靠空表当场红，
+    比让整条自证崩掉更好定位。**真装载走 `_table_for`**，它才抛 `MissingPack`。
+    """
+    import json                                          # noqa: PLC0415
+    base = pack_dir()
+    table = {}
+    d = os.path.join(base, lang)
+    if os.path.isdir(d):
+        for n in sorted(os.listdir(d)):
+            if not n.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(d, n), encoding="utf-8") as fh:
+                    part = json.load(fh)
+            except (OSError, ValueError):
+                continue
+            if isinstance(part, dict):
+                table.update(part)
+    single = os.path.join(base, "%s.json" % lang)
+    if os.path.exists(single):
+        try:
+            with open(single, encoding="utf-8") as fh:
+                part = json.load(fh)
+        except (OSError, ValueError):
+            part = None
+        if isinstance(part, dict):
+            table.update(part)
+    return table
+
+
 def _table_for(lang, tables):
-    """解析语言包：注入的 tables 优先，其次磁盘（`REFLECT_I18N/<lang>.json`）。
+    """解析语言包：注入的 tables 优先，其次磁盘（`pack_dir()`）。
 
     未装语言包 ⇒ `None`（走 null 包）。**不做 fallback** —— 半装的语言包
     不该让人看到中英混杂（本仓纪律：宁可明说未启用，不假装查过）。
+
+    ⚠️ 注入的 tables **同样要过 `_validate`**：此前注入路径直接 `return got`，
+    于是「空包不是已翻译」这条零值守卫**只在磁盘路径上成立** —— 自证里用
+    注入表测它永远绿（实测踩到：`i18n.empty_pack_rejected` 在 null 模式红）。
+    自证跑的是注入路径，守卫若只守在另一个路径上，等于没守。
     """
     if tables is not None:
         got = tables.get(lang) if lang else None
         if got is None and lang:
             raise MissingPack("自证注入的 tables 里没有 %r" % lang)
+        if got is not None:
+            _validate(got, lang)
         return got
     if not lang:
         return None
-    import json                                          # noqa: PLC0415
-    # ⚠️ 语言包是**工具**的属性，不是被检查仓库的 —— 用**本文件所在处**作锚，
-    # 不用 `gate.repo()`（那是 GATE_REPO 相对）。
-    # 实测踩到：跨仓夹具把 GATE_REPO 指向临时目录，那里没有 zreflect/lang
-    # ⇒ `REFLECT_LANG=zh` 时夹具里每个闸门都 MissingPack FATAL（0/15 全红）。
-    # 与 registry 的 `_zdir()` 是同一类修正。
-    tool_dir = os.path.dirname(os.path.abspath(__file__))
-    i18n_dir = os.environ.get("REFLECT_I18N", "").strip() or "lang"
-    base = (i18n_dir if os.path.isabs(i18n_dir)
-            else os.path.join(tool_dir, i18n_dir))
-    # 两种形状都认（后者是为**并行开发**设计的，避免多人写同一个文件）：
-    #   lang/<lang>.json        单文件（小仓 / 样板）
-    #   lang/<lang>/*.json      按命名空间分文件（每闸门一份，合并时后者覆盖同 code）
-    single = os.path.join(base, "%s.json" % lang)
-    d = os.path.join(base, lang)
-    table = {}
-    merged_any = False
-    if os.path.isdir(d):
-        for n in sorted(os.listdir(d)):
-            if not n.endswith(".json"):
-                continue
-            with open(os.path.join(d, n), encoding="utf-8") as fh:
-                part = json.load(fh)
-            if not isinstance(part, dict):
-                raise MissingPack("语言包 %s 里的 %s 不是对象" % (lang, n))
-            table.update(part)
-            merged_any = True
-    if os.path.exists(single):
-        with open(single, encoding="utf-8") as fh:
-            table.update(json.load(fh))
-        merged_any = True
-    if not merged_any:
+    table = load_pack(lang)
+    if not table:
+        base = pack_dir()
         raise MissingPack(
             "语言包 %s 不在（%s 或 %s/ 都没有）。装一个，或撤掉 REFLECT_LANG "
             "—— 本仓不做「没装就回落中文」：那会让半装的语言包看起来像装好了"
-            % (lang, single, d))
+            % (lang, os.path.join(base, "%s.json" % lang),
+               os.path.join(base, lang)))
     _validate(table, lang)
     return table
 
@@ -192,14 +251,16 @@ def _validate(table, lang):
 class _Binding:
     """`bind()` 的上下文：装/卸语言包（可重入）。"""
 
-    def __init__(self, lang, tables):
+    def __init__(self, lang, tables, forced_null=False):
         self.lang = lang
         self.tables = tables
+        self.forced_null = forced_null
         self.prev = None
 
     def __enter__(self):
         self.prev = _ACTIVE[0]
-        _ACTIVE[0] = (self.lang, _table_for(self.lang, self.tables))
+        _ACTIVE[0] = (None, None) if self.forced_null \
+            else (self.lang, _table_for(self.lang, self.tables))
         return self
 
     def __exit__(self, *exc):
@@ -210,12 +271,21 @@ class _Binding:
 _ACTIVE = [(None, None)]           # (lang, table)
 
 
+NULL = object()                   # 「显式要 null 包」的哨兵（区别于「没传」）
+
+
 def bind(lang=None, tables=None):
-    """装一个语言包（上下文管理器）。`lang=None` ⇒ null 包。
+    """装一个语言包（上下文管理器）。
+
+    · `lang=NULL` ⇒ **显式 null 包**（不看环境变量 —— 自证用它把形状判据
+      钉在「没装包」这一档上；否则 `REFLECT_LANG=zh` 下这些用例全红）。
+    · `lang=None` ⇒ 没传，回落 `REFLECT_LANG`；都没有 ⇒ null 包。
+    · 字符串 ⇒ 装那个包（不在 ⇒ `MissingPack`）。
 
     `tables={lang: {code: template}}` ⇒ 纯内存（**自证专用**：零文件 I/O）。
-    `lang` 未给时读 `REFLECT_LANG`；两者都没有 ⇒ null 包。
     """
+    if lang is NULL:
+        return _Binding(None, {}, forced_null=True)
     return _Binding(lang if lang is not None else
                     (os.environ.get("REFLECT_LANG", "").strip() or None), tables)
 
@@ -277,36 +347,66 @@ def _cases():
     bad_shape = {"ok": "OFF: not configured"}          # 伪装成机器行
     empty = {}
 
-    def with_en(fn):
-        """在 en 语言包下跑 fn（`bind` 是上下文管理器）。"""
-        b = bind("en", {"en": fake})
+    def scope(lang, tables, fn):
+        """在指定语言包作用域下跑 fn（进出即还原，不污染别的用例）。
+
+        `lang=NULL` ⇒ 显式 null 包（不吃 `REFLECT_LANG`）。
+        """
+        b = bind(lang, tables)
         b.__enter__()
         try:
             return fn()
         finally:
             b.__exit__(None, None, None)
 
+    def with_en(fn):
+        """在 en 语言包下跑 fn。"""
+        return scope("en", {"en": fake}, fn)
+
+    def with_null(fn):
+        """在 **null 包**下跑 fn —— 断言测的是「无语言包」的形状，与调用环境无关。
+
+        ⚠️ 此前这些用例直接 `M(...)`：入口 `activate()` 一旦把 zh / en 设上，
+        它们就全红（实测 `REFLECT_LANG=zh gates-selftest.sh` 下 KeyError）——
+        断言**没有声明自己的作用域**，于是成了「跑在什么环境就考什么」。形状
+        判据必须自带 null 作用域，否则 zh 用户的自证永远是红的。
+        """
+        return scope(NULL, {}, fn)
+
+    def said(**params):
+        """在 null 包下渲染一条 M(...) 的文本。"""
+        return with_null(lambda: str(M("probe.code", **params)))
+
     return [
         # ① 正常不报 —— null 包（无语言包）形状
-        ("i18n.null_no_params", lambda: str(M("gate.off.body")) == "gate.off.body"),
+        ("i18n.null_no_params",
+         lambda: with_null(lambda: str(M("gate.off.body")) == "gate.off.body")),
         ("i18n.null_with_params",
-         lambda: str(M("replay.no_cmd", k="py_lines")) == "replay.no_cmd(k='py_lines')"),
+         lambda: with_null(
+             lambda: str(M("replay.no_cmd", k="py_lines"))
+             == "replay.no_cmd(k='py_lines')")),
         ("i18n.null_params_sorted",
-         lambda: str(M("x", bb=2, aa=1)) == "x(aa=1, bb=2)"),
+         lambda: with_null(lambda: str(M("x", bb=2, aa=1)) == "x(aa=1, bb=2)")),
+        # `repr` 必须处理引号嵌套：值里带单引号时，手拼 `'%s'` 会产出畸形串。
         ("★ i18n.repr_quotes",
-         lambda: (lambda s: s.count("'") >= 2 and s.startswith("x(command="))(
-             str(M("x", command="find . -name '*.md' | wc -l")))),
+         lambda: (lambda s: s.count("'") >= 2 and s.startswith("probe.code("))(
+             said(command="find . -name '*.md' | wc -l"))),
         ("i18n.null_long_value_truncated",
-         lambda: (lambda m: len(m) < 80)(str(M("x", cmd="f" * 200)))),
+         lambda: len(said(cmd="f" * 200)) < 80),
         ("i18n.pack_applied",
          lambda: with_en(lambda: str(M("replay.no_cmd", k="f.py"))
                          == "`f.py` has no replay command")),
         ("i18n.message_is_str",
          lambda: (lambda m: (bool([m]), "  · " + m, len([m]))[0] is True)(M("a"))),
+        # `.code` / `.params` 是身份，与语言无关 —— 不随激活变。但它们得在
+        # null 包下构造：`Message` 是**构造时渲染**的，拿捏造的 code 去撞真
+        # zh 包会 KeyError（实测 `REFLECT_LANG=zh` 下这两条红）。
         ("i18n.code_readable",
-         lambda: M("replay.no_cmd", k=1).code == "replay.no_cmd"),
+         lambda: with_null(lambda: M("replay.no_cmd", k=1).code
+                           == "replay.no_cmd")),
         ("i18n.params_readable",
-         lambda: M("replay.no_cmd", k="py_lines").params == {"k": "py_lines"}),
+         lambda: with_null(lambda: M("replay.no_cmd", k="py_lines").params
+                           == {"k": "py_lines"})),
         ("i18n.activate_sets_default",
          lambda: after_activate("en", "replay.no_cmd", dict(k="f.py"),
                                 "`f.py` has no replay command",
@@ -316,19 +416,25 @@ def _cases():
          lambda: _raises(lambda: _validate(empty, "xx"))),
         ("★ i18n.pack_masquerades_contract",
          lambda: _raises(lambda: _validate(bad_shape, "xx"))),
+        # 缺失的语言包必须**报**，不是静默回落中文（`_table_for` 的反向证据）。
+        ("★ i18n.missing_pack_raises",
+         lambda: _raises(lambda: _table_for("xx", {"zh": {}}))),
+        # 空包不是「已翻译」（零值守卫第一档）。
+        ("★ i18n.empty_pack_rejected",
+         lambda: _raises(lambda: _table_for("xx", {"xx": {}}))),
         # ③ 空输入必须报
         ("★ i18n.empty_code",
-         lambda: str(M("")) == ""),
+         lambda: with_null(lambda: str(M("")) == "")),
     ]
-
-
 def _selftest():
     import sys                                           # noqa: PLC0415
     from gate import main_selftest_or                    # noqa: PLC0415
 
     def _run(argv):
-        print("i18n 是模块（被各闸门与平台模块消费）；--selftest 看自证。",
-              file=sys.stderr)
+        # 走 M()：`REFLECT_LANG=en` 下这条也必须说英语。此前是裸中文字面量，
+        # 靠 `check_i18n` 的整文件豁免（本文件通篇是装包机制）遮住 ——
+        # 豁免是对的（循环依赖），但**这条不是**循环依赖，它只是普通消息。
+        print(M("i18n.module_banner"), file=sys.stderr)
         return 2
     return main_selftest_or(sys.argv[1:],
                             "i18n（本体零语言 + 语言包可选）", _cases, _run)
@@ -342,4 +448,10 @@ MODULE = module_meta("i18n", "本体零语言 + 语言包可选（Message/M/bind
 if __name__ == "__main__":
     import sys                                           # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    sys.exit(_selftest())
+    # ⚠️ 不能直接 `sys.exit(_selftest())`：本文件作为**脚本**运行时，这份代码是
+    # `__main__`，而 `gate.activate_or_fatal` 里 `import i18n` 加载的是**另一个
+    # 模块对象**（同名模块副本）。`_ACTIVE` 是模块级状态 ⇒ 激活设在副本上、
+    # 渲染读 `__main__` 的 `_ACTIVE` ⇒ 永远 null 包（实测症状：`REFLECT_LANG=en
+    # i18n.py` 打出裸 `i18n.module_banner`）。委派给模块副本，两边就是同一个对象。
+    import i18n as _mod                                  # noqa: PLC0415
+    sys.exit(_mod._selftest())

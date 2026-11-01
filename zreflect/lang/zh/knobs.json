@@ -32,5 +32,9 @@
  "knobs.sem.reflect_retractions": "翻案台账",
  "knobs.sem.reflect_stale_days": "测龄报警天数；空 = 该规则明说未启用",
  "knobs.sem.reflect_world": "world 声明（验证对象清单）；缺文件 = 未启用",
- "knobs.sem.reflect_world_line": "world 线覆盖（CI / 特殊跑法）"
+ "knobs.sem.reflect_world_line": "world 线覆盖（CI / 特殊跑法）",
+ "knobs.pack_sync_empty": "语言包对账：zh / en 两个包都读不到（或为空）—— 空表不是「一致」（零值守卫）：%(langs)s",
+ "knobs.pack_missing_keys": "语言包 %(lang)s 缺少 %(reference)s 里有的键（设了 %(lang)s 的用户会看到裸 code）：%(keys)s",
+ "knobs.pack_extra_keys": "语言包 %(lang)s 有 %(reference)s 里没有的键（另一侧缺失 ⇒ 那边会看到裸 code）：%(keys)s",
+ "knobs.pack_placeholder_mismatch": "语言包 %(lang)s 的 `%(key)s` 占位符名与 %(reference)s 侧不一致（%(reference)s: %(want)s / %(lang)s: %(got)s）—— 渲染会 KeyError"
 }

@@ -1,0 +1,3 @@
+{
+ "i18n.module_banner": "i18n is a module (consumed by every gate and platform module); --selftest shows its selftest."
+}
