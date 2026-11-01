@@ -282,36 +282,36 @@ def _cases():
 
     return [
         # ① 正常不报 —— null 包（无语言包）形状
-        ("null 包：无参数 ⇒ 只有 code", lambda: str(M("gate.off.body")) == "gate.off.body"),
-        ("null 包：有参数 ⇒ code(k='v')（repr 加引号）",
+        ("i18n.null_no_params", lambda: str(M("gate.off.body")) == "gate.off.body"),
+        ("i18n.null_with_params",
          lambda: str(M("replay.no_cmd", k="py_lines")) == "replay.no_cmd(k='py_lines')"),
-        ("null 包：多参数按 key 排序（稳定输出）",
+        ("i18n.null_params_sorted",
          lambda: str(M("x", bb=2, aa=1)) == "x(aa=1, bb=2)"),
-        ("null 包：值内含引号 ⇒ repr 不产出畸形串（实测踩到的形状）",
+        ("★ i18n.repr_quotes",
          lambda: (lambda s: s.count("'") >= 2 and s.startswith("x(command="))(
              str(M("x", command="find . -name '*.md' | wc -l")))),
-        ("null 包：长值截断（长命令不撑屏）",
+        ("i18n.null_long_value_truncated",
          lambda: (lambda m: len(m) < 80)(str(M("x", cmd="f" * 200)))),
-        ("装了语言包 ⇒ 用模板（命名占位可重排）",
+        ("i18n.pack_applied",
          lambda: with_en(lambda: str(M("replay.no_cmd", k="f.py"))
                          == "`f.py` has no replay command")),
-        ("Message 是 str 子类 ⇒ 现有消费者零改动",
+        ("i18n.message_is_str",
          lambda: (lambda m: (bool([m]), "  · " + m, len([m]))[0] is True)(M("a"))),
-        ("Message 带身份：.code 可读",
+        ("i18n.code_readable",
          lambda: M("replay.no_cmd", k=1).code == "replay.no_cmd"),
-        ("Message 带数据：.params 可读",
+        ("i18n.params_readable",
          lambda: M("replay.no_cmd", k="py_lines").params == {"k": "py_lines"}),
-        ("activate(lang) 设置进程默认 ⇒ M() 直接用该语言包",
+        ("i18n.activate_sets_default",
          lambda: after_activate("en", "replay.no_cmd", dict(k="f.py"),
                                 "`f.py` has no replay command",
                                 {"en": fake})),
         # ② 该报的必须报
-        ("★ 语言包为空 ⇒ MissingPack（空包不是「已翻译」）",
+        ("★ i18n.pack_empty",
          lambda: _raises(lambda: _validate(empty, "xx"))),
-        ("★ 语言包的值伪装成机器行 ⇒ MissingPack（契约结构上不可译）",
+        ("★ i18n.pack_masquerades_contract",
          lambda: _raises(lambda: _validate(bad_shape, "xx"))),
         # ③ 空输入必须报
-        ("★ 空 code ⇒ 输出空串，不是 None（不许静默变 None）",
+        ("★ i18n.empty_code",
          lambda: str(M("")) == ""),
     ]
 

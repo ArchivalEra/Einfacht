@@ -27,6 +27,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import fatal, finish, main_selftest_or, meta, off, repo, selftest  # noqa: E402
+from i18n import M                                        # noqa: E402
 
 DEFAULT_ROOT = "zreflect"
 KNOB = "REFLECT_I18N_ROOT"
@@ -69,12 +70,12 @@ def problems(paths):
     """
     out = []
     if not paths:
-        return ["扫描面为空 —— 没找到源码不是「零语言通过」（零值守卫）"]
+        return [M("i18n_cover.empty_scan")]
     for name, src in paths:
         try:
             tree = ast.parse(src)
         except SyntaxError as e:
-            out.append("%s 解析不了：%s —— 解析失败不许当通过" % (name, e))
+            out.append(M("i18n_cover.parse_error", file=name, error=e))
             continue
         # 收集 docstring 节点（豁免）
         doc_nodes = set()
@@ -116,6 +117,18 @@ def problems(paths):
         # `render_block` / `render_gates` 的文本**必须固定一种语言**
         # （用户决策 #2：不算违规）—— 它写进 STATE.md 并被 --check 逐字节
         # 对账，跟随语言就「同一提交在不同环境结果不同」（不收敛）。
+        # 豁免形状⑤：「语言包装载器自身的错误」—— `i18n.py` 里 `MissingPack`
+        # 的文案**不能用 M()**（循环依赖：M 依赖语言包，语言包坏了才抛它）。
+        # 这是设计上的合法例外，不是漏迁。文件级豁免，因为该文件通篇是
+        # 「语言包怎么装载」的机制，它的错误文案必然在语言包之外。
+        if name == "i18n.py":
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Constant):
+                    exempt_ids.add(id(node))
+        # ⚠️ 曾试图豁免整个 `_cases()` 函数体 —— **错了**：夹具里的源码样例
+        # （`GOOD`/`BARE`/`LABEL` 的多行字符串）正是本闸门自证要扫的对象，
+        # 豁免它们会让三条反向断言失效（实测踩到 2 PASS / 3 FAIL）。
+        # 夹具**源码文本**豁免，夹具**标签**不豁免 —— 后者按 1C 必须 id 化。
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name in (
                     "render_block", "render_gates", "_gates_header"):
@@ -141,9 +154,8 @@ def problems(paths):
                 continue
             if id(node) in doc_nodes or id(node) in msg_consts or id(node) in exempt_ids:
                 continue
-            out.append("%s:%d 本体里有裸中文文本 %r —— 用户可见的消息必须走 "
-                       "M(<字面量 code>, **params)；自证标签按 1C 必须是 id"
-                       % (name, node.lineno, v[:40]))
+            out.append(M("i18n_cover.bare_text",
+                         file=name, lineno=node.lineno, text=v[:40]))
     return out
 
 
@@ -169,14 +181,12 @@ def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     root = os.environ.get(KNOB, "").strip()
     if not root:
-        return off("语言覆盖闸门：%s 未配置 ⇒ 本闸门未启用（可插拔模块；"
-                   "配了才检查「本体零语言」）" % KNOB)
+        return off(M("i18n_cover.off", knob=KNOB))
     paths = collect(root)
     if not paths:
-        return fatal("扫描面 %s 为空 —— 没找到源码不是「零语言通过」" % root)
-    return finish("语言覆盖闸门", problems(paths),
-                  "语言覆盖闸门：OK（%d 个文件本体零语言；语言包可选）"
-                  % len(paths))
+        return fatal(M("i18n_cover.scan_empty_dir", root=root))
+    return finish(M("i18n_cover.title"), problems(paths),
+                  M("i18n_cover.ok", files=len(paths)))
 
 
 def _cases():
@@ -204,12 +214,14 @@ def _cases():
         # ① 正常不报
         ("消息全走 M()，docstring 有中文 ⇒ 不报", lambda: problems([("good.py", GOOD)]) == []),
         # ② 该报的必须报
-        ("★ 裸中文 append ⇒ 必须报（本体在说人话）",
-         lambda: any("裸中文文本" in x for x in problems([("bare.py", BARE)]))),
-        ("★ 自证标签是中文句子 ⇒ 必须报（按 1C 必须是 id）",
-         lambda: any("裸中文文本" in x for x in problems([("label.py", LABEL)]))),
-        ("★ 语法坏 ⇒ 必须报（解析失败不许当通过）",
-         lambda: any("解析不了" in x for x in problems([("bad.py", "def (")]))),
+        ("★ i18n_cover.bare_text（本体在说人话）",
+         lambda: [x.code for x in problems([("bare.py", BARE)])
+                  ] == ["i18n_cover.bare_text"]),
+        ("★ i18n_cover.bare_text（自证标签按 1C 必须是 id）",
+         lambda: [x.code for x in problems([("label.py", LABEL)])
+                  ] == ["i18n_cover.bare_text"]),
+        ("★ i18n_cover.parse_error（解析失败不许当通过）",
+         lambda: [x.code for x in problems([("bad.py", "def (")])] == ["i18n_cover.parse_error"]),
         # ③ 空输入必须报
         ("★ 扫描面为空 ⇒ 必须报（零值守卫）", lambda: problems([]) != []),
     ]
