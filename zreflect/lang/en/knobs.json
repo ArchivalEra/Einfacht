@@ -37,5 +37,6 @@
  "knobs.pack_missing_keys": "pack %(lang)s is missing keys present in %(reference)s (users on %(lang)s would see bare codes): %(keys)s",
  "knobs.pack_extra_keys": "pack %(lang)s has keys absent from %(reference)s (the other side then shows bare codes): %(keys)s",
  "knobs.pack_placeholder_mismatch": "pack %(lang)s's `%(key)s` placeholder names differ from %(reference_lang)s (%(reference_lang)s: %(expected_params)s / %(lang)s: %(actual_params)s) — rendering would KeyError",
- "knobs.pack_unreadable": "pack %(lang)s could not be read (%(error)s) — a broken pack must not be skipped as if uninstalled"
+ "knobs.pack_unreadable": "pack %(lang)s could not be read (%(error)s) — a broken pack must not be skipped as if uninstalled",
+ "knobs.pack_missing_code": "the core emits codes that are absent from the %(lang)s pack (%(count)d of them) — users on that language would see bare codes: %(codes)s"
 }

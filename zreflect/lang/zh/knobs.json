@@ -37,5 +37,6 @@
  "knobs.pack_missing_keys": "语言包 %(lang)s 缺少 %(reference)s 里有的键（设了 %(lang)s 的用户会看到裸 code）：%(keys)s",
  "knobs.pack_extra_keys": "语言包 %(lang)s 有 %(reference)s 里没有的键（另一侧缺失 ⇒ 那边会看到裸 code）：%(keys)s",
  "knobs.pack_placeholder_mismatch": "语言包 %(lang)s 的 `%(key)s` 占位符名与 %(reference_lang)s 侧不一致（%(reference_lang)s: %(expected_params)s / %(lang)s: %(actual_params)s）—— 渲染会 KeyError",
- "knobs.pack_unreadable": "语言包 %(lang)s 读不了（%(error)s）—— 坏包不许被当成「没装」跳过"
+ "knobs.pack_unreadable": "语言包 %(lang)s 读不了（%(error)s）—— 坏包不许被当成「没装」跳过",
+ "knobs.pack_missing_code": "本体会发 `code` 里这些在 %(lang)s 包里没有（%(count)d 条）—— 那个语言的用户会看到裸 code：%(codes)s"
 }
