@@ -1,0 +1,19 @@
+{
+ "gate.input_label": "input",
+ "gate.require_nonempty": "%(name)s: %(what)s is empty. An empty input is not \"all pass\" — either the collection logic is broken or the path is wrong. Fix the input, do not switch the gate off.",
+ "gate.spec_unreadable": "%(path)s cannot be read / is not valid JSON: %(error)s",
+ "gate.problems_header": "%(name)s: %(count)d problem(s)",
+ "gate.env_hint": "found %(file)s, but this process set no knob at all — criteria may fall back to default names and differ from the hook context.\n       try running it with %(file)s:\n         set -a; . %(file)s; set +a\n       (or pass the knob explicitly: `REFLECT_*=<value> python3 ...`)",
+ "gate.never_falsifiable_or": "`or <truthy constant>` — the boolean is short-circuited by a constant, always PASS",
+ "gate.never_falsifiable_and": "`and <falsy constant>` — the boolean is short-circuited by a constant, always fail",
+ "gate.never_falsifiable_self_compare": "both sides of the comparison are the same expression — always true (x == x)",
+ "gate.selftest_empty_cases": "the selftest case list for %(name)s is empty — all three tiers of cases are mandatory (0/0 is not a pass, it means \"this selftest checked nothing\")",
+ "gate.case_unfalsifiable": "%(label)s (assertion cannot be falsified: %(why)s)",
+ "gate.case_unexpected_systemexit": "%(label)s (unexpected SystemExit: %(error)s)",
+ "gate.case_raised": "%(label)s (exception %(error)r)",
+ "gate.selftest_summary": "%(name)s selftest: %(passed)d PASS / %(failed)d fail",
+ "gate.pack_assembly_failed": "language pack assembly failed: %(error)s",
+ "gate.platform_root": "Gate platform. Repo root under check: %(root)s",
+ "gate.platform_usage": "Usage: in your checker `from gate import selftest, require_nonempty`.",
+ "gate.module_banner": "the gate platform is a module (it provides selftest / require_nonempty / finish; it consumes none) — it does not run standalone."
+}

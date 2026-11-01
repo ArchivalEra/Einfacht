@@ -39,6 +39,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
 from gate import repo                            # noqa: E402
+from i18n import M                                # noqa: E402
 from ledger import facts_of, load                         # noqa: E402
 
 INSTRUMENTS_RAW = os.environ.get("REFLECT_INSTRUMENTS", "").strip()
@@ -74,7 +75,7 @@ def problems(ledger, methods=None, days=None):
     out = []
     f = facts_of(ledger)
     if not f:
-        return ["台账为空 —— 空不是通过（零值守卫）：先查 measure() 是不是坏了"]
+        return [M("instruments.ledger_empty")]
     if days is not None:
         for k in sorted(f):
             entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
@@ -83,24 +84,23 @@ def problems(ledger, methods=None, days=None):
                 continue          # 旧台账条目没有 first_seen：不猜、不报
             age = _age_days(fs)
             if age is None:
-                out.append("`%s` 的 first_seen 不可解析（%r）—— 恒常判据"
-                           "无法评估（读不到就明说，不许猜）" % (k, fs))
+                out.append(M("instruments.first_seen_unparseable",
+                             key=k, first_seen=fs))
             elif age > days:
-                out.append("`%s` 的值自 %s 起没变过（%.0f 天，恒常阈值 %.0f 天）"
-                           " —— 人工确认：这条 cmd 是在量，还是恒返回同一个数？"
-                           "（仪器静默失真检查，issue #6 ①）" % (k, fs, age, days))
+                out.append(M("instruments.constant_return", key=k,
+                             first_seen=fs, days=age, threshold=days))
     for m in (methods or []):
         text = str(m.get("text") or "").strip()
         why = str(m.get("why") or "").strip()
         if not text or not why:
-            out.append("量法登记条目形状残缺（text 与 why 必须都给）：%r" % (m,))
+            out.append(M("instruments.entry_malformed", entry=m))
             continue
         for k in sorted(f):
             entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
             if text in str(entry.get("cmd") or ""):
-                out.append("`%s` 的 cmd 含**被证伪的量法**片段 %r（%s；"
-                           "正确量法见 %s）—— 坏量法不许留在台账里"
-                           % (k, text, why, m.get("fixed_in") or "未登记"))
+                out.append(M("instruments.falsified_method", key=k, text=text,
+                             why=why, fixed_in=m.get("fixed_in") or M(
+                                 "instruments.fixed_in_unregistered")))
     return out
 
 
@@ -109,34 +109,34 @@ def run(argv=None):
     name = INSTRUMENTS_RAW
     days = _days()
     if DAYS_RAW and days is None:
-        return fatal("REFLECT_INSTRUMENT_DAYS=%r 不可解析成天数 —— 修配置"
-                     "（或撤掉该旋钮）" % DAYS_RAW)
+        return fatal(M("instruments.days_unparseable",
+                       days_knob="REFLECT_INSTRUMENT_DAYS", value=DAYS_RAW))
     if not name and days is None:
-        return off("仪器生命周期闸门：REFLECT_INSTRUMENT_DAYS 与 REFLECT_INSTRUMENTS"
-                   " 均未配置 ⇒ 本闸门未启用（可插拔模块；要启用："
-                   "REFLECT_INSTRUMENT_DAYS=天 开恒常检测；REFLECT_INSTRUMENTS="
-                   "instruments.json 登记被证伪量法）")
+        return off(M("instruments.off",
+                     days_knob="REFLECT_INSTRUMENT_DAYS",
+                     instruments_knob="REFLECT_INSTRUMENTS"))
     led_path = repo(os.environ.get("REFLECT_FACTS", "FACTS.json"))
     if not os.path.exists(led_path):
-        return fatal("台账不在：%s —— 先跑 facts.py" % led_path)
+        return fatal(M("instruments.ledger_missing", path=led_path))
     methods = []
     if name:
         reg_path = repo(name)
         if not os.path.exists(reg_path):
-            return fatal("REFLECT_INSTRUMENTS=%s 已配置但登记位不在 —— 先登记"
-                         "（或撤掉该旋钮）" % name)
+            return fatal(M("instruments.registry_missing", name=name))
         reg, err = load_spec(reg_path)
         if err:
-            return fatal(err)
+            return fatal(M("instruments.spec_broken", name=name, error=err))
         methods = reg.get("methods") or []
     probs = problems(load(led_path), methods=methods, days=days)
     parts = []
     if days is not None:
-        parts.append("恒常检测 %.0f 天阈值" % days)
+        parts.append(M("instruments.part_days", threshold=days))
     if name:
-        parts.append("量法登记 %s（%d 条）" % (name, len(methods)))
-    return finish("仪器生命周期闸门", probs,
-                  "仪器生命周期闸门：OK（%s）" % (" + ".join(parts) or "空登记"))
+        parts.append(M("instruments.part_methods", name=name,
+                       count=len(methods)))
+    return finish(M("instruments.title"), probs,
+                  M("instruments.ok", modes=" + ".join(parts)
+                    or M("instruments.part_none")))
 
 
 def _cases():
@@ -147,37 +147,41 @@ def _cases():
     led_old = {"facts": {"n": {"value": 7, "cmd": "echo 7", "source": "s",
                                   "first_seen": old}}}
     led_bad = {"facts": {"n": {"value": 7, "cmd": "echo 7", "source": "s",
-                                  "first_seen": "坏日期"}}}
+                                  "first_seen": "bad-date"}}}
     led_method = {"facts": {"n": {"value": 7,
                                      "cmd": "llvm-objdump -d x.o | grep -c relaxed_madd",
                                      "source": "s", "first_seen": today}}}
     methods = [{"text": "grep -c relaxed_madd",
-                "why": "llvm-objdump 对 relaxed-simd 只打印 <unknown>，"
-                       "grep 恒 0（命令成功、值稳定、复跑永远通过）",
-                "fixed_in": "calibrate= 已知含 relaxed_madd 的校准样本"}]
+                "why": "llvm-objdump only prints <unknown> for relaxed-simd, "
+                       "grep is always 0 (command succeeds, value stable, replay "
+                       "passes forever)",
+                "fixed_in": "calibrate= a calibration sample known to contain relaxed_madd"}]
     return [
         # ① 正常不报
-        ("first_seen 今天 + 阈值 30 天 ⇒ 不报",
+        ("instruments.fresh",
          lambda: problems(led, days=30) == []),
-        ("first_seen 今天 + 量法登记（不含片段）⇒ 不报",
+        ("instruments.registered_method_absent",
          lambda: problems(led, methods=methods, days=30) == []),
-        ("first_seen 缺失 ⇒ 不报（旧条目不猜）",
+        ("instruments.first_seen_absent",
          lambda: problems({"facts": {"n": {"value": 1, "cmd": "c"}}},
                           days=30) == []),
         # ② 该报的必须报
-        ("★ 恒常：40 天没变 + 阈值 30 ⇒ 必须报",
-         lambda: any("没变过" in x for x in problems(led_old, days=30))),
-        ("★ 恒常：first_seen 不可解析 ⇒ 必须报（读不到就明说）",
-         lambda: any("不可解析" in x for x in problems(led_bad, days=30))),
-        ("★ 量法：cmd 含被证伪片段 ⇒ 必须报（坏量法不许留在台账）",
-         lambda: any("被证伪的量法" in x
-                     for x in problems(led_method, methods=methods))),
-        ("★ 登记条目形状残缺（缺 why）⇒ 必须报",
-         lambda: any("形状残缺" in x
-                     for x in problems(led, methods=[{"text": "x"}]))),
+        ("★ instruments.constant_return",
+         lambda: [p.code for p in problems(led_old, days=30)]
+         == ["instruments.constant_return"]),
+        ("★ instruments.first_seen_unparseable",
+         lambda: [p.code for p in problems(led_bad, days=30)]
+         == ["instruments.first_seen_unparseable"]),
+        ("★ instruments.falsified_method",
+         lambda: [p.code for p in problems(led_method, methods=methods)]
+         == ["instruments.falsified_method"]),
+        ("★ instruments.entry_malformed",
+         lambda: [p.code for p in problems(led, methods=[{"text": "x"}])]
+         == ["instruments.entry_malformed"]),
         # ③ 空输入必须报
-        ("★ 空台账 ⇒ 必须报（零值守卫）",
-         lambda: problems({"facts": {}}, days=30) != []),
+        ("★ instruments.ledger_empty",
+         lambda: [p.code for p in problems({"facts": {}}, days=30)]
+         == ["instruments.ledger_empty"]),
     ]
 
 
@@ -185,6 +189,4 @@ GATE = meta("仪器生命周期闸门", "恒常检测（first_seen）+ 被证伪
             knobs=("REFLECT_INSTRUMENTS", "REFLECT_INSTRUMENT_DAYS", "REFLECT_FACTS"))
 
 if __name__ == "__main__":
-    sys.exit(main_selftest_or(sys.argv[1:],
-                              "仪器生命周期闸门（可插拔：恒常检测 + 量法登记）",
-                              _cases(), run))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_instruments", _cases, run))

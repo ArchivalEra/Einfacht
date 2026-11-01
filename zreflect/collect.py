@@ -48,6 +48,7 @@
 import re
 
 from gate import module_meta, repo                                    # noqa: F401  (re-export 便利)
+from i18n import M                                        # noqa: E402
 
 
 def unavailable(what, why):
@@ -82,8 +83,8 @@ def parse_prev_values(doc_text, row_pattern, group_names):
             except IndexError as error:
                 # 未命名分组 = 配置错，必须响，不许静默拿错值。
                 raise SystemExit(
-                    "FATAL: parse_prev_values：行正则里没有命名分组 %r —— "
-                    "回收靠命名分组，别用位置分组（换行序 = 静默拿错值）" % name) from error
+                    "FATAL: %s" % M("collect.regex_missing_group", name=name)
+                ) from error
         out[key] = rec
     return out
 

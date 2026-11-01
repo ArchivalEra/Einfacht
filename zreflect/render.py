@@ -85,40 +85,53 @@ def prose_of(doc_text):
 
 
 # ── 自证 ──────────────────────────────────────────────────────────────────────
+def _extra_lines(block):
+    """块正文里除 `PREAMBLE` 与空行以外的行（PINNED 样板之外的「说了什么」）。"""
+    return [ln for ln in body_of(block).splitlines()
+            if ln.strip() and ln not in PREAMBLE]
+
+
 def _cases():
     full = {"facts": {"a": 4752, "s": {"value": "b" * 64, "cmd": "c"}}}
+    # 表头取自**渲染输出本身**（不手抄 PINNED 文本 —— 抄一份就多一处会漂的产地）
+    header = next(ln for ln in body_of(render_block(full)).splitlines()
+                  if ln.startswith("|"))
     return [
         # ① 正常不报
-        ("每个键都出现在块里", lambda: all(k in render_block(full) for k in ("a", "s"))),
-        ("值是原值（4752 在块里）", lambda: "**4752**" in render_block(full)),
-        ("sha 截断显示（不整条摊开）", lambda: "`" + "b" * 16 + "…`" in render_block(full)),
-        ("块渲染是纯函数（渲染两次逐字节相同）",
+        ("render.keys_in_block",
+         lambda: all(k in render_block(full) for k in ("a", "s"))),
+        ("render.raw_value", lambda: "**4752**" in render_block(full)),
+        ("render.sha_truncated", lambda: "`" + "b" * 16 + "…`" in render_block(full)),
+        ("render.block_pure",
          lambda: render_block(full) == render_block(full)),
-        ("prose_of 只取块以外的正文（块内的表格被排除，块外的字保留）",
-         lambda: (lambda d: ("正文" in prose_of(d) and "tail" in prose_of(d)
-                             and "| 键 |" not in prose_of(d) and "| 键 |" in d))(
-             "正文\n" + render_block(full) + "\ntail")),
-        ("没有块标记时 prose_of 退回整篇（找不到块 ≠ 可以当空）",
-         lambda: prose_of("没有标记的文档") == "没有标记的文档"),
+        ("render.prose_only_outside_block",
+         lambda: (lambda d: ("body" in prose_of(d) and "tail" in prose_of(d)
+                             and header not in prose_of(d) and header in d))(
+             "body\n" + render_block(full) + "\ntail")),
+        ("render.prose_fallback_whole_doc",
+         lambda: prose_of("a document without markers") == "a document without markers"),
         # #14：双机器块文档，GATES 块也必须剥掉（否则名录里的 sha256 被当裸数字）
-        ("双块文档：两个 AUTO 块都不进 prose（#14）",
+        ("render.prose_strips_all_blocks",
          lambda: (lambda d: ("sha256" not in prose_of(d)
-                             and "事实表" not in prose_of(d)
-                             and "正文" in prose_of(d) and "尾" in prose_of(d)))(
-             "正文\n<!-- AUTO:FACTS -->\n事实表\n<!-- /AUTO:FACTS -->\n"
-             "<!-- AUTO:GATES -->\n| x | sha256 |\n<!-- /AUTO:GATES -->\n尾")),
-        ("块内有 begin 字面量（md_lines 的 awk 判据）不破坏剥离",
-         lambda: (lambda d: "awk" not in prose_of(d) and "尾" in prose_of(d))(
-             "头\n<!-- AUTO:FACTS -->\ncmd: awk '<!-- AUTO:FACTS -->'\n"
-             "<!-- /AUTO:FACTS -->\n尾")),
+                             and "GATES_TABLE" not in prose_of(d)
+                             and "body" in prose_of(d) and "tail" in prose_of(d)))(
+             "body\n<!-- AUTO:FACTS -->\nFACTS_TABLE\n<!-- /AUTO:FACTS -->\n"
+             "<!-- AUTO:GATES -->\n| x | sha256 |\n<!-- /AUTO:GATES -->\ntail")),
+        ("render.prose_nested_begin_literal",
+         lambda: (lambda d: "awk" not in prose_of(d) and "tail" in prose_of(d))(
+             "head\n<!-- AUTO:FACTS -->\ncmd: awk '<!-- AUTO:FACTS -->'\n"
+             "<!-- /AUTO:FACTS -->\ntail")),
         # ② 该报的必须报（渲染层的「该报」= 必须发生变化，不许是常量）
-        ("★ 台账少一条 ⇒ 块跟着变（块不是常量）",
+        ("★ render.block_not_constant",
          lambda: render_block(full) != render_block({"facts": {"a": 4752}})),
         # ③ 空输入必须报
-        ("★ 空台账 ⇒ 必须明写「台账为空」，且不许渲染出一张表",
-         lambda: "台账为空" in render_block({"facts": {}})
-         and "| 键 |" not in render_block({"facts": {}})),
-        ("★ 空台账与有台账的块必须不同（空不是「都一样」）",
+        ("★ render.empty_ledger_says_so",
+         # 空台账必须**额外写了一句话**（PREAMBLE 之外的行非空），且**不许**渲染出表。
+         lambda: (lambda b: _extra_lines(b) != []
+                  and not any(ln.lstrip().startswith("|")
+                              for ln in body_of(b).splitlines()))(
+             render_block({"facts": {}}))),
+        ("★ render.empty_differs_from_full",
          lambda: render_block({"facts": {}}) != render_block(full)),
     ]
 

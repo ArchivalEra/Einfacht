@@ -46,6 +46,8 @@
 | 部件 | 文件 | 它挡住什么 |
 |---|---|---|
 | **闸门平台** | `zreflect/gate.py` | 检查器静默变绿 —— 也是 **rc 契约的唯一产地**：`off()`（0，打 `OFF:` 机器标记）/ `fatal()`（2，配置坏 ≠ 发现问题）/ `load_spec()` / `finish()`（1 vs 0）收编整条闸门生命周期，13 道闸门不再手抄 run() 尾巴（此前手抄出三派漂移：stdout 对 stderr、标题先后、退出码各异）。`selftest()` 现在**拒收空用例清单**（0/0 洞 —— grep 曾照样认「0 PASS / 0 FAIL」）；`main_selftest_or()` 是唯一的 `__main__` 尾巴；`meta()` 是名录解析的声明行，`run_phase()` 是**执行面**：跑一个相位的闸门并聚合 `ran / off / failed` —— 「全绿」不再把「没跑」算进去（本仓曾有 7/13 道 off）。**off 是独立状态，不是通过** |
+| **语言核心**（可插拔） | `zreflect/i18n.py` + `zreflect/lang/` | **本体不发任何自然语言**。拉下套件后你自己挑语言包（`zh` / `en` / …），也可以一个都不挑——不设时每条消息渲染成 `code(key='py_lines', actual=6180, expected=6014)`：结构化、机器可解析、没有句子。**中文不是源语言**，只是又一个可选包（issue #26）。`M(code, **human_params)` 构造每条消息——参数是**完整英文单词**（`key`/`actual`/`expected`/`threshold`，不是 `k`/`got`/`want`），值走 `repr`（自动处理引号嵌套）并在 40 字符处截断。`Message` 是 **`str` 子类**，所以 `if problems` / `len(...)` / `"  · " + p` 全部零改动继续工作；`.code` / `.params` 是新面。语言包形状：`lang/<lang>.json` 或 `lang/<lang>/*.json`（按闸门命名空间分文件 —— 并行开发不互相覆盖）。**机器契约结构上不可译**：`OFF:` / `FATAL:` / `SKIP:` / `DOWN:` / `=== N PASS / M FAIL ===` 在发射点用字面量，包里的值若**看起来像**这种行会在装载时被拒。包不在 ⇒ FATAL，绝不静默回落中文 |
+| **语言覆盖闸门**（可插拔） | `zreflect/check_i18n.py` | 把「本体零语言」从口号变成可判定的判据：**本体里任何裸中文文本都是问题**——消息必须走 `M(<字面量 code>, **params)`，自证标签必须是点分 id。**声明式豁免**：`GATE = meta(name, desc)` 声明数据、`re.compile(...)` 匹配器数据、自证的**夹具源码样例**、`i18n.py` 自身的装载错误（循环依赖）、以及 **AUTO 机器块**（PINNED）。没有它，语言包可能只覆盖 90% 而没人知道——本闸门把剩余 325 条报到 0 |
 | **逐字执行器** | `zreflect/runner.py` | 「逐字跑命令 + 裸值判 stdout」的**公共 seam**（`run_cmd` / `quote` / 超时）—— 复跑闸门与 world 闸门是它的两个 adapter（两个 adapter = 真实 seam；此前住在 `check_facts_replay` 的私有区） |
 | **旋钮登记** | `zreflect/knobs.py` | 「旋钮」没有 module 的病：读取散在各闸门、声明活在 docstring、名册靠文本扫描猜（收编过**幻影旋钮** —— 配了静默无效）。一份名册（名字 → 种类/默认值/语义），**登记才算数**；外加自洽性判据（扫描面幻影 / README 幻影 / 声明旋钮 ⊆ 实读 / 登记表 ⊆ README 配置表）—— 全部**与任何 env 载体无关**（曾被焊在载体开关之后、从未执行） |
 | **发现式名录** | `zreflect/registry.py` | 闸门的**集合**是发现式的，**叙述**却是手写的 —— 手写叙述会漂（STATE.md 写「十道」时实际十三道；红名单六道里只点了四道）。闸门自声明（`GATE = gate.meta(…)`，ast 解析、不 import）；平台模块也是（`MODULE = module_meta(…)`，C5）。registry 派生：**执行清单**（`runnable(相位)` —— 唯一产地，hooks/CI/runner 读它而非 glob `check_*.py`）、叙述（**AUTO:GATES** 机器块）、红名单、自证名录。`runs_at`（C1）是声明字段、不是命名意外：`doctor` 是相位 `start-of-work` 的闸门 |
@@ -556,6 +558,9 @@ install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
 | `REFLECT_INSTRUMENTS` | 空（不在 ⇒ 未启用） | 被证伪量法登记（issue #6 ①）：`{"methods": [{text, why, fixed_in}]}` |
 | `REFLECT_INSTRUMENT_DAYS` | 空（不在 ⇒ 未启用） | 恒常检测阈值天（issue #6 ①）：台账条目 `first_seen` 超阈值 ⇒「这条 cmd 是在量，还是恒返回同一个数？」 |
 | `REFLECT_ENV_FILE` | `Einfacht.env` | 钩子旋钮载体的文件名（issue #8），由可拔插件 `einfacht-env.sh` 解析（钩子目录优先、仓库根次之） |
+| `REFLECT_LANG` | 空 | 输出语言包名（`zh` / `en` / …）。**空 = null 包：本体不发任何自然语言**，只输出 `code(param=value)`（issue #26）。注释串（`OFF:` / `FATAL:` / `=== N PASS / M FAIL ===`）永不翻译 —— 它们是发射点的字面量 |
+| `REFLECT_I18N` | `zreflect/lang` | 语言包目录。两种形状：`<lang>.json`（单文件）或 `<lang>/*.json`（按闸门命名空间分文件 —— 合并，后者覆盖） |
+| `REFLECT_I18N_ROOT` | 空 | 覆盖闸门扫描的源码目录（本体零语言检查）。空 ⇒ 该闸门明说未启用 |
 | `REFLECT_ENV_HINT` | 空（开） | `off` ⇒ 关闭**裸跑提示**。凡是旋钮来自 `Einfacht.env` 的闸门，在「手工裸跑且一个旋钮都没设」时会提示 *try running it with `Einfacht.env`*，并给出确切的 `set -a; . …; set +a` 一行。它是**提示不是判据**：不改 rc、不碰 stdout；没有载体的仓保持安静（那里裸跑是正常用法） |
 | `REFLECT_RETRACTIONS` | `retractions.json` | 翻案台账（翻案闸门扫 `REFLECT_DOCS` 文档里的重现行） |
 | `REFLECT_QUESTIONS` | `questions` | 悬案目录（一题一文件；每份必须挂可跑的结算件） |

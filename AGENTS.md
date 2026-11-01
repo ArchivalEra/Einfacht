@@ -93,6 +93,21 @@ for g in zreflect/check_*.py; do python3 "$g" || exit 1; done
   决策（纯函数，可自证）与执行（写盘 / 打印）分开 —— 见 `zreflect/guard.py`。
   **守卫不许随开关一起消失**（C3）：env 闸门的幻影守卫曾焊在「载体存在」之后，
   本仓没有 Einfacht.env ⇒ 从未执行 —— 判据的家要与开关解耦。
+- **本体零语言，中文只是可选包**（issue #26）：用户可见的消息必须走
+  `M("<点分 code>", **human_params)`，**不许裸写自然语言**。参数名是**完整英文单词**
+  （`key` / `actual` / `expected` / `threshold`，不是 `k` / `got` / `want`）——
+  null 包（不装语言包）的输出就是 `code(key='py_lines', actual=6180, expected=6014)`，
+  参数名是它唯一的可读性来源。`Message` 是 `str` 子类，所以 `finish(problems)` /
+  `if problems` / `"  · " + p` 全部零改动。
+  **机器契约结构上不可译**：`OFF:` / `FATAL:` / `SKIP:` / `DOWN:` /
+  `=== N PASS / M FAIL ===` 在**发射点用字面量**，绝不过 `M()`；语言包的值若看起来
+  像这种行，装载时被拒。**AUTO 机器块（`render_block` / `render_gates` / `PREAMBLE`）
+  必须 PINNED**——它写进 STATE.md 并被 `--check` 逐字节对账，跟随语言会让
+  「同一提交在不同环境结果不同」（不收敛，实测过）。
+  **自证标签按 1C 是点分 id**（`"★ replay.timeout"`），不是中文句子——这样改文案
+  不再破测试。`check_i18n.py` 是这条纪律的机器判据（裸中文 ⇒ 报），
+  豁免面是**声明的**：`meta()` 声明数据、`re.compile` 匹配器、自证夹具源码样例、
+  `i18n.py` 自身的装载错误、AUTO 块。
 - **三语 README 是同一条断言的三份拷贝**（2026-10-01 起）：`README.md`（英语，默认）/
   `README.zh.md` / `README.de.md`。改任何一份 ⇒ 这次推送的改动集必须**三份全含**，
   pre-push 缺一份拒推、CI 跑同一条判据（`git push --no-verify` 只躲得过本地）。

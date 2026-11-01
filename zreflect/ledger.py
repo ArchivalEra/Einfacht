@@ -13,6 +13,7 @@ import json
 import time
 from datetime import datetime, timedelta, timezone
 from gate import module_meta
+from i18n import M
 
 
 def load(path, missing_ok=False):
@@ -115,9 +116,7 @@ def fact(value, cmd, source, note="", replay=True,
                        (calibrate, calibrate_expect, "calibrate")):
         if (a is None) != (b is None):
             raise SystemExit(
-                "FATAL: fact() 形状契约（issue #5/#6）：`%s` 与 `%s_expect`"
-                " 必须同时给（只给一个 = 残缺断言，断言残缺比静默缺失好抓）"
-                % (name, name))
+                "FATAL: %s" % M("ledger.shape_incomplete", name=name))
     d = {"value": value, "cmd": cmd, "source": source,
          "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
          "first_seen": time.strftime("%Y-%m-%d")}
@@ -155,56 +154,60 @@ def _cases():
     from gate import raises                            # noqa: PLC0415
     return [
         # ① 正常不报
-        ("掉条：不掉条时不报", lambda: dropped_keys({"a": 1}, {"a": 1, "c": 3}) == []),
-        ("改口：值没变时不报", lambda: changed_keys({"a": {"value": 1}}, {"a": {"value": 1}}) == []),
-        ("改口：只改 cmd/source 不算改口（否则守卫变噪音）",
-         lambda: changed_keys({"a": {"value": 1, "cmd": "旧"}},
-                              {"a": {"value": 1, "cmd": "新"}}) == []),
+        ("ledger.dropped_clean", lambda: dropped_keys({"a": 1}, {"a": 1, "c": 3}) == []),
+        ("ledger.changed_clean",
+         lambda: changed_keys({"a": {"value": 1}}, {"a": {"value": 1}}) == []),
+        ("ledger.changed_cmd_only",
+         lambda: changed_keys({"a": {"value": 1, "cmd": "old"}},
+                              {"a": {"value": 1, "cmd": "new"}}) == []),
         # ② 该报的必须报
-        ("★ 掉条：键没了必须报出来", lambda: dropped_keys({"a": 1, "b": 2}, {"a": 1}) == ["b"]),
-        ("★ 改口：值换了必须报出来，且带旧值→新值",
+        ("★ ledger.dropped_keys",
+         lambda: dropped_keys({"a": 1, "b": 2}, {"a": 1}) == ["b"]),
+        ("★ ledger.changed_keys",
          lambda: changed_keys({"a": {"value": 1}}, {"a": {"value": 2}}) == [("a", 1, 2)]),
         # ③ 空输入必须报（这里是「不许报」的对面：空起步是合法的第一次生成）
-        ("空台账起步 ⇒ 掉条不报（第一次生成不许被自己拦住）",
+        ("ledger.first_run_dropped_silent",
          lambda: dropped_keys({}, {"a": 1}) == []),
-        ("空台账起步 ⇒ 改口不报", lambda: changed_keys({}, {"a": {"value": 1}}) == []),
+        ("ledger.first_run_changed_silent",
+         lambda: changed_keys({}, {"a": {"value": 1}}) == []),
         # 附：形状
-        ("facts_of 容忍两种形状", lambda: facts_of({"facts": {"a": 1}}) == {"a": 1}
+        ("ledger.facts_of_both_shapes", lambda: facts_of({"facts": {"a": 1}}) == {"a": 1}
          and facts_of({"a": 1}) == {"a": 1}),
-        ("sha 型长值在提示里被截断", lambda: short_value("a" * 64) == "a" * 16 + "…"),
-        ("raises 能识别「确实报了」", lambda: raises(lambda: (_ for _ in ()).throw(SystemExit(2)))),
+        ("ledger.short_value_sha", lambda: short_value("a" * 64) == "a" * 16 + "…"),
+        ("ledger.raises_detects",
+         lambda: raises(lambda: (_ for _ in ()).throw(SystemExit(2)))),
         # ② 测龄（issue #3 ②）
-        ("fact() 盖采集时刻戳", lambda: isinstance(fact(1, "c", "s").get("measured_at"), str)),
-        ("age_days：缺失 measured_at ⇒ None（读不到就明说）",
-         lambda: age_days({"value": 1}) is None),
-        ("age_days：坏时间戳 ⇒ None（不许猜 0）",
-         lambda: age_days({"measured_at": "不是时间"}) is None),
-        ("age_days：刚刚测的 ⇒ 不足一天",
+        ("ledger.fact_stamps_measured_at",
+         lambda: isinstance(fact(1, "c", "s").get("measured_at"), str)),
+        ("ledger.age_days_missing_none", lambda: age_days({"value": 1}) is None),
+        ("ledger.age_days_bad_stamp_none",
+         lambda: age_days({"measured_at": "not-a-time"}) is None),
+        ("ledger.age_days_fresh",
          lambda: 0 <= age_days({"measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}) < 1),
-        ("age_days：40 天前 ⇒ 约 40 天",
+        ("ledger.age_days_about_40",
          lambda: 39 < age_days({"measured_at": (datetime.now(timezone.utc)
                                                  - timedelta(days=40)
                                                  ).strftime("%Y-%m-%dT%H:%M:%S%z")}) < 41),
         # ③ 见证（issue #5）
-        ("fact() 盖 witness 字段（两者同给）",
+        ("ledger.witness_fields",
          lambda: fact(1, "c", "s", witness="w", witness_expect="e").get("witness") == "w"
          and fact(1, "c", "s", witness="w", witness_expect="e").get("witness_expect") == "e"),
-        ("fact() 不给 witness ⇒ 无字段",
+        ("ledger.no_witness_no_field",
          lambda: "witness" not in fact(1, "c", "s")),
-        ("★ witness 形状残缺：只给 witness ⇒ 当场报错",
+        ("★ ledger.witness_only",
          lambda: raises(lambda: fact(1, "c", "s", witness="w"))),
-        ("★ witness 形状残缺：只给 witness_expect ⇒ 当场报错",
+        ("★ ledger.witness_expect_only",
          lambda: raises(lambda: fact(1, "c", "s", witness_expect="e"))),
         # ④ 仪器校准（issue #6 ①）
-        ("fact() 盖 calibrate 字段（两者同给）",
+        ("ledger.calibrate_fields",
          lambda: fact(1, "c", "s", calibrate="cal", calibrate_expect="e")
          .get("calibrate") == "cal"),
-        ("★ calibrate 形状残缺：只给 calibrate ⇒ 当场报错",
+        ("★ ledger.calibrate_only",
          lambda: raises(lambda: fact(1, "c", "s", calibrate="cal"))),
-        ("★ calibrate 形状残缺：只给 calibrate_expect ⇒ 当场报错",
+        ("★ ledger.calibrate_expect_only",
          lambda: raises(lambda: fact(1, "c", "s", calibrate_expect="e"))),
         # ⑤ first_seen（issue #6 ① 恒常检测的状态）
-        ("fact() 盖 first_seen（采集日）",
+        ("ledger.fact_stamps_first_seen",
          lambda: fact(1, "c", "s").get("first_seen")
          == time.strftime("%Y-%m-%d")),
     ]

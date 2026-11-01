@@ -36,6 +36,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import module_meta, fatal, repo, selftest                    # noqa: E402
+from i18n import M                                        # noqa: E402
 from knobs import REGISTRY                                # noqa: E402
 
 GATES_BEGIN = "<!-- AUTO:GATES -->"
@@ -97,9 +98,8 @@ def phases_problems():
         dup = [p for p in (x.strip() for x in raw.split(","))
                if p in BUILTIN_PHASES]
         if dup:
-            out.append("REFLECT_PHASES 里的 %s 是内置相位（commit / "
-                       "start-of-work 不可重名也不必重报）—— 删掉它们，"
-                       "只留自定义相位" % ", ".join(sorted(set(dup))))
+            out.append(M("registry.builtin_phase_repeated",
+                         phases=", ".join(sorted(set(dup)))))
     return out
 
 def modules(zdir=None):
@@ -302,9 +302,7 @@ def _missing_declaration_problems(missing):
     """叫 check_ 却没有 GATE 声明行 —— 忘写声明 = 叙述会漂。"""
     if not missing:
         return []
-    return ["以下闸门没有 GATE = gate.meta(…) 声明行 —— 名录不收"
-            "无名之辈（手写名录会漂，声明即登记）：%s"
-            % ", ".join(missing)]
+    return [M("registry.missing_declaration", files=", ".join(missing))]
 
 
 def _phase_problems(gs):
@@ -312,9 +310,9 @@ def _phase_problems(gs):
     out = []
     for g in gs:
         if g.get("runs_at", "commit") not in phases():
-            out.append("`%s` 的 runs_at=%r 不是已知相位（%s）—— 频率是声明"
-                       "字段，写错值会让执行面漏掉它"
-                       % (g["file"], g.get("runs_at"), " | ".join(phases())))
+            out.append(M("registry.unknown_phase",
+                         file=g["file"], runs_at=g.get("runs_at"),
+                         phases=" | ".join(phases())))
     return out
 
 
@@ -323,17 +321,14 @@ def _name_dependent_problems(gs):
     out = []
     for g in gs:
         if g["name_dependent"] and not _touches_renamed(g):
-            out.append("`%s` 标了 name_dependent，但消费的旋钮没有一个默认名"
-                       "在换名自证的改名清单里 —— 旗标错了（要么去掉旗标，"
-                       "要么把新默认名加进 registry.RENAMED_DEFAULTS）"
-                       % g["file"])
+            out.append(M("registry.name_dependent_wrong", file=g["file"]))
     return out
 
 
 def _empty_gate_problems(gs, missing):
     """名录整体为空 —— 零值守卫：空输入不是通过。"""
     if not gs and not missing:
-        return ["一个闸门都没发现 —— 零值守卫：空输入不是通过"]
+        return [M("registry.empty_roster")]
     return []
 
 
@@ -343,10 +338,10 @@ def _selftest_roster_problems(mods, mods_missing):
         mods, mods_missing = selftest_modules()
     out = []
     if mods_missing:
-        out.append("以下模块声明了 selftest=True 却没有 --selftest 入口 —— "
-                   "写而不跑的自证 = 装饰：%s" % ", ".join(mods_missing))
+        out.append(M("registry.selftest_no_entry",
+                     files=", ".join(mods_missing)))
     if not mods:
-        out.append("没有任何平台模块自证可发现 —— 零值守卫：空输入不是通过")
+        out.append(M("registry.no_module_selftest"))
     return out
 
 
@@ -357,10 +352,7 @@ def _undeclared_module_problems(undeclared):
         _decl, undeclared = modules()
     if not undeclared:
         return []
-    return ["以下 .py 既非闸门（无 GATE 声明）也非已声明的平台模块"
-            "（无 MODULE = module_meta(…)）—— 平台模块必须声明自己，"
-            "哪怕 selftest=False（正面说「我不用自证」）：%s"
-            % ", ".join(undeclared)]
+    return [M("registry.undeclared_module", files=", ".join(undeclared))]
 
 
 def _knob_problems(knob_problems, gs):
@@ -403,6 +395,17 @@ def problems(gs, missing, mods=None, mods_missing=None,
     out += _undeclared_module_problems(undeclared)
     out += _knob_problems(knob_problems, gs)
     return out
+
+
+def _pinned_under(lang):
+    """自证帮手：在指定 REFLECT_LANG 下渲染 AUTO 块（用于证明它不随语言变）。"""
+    old = os.environ.get("REFLECT_LANG", "")
+    os.environ["REFLECT_LANG"] = lang
+    try:
+        gs, _ = gates()
+        return render_gates(gs)
+    finally:
+        os.environ["REFLECT_LANG"] = old
 
 
 def _with_phases(val):
@@ -451,7 +454,15 @@ def plugins(hooks_dir=None):
 
 def render_gates(gs):
     """闸门名录 → AUTO:GATES 机器块（含首尾标记）。**纯函数**：
-    同一名录渲染两次逐字节相同。"""
+    同一名录渲染两次逐字节相同。
+
+    ⚠️ **PINNED**（issue #26，D' 的洞见）：本块的文本**永远用固定语言**，
+    不跟随 `REFLECT_LANG`。理由：它写进 `STATE.md` 并被 `facts.py --check`
+    逐字节对账 —— 若随语言变，`REFLECT_LANG=de --render-doc` 之后
+    `REFLECT_LANG=zh --check` 必然红，**同一提交在不同语言环境下结果不同**
+    （`collect.py` 原则 2 的同族病：不引入会自己变的输入）。
+    实测过：不 PINNED 就会不收敛。
+    """
     lines = [GATES_BEGIN,
              "> 本区块由 `zreflect/facts.py --render-doc` 从发现式名录"
              "（zreflect/registry.py 的声明行）渲染，**不要手改**。",
@@ -485,13 +496,12 @@ def _main_run(argv):
     from gate import run_phase                          # noqa: PLC0415
     gs = runnable(phase)
     if not gs:
-        return fatal("相位 %s 没有可跑的闸门 —— 零值守卫：空清单不是通过"
-                     "（谓词或声明坏了？）" % phase)
+        return fatal(M("registry.empty_phase", phase=phase))
     res = run_phase(phase, gs)
-    print("相位 %s：ran %d / off %d / failed %d"
-          % (phase, res["ran"], res["off"], res["failed"]))
+    print(M("registry.phase_summary", phase=phase, ran=res["ran"],
+            off=res["off"], failed=res["failed"]))
     for f in res["off_list"]:
-        print("  off    %s（未启用 —— 没查，不是通过）" % f)
+        print(M("registry.phase_off", file=f))
     for f in res["fail_list"]:
         print("  FAILED %s" % f, file=sys.stderr)
     return 1 if res["failed"] else 0
@@ -500,8 +510,7 @@ def _main_run(argv):
 def _main_selftest_modules():
     mods, missing = selftest_modules()
     for m in missing:
-        print("  ❌ %s 写了自证却没有 --selftest 入口（写而不跑 = 装饰）" % m,
-              file=sys.stderr)
+        print(M("registry.selftest_no_entry", files=m), file=sys.stderr)
     if missing:
         return 1
     print("\n".join(mods))
@@ -514,7 +523,7 @@ def _main_gates():
     for x in probs:
         print("  · %s" % x, file=sys.stderr)
     if probs:
-        return fatal("名录有问题（%d）" % len(probs))
+        return fatal(M("registry.roster_problems", count=len(probs)))
     for g in gs:
         print("%s\t%s\t%s" % (g["file"], g["name"], g["desc"]))
     return 0
@@ -558,8 +567,10 @@ def _main_listings(argv):
     return None
 
 
-_USAGE = ("用法：registry.py [--gates|--runnable [phase]|--all-runnable|"
-          "--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]")
+def _usage():
+    """用法行。**函数而不是模块常量**：入口在 `main_selftest_or` 里才
+    `activate()` 语言包，模块级 `M(…)` 会在 import 时就被冻在 null 包上。"""
+    return M("registry.usage")
 
 
 def main(argv):
@@ -575,7 +586,7 @@ def main(argv):
         return _main_selftest_modules()
     if "--gates" in argv:
         return _main_gates()
-    print(_USAGE, file=sys.stderr)
+    print(_usage(), file=sys.stderr)
     return 2
 
 
@@ -585,16 +596,19 @@ def _cases():
     import tempfile                                      # noqa: PLC0415
     d = tempfile.mkdtemp()
     atexit.register(shutil.rmtree, d, True)
+    # 夹具的声明数据用**ASCII 名**：它们是被 ast 提取的输入（进 AUTO:GATES
+    # 机器块），不是本体输出 —— 中文夹具会被零语言闸门收编。
     open(os.path.join(d, "check_ok.py"), "w").write(
-        'GATE = gate.meta("甲闸门", "挡甲", knobs=("REFLECT_FACTS",),'
+        'GATE = gate.meta("gate_a", "blocks_a", knobs=("REFLECT_FACTS",),'
         ' name_dependent=True)\n')
     open(os.path.join(d, "check_plain.py"), "w").write(
-        'GATE = gate.meta("乙闸门", "挡乙", knobs=("REFLECT_WORLD",))\n')
+        'GATE = gate.meta("gate_b", "blocks_b", knobs=("REFLECT_WORLD",))\n')
     open(os.path.join(d, "check_bare.py"), "w").write("X = 1\n")
     open(os.path.join(d, "named_other.py"), "w").write(
-        'GATE = gate.meta("丙", "声明即闸门，名字无关", knobs=())\n')
+        'GATE = gate.meta("gate_c", "declared means registered", knobs=())\n')
     open(os.path.join(d, "doc_gate.py"), "w").write(
-        'GATE = gate.meta("丁", "开工相位", knobs=(), runs_at="start-of-work")\n')
+        'GATE = gate.meta("gate_d", "start-of-work phase", knobs=(),'
+        ' runs_at="start-of-work")\n')
     open(os.path.join(d, "platform.py"), "w").write("Y = 2\n")   # 无声明 = 平台模块
     gs, missing = gates(d)
     ok = [g for g in gs if g["file"].endswith("check_ok.py")][0]
@@ -606,78 +620,88 @@ def _cases():
                 if n.startswith("check_") and n.endswith(".py")}
     return [
         # ① 正常不报
-        ("ast 提取声明行：名字 / 一句话 / 旋钮 / 旗标 / 相位",
-         lambda: ok["name"] == "甲闸门" and ok["desc"] == "挡甲"
+        ("registry.ast_declaration_fields",
+         lambda: ok["name"] == "gate_a" and ok["desc"] == "blocks_a"
          and ok["knobs"] == ("REFLECT_FACTS",)
          and ok["name_dependent"] is True and ok["runs_at"] == "commit"),
-        ("无声明且非 check_ ⇒ 平台模块，既不入名录也不入 missing",
+        ("registry.undeclared_noncheck_is_module",
          lambda: all(not m.endswith("platform.py") for m in missing)
          and all(not g["file"].endswith("platform.py") for g in gs)),
-        ("声明即闸门：非 check_ 命名但有声明 ⇒ 被发现（孤儿概念消失）",
+        ("registry.declaration_is_registration",
          lambda: any(g["file"].endswith("named_other.py") for g in gs)
          and not any(m.endswith("named_other.py") for m in missing)),
-        ("真仓名录与磁盘一致：每个 check_*.py 都在名录里",
+        ("registry.real_roster_matches_disk",
          lambda: not real_missing and real_files() <= {g["file"] for g in real}),
-        ("runnable 按相位过滤：commit 不含 start-of-work 的闸门",
+        ("registry.runnable_filters_by_phase",
          lambda: (lambda cm, sw: all(g["runs_at"] == "commit" for g in cm)
                   and [g["file"] for g in sw]
                   == ["zreflect/doc_gate.py"])(runnable("commit", d),
                                                runnable("start-of-work", d))),
-        ("真仓：doctor 是 start-of-work 相位（不靠名字排除）",
+        ("registry.doctor_is_start_of_work",
          lambda: any(g["file"].endswith("doctor.py") for g in real)
          and not any(g["file"].endswith("doctor.py")
                      for g in runnable("commit"))),
-        ("红名单非空且每道都标了旗标（真仓一致性）",
+        ("registry.red_need_flagged",
          lambda: (lambda rn: len(rn) >= 1 and all(
              any(g["file"].endswith(b) and g["name_dependent"] for g in real)
              for b in rn))(red_need(real))),
-        ("真仓：每个平台模块都声明了 MODULE（无 undeclared）",
+        ("registry.real_modules_declared",
          lambda: modules()[1] == [] and len(modules()[0]) >= 8),
-        ("★ 未声明的平台模块 ⇒ 必须报（C5：平台模块必须声明自己）",
-         lambda: any("必须声明自己" in x for x in problems(
-             [], [], mods=["zreflect/x.py"], mods_missing=[],
-             knob_problems=[], undeclared=["zreflect/orphan_mod.py"]))),
-        ("真仓：夹具改名集唯一产地（FIXTURE_RENAMES 覆盖全部 RENAMED_DEFAULTS）",
+        ("registry.fixture_renames_single_source",
          lambda: set(FIXTURE_RENAMES) == set(RENAMED_DEFAULTS)
          and len(FIXTURE_RENAMES) >= 7),
-        ("插件：einfacht-env.sh 发现式收编（doctor 不再靠点名）",
+        ("registry.plugin_discovery",
          lambda: "reflect-hooks/einfacht-env.sh" in plugins()
          and "zreflect/doctor.py" not in plugins()),
-        ("render_gates 是纯函数且含每道闸门（含首尾标记）",
+        ("★ registry.auto_block_pinned_across_langs",
+         lambda: _pinned_under("en") == _pinned_under("zh")
+         and _pinned_under("de") == _pinned_under("")),
+        ("registry.render_gates_pure",
          lambda: render_gates(gs) == render_gates(gs)
-         and "甲闸门" in render_gates(gs)
+         and "gate_a" in render_gates(gs)
          and GATES_BEGIN in render_gates(gs) and GATES_END in render_gates(gs)),
         # ② 该报的必须报
-        ("★ 叫 check_ 却没声明 ⇒ 必须报（忘写声明行的形状）",
+        ("★ registry.missing_declaration",
          lambda: missing == ["zreflect/check_bare.py"]),
-        ("★ runs_at 是未知相位 ⇒ 必须报（频率写错会让执行面漏掉它）",
-         lambda: any("不是已知相位" in x for x in problems(
+        ("★ registry.unknown_phase",
+         lambda: [p.code for p in problems(
              [dict(plain, runs_at="whenever")], [],
-             mods=["zreflect/x.py"], mods_missing=[], knob_problems=[], undeclared=[]))),
-        ("★ 标了 name_dependent 却不消费改名默认名 ⇒ 必须报（旗标错了）",
-         lambda: any("旗标" in x for x in problems(
+             mods=["zreflect/x.py"], mods_missing=[], knob_problems=[],
+             undeclared=[])] == ["registry.unknown_phase"]),
+        ("★ registry.name_dependent_wrong",
+         lambda: [p.code for p in problems(
              [dict(plain, name_dependent=True)], [],
-             mods=["zreflect/x.py"], mods_missing=[], knob_problems=[], undeclared=[]))),
-        ("★ 写了自证却没有 --selftest 入口 ⇒ 必须报（写而不跑 = 装饰）",
-         lambda: any("写而不跑" in x for x in problems(
+             mods=["zreflect/x.py"], mods_missing=[], knob_problems=[],
+             undeclared=[])] == ["registry.name_dependent_wrong"]),
+        # 这两条的空名录与「空清单不是通过」同时在场（gs=[] 必然触发零值守卫），
+        # 所以用 `any(code == …)` 而不是整表相等 —— 断言仍精确指向那一条。
+        ("★ registry.selftest_no_entry",
+         lambda: any(p.code == "registry.selftest_no_entry" for p in problems(
              [], [], mods=["zreflect/x.py"],
-             mods_missing=["zreflect/y.py"], knob_problems=[]))),
+             mods_missing=["zreflect/y.py"],
+             knob_problems=[]))),
+        ("★ registry.undeclared_module",
+         lambda: any(p.code == "registry.undeclared_module" for p in problems(
+             [], [], mods=["zreflect/x.py"], mods_missing=[],
+             knob_problems=[],
+             undeclared=["zreflect/orphan_mod.py"]))),
         # ③ 空输入必须报
-        ("★ 空名录 + 空模块 ⇒ 必须报（零值守卫）",
+        ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
                           knob_problems=[], undeclared=[]) != []),
         # issue #21：相位旋钮 —— 下游自定义相位（如 S26 的 lab）不再 fork PHASES
-        ("REFLECT_PHASES=lab ⇒ phases() 追加、内置两个不动",
+        ("registry.phases_extra_appended",
          lambda: _with_phases("lab")[0] == ("commit", "start-of-work", "lab")),
-        ("★ REFLECT_PHASES 重报内置相位 ⇒ phases_problems 必须报",
-         lambda: any("内置相位" in x for x in _with_phases("commit,lab")[1])),
-        ("REFLECT_PHASES 未设 ⇒ 只有内置两个（现状不变，兼容红线）",
+        ("★ registry.builtin_phase_repeated",
+         lambda: [p.code for p in _with_phases("commit,lab")[1]
+                  ] == ["registry.builtin_phase_repeated"]),
+        ("registry.phases_default_builtin_only",
          lambda: _with_phases("")[0] == ("commit", "start-of-work")),
         # 人性化提示（env_hint）：四条判据
-        ("无 Einfacht.env 的仓 ⇒ env_hint 不提示（裸跑是正常用法）",
+        ("registry.env_hint_silent_without_carrier",
          lambda: __import__("gate").env_hint(consumed=("REFLECT_FACTS",)) is None
          or __import__("gate").env_carrier() is not None),
-        ("REFLECT_ENV_HINT=off ⇒ _maybe_hint 不输出（提示可关）",
+        ("registry.env_hint_off_silent",
          lambda: (lambda: (os.environ.update(REFLECT_ENV_HINT="off"),
                            __import__("gate")._maybe_hint(),
                            os.environ.pop("REFLECT_ENV_HINT", None),
