@@ -222,7 +222,7 @@ from i18n import M
 
 def f(x):
     out = []
-    out.append(M("replay.no_cmd", k=x))
+    out.append(M("replay.no_cmd", key=x))
     return out
 '''
     BARE = f'''
