@@ -541,9 +541,14 @@ cp -r zreflect reflect-hooks gates-selftest.sh /path/to/your-repo/
 python3 zreflect/facts.py                       # measure once
 python3 zreflect/facts.py --render-doc STATE.md # write the machine blocks (facts + gate registry) into the doc
 python3 zreflect/facts.py --get py_lines         # bare value of one fact (for scripts / other languages)
-# 2. Install pre-commit / pre-push (recompute block + run all gates;
-#    pre-push additionally refuses pushes that don't update the README trio together)
-sh reflect-hooks/install.sh
+# 2. Wire the gates into commit/push (recompute block + run all gates;
+#    push additionally refuses pushes that don't update the README trio together).
+#    Einfacht does NOT take over the hook slot: it exposes one entry
+#    (reflect-hooks/einfacht-gate.sh) that any hook system can call.
+sh reflect-hooks/install.sh              # prints wiring instructions, writes nothing
+sh reflect-hooks/install.sh --chain      # or: chain into .git/hooks (keeps yours, runs it first)
+# ⚠️ `--legacy` sets core.hooksPath, which makes git IGNORE .git/hooks entirely
+#    (husky / lefthook / pre-commit / hand-written hooks go silently dead).
 # 2b. (optional) give the hooks a durable knob carrier (issue #8):
 #     cp reflect-hooks/Einfacht.env.example reflect-hooks/Einfacht.env
 #     — git does not export custom env to hooks, so REFLECT_* values the

@@ -442,8 +442,13 @@ cp -r zreflect reflect-hooks gates-selftest.sh /path/to/your-repo/
 python3 zreflect/facts.py                      # 量一遍
 python3 zreflect/facts.py --render-doc STATE.md # 把机器块（事实 + 闸门名录）写进文档
 python3 zreflect/facts.py --get 键名             # 只打印一条事实的裸值（脚本 / 其它语言用）
-# 2. 挂进 pre-commit / pre-push（重算机器块 + 全部闸门；pre-push 还要求三语 README 同批更新）
-sh reflect-hooks/install.sh
+# 2. 挂进提交 / 推送（重算机器块 + 全部闸门；推送还要求三语 README 同批更新）。
+#    Einfacht **不抢钩子座位**：只暴露一个入口（reflect-hooks/einfacht-gate.sh），
+#    任何钩子体系都可以调它。
+sh reflect-hooks/install.sh              # 打印接入说明，不写任何文件
+sh reflect-hooks/install.sh --chain      # 或：链式装进 .git/hooks（保留你原有的，先跑它）
+# ⚠️ `--legacy` 设 core.hooksPath —— 那会让 git **完全不看** .git/hooks，
+#    husky / lefthook / pre-commit / 手写钩子会被静默废掉。
 # 2b.（可选）给 hooks 一个持久的旋钮载体（issue #8）：
 #     cp reflect-hooks/Einfacht.env.example reflect-hooks/Einfacht.env
 #     —— git 不把自定义环境变量传给 hooks，钩子要读的 REFLECT_* 值住在这个
