@@ -589,9 +589,14 @@ cp -r zreflect reflect-hooks gates-selftest.sh /path/to/your-repo/
 python3 zreflect/facts.py                        # einmal messen
 python3 zreflect/facts.py --render-doc STATE.md  # den Maschinenblock ins Doc schreiben
 python3 zreflect/facts.py --get py_lines          # Bare-Wert eines Fakts (für Skripte / andere Sprachen)
-# 2. pre-commit / pre-push einhängen (Block neu rechnen + alle Gates;
-#    pre-push weist außerdem Pushes ab, die das README-Trio nicht gemeinsam aktualisieren)
-sh reflect-hooks/install.sh
+# 2. In Commit/Push einhängen (Block neu rechnen + alle Gates;
+#    Push weist außerdem Pushes ab, die das README-Trio nicht gemeinsam aktualisieren).
+#    Einfacht **belegt den Hook-Platz nicht**: es exponiert einen Einstiegspunkt
+#    (reflect-hooks/einfacht-gate.sh), den jedes Hook-System aufrufen kann.
+sh reflect-hooks/install.sh              # druckt die Verdrahtung, schreibt nichts
+sh reflect-hooks/install.sh --chain      # oder: verkettet in .git/hooks (deins bleibt, läuft zuerst)
+# ⚠️ `--legacy` setzt core.hooksPath — dann ignoriert git .git/hooks **komplett**
+#    (husky / lefthook / pre-commit / handgeschriebene Hooks sterben still).
 # 2b. (optional) den Hooks einen dauerhaften Knopf-Träger geben (Issue #8):
 #     cp reflect-hooks/Einfacht.env.example reflect-hooks/Einfacht.env
 #     — git exportiert keine Custom-Env an Hooks, REFLECT_* -Werte,
