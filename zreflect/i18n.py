@@ -130,10 +130,16 @@ def _table_for(lang, tables):
         return got
     if not lang:
         return None
-    from gate import repo                                # noqa: PLC0415
     import json                                          # noqa: PLC0415
-    # 默认 `zreflect/lang`（包随套件分发在 zreflect/ 内）；`REFLECT_I18N` 可换。
-    base = repo(os.environ.get("REFLECT_I18N", os.path.join("zreflect", "lang")))
+    # ⚠️ 语言包是**工具**的属性，不是被检查仓库的 —— 用**本文件所在处**作锚，
+    # 不用 `gate.repo()`（那是 GATE_REPO 相对）。
+    # 实测踩到：跨仓夹具把 GATE_REPO 指向临时目录，那里没有 zreflect/lang
+    # ⇒ `REFLECT_LANG=zh` 时夹具里每个闸门都 MissingPack FATAL（0/15 全红）。
+    # 与 registry 的 `_zdir()` 是同一类修正。
+    tool_dir = os.path.dirname(os.path.abspath(__file__))
+    i18n_dir = os.environ.get("REFLECT_I18N", "").strip() or "lang"
+    base = (i18n_dir if os.path.isabs(i18n_dir)
+            else os.path.join(tool_dir, i18n_dir))
     # 两种形状都认（后者是为**并行开发**设计的，避免多人写同一个文件）：
     #   lang/<lang>.json        单文件（小仓 / 样板）
     #   lang/<lang>/*.json      按命名空间分文件（每闸门一份，合并时后者覆盖同 code）

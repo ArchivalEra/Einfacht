@@ -1,0 +1,15 @@
+{
+ "registry.builtin_phase_repeated": "REFLECT_PHASES 里的 %(phases)s 是内置相位（commit / start-of-work 不可重名也不必重报）—— 删掉它们，只留自定义相位",
+ "registry.empty_phase": "相位 %(phase)s 没有可跑的闸门 —— 零值守卫：空清单不是通过（谓词或声明坏了？）",
+ "registry.empty_roster": "一个闸门都没发现 —— 零值守卫：空输入不是通过",
+ "registry.missing_declaration": "以下闸门没有 GATE = gate.meta(…) 声明行 —— 名录不收无名之辈（手写名录会漂，声明即登记）：%(files)s",
+ "registry.name_dependent_wrong": "`%(file)s` 标了 name_dependent，但消费的旋钮没有一个默认名在换名自证的改名清单里 —— 旗标错了（要么去掉旗标，要么把新默认名加进 registry.RENAMED_DEFAULTS）",
+ "registry.no_module_selftest": "没有任何平台模块自证可发现 —— 零值守卫：空输入不是通过",
+ "registry.phase_off": "  off    %(file)s（未启用 —— 没查，不是通过）",
+ "registry.phase_summary": "相位 %(phase)s：ran %(ran)d / off %(off)d / failed %(failed)d",
+ "registry.roster_problems": "名录有问题（%(count)d）",
+ "registry.selftest_no_entry": "以下模块声明了 selftest=True 却没有 --selftest 入口 —— 写而不跑的自证 = 装饰：%(files)s",
+ "registry.undeclared_module": "以下 .py 既非闸门（无 GATE 声明）也非已声明的平台模块（无 MODULE = module_meta(…)）—— 平台模块必须声明自己，哪怕 selftest=False（正面说「我不用自证」）：%(files)s",
+ "registry.unknown_phase": "`%(file)s` 的 runs_at=%(runs_at)r 不是已知相位（%(phases)s）—— 频率是声明字段，写错值会让执行面漏掉它",
+ "registry.usage": "用法：registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]"
+}
