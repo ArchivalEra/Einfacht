@@ -68,12 +68,33 @@ def problems_structure(files, langs):
 
 
 def problems_push(changed, langs):
-    """推送集判据（纯函数）。`changed` = 本次推送改动过的文件路径集合。"""
+    """推送集判据（纯函数）。`changed` = 本次推送改动过的文件路径集合。
+
+    **条件式**（与 AGENTS 原话一致：「改任何一份 ⇒ 这次推送的改动集必须三份
+    全含」）：
+      · 一份 README 都没改 ⇒ 不适用（纯代码 / 纯文档提交不该被拦）
+      · 改了至少一份 ⇒ 三份都必须在推送集里（缺一份报一份）
+
+    **两种名单形态，两条判据**（文档第 12/19 行的区分）：
+
+      · **多条目**（默认三语 trio）⇒ **条件式**：「改任何一份 ⇒ 这次推送的
+        改动集必须三份全含」。一份都没碰 ⇒ 不适用（纯代码提交不该被拦）。
+      · **单条目**（`REFLECT_READMES=maintaince.md` 这种「把一份活文档当
+        README」的用法）⇒ **无条件**：「每次推送必须更新它」。这是更强的那条
+        —— 单份清单没有「同批」可言，它的判据就是「必须有」。
+
+    ⚠️ 此前对**多条目**也是无条件，于是任何不改 README 的提交都被判红
+    （CI 上连续红：`0cef263` 只改了 `i18n.py` + 台账）。多条目按文档是条件式。
+    """
     out = []
     if not langs:
         return [M("readme.names_empty_push")]
     if not changed:
         return [M("readme.changed_empty")]
+    multi = len(langs) > 1
+    # 多条目的条件式：一份都没碰 ⇒ 不适用
+    if multi and not any(name in changed for name in langs):
+        return []
     for name in langs:
         if name not in changed:
             out.append(M("readme.not_in_push", name=name))
@@ -161,6 +182,17 @@ def _cases():
         ("★ readme.single_not_in_push",
          lambda: [p.code for p in problems_push({"other.md"}, ("maintaince.md",))]
          == ["readme.not_in_push"]),
+        # **多条目条件式**：一份 README 都没碰 ⇒ 不适用（纯代码提交不该被拦）。
+        # 这是 CI 上 `0cef263`（只改 i18n.py + 台账）被判红的那一类 ——
+        # 文档说的是条件判据（「改任何一份 ⇒ 三份全含」），不是无条件。
+        ("readme.multi_untouched_is_not_in_scope",
+         lambda: problems_push({"zreflect/x.py"}, ("README.md", "README.zh.md"))
+         == []),
+        # 但**碰了一份就必须三份全含**（否则改成条件式就等于放水了）
+        ("★ readme.multi_partial_still_fires",
+         lambda: [p.code for p in problems_push(
+             {"README.md", "zreflect/x.py"}, ("README.md", "README.zh.md"))
+         ] == ["readme.not_in_push"]),
         # ③ 空输入必须报
         ("★ readme.names_empty_structure",
          lambda: [p.code for p in problems_structure(_trio(), ())]
