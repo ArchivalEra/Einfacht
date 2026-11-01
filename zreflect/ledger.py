@@ -220,7 +220,7 @@ def _selftest():
     rc = activate_or_fatal()
     if rc:
         return rc
-    return selftest("ledger（两道守卫）", _cases())
+    return selftest(M("gate.title.ledger"), _cases())
 
 
 MODULE = module_meta("事实台账数据层", "读写 + 两道守卫的纯函数", selftest=True)

@@ -15,5 +15,21 @@
  "gate.pack_assembly_failed": "language pack assembly failed: %(error)s",
  "gate.platform_root": "Gate platform. Repo root under check: %(root)s",
  "gate.platform_usage": "Usage: in your checker `from gate import selftest, require_nonempty`.",
- "gate.module_banner": "the gate platform is a module (it provides selftest / require_nonempty / finish; it consumes none) — it does not run standalone."
+ "gate.module_banner": "the gate platform is a module (it provides selftest / require_nonempty / finish; it consumes none) — it does not run standalone.",
+ "gate.title.envfile": "env-file gate (removable: guards the hooks' REFLECT_* carrier)",
+ "gate.title.facts": "check_facts (block consistency / bare numbers / bad citations)",
+ "gate.title.facts_replay": "check_facts_replay (ledger cmd re-run verbatim: stdout must equal the value)",
+ "gate.title.i18n_cover": "language-coverage gate (core carries no natural language)",
+ "gate.title.invariants": "invariants gate (declarative: repo files must / must not contain a snippet)",
+ "gate.title.locks": "check_locks (locked-sources list)",
+ "gate.title.doctor": "start-of-work doctor (process / port liveness)",
+ "gate.title.facts_cli": "facts.py (two guards + document consistency)",
+ "gate.title.guard": "guard (ledger write guard: dropped rows / changed values / per-key accept wiring)",
+ "gate.title.i18n": "i18n (zero-language core + optional language packs)",
+ "gate.title.knobs": "knobs (knob registry: the single roster of REFLECT_*)",
+ "gate.title.registry": "registry (the data side of discovery-based rosters)",
+ "gate.title.runner": "runner (verbatim executor: bare-value contract + pipefail + timeout)",
+ "gate.title.questions": "check_questions (an open question must carry a runnable settling case)",
+ "gate.title.ledger": "ledger (two guards)",
+ "gate.title.render": "render (the single place numbers are produced)"
 }

@@ -195,5 +195,5 @@ GATE = meta("不变量闸门", "声明式不变量：仓库文件必须/不得�
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],
-                              "不变量闸门（声明式：仓库文件必须/不得含某片段）",
+                              M("gate.title.invariants"),
                               _cases(), run))

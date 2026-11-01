@@ -731,5 +731,5 @@ if __name__ == "__main__":
     # 而 gate 自己的 `__main__` 又是第三种写法（连 FATAL 都没有）—— 同一件事
     # 三份拷贝，口径必然漂。
     sys.exit(main_selftest_or(sys.argv[1:],
-                              "registry（发现式名录的数据面）",
+                              M("gate.title.registry"),
                               _cases, main))

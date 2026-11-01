@@ -389,5 +389,5 @@ MODULE = module_meta("台账 CLI", "量一遍 / 渲染 / --get / 两道守卫", 
 
 
 if __name__ == "__main__":
-    sys.exit(main_selftest_or(sys.argv[1:], "facts.py（两道守卫 + 文档一致性）",
+    sys.exit(main_selftest_or(sys.argv[1:], M("gate.title.facts_cli"),
                               CASES, main))

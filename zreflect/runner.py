@@ -101,7 +101,7 @@ def _selftest():
         print(M("runner.module_banner"), file=sys.stderr)
         return 2
     return main_selftest_or(sys.argv[1:],
-                            "runner（逐字执行器：裸值契约 + pipefail + 超时）",
+                            M("gate.title.runner"),
                             _cases, _run)
 
 

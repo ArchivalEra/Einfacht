@@ -554,7 +554,7 @@ def _selftest():
         print(M("i18n.module_banner"), file=sys.stderr)
         return 2
     return main_selftest_or(sys.argv[1:],
-                            "i18n（本体零语言 + 语言包可选）", _cases, _run)
+                            M("gate.title.i18n"), _cases, _run)
 
 
 from gate import module_meta                             # noqa: E402
