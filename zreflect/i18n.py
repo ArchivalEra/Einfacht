@@ -59,10 +59,7 @@ _CONTRACT_SHAPES = (
     re.compile(r"^fail \| "),
 )
 
-# null 包（唯一内置）：无语言包时的输出形状。
-# `code` 无参数 ⇒ 只打 code；有参数 ⇒ `code(k=v, …)`。
-_NULL = object()
-
+# `NULL` 哨兵的定义在 `bind()` 附近（与 `activate` 共用，只有一个）。
 
 class Message(str):
     """一条消息。**值是渲染结果**，`.code` / `.params` 是身份与数据。
@@ -455,6 +452,9 @@ def _cases():
         # 静默跳过的后果是那部分消息退回裸 code 而退出码仍是 0（实测踩到）。
         ("★ i18n.broken_shard_raises",
          lambda: _broken_pack_raises()),
+        # **`pack_dir` 三条口径的机器判据**（它是最显眼的契约，此前零自证 ——
+        # 「写而不跑」的形状）。未设 ⇒ 工具自带；绝对 ⇒ 原样；相对 ⇒ 被检查仓根。
+        ("★ i18n.pack_dir_three_rules", lambda: _pack_dir_rules_ok()),
         # `activate(NULL)` 与 `bind(NULL)` 语义必须一致（此前 activate 把哨兵
         # 当语言名 join，直接 TypeError）。
         ("★ i18n.activate_accepts_null",
@@ -488,6 +488,40 @@ def _broken_pack_raises():
                 os.environ["REFLECT_I18N"] = prev
     finally:
         shutil.rmtree(d, True)
+
+
+def _pack_dir_rules_ok():
+    """`pack_dir()` 的三条口径逐条验（每条都是踩过的坑，别只验一条）。"""
+    import gate                                          # noqa: PLC0415
+    prev = os.environ.get("REFLECT_I18N")
+    try:
+        env = os.environ
+        # ① 未设 ⇒ 工具自带的包目录（跨仓夹具靠它）
+        env.pop("REFLECT_I18N", None)
+        if not os.path.isdir(pack_dir()):
+            return False
+        # ② 绝对路径 ⇒ 原样（不拼任何前缀）
+        probe = os.path.abspath(os.sep)
+        env["REFLECT_I18N"] = probe
+        if pack_dir() != probe:
+            return False
+        # ③ 相对路径 ⇒ **被检查仓根**（与其他名字型旋钮同口径）。
+        #    这条曾经错 join 到工具仓根，实测 `GATE_REPO=$T REFLECT_I18N=lang`
+        #    解析成 /…/Einfacht/lang ⇒ FATAL。
+        #    ⚠️ 必须把两个仓根**真的分开**才能验：不设 GATE_REPO 时两者同值，
+        #    错口径也能过（实测踩到：断言自称能红，换回旧实现仍 True）。
+        env["REFLECT_I18N"] = "rel/probe"
+        saved = gate.GATE_REPO
+        gate.GATE_REPO = os.sep + "tmp-probe-repo"
+        try:
+            return pack_dir() == os.path.join(gate.GATE_REPO, "rel/probe")
+        finally:
+            gate.GATE_REPO = saved
+    finally:
+        if prev is None:
+            os.environ.pop("REFLECT_I18N", None)
+        else:
+            os.environ["REFLECT_I18N"] = prev
 
 
 def _activate_null_ok():

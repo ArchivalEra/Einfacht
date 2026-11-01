@@ -35,7 +35,7 @@ import re
 import sys
 
 from gate import module_meta, GATE_REPO                                # noqa: E402
-from i18n import M, bind, load_pack, NULL                         # noqa: E402
+from i18n import M, bind, load_pack, pack_dir, NULL                # noqa: E402
 
 class _Semantic(str):
     """旋钮的一行语义（`REGISTRY` 第三项）：**延迟渲染**的用户可见文本。
@@ -297,17 +297,40 @@ def _semantic_packs_intact():
     return True
 
 
-def pack_sync_problems(langs=("zh", "en"), loader=None):
+def installed_langs():
+    """语言包目录里实际装了哪些语言（**发现式**，不写名单）。
+
+    C4「手写名录一定会漂」在这里同样成立：此前 `langs=("zh", "en")` 是写死的，
+    于是往 `zreflect/lang/` 里加一个 `de/`（半装、缺键）时对账器**完全不看它**
+    ——「装了但没对账」正是本仓要消灭的那类静默。现在是扫目录。
+    """
+    base = pack_dir()
+    out = set()
+    try:
+        for n in sorted(os.listdir(base)):
+            p = os.path.join(base, n)
+            if os.path.isdir(p):
+                out.add(n)
+            elif n.endswith(".json"):
+                out.add(n[:-len(".json")])
+    except OSError:
+        return []
+    return sorted(out)
+
+
+def pack_sync_problems(langs=None, loader=None):
     """C4 对账③：各语言包的**键集**与**占位符名**必须一致。
 
     此前无任何东西强制这件事 —— 手工把一条 code 加进 zh 却忘了 en，
     `REFLECT_LANG=en` 的用户就静默看到裸 code（本仓立身要消灭的静默退化）。
     实测现状两份是相等的，但「相等」是运气不是判据。
 
-    `loader` 可注入（自证用假包）；默认走 `i18n.load_pack`（**合并视图**，
-    与真装载器看同一张表 —— 只读单个分片会与装载器分叉）。
+    `langs=None` ⇒ **从磁盘发现**（`installed_langs()`）；`loader` 可注入
+    （自证用假包）；默认走 `i18n.load_pack`（**合并视图**，与真装载器看同一
+    张表 —— 只读单个分片会与装载器分叉）。
     """
     load = loader if loader is not None else load_pack
+    langs = installed_langs() if langs is None else list(langs)
     tables = {}
     for lang in langs:
         tables[lang] = load(lang)
@@ -424,11 +447,13 @@ def _cases():
              "README.zh.md": "x", "README.de.md": "x"}))),
         # 对账器本身必须能红（否则它只是一条恒绿的装饰）
         ("★ knobs.pack_missing_keys",
-         lambda: [p.code for p in pack_sync_problems(loader=lambda l: {
+         lambda: [p.code for p in pack_sync_problems(
+             langs=("zh", "en"), loader=lambda l: {
              "zh": {"a": "x"}, "en": {"a": "x", "b": "y"}}[l])
          ] == ["knobs.pack_missing_keys"]),
         ("★ knobs.pack_placeholder_mismatch",
-         lambda: [p.code for p in pack_sync_problems(loader=lambda l: {
+         lambda: [p.code for p in pack_sync_problems(
+             langs=("zh", "en"), loader=lambda l: {
              "zh": {"a": "x %(k)s"}, "en": {"a": "x %(j)s"}}[l])
          ] == ["knobs.pack_placeholder_mismatch"]),
         # 多键方向也必须能报（此前只测了缺键 —— 「多出来一个键」同样会让
@@ -436,12 +461,26 @@ def _cases():
         # 参考侧是 `sorted(...)[0]`（这里 = "en"），所以「zh 多一个键」才走
         # extra_keys；反过来会被报成 en 缺键（同一个洞，两种措辞）。
         ("★ knobs.pack_extra_keys",
-         lambda: [p.code for p in pack_sync_problems(loader=lambda l: {
+         lambda: [p.code for p in pack_sync_problems(
+             langs=("zh", "en"), loader=lambda l: {
              "zh": {"a": "x", "b": "y"}, "en": {"a": "x"}}[l])
          ] == ["knobs.pack_extra_keys"]),
+        # 发现式（不写名单）：磁盘上多装一个半残的包也必须被对账器看见。
+        # 此前 `langs=("zh","en")` 写死 ⇒ 加一个缺键的 `de/` 时它**完全不看**
+        # ——「装了但没对账」正是本仓要消灭的那类静默。
+        ("★ knobs.pack_sync_sees_every_installed_lang",
+         lambda: [p.code for p in pack_sync_problems(
+             langs=("de", "en", "zh"), loader=lambda l: {
+                 "zh": {"a": "x"}, "en": {"a": "x"}, "de": {"a": "x"}}[l])
+         ] == [] and
+         [p.code for p in pack_sync_problems(
+             langs=("de", "en", "zh"), loader=lambda l: {
+                 "zh": {"a": "x"}, "en": {"a": "x"}, "de": {}}[l])
+         ] != []),
         # ③ 空输入必须报
         ("★ knobs.pack_sync_empty",
-         lambda: [p.code for p in pack_sync_problems(loader=lambda l: {})]
+         lambda: [p.code for p in pack_sync_problems(
+             langs=("zh", "en"), loader=lambda l: {})]
          == ["knobs.pack_sync_empty"]),
         ("★ knobs.registry_empty", lambda: bool(REGISTRY)),
         ("knobs.phases_registered", lambda: "REFLECT_PHASES" in REGISTRY),

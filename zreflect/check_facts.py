@@ -224,15 +224,6 @@ def run(argv):
 LED = {"facts": {"count": {"value": 4752, "cmd": "c"}}}
 
 
-def _load_real_pack(lang, fname=None):
-    """读磁盘上真实发布的语言包（自证用；缺失 ⇒ {} 让断言当场红）。
-
-    走 `i18n.load_pack` 的**合并视图**（`fname` 仅为兼容旧调用点保留，
-    已不再分流 —— 与真装载器看同一张表）。此前这里用 `repo()` 即 GATE_REPO
-    相对，跨仓夹具里读不到包 —— 实测 `GATE_REPO=$(mktemp -d)` 下本条自证
-    17 PASS / 1 FAIL。
-    """
-    return load_pack(lang)
 
 
 def _cases():
@@ -250,7 +241,7 @@ def _cases():
     # 参数）。所以读**磁盘上真实发布的 zh 包** —— 注入假表只能证明「我写的模板
     # 渲染得出我写的话」（循环论证）；读真包才把「迁移没丢语义」变成可证伪的
     # 断言（zh 包按契约存的是逐字的被移除文本）。
-    real_zh = _load_real_pack("zh", "facts.json")
+    real_zh = load_pack("zh")
 
     def pack_placeholders(code):
         """真实 zh 包里某条 code 的占位名集合（缺条目 ⇒ 空集，断言当场红）。"""

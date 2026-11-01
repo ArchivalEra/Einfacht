@@ -35,7 +35,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import module_meta, fatal, repo, selftest, main_selftest_or     # noqa: E402
+from gate import module_meta, fatal, repo, main_selftest_or             # noqa: E402
 from i18n import M                                        # noqa: E402
 from knobs import REGISTRY                                # noqa: E402
 
