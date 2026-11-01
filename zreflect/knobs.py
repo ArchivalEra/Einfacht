@@ -317,18 +317,20 @@ def _discovery_sees_planted_lang():
     # 写死 zh 会让这条自证假红（实测 en-only ⇒ 16 PASS / 1 FAIL）。
     base = a_pack_lang()
     if not base:
-        return False        # 零包 = 配置坏（`REFLECT_I18N` 指到没包的目录），不许绿
+        # 零包是**合法态**（用户要的零语言默认）⇒ 没有基准包可种，这条的
+        # 条件真空成立。真仓永远有包，所以这条在真环境里必然真考。
+        return True
     zh = load_pack(base)
     if not zh:
         return False
     d = tempfile.mkdtemp()
     try:
-        os.makedirs(os.path.join(d, base))
+        os.makedirs(os.path.join(d, base), exist_ok=True)
         with open(os.path.join(d, base, "all.json"), "w",
                   encoding="utf-8") as fh:
             json.dump(zh, fh, ensure_ascii=False)
         # 种一个**半残**的 de：只有一半的键 —— 不发现它就会漏判
-        os.makedirs(os.path.join(d, "de"))
+        os.makedirs(os.path.join(d, "de"), exist_ok=True)
         half = dict(list(zh.items())[: len(zh) // 2])
         with open(os.path.join(d, "de", "all.json"), "w", encoding="utf-8") as fh:
             json.dump(half, fh, ensure_ascii=False)
@@ -415,9 +417,15 @@ def pack_sync_problems(langs=None, loader=None, discovery=None):
             # 同一个输入加 `REFLECT_LANG=zh` 才是 rc=2。
             return [M("knobs.pack_unreadable", lang=lang, error=e)]
     out = []
-    # 零值守卫：一张表都没有 / 全都空 ⇒ 不是「一致」，是没装上。
-    if not tables or not any(tables.values()):
-        return [M("knobs.pack_sync_empty", langs=", ".join(langs))]
+    # **零包是合法态**（用户要的「本体没有任何语言表达也能用」）：一个包都没
+    # 装 ⇒ 没有「彼此一致」可言，但也不是配置坏 —— 返回空（不报）。
+    # 「设了包却读不到」由 `pack_unreadable` / 激活路径的 `i18n.pack_absent`
+    # 负责，那是另一件事：**没要** vs **要了却没有**。
+    if not tables:
+        return []
+    # 装了但全是空表 ⇒ 那是坏包（声称有目录却没有内容），报。
+    if not any(tables.values()):
+        return [M("knobs.pack_sync_empty", pack_dir=pack_dir())]
     ref_lang = sorted(tables)[0]
     ref = tables[ref_lang]
     for lang in sorted(tables):
@@ -511,10 +519,14 @@ def _cases():
         # （注入假表只能证明「我写的模板渲染出我写的字」—— 循环论证）。
         # 复跑：REFLECT_LANG=zh python3 zreflect/knobs.py --selftest
         ("knobs.semantics_present_in_real_packs",
-         lambda: _semantic_packs_intact()),
+         # 条件判据：**装了包就必须完整**。零包（合法态）⇒ 无对象可验，
+         # 条件真空成立；装了坏包 ⇒ 这条照样红（已用 planted 包验证过）。
+         lambda: not installed_langs() or _semantic_packs_intact()),
         # zh / en 键集与占位符名一致（C4 对账③）。真包绿 = 迁移没落一边；
         # 反向断言见 ② 档（假包必须报）。
-        ("knobs.real_packs_in_sync", lambda: pack_sync_problems() == []),
+        ("knobs.real_packs_in_sync",
+         # 同上：零包合法 ⇒ 无「彼此」可对；有包就必须一致。
+         lambda: not installed_langs() or pack_sync_problems() == []),
         # ② 该报的必须报
         ("★ knobs.phantom_token",
          lambda: any(p.code == "knobs.phantom_token"
@@ -577,5 +589,5 @@ if __name__ == "__main__":
         return 2
     # 自证标题是**开发者界面**（check_i18n 的豁免面 ②），按设计保留一种语言。
     sys.exit(main_selftest_or(sys.argv[1:],
-                              "knobs（旋钮登记：REFLECT_* 的唯一名册）",
+                              M("gate.title.knobs"),
                               _cases, _run))

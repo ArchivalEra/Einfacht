@@ -222,11 +222,7 @@ def _cases():
             return [str(p) for p in replay_all(ledger, runner=runner)["problems"]]
 
     def _hint_has(ledger, runner, *anchors):
-        """渲染后的句子是否都含这些 **ASCII 锚点**。
-
-        零包（`REFLECT_I18N` 指到没包的目录）⇒ `said()` 为空 ⇒ 这里红 ——
-        那是**对的**：零包是配置坏，不是「不适用」。
-        """
+        """渲染后的句子是否都含这些 **ASCII 锚点**（调用方负责零包的条件短路）。"""
         return any(all(a in text for a in anchors)
                    for text in said(ledger, runner))
 
@@ -251,7 +247,9 @@ def _cases():
          # 零包 ⇒ 没有可渲染的句子，这条语义锚点**不适用**（明说不假装通过）。
          lambda: codes(LED, lambda c: (0, "13")) == ["replay.mismatch"]
          and params(LED, lambda c: (0, "13"), "replay.mismatch")[0]["key"] == "n"
-         and _hint_has(LED, lambda c: (0, "13"), "accept-changes", "facts.py")),
+         # 条件判据：**装了包就必须带锚点**；零包（合法态）无句子可验。
+         and (not pack_lang or _hint_has(LED, lambda c: (0, "13"),
+                                         "accept-changes", "facts.py"))),
         ("★ replay.mismatch_full_line",
          lambda: codes(LED, lambda c: (0, "count=12 total")) == ["replay.mismatch"]),
         ("★ replay.command_failed",
@@ -262,7 +260,8 @@ def _cases():
          # 冷启动提示的语义锚点：`REFLECT_REPLAY_TIMEOUT` 旋钮名（ASCII）必须
          # 仍在模板里 —— 删掉冷启动提示句（它原先就带着这个旋钮名）⇒ 这条红。
          lambda: codes(LED, lambda c: (None, "")) == ["replay.timeout", "replay.none_ran"]
-         and _hint_has(LED, lambda c: (None, ""), "REFLECT_REPLAY_TIMEOUT")),
+         and (not pack_lang or _hint_has(LED, lambda c: (None, ""),
+                                         "REFLECT_REPLAY_TIMEOUT"))),
         ("★ replay.no_cmd",
          lambda: codes({"facts": {"n": {"value": 1, "source": "s"}}},
                        lambda c: (0, "1")) == ["replay.no_cmd"]),
@@ -318,5 +317,5 @@ GATE = meta("复跑闸门", "台账 cmd 逐字复跑（裸值契约：stdout 必
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],
-                              "check_facts_replay（台账 cmd 逐字复跑：stdout 必须等于值）",
+                              M("gate.title.facts_replay"),
                               _cases, run))

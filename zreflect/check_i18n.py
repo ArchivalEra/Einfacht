@@ -106,16 +106,18 @@ def problems(paths):
         exempt_ids = set()
         # ① `GATE = meta(名字, 描述…` / `MODULE = module_meta(…)` —— **声明数据**
         #    （进 AUTO:GATES 机器块，用户决策：不进语言包）。
-        # ② `main_selftest_or(…, "标题"…)` 与 `selftest(…)` 的标题 —— 自证输出
-        #    是**开发者界面**，不是产品输出。
-        # ③ `re.compile(...)` 的实参 —— **匹配器数据**（正则里的中文是判据，
+        # ② `re.compile(...)` 的实参 —— **匹配器数据**（正则里的中文是判据，
         #    不是要说给人听的话；check_stale 的 HIST_MARK 就是这类）。
+        # ⚠️ **自证标题曾在豁免里，已撤销**（用户裁决：「选英文出中文肯定不允许」，
+        #    自证标题确实打在屏幕上）。现在 13 个闸门的标题都走
+        #    `M("gate.title.<name>")` ⇒ 进语言包。豁免留在这里会给「写回中文
+        #    标题」放行 —— 那条豁免正是让英文模式漏中文的原因。
         # 豁免形状①：「调用实参」——`meta(...)` / `re.compile(...)` 等
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 f = node.func
                 fn = getattr(f, "id", "") or getattr(f, "attr", "")
-                if fn in ("meta", "module_meta", "main_selftest_or", "selftest",
+                if fn in ("meta", "module_meta",
                           "compile", "startswith", "endswith", "match", "search",
                           "fullmatch", "find"):
                     for n in ast.walk(node):
@@ -256,4 +258,4 @@ GATE = meta("语言覆盖闸门", "本体零语言：用户可见文本必须走
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],
-                              "语言覆盖闸门（本体零语言化）", _cases(), run))
+                              M("gate.title.i18n_cover"), _cases(), run))

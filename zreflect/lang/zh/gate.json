@@ -15,5 +15,21 @@
  "gate.pack_assembly_failed": "语言包装配失败：%(error)s",
  "gate.platform_root": "闸门平台。被检查的仓库根：%(root)s",
  "gate.platform_usage": "用法：在你的检查器里 `from gate import selftest, require_nonempty`。",
- "gate.module_banner": "闸门平台是模块（提供 selftest / require_nonempty / finish；自己不消费）—— 不单独跑。"
+ "gate.module_banner": "闸门平台是模块（提供 selftest / require_nonempty / finish；自己不消费）—— 不单独跑。",
+ "gate.title.envfile": "env 文件闸门（可插拔：守钩子的 REFLECT_* 载体）",
+ "gate.title.facts": "check_facts（块一致性 / 裸数字 / 坏引用）",
+ "gate.title.facts_replay": "check_facts_replay（台账 cmd 逐字复跑：stdout 必须等于值）",
+ "gate.title.i18n_cover": "语言覆盖闸门（本体零语言化）",
+ "gate.title.invariants": "不变量闸门（声明式：仓库文件必须/不得含某片段）",
+ "gate.title.locks": "check_locks（锁定源清单）",
+ "gate.title.doctor": "开工预检 doctor（进程/端口活性）",
+ "gate.title.facts_cli": "facts.py（两道守卫 + 文档一致性）",
+ "gate.title.guard": "guard（台账写盘守卫：掉条 / 改口 / 逐条接受的接线）",
+ "gate.title.i18n": "i18n（本体零语言 + 语言包可选）",
+ "gate.title.knobs": "knobs（旋钮登记：REFLECT_* 的唯一名册）",
+ "gate.title.registry": "registry（发现式名录的数据面）",
+ "gate.title.runner": "runner（逐字执行器：裸值契约 + pipefail + 超时）",
+ "gate.title.questions": "check_questions（悬案必须挂结算件）",
+ "gate.title.ledger": "ledger（两道守卫）",
+ "gate.title.render": "render（数字的唯一产地）"
 }

@@ -422,5 +422,5 @@ GATE = meta("开工预检 doctor",
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],
-                              "开工预检 doctor（进程/端口活性）",
+                              M("gate.title.doctor"),
                               _cases(), run))

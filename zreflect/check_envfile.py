@@ -328,5 +328,5 @@ GATE = meta("env 文件闸门", "守钩子的 REFLECT_* 载体（旋钮 typo / �
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],
-                              "env 文件闸门（可插拔：守钩子的 REFLECT_* 载体）",
+                              M("gate.title.envfile"),
                               _cases(), run))

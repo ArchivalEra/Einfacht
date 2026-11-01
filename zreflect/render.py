@@ -10,6 +10,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import module_meta                             # noqa: E402
+from i18n import M                                        # noqa: E402
 
 BLOCK_BEGIN = "<!-- AUTO:FACTS -->"
 BLOCK_END = "<!-- /AUTO:FACTS -->"
@@ -146,7 +147,7 @@ def _selftest():
     rc = activate_or_fatal()
     if rc:
         return rc
-    return selftest("render（数字的唯一产地）", _cases())
+    return selftest(M("gate.title.render"), _cases())
 
 
 MODULE = module_meta("机器块渲染", "数字的唯一产地（纯函数）", selftest=True)

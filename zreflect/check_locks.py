@@ -177,4 +177,4 @@ GATE = meta("锁定源闸门", "锁定源清单（URL + 文件 + sha256 的内�
             knobs=("REFLECT_LOCKS",))
 
 if __name__ == "__main__":
-    sys.exit(main_selftest_or(sys.argv[1:], "check_locks（锁定源清单）", _cases, main))
+    sys.exit(main_selftest_or(sys.argv[1:], M("gate.title.locks"), _cases, main))
