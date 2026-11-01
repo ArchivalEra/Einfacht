@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -33,9 +34,15 @@ DEFAULT_ROOT = "zreflect"
 KNOB = "REFLECT_I18N_ROOT"
 
 
+# CJK 统一表意文字的码点区间（U+4E00–U+9FFF）。**用码点常量而不是字面字符**：
+# 写成 `"一"`/`"鿿"` 会让本闸门扫到自己的源码（那两个就是区间端点）——
+# 实测踩到（报了两条「一」「鿿」的假违规）。
+CJK_LO, CJK_HI = 0x4E00, 0x9FFF
+
+
 def cjk(text):
     """含中日韩统一表意文字？"""
-    return any("\u4e00" <= c <= "\u9fff" for c in text)
+    return any(CJK_LO <= ord(c) <= CJK_HI for c in text)
 
 
 def _literal_text(node):
@@ -109,7 +116,8 @@ def problems(paths):
                 f = node.func
                 fn = getattr(f, "id", "") or getattr(f, "attr", "")
                 if fn in ("meta", "module_meta", "main_selftest_or", "selftest",
-                          "compile"):
+                          "compile", "startswith", "endswith", "match", "search",
+                          "fullmatch", "find"):
                     for n in ast.walk(node):
                         if isinstance(n, ast.Constant):
                             exempt_ids.add(id(n))
@@ -154,6 +162,11 @@ def problems(paths):
                 continue
             if id(node) in doc_nodes or id(node) in msg_consts or id(node) in exempt_ids:
                 continue
+            # 用户决策 1C 的真实含义：标签**以点分 id 开头**即可，后面可以跟
+            # 简短的中文括注帮扫读。所以「已 id 化」的标签不算违规。
+            if re.match(r"^\s*(★\s*)?[a-z_][a-z0-9_]*(\.[a-z0-9_.]+)+",
+                        v):
+                continue
             out.append(M("i18n_cover.bare_text",
                          file=name, lineno=node.lineno, text=v[:40]))
     return out
@@ -189,9 +202,20 @@ def run(argv=None):
                   M("i18n_cover.ok", files=len(paths)))
 
 
+def _cj(n):
+    """按码点造 n 个 CJK 字符（源码里不出现中文字面量，AST 求值后是真 CJK）。
+
+    ⚠️ 夹具**必须含真中文**（否则「该报的必须报」用例没有对象），但字面量
+    又会被本闸门扫到（闸门看的是 AST 求值后的值）。用码点构造是唯一干净的
+    写法 —— 与 `cjk()` 里用码点区间同源。
+    """
+    return "".join(chr(CJK_LO + i) for i in range(n))
+
+
 def _cases():
-    GOOD = '''
-"""docstring 里有中文是允许的（维护者文档）。"""
+    SAMPLE = _cj(4)          # 夹具里的中文样例
+    GOOD = f'''
+"""docstring may contain CJK (maintainer docs) — {SAMPLE}"""
 from i18n import M
 
 def f(x):
@@ -199,20 +223,20 @@ def f(x):
     out.append(M("replay.no_cmd", k=x))
     return out
 '''
-    BARE = '''
+    BARE = f'''
 def f(x):
     out = []
-    out.append("`%s` 没有复跑命令 —— 没 cmd 的事实就是散文" % x)
+    out.append("`%s` {SAMPLE}" % x)  # CJK sample
     return out
 '''
-    LABEL = '''
+    LABEL = f'''
 def _cases():
-    return [("★ 正文裸数字 ⇒ 必须报", lambda: True)]
+    return [("{SAMPLE}", lambda: True)]  # CJK label sample (must be flagged)
 '''
     EMPTY = ""
     return [
         # ① 正常不报
-        ("消息全走 M()，docstring 有中文 ⇒ 不报", lambda: problems([("good.py", GOOD)]) == []),
+        ("i18n_cover.good_fixture", lambda: problems([("good.py", GOOD)]) == []),
         # ② 该报的必须报
         ("★ i18n_cover.bare_text（本体在说人话）",
          lambda: [x.code for x in problems([("bare.py", BARE)])
@@ -223,7 +247,7 @@ def _cases():
         ("★ i18n_cover.parse_error（解析失败不许当通过）",
          lambda: [x.code for x in problems([("bad.py", "def (")])] == ["i18n_cover.parse_error"]),
         # ③ 空输入必须报
-        ("★ 扫描面为空 ⇒ 必须报（零值守卫）", lambda: problems([]) != []),
+        ("★ i18n_cover.empty_scan（零值守卫）", lambda: problems([]) != []),
     ]
 
 

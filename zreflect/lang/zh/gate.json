@@ -1,0 +1,19 @@
+{
+ "gate.input_label": "输入",
+ "gate.require_nonempty": "%(name)s：%(what)s 是空的。空输入不是「全部通过」—— 要么收集逻辑坏了，要么路径给错了。先修输入，别关闸门。",
+ "gate.spec_unreadable": "%(path)s 读不了 / 不是合法 JSON：%(error)s",
+ "gate.problems_header": "%(name)s：%(count)d 个问题",
+ "gate.env_hint": "检测到 %(file)s，但本次进程一个旋钮都没设 —— 判据可能回落默认名，结果与钩子语境不同。\n       try running it with %(file)s：\n         set -a; . %(file)s; set +a\n       （或 `REFLECT_*=<值> python3 ...` 显式给旋钮）",
+ "gate.never_falsifiable_or": "`or <真值常量>` —— 布尔或被常量短路，永远 PASS",
+ "gate.never_falsifiable_and": "`and <假值常量>` —— 布尔与被常量短路，永远 fail",
+ "gate.never_falsifiable_self_compare": "比较两侧是同一个表达式 —— 恒真（x == x）",
+ "gate.selftest_empty_cases": "%(name)s 的自证用例清单为空 —— 三档用例齐全是硬规矩（0/0 不是通过，是「这个自证什么都没查」）",
+ "gate.case_unfalsifiable": "%(label)s（断言不可证伪：%(why)s）",
+ "gate.case_unexpected_systemexit": "%(label)s（未预期的 SystemExit：%(error)s）",
+ "gate.case_raised": "%(label)s（异常 %(error)r）",
+ "gate.selftest_summary": "%(name)s 自证：%(passed)d PASS / %(failed)d fail",
+ "gate.pack_assembly_failed": "语言包装配失败：%(error)s",
+ "gate.platform_root": "闸门平台。被检查的仓库根：%(root)s",
+ "gate.platform_usage": "用法：在你的检查器里 `from gate import selftest, require_nonempty`。",
+ "gate.module_banner": "闸门平台是模块（提供 selftest / require_nonempty / finish；自己不消费）—— 不单独跑。"
+}
