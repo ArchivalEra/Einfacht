@@ -44,8 +44,23 @@ PINNED_MARK = "PINNED:"
 
 
 def _declares_pinned(doc):
-    """docstring 里有没有 `PINNED:` 声明。"""
-    return bool(doc) and PINNED_MARK in doc
+    """docstring 里有没有**带理由的** `PINNED:` 声明。
+
+    ⚠️ 只认「`PINNED:` 后面还有字数 ≥ 8 的理由」：否则任何函数只要在
+    docstring 里写个 `PINNED:` 就能把它的全部中文豁免（实测：一个普通
+    `report_problem()` 加一行 `PINNED: x` 就全豁免）。豁免必须说明「为什么
+    这段文本不能翻译」—— 与 `REFLECT_INVARIANTS` 的 `why` 必填同一条纪律。
+    """
+    if not doc or PINNED_MARK not in doc:
+        return False
+    idx = doc.index(PINNED_MARK)
+    reason = doc[idx + len(PINNED_MARK):].strip()
+    # 理由取到第一个句号 / 换行为止（一句话够用）
+    for sep in ("\n", "。", ". "):
+        cut = reason.find(sep)
+        if cut != -1:
+            reason = reason[:cut]
+    return len(reason.strip()) >= 8
 
 
 def _pinned_by_comment(src, node):
@@ -254,7 +269,8 @@ def _cjk_src(doc):
             '    return "%s"\n') % (doc, chr(CJK_LO) * 2)
 
 
-PINNED_FN = _cjk_src("PINNED: fixed language machine block.")
+PINNED_FN = _cjk_src("PINNED: AUTO 机器块固定语言，逐字节对账。")
+PINNED_BARE = _cjk_src("PINNED: x")
 BARE_FN = _cjk_src("ordinary renderer.")
 
 
@@ -265,7 +281,8 @@ def _cjk_src(doc):
             '    return "%s"\n') % (doc, chr(CJK_LO) * 2)
 
 
-PINNED_FN = _cjk_src("PINNED: fixed language machine block.")
+PINNED_FN = _cjk_src("PINNED: AUTO 机器块固定语言，逐字节对账。")
+PINNED_BARE = _cjk_src("PINNED: x")
 BARE_FN = _cjk_src("ordinary renderer.")
 
 
@@ -311,6 +328,10 @@ def _cases():
          # 同样函数**不带声明** ⇒ 必须报（否则豁免变成放水）
          lambda: [p.code for p in problems([("r.py", BARE_FN)])
                   ] == ["i18n_cover.bare_text"]),
+        # **冒充 PINNED 必须有理由**（否则任何函数写一行 `PINNED: x` 就全豁免）
+        ("★ i18n_cover.pinned_needs_reason",
+         lambda: [p.code for p in problems([("r.py", PINNED_BARE)])]
+         == ["i18n_cover.bare_text"]),
         # ③ 空输入必须报
         ("★ i18n_cover.empty_scan（零值守卫）", lambda: problems([]) != []),
     ]
