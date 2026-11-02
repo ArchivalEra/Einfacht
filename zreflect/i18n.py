@@ -91,7 +91,15 @@ class Catalog:
 
     __slots__ = ("lang", "table")
 
-    def __init__(self, lang, table):
+    def __init__(self, lang, table, _sealed=False):
+        # ⚠️ `_sealed` 是**构造闸**：`Catalog` 只能由 `null()` / `load()` 造，
+        # 因为 `_validate`（契约串防线）只在 `load()` 里执行。此前直接
+        # `Catalog("xx", {"a.b": "OFF: masquerading"})` 能绕过校验并让一条
+        # 伪装成机器行的值真的渲出去（实测）。外部构造一律拒绝。
+        if not _sealed:
+            raise TypeError(
+                "Catalog 只能由 Catalog.null() / Catalog.load() 构造"
+                "（校验在 load 里，绕过去就等于关掉契约串防线）")
         object.__setattr__(self, "lang", lang)
         object.__setattr__(self, "table", table)
 
@@ -103,7 +111,7 @@ class Catalog:
     @classmethod
     def null(cls):
         """null 包：没有语言，只输出 `code(key=value)`。"""
-        return cls(None, None)
+        return cls(None, None, _sealed=True)
 
     @classmethod
     def load(cls, lang, tables=None):
@@ -129,7 +137,7 @@ class Catalog:
         # 挡不住原地改字典 —— 实测 `cat.table['locks.ok']='HAHA'` 成功，且后续
         # 渲染全错。`Catalog` 是**值**，它的数据必须真不可变
         # （`MappingProxyType` 是只读视图，且不复制、不增开销）。
-        return cls(lang, MappingProxyType(dict(table)))
+        return cls(lang, MappingProxyType(dict(table)), _sealed=True)
 
     def render(self, code, params):
         """把 (code, params) 渲成文本；这张表里没有该 code ⇒ null 形状。
@@ -389,6 +397,15 @@ def _as_null(fn):
     return _scoped(NULL, fn)
 
 
+def _construct_sealed():
+    """外部直接构造 `Catalog` 必须被拒（只能走 null() / load()）。"""
+    try:
+        Catalog("xx", {"a.b": "OFF: masquerading"})
+        return False          # 居然构造成功 = 这条红
+    except TypeError:
+        return True
+
+
 def _cases():
     fake = {
         # 占位名必须与**真包**一致（`key` / `actual` / `expected`）：
@@ -459,6 +476,9 @@ def _cases():
         # **`Catalog` 的数据必须真不可变**：`__slots__` + `__setattr__` 只挡
         # 属性赋值，挡不住原地改字典（实测 `cat.table[...]=...` 成功且渲染全错）。
         ("★ i18n.catalog_data_immutable", lambda: _catalog_immutable()),
+        # **构造闸**：`Catalog(…)` 不能被外部直接造 —— 那会绕过 `load()` 里的
+        # `_validate`（契约串防线），让一条伪装成 `OFF:` 的译文真的渲出去（实测）。
+        ("★ i18n.catalog_construct_sealed", lambda: _construct_sealed()),
         # ③ 空输入必须报
         ("★ i18n.empty_code",
          lambda: _as_null(lambda: str(M("")) == "")),
