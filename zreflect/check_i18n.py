@@ -219,6 +219,56 @@ def problems(paths):
                 continue
             out.append(M("i18n_cover.bare_text",
                          file=name, lineno=node.lineno, text=v[:40]))
+        out += _fixture_literal_problems(name, tree)
+    return out
+
+
+def _fixture_literal_problems(name, tree):
+    """**自证夹具里不许有中文源码字面量**（必须是码点构造）。
+
+    为什么这条值得判据：我踩了**三次**（第 8 轮 PINNED 理由、第 9 轮、
+    第 13 轮）—— 每次都是「写个中文夹具/断言 → `check_i18n` 报 bare_text →
+    才发现本文件自己在扫描面内」。第三次之后该把它变成机器判据。
+
+    `_cases()` 里的 CJK 字符串常量只许出现在两种合法位置：
+      · 自证**标签**（`(标签, callable)` 元组的首元素）—— 按 1C 决策，标签
+        是 id 形式的，后面可以跟中文括注帮扫读
+      · **docstring** —— 维护者文档，不是输出
+    其余（夹具源码样例 / 断言里的中文串）⇒ 报。
+    码点构造（`chr(CJK_LO)` / `_cj(n)`）产出的值**不在 AST 里**，天然不报 ——
+    这就是正确的写法。
+    """
+    fns = [n for n in ast.walk(tree)
+           if isinstance(n, ast.FunctionDef) and n.name == "_cases"]
+    if not fns:
+        return []
+    fn = fns[0]
+    # 合法节点：docstring
+    docs = set()
+    for node in ast.walk(fn):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
+            d = ast.get_docstring(node, clean=False)
+            if d:
+                for n in ast.walk(node):
+                    if isinstance(n, ast.Constant) and n.value == d:
+                        docs.add(id(n))
+                        break
+    # 合法节点：自证标签（元组首元素）
+    labels = set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Tuple) and len(node.elts) == 2 \
+                and isinstance(node.elts[0], ast.Constant):
+            labels.add(id(node.elts[0]))
+    out = []
+    for node in ast.walk(fn):
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            continue
+        if not cjk(node.value):
+            continue
+        if id(node) in docs or id(node) in labels:
+            continue
+        out.append(M("i18n_cover.fixture_literal",
+                     file=name, lineno=node.lineno, text=node.value[:40]))
     return out
 
 
@@ -292,6 +342,16 @@ def _cjk_src(doc):
 # 理由用码点构造（本文件源码里不出现中文 —— 否则会被自己的覆盖闸门收编）
 PINNED_FN = _cjk_src("PINNED: " + chr(CJK_LO) * 10 + " pinned, byte-exact.")
 PINNED_BARE = _cjk_src("PINNED: x")
+# 夹具字面量三例（值用码点拼，本文件源码不出现中文）
+_CJ4 = chr(CJK_LO) * 4
+FIXTURE_BAD = ("def _cases():\n"
+               "    SAMPLE = \"" + _CJ4 + "\"\n"
+               "    return [(\"ok.label\", lambda: SAMPLE == SAMPLE)]\n")
+FIXTURE_LABEL = ("def _cases():\n"
+                 "    return [(\"ok.label" + _CJ4 + "\", lambda: True)]\n")
+FIXTURE_DOC = ("def _cases():\n"
+               "    \"\"\"doc " + _CJ4 + "\"\"\"\n"
+               "    return [(\"ok\", lambda: True)]\n")
 BARE_FN = _cjk_src("ordinary renderer.")
 
 
@@ -341,6 +401,15 @@ def _cases():
         ("★ i18n_cover.pinned_needs_reason",
          lambda: [p.code for p in problems([("r.py", PINNED_BARE)])]
          == ["i18n_cover.bare_text"]),
+        # **自证夹具里不许有中文源码字面量**（我踩了三次：第 8/9/13 轮）。
+        # 夹具源码必须码点构造；标签与 docstring 是合法位置。
+        ("★ i18n_cover.fixture_literal",
+         lambda: [p.code for p in problems([("t.py", FIXTURE_BAD)])
+                  ] == ["i18n_cover.bare_text", "i18n_cover.fixture_literal"]),
+        ("i18n_cover.fixture_label_cjk_is_allowed",
+         lambda: problems([("t.py", FIXTURE_LABEL)]) == []),
+        ("i18n_cover.fixture_docstring_cjk_is_allowed",
+         lambda: problems([("t.py", FIXTURE_DOC)]) == []),
         # ③ 空输入必须报
         ("★ i18n_cover.empty_scan（零值守卫）", lambda: problems([]) != []),
     ]
