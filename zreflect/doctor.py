@@ -418,7 +418,8 @@ def _cases():
 GATE = meta("开工预检 doctor",
             "进程 / 端口活性（查会死的东西 ⇒ runs_at=start-of-work，不进 pre-commit）",
             knobs=("REFLECT_DOCTOR", "REFLECT_DOCTOR_TIMEOUT"),
-            runs_at="start-of-work")
+            runs_at="start-of-work",
+            off_reason="本仓没有 doctor.json 规格：不查进程/端口活性 ⇒ 明说未启用")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],

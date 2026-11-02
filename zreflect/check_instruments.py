@@ -186,7 +186,8 @@ def _cases():
 
 
 GATE = meta("仪器生命周期闸门", "恒常检测（first_seen）+ 被证伪量法登记",
-            knobs=("REFLECT_INSTRUMENTS", "REFLECT_INSTRUMENT_DAYS", "REFLECT_FACTS"))
+            knobs=("REFLECT_INSTRUMENTS", "REFLECT_INSTRUMENT_DAYS", "REFLECT_FACTS"),
+            off_reason="两个旋钮都未配 ⇒ 特化机制没启用（可插拔，本仓按需再开）")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_instruments", _cases, run))

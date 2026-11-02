@@ -190,7 +190,8 @@ def env_hint(consumed=(), module=None):
     return i18n.M("gate.env_hint", file=rel)
 
 
-def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit"):
+def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit",
+         off_reason=None):
     """闸门声明行（registry 的 ast 提取目标）：名字 + 一句话 + 消费的旋钮。
 
     声明即登记 —— 手写名录会漂，这里只许写事实。
@@ -211,7 +212,12 @@ def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit"):
     """
     return {"name": name, "desc": desc, "knobs": tuple(knobs),
             "name_dependent": bool(name_dependent),
-            "runs_at": str(runs_at)}
+            "runs_at": str(runs_at),
+            # `off_reason`（第 12 轮）：本闸门**为什么会未启用**。会调 `off()`
+            # 的闸门必须写 —— 否则「off」就没有理由，「永久 off 的闸门」与
+            # 「本仓不用这套机制」不可区分（本仓真的有过 8/13 道 off 而「全绿」
+            # 不可见的历史）。理由必须 ≥8 字（同 `PINNED:` 的纪律）。
+            "off_reason": (None if off_reason is None else str(off_reason))}
 
 
 def module_meta(name, desc, selftest=True):

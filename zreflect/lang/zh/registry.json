@@ -14,5 +14,8 @@
  "registry.unknown_phase": "`%(file)s` 的 runs_at=%(runs_at)r 不是已知相位（%(phases)s）—— 频率是声明字段，写错值会让执行面漏掉它",
  "registry.usage": "用法：registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]",
  "registry.phase_fatal": "  FATAL %(file)s（配置/环境坏 —— 不是检查失败，修法不同）",
- "registry.phase_error": "  ERROR %(file)s（执行器层面坏了：rc<0 被信号杀，或 >2 未约定的码）"
+ "registry.phase_error": "  ERROR %(file)s（执行器层面坏了：rc<0 被信号杀，或 >2 未约定的码）",
+ "registry.off_without_reason": "`%(file)s` 会调 `off()` 却没在 `meta()` 里声明 `off_reason` —— 没有理由的 off 与「本仓不用这套机制」不可区分",
+ "registry.off_reason_too_short": "`%(file)s` 的 `off_reason` 太短（%(reason)r）—— 豁免必须说明为什么，同 `PINNED:` 的纪律",
+ "registry.off_reason_without_off": "`%(file)s` 声明了 `off_reason` 但源码从不调 `off()` —— 理由白写了（谎）"
 }

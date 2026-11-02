@@ -353,7 +353,8 @@ def _cases():
 
 
 GATE = meta("env 文件闸门", "守钩子的 REFLECT_* 载体（旋钮 typo / 指向缺失 / 空值）",
-            knobs=("REFLECT_ENV_FILE",))
+            knobs=("REFLECT_ENV_FILE",),
+            off_reason="本仓没有 Einfacht.env 载体：旋钮全用默认值 ⇒ 明说未启用")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],
