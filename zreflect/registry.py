@@ -508,12 +508,15 @@ def _main_run(argv):
             error=res.get("error", 0)))
     for f in res["off_list"]:
         print(M("registry.phase_off", file=f))
+    # ⚠️ 这三个清单**同时打 stdout**：聚合方常常只捕 stdout（`$(...)` / 管道），
+    # 只打 stderr 的话它们看到 `fatal=1` 却不知道是哪个文件坏（review 实测）。
+    # 问题**原因**仍在闸门自己的 stderr 里 —— 这里补的是「谁」。
     for f in res.get("fatal_list", ()):
-        print(M("registry.phase_fatal", file=f), file=sys.stderr)
+        print(M("registry.phase_fatal", file=f))
     for f in res.get("error_list", ()):
-        print(M("registry.phase_error", file=f), file=sys.stderr)
+        print(M("registry.phase_error", file=f))
     for f in res["fail_list"]:
-        print("  FAILED %s" % f, file=sys.stderr)
+        print("  FAILED %s" % f)
     # 配置坏（rc=2）与判据红（rc=1）都要非零退出，但消息不同（修法不同）
     return 1 if (res["failed"] or res.get("fatal") or res.get("error")) else 0
 
@@ -626,6 +629,32 @@ def _phase_tiers_ok():
             and res["ran"] == 1)
 
 
+def _captures_stderr():
+    """`default_runner` 必须把子进程的 **stderr 也带回来**。
+
+    ⚠️ 这条**必须测默认执行器本身**（`gate.default_runner`），不能测注入的
+    runner：注入的 runner 是自证自己写的，测它等于测自己。此前那版就这么写，
+    实测对旧实现返回 BLIND（旧实现同样把 rc=2 归 fatal，差别在 out 里有没有
+    stderr 的内容）。
+    """
+    from gate import default_runner                     # noqa: PLC0415
+    import os                                           # noqa: PLC0415
+    import shutil                                       # noqa: PLC0415
+    import tempfile                                     # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        p = os.path.join(d, "boom.py")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write("import sys\n"
+                     "sys.stderr.write('FATAL: probe\\n')\n"
+                     "sys.exit(2)\n")
+        rc, out = default_runner(p, d)
+        # 只往 stderr 写 ⇒ stdout 空；若执行器只回 stdout，out 就是空串
+        return rc == 2 and "FATAL: probe" in out
+    finally:
+        shutil.rmtree(d, True)
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -732,6 +761,12 @@ def _cases():
         # 而修法完全不同（修问题 vs 改配置）。
         ("★ registry.phase_tiers_separate",
          lambda: _phase_tiers_ok()),
+        # **stderr 必须被捕获**：本仓约定「问题行统一 stderr」，所以 rc=2 的
+        # 闸门 stdout 可能是空的（原因全在 stderr）。此前 `_default` 只回传
+        # `p.stdout` ⇒ 聚合方拿到 (2, "")，FATAL 被当成「跑过了」。
+        # 这条钉的是**默认执行器**的行为（注入 runner 测不到它）。
+        ("★ registry.run_phase_captures_stderr",
+         lambda: _captures_stderr()),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],

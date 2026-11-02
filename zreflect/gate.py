@@ -491,6 +491,20 @@ def main_selftest_or(args, name, cases, run):
     return run([a for a in args if a != "--selftest"])
 
 
+def default_runner(f, repo_root=None):
+    """默认执行器：跑一个闸门文件，返回 `(rc, 合并后的输出)`。
+
+    ⚠️ **stdout 与 stderr 必须合并**：本仓约定「问题行统一 stderr」，于是
+    rc=2 的闸门 stdout 可能是**空的**（原因全在 stderr）。只回 `p.stdout`
+    ⇒ 聚合方拿到 (2, "")，既不知道哪个文件坏了也不知道为什么
+    （实测：`REFLECT_SNAPSHOT_ROOT=/nonexistent` ⇒ stdout=''）。
+    """
+    import subprocess                                    # noqa: PLC0415
+    p = subprocess.run([sys.executable, f], capture_output=True, text=True,
+                       cwd=repo_root or GATE_REPO)
+    return p.returncode, (p.stdout or "") + (p.stderr or "")
+
+
 def run_phase(phase, gates, runner=None, repo_root=None):
     """按相位跑一组闸门并**聚合 ran / off / failed**（C1+C2 的执行面）。
 
@@ -510,13 +524,7 @@ def run_phase(phase, gates, runner=None, repo_root=None):
     同一个 `failed`，聚合结果看不出「有三道闸门报了真实问题」还是「有一道闸门
     配置坏了」—— 修复动作完全不同（改配置 vs 修问题）。
     """
-    import subprocess                                    # noqa: PLC0415
-
-    def _default(f):
-        p = subprocess.run([sys.executable, f], capture_output=True, text=True,
-                           cwd=repo_root or GATE_REPO)
-        return p.returncode, p.stdout
-    run = runner or _default
+    run = runner or (lambda f: default_runner(f, repo_root))
     res = {"ran": 0, "off": 0, "failed": 0, "fatal": 0, "error": 0,
            "off_list": [], "fail_list": [], "fatal_list": [], "error_list": []}
     for item in gates:
