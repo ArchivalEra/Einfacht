@@ -504,15 +504,18 @@ def _main_run(argv):
         return fatal(M("registry.empty_phase", phase=phase))
     res = run_phase(phase, gs)
     print(M("registry.phase_summary", phase=phase, ran=res["ran"],
-            off=res["off"], failed=res["failed"], fatal=res.get("fatal", 0)))
+            off=res["off"], failed=res["failed"], fatal=res.get("fatal", 0),
+            error=res.get("error", 0)))
     for f in res["off_list"]:
         print(M("registry.phase_off", file=f))
     for f in res.get("fatal_list", ()):
         print(M("registry.phase_fatal", file=f), file=sys.stderr)
+    for f in res.get("error_list", ()):
+        print(M("registry.phase_error", file=f), file=sys.stderr)
     for f in res["fail_list"]:
         print("  FAILED %s" % f, file=sys.stderr)
     # 配置坏（rc=2）与判据红（rc=1）都要非零退出，但消息不同（修法不同）
-    return 1 if (res["failed"] or res.get("fatal")) else 0
+    return 1 if (res["failed"] or res.get("fatal") or res.get("error")) else 0
 
 
 def cli_selftest_missing_lines(missing):
@@ -614,8 +617,11 @@ def _phase_tiers_ok():
               "ok.py": (0, "")}
     res = run_phase("commit", list(script),
                     runner=lambda f: script[f])
+    script["err.py"] = (3, "boom")          # 未约定的码 / 被信号杀
+    res = run_phase("commit", list(script), runner=lambda f: script[f])
     return (res["fatal"] == 1 and res["fatal_list"] == ["fatal.py"]
             and res["failed"] == 1 and res["fail_list"] == ["fail.py"]
+            and res["error"] == 1 and res["error_list"] == ["err.py"]
             and res["off"] == 1 and res["off_list"] == ["off.py"]
             and res["ran"] == 1)
 

@@ -46,7 +46,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import fatal, finish, main_selftest_or, meta, off, selftest  # noqa: E402
 from i18n import M                                        # noqa: E402
 
+# ⚠️ 默认值**不是空**：本闸门守的正是本仓自己的代码（`zreflect/*.py`），
+# 所以它对任何 Einfacht 落地的仓库都该默认生效。此前默认空 ⇒ 旋钮没人配 ⇒
+# 活体 `registry --run commit` 里它永远是 `off`（实测：CI/hook/自证三处都没配）。
+# 「闸门存在、自证绿、但从没跑过」正是本仓立身要消灭的假绿。
 KNOB = "REFLECT_SNAPSHOT_ROOT"
+DEFAULT_ROOT = "zreflect"
 # ⚠️ **不再用手写名单**。此前这里是一串硬编码模块名（`("gate", "knobs", …)`），
 # 违反 AGENTS「手写名录一定会漂」：全仓 28 个 `zreflect/*.py` 里只有 12 个在册，
 # 另外 16 个（全部 `check_*.py`）作为**被导入源**时判据完全看不到。
@@ -79,18 +84,29 @@ def _aliases_of(trees, src_mod):
     return out
 
 
-def _reassigned_elsewhere(trees, src_mod, name):
-    """有没有**任何模块**在运行期给 `src_mod.name` 赋值（`src_mod.name = …`）？
+def _mutated_globals(trees):
+    """**一次性索引**：哪些 `(模块, 名字)` 会在运行期被别人赋值。
 
-    ⚠️ 判据形状的关键：不是「源模块自己赋值几次」（`gate.GATE_REPO` 只赋一次），
+    ⚠️ 此前 `_reassigned_elsewhere(trees, src_mod, name)` 对**每个候选名**都
+    重新 `ast.walk` 全部模块 —— 115 个名字 × 28 个模块的 AST ⇒ 6.3 秒
+    （实测：占整个闸门 6.5s 的 97%）。索引建一次即可，查询 O(1)。
+
+    判据形状的关键：不是「源模块自己赋值几次」（`gate.GATE_REPO` 只赋一次），
     而是「**别人会不会改它**」—— `check_envfile` / `i18n` 的自证都在
-    `gate.GATE_REPO = …` 改它。那才是拷贝变陈旧的真正条件。
-
-    只赋值一次、无人改写的常量（`REGISTRY`）不报 ——
-    它们的语义是「一个数据表」，拷贝与引用没区别。
+    `gate.GATE_REPO = …` 改它。只赋值一次、无人改写的常量（`REGISTRY`）不报
+    —— 它们的语义是「一个数据表」，拷贝与引用没区别。
     """
-    aliases = _aliases_of(trees, src_mod)
-    for _mod, tree in trees.items():
+    mutated = set()
+    # 别名索引：`import <mod> as <alias>` ⇒ alias 也指向那个模块
+    aliases = {}
+    for _m, tree in trees.items():
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.asname:
+                        aliases[a.asname] = a.name
+    for _m, tree in trees.items():
+        globs_of = _globals_of(tree)
         for node in ast.walk(tree):
             targets = []
             if isinstance(node, ast.Assign):
@@ -98,49 +114,124 @@ def _reassigned_elsewhere(trees, src_mod, name):
             elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
                 targets = [node.target]
             for t in targets:
-                # 形状①：`<src_mod>.<name> = …`（**别的模块**从外面改）
-                # 形状①b：`<alias>.<name> = …`，其中 `import <src_mod> as <alias>`
-                #   —— 别名是同一件事的另一种写法，此前漏报（实测 `[]`）。
-                if isinstance(t, ast.Attribute) and t.attr == name \
-                        and isinstance(t.value, ast.Name) \
-                        and (t.value.id == src_mod or t.value.id in aliases):
-                    return True
+                # 形状①/①b：`<src_mod>.<name> = …` 或 `<alias>.<name> = …`
+                if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name):
+                    owner = t.value.id
+                    mutated.add((aliases.get(owner, owner), t.attr))
             # 形状②：源模块自己用 `global NAME` + 再赋值（同一模块内改写）
-            if _mod == src_mod and isinstance(node, (ast.Assign, ast.AugAssign)):
+            if isinstance(node, (ast.Assign, ast.AugAssign)):
                 for t in targets:
-                    if isinstance(t, ast.Name) and t.id == name \
-                            and _uses_global(tree, name):
-                        return True
-    return False
+                    if isinstance(t, ast.Name) and t.id in globs_of:
+                        mutated.add((_m, t.id))
+    return mutated
 
 
-def _uses_global(tree, name):
-    """这个模块里有没有 `global <name>` 声明？（配合赋值即「会变」的证据）"""
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Global) and name in node.names:
-            return True
-    return False
-
-
-def _functions_reading(src_tree, src_mod, name):
-    """`src_mod` 里**读** `name` 的顶层函数名（`repo()` 这类薄封装）。
-
-    派生快照常经由这种封装出现：`OUT = repo(LEDGER_NAME)`，
-    表达式文本里没有 `gate.GATE_REPO`，但 `repo()` 的体里有 —— 只看文本会漏。
-    """
+def _globals_of(tree):
+    """这个模块里所有 `global <name>` 声明涉及的名字。"""
     out = set()
-    for node in src_tree.body:
-        if not isinstance(node, ast.FunctionDef):
-            continue
-        for n in ast.walk(node):
-            if isinstance(n, ast.Name) and n.id == name \
-                    and isinstance(n.ctx, ast.Load):
-                out.add(node.name)
-                break
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Global):
+            out.update(node.names)
     return out
 
 
-def _module_level_derivations(tree, src_mod, name, readers=()):
+def _uses_global(tree, name):
+    """这个模块里有没有 `global <name>` 声明（name=None ⇒ 有没有任何 global）。"""
+    g = _globals_of(tree)
+    return bool(g) if name is None else name in g
+
+
+def _functions_reading(src_tree, src_mod, name):
+    """`src_mod` 里**（传递地）**读 `name` 的顶层函数名。
+
+    派生快照常经由封装出现：`OUT = repo(LEDGER_NAME)` —— 表达式文本里没有
+    `gate.GATE_REPO`，但 `repo()` 的体里有。只看一跳会漏**两跳**：
+    `def a(): return repo(x)` 然后 `OUT = a()`（实测 []）。
+    所以这里做**闭包**：反复把「调用了已知 reader 的函数」也加入 reader 集合，
+    直到不动点。对 `zreflect` 这种 28 个模块的规模，几轮就收敛。
+    """
+    defs = {}
+    for node in src_tree.body:
+        if isinstance(node, ast.FunctionDef):
+            calls = {getattr(c.func, "id", None) or getattr(c.func, "attr", None)
+                     for c in ast.walk(node) if isinstance(c, ast.Call)}
+            reads = any(isinstance(n, ast.Name) and n.id == name
+                        and isinstance(n.ctx, ast.Load)
+                        for n in ast.walk(node))
+            defs[node.name] = (reads, calls - {None})
+    readers = {f for f, (reads, _c) in defs.items() if reads}
+    changed = True
+    while changed:
+        changed = False
+        for f, (_reads, calls) in defs.items():
+            if f not in readers and (calls & readers):
+                readers.add(f)
+                changed = True
+    return readers
+
+
+def _calls_outside_lambda(node):
+    """`node` 里**不在 lambda 体内**的 Call 节点（lambda 体是延迟求值）。
+
+    ⚠️ 必须把 `node` **自己**也算进去：`OUT = repo("L")` 的 `node.value` 自身
+    就是 Call —— 只遍历 children 会漏掉它（实测：派生检测全失效）。
+    """
+    out = []
+    def walk(n):
+        if isinstance(n, ast.Call):
+            out.append(n)
+        for child in ast.iter_child_nodes(n):
+            if isinstance(child, ast.Lambda):
+                continue            # 整条 lambda 体跳过
+            walk(child)
+    walk(node)
+    return out
+
+
+def _call_graph(tree):
+    """本模块每个顶层函数**调用的裸函数名**集合（一次性建，避免重复 ast.walk）。"""
+    out = {}
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        out[node.name] = {n.func.id for n in ast.walk(node)
+                          if isinstance(n, ast.Call)
+                          and isinstance(n.func, ast.Name)}
+    return out
+
+
+def _reaches(node, readers, graph):
+    """这个表达式**直接或经本模块的顶层函数**能到达 `readers` 里的函数吗？
+
+    ⚠️ 用预建的调用图（`graph`）+ 显式栈做可达性，**不递归、不重复 walk**：
+    此前版本对每个派生节点都 `ast.walk` 整个函数体并递归下去，遇到互相递归的
+    函数直接挂死（实测：真仓 28 模块 timeout 60s 不返回）。
+
+    两条防误报约束（此前都会假红，实测）：
+      · 本模块自己定义的同名函数不算「源模块的 reader」（遮蔽）——
+        它仍会被沿调用图继续追（它自己可能转调 repo）
+      · 属性调用（`tools.repo(…)`）不算 —— `getattr(...​,"attr")` 会匹配任何
+        模块的同名函数，与本模块的 repo 不是同一个东西
+    """
+    # ⚠️ **不进 lambda 体**：`CASES = [("label", lambda: check_doc(..., repo(...)))]`
+    # 里的调用是**延迟执行**的，import 时不求值，不会被冻结。此前用 `ast.walk`
+    # 无差别扫，把 lambda 体内的 repo 也算进去 ⇒ 误报 `facts.CASES`（实测）。
+    seen = set()
+    stack = [n.func.id for n in _calls_outside_lambda(node)
+             if isinstance(n.func, ast.Name)]
+    while stack:
+        fn = stack.pop()
+        if fn in seen:
+            continue
+        seen.add(fn)
+        if fn in graph:
+            stack.extend(graph[fn])     # 本地函数：继续追它调用的
+        elif fn in readers:
+            return True                 # 源模块里的 reader
+    return False
+
+
+def _module_level_derivations(tree, src_mod, name, readers=(), graph=None):
     """模块顶层有没有 `OTHER = <表达式里含 src_mod.name>`？那是**同一类快照**。
 
     两种写法都会在 import 那一刻冻结：
@@ -151,33 +242,44 @@ def _module_level_derivations(tree, src_mod, name, readers=()):
     实测：改 `gate.GATE_REPO` 后 `facts.OUT` 仍是旧路径）。
     """
     hits = []
+    # 三种形状都认（此前只认 `ast.Assign`，漏报另外两种 —— review 实测）：
+    #   · `OUT = repo(...)`              普通赋值
+    #   · `OUT: str = repo(...)`         带类型注解（AnnAssign）
+    #   · `class C: OUT = repo(...)`     类属性（同样在 import 时求值）
+    nodes = []
     for node in tree.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        text = ast.unparse(node.value)
-        hit = ("%s.%s" % (src_mod, name)) in text
-        # 或者：表达式调用了源模块里「会读 name」的函数（如 repo()）
+        if isinstance(node, ast.Assign):
+            nodes.append(node)
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            nodes.append(node)
+        elif isinstance(node, ast.ClassDef):
+            nodes.extend(n for n in node.body
+                         if isinstance(n, ast.Assign)
+                         or (isinstance(n, ast.AnnAssign) and n.value is not None))
+    for node in nodes:
+        hit = ("%s.%s" % (src_mod, name)) in ast.unparse(node.value)
+        # 或者：表达式「直接或经本地函数」触达源模块里会读 name 的函数（repo 等）
         if not hit and readers:
-            for n in ast.walk(node.value):
-                if isinstance(n, ast.Call):
-                    fn = getattr(n.func, "id", None) or getattr(n.func, "attr", None)
-                    if fn in readers:
-                        hit = True
-                        break
+            hit = _reaches(node.value, readers, graph)
         if hit:
-            for t in node.targets:
+            # Assign 有 `.targets`，AnnAssign 只有 `.target`
+            targets = getattr(node, "targets", None) or [node.target]
+            for t in targets:
                 if isinstance(t, ast.Name):
                     hits.append(t.id)
     return hits
 
 
-def _used_in_module(tree, name):
-    """导入方**真的用到**这个名字了吗（排除「import 了没用」的死导入）。"""
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name) and node.id == name \
-                and isinstance(node.ctx, ast.Load):
-            return True
-    return False
+def _loaded_names(tree):
+    """这个模块里**被读取**（Load）的所有名字集合（一次性建，供 `_used_in_module`）。
+
+    ⚠️ 此前 `_used_in_module(tree, name)` 对**每个候选名**都 `ast.walk` 整棵树 —— 
+    在 28 个模块 × 数百个名字的规模下退化成 1000 万次 `ast.walk`
+    （实测：cProfile 32s，`iter_child_nodes` 被调 2000 万次）。缓存成集合后
+    一次遍历即可，查询 O(1)。
+    """
+    return {n.id for n in ast.walk(tree)
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
 
 
 def problems(paths=None, sources=None):
@@ -205,21 +307,38 @@ def problems(paths=None, sources=None):
     # 且**有别的模块在运行期改它**。
     assigned = {mod: _module_level_assigns(tree) for mod, tree in trees.items()}
 
+    # ⚠️ **预计算**：`(src_mod, name)` 是否「被别处改」与调用方无关。
+    # 此前在双重循环里对每个 (模块 × 名字) 都重算一次，每次 `ast.walk` 全部
+    # 28 个模块的 AST ⇒ O(M²·N)，实测 400+ 次调用后仍不返回（timeout 60s）。
+    _mutated = _mutated_globals(trees)
+    mutable_names = {(m, n) for m, names in assigned.items() for n in names
+                     if (m, n) in _mutated}
+    # 同样预计算：每模块的「被读取名字集」与「调用图」都只依赖该模块自己，
+    # 内层循环里重复构建就是浪费（实测 `_call_graph` 也是热点）。
+    loaded_of = {mod: _loaded_names(tree) for mod, tree in trees.items()}
+    graph_of = {mod: _call_graph(tree) for mod, tree in trees.items()}
+    # `readers` 只依赖 (src_mod, name)，也预计算 —— 否则在内层循环里对每个
+    # (模块 × 名字) 都要 walk 源模块的所有函数体（实测这是最后的热点）。
+    readers_of = {(m, n): _functions_reading(trees[m], m, n)
+                  for (m, n) in mutable_names}
     out = []
     # ② **派生快照**：模块顶层把「含可变全局的表达式」存成常量（同 import 一样会冻住）
     for mod, tree in sorted(trees.items()):
+        loaded = loaded_of[mod]
         for src_mod, names in sorted(assigned.items()):
             for name in sorted(names):
-                if not _reassigned_elsewhere(trees, src_mod, name):
+                if (src_mod, name) not in mutable_names:
                     continue
-                readers = _functions_reading(trees[src_mod], src_mod, name)
+                readers = readers_of.get((src_mod, name), set())
+                graph = graph_of[mod]
                 for derived in _module_level_derivations(tree, src_mod, name,
-                                                         readers):
-                    if _used_in_module(tree, derived):
+                                                         readers, graph):
+                    if derived in loaded:
                         out.append(M("snapshot.derived_copy",
                                      file=mod + ".py", derived=derived,
                                      source=src_mod, imported=name))
     for mod, tree in sorted(trees.items()):
+        loaded = loaded_of[mod]
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
                 continue
@@ -234,9 +353,9 @@ def problems(paths=None, sources=None):
                     continue                # 函数 / 类 / 小写名不是「值快照」
                 if name not in assigned[src_mod]:
                     continue                # 源模块没有这个模块级名字
-                if not _reassigned_elsewhere(trees, src_mod, name):
+                if (src_mod, name) not in mutable_names:
                     continue                # 没人改它 ⇒ 拷贝安全
-                if not _used_in_module(tree, alias.asname or name):
+                if (alias.asname or name) not in loaded:
                     continue                # 死导入，不报
                 out.append(M("snapshot.mutable_copy",
                              file=mod + ".py", imported=name,
@@ -264,9 +383,10 @@ def collect(root):
 
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    root = os.environ.get(KNOB, "").strip()
-    if not root:
-        return off(M("snapshot.off", knob=KNOB))
+    root = os.environ.get(KNOB, "").strip() or DEFAULT_ROOT
+    if not os.path.isdir(root):
+        # 旋钮指向不存在的目录 ⇒ 配置坏（不是「没启用」）
+        return fatal(M("snapshot.scan_empty_dir", root=root))
     paths = collect(root)
     if not paths:
         return fatal(M("snapshot.scan_empty_dir", root=root))
@@ -356,6 +476,13 @@ def f():
          lambda: [p.code for p in problems(sources={
              "gate": GATE_WITH_REPO,
              "facts": "OUT = repo('L.json')\nprint(OUT)\n"})
+         ] == ["snapshot.derived_copy"]),
+        # ② 带类型注解的派生（`OUT: str = repo(...)`）—— 此前只认 `ast.Assign`，
+        #    漏报 AnnAssign（review 实测 `[]`）
+        ("★ snapshot.derived_copy_annotated",
+         lambda: [p.code for p in problems(sources={
+             "gate": GATE_WITH_REPO,
+             "facts": "OUT: str = repo('L.json')\nprint(OUT)\n"})
          ] == ["snapshot.derived_copy"]),
         # ③ 空输入必须报
         ("★ snapshot.empty_scan", lambda: problems(sources={}) != []),
