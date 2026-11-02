@@ -75,24 +75,17 @@ def known_knobs(py_dir=None):
     对账用（不是名册本身 —— 名册是 knobs.REGISTRY）：扫描面里出现而
     登记表里没有的记号 = 幻影 / typo，本闸门报。`py_dir` 可注入
     （自证用假源码树 —— 真文件进了自证，自证就依赖机器了）。
+
+    ⚠️ **默认目录是「被检查仓」的 zreflect**（`repo("zreflect")`），不是工具的
+    —— 本闸门守的是**被检查仓库**的载体，不是工具自己。`knobs._py_sources()`
+    是共享的读取循环，但 base 由这里显式给：两边的默认目录在生产里同值、
+    在夹具里不同（那条差别必须留住，不能靠巧合）。
     """
     d = py_dir if py_dir is not None else repo("zreflect")
-    knobs = set()
-    try:
-        names = sorted(os.listdir(d))
-    except OSError:
-        return knobs
-    for n in names:
-        if not n.endswith(".py"):
-            continue
-        try:
-            with open(os.path.join(d, n), encoding="utf-8",
-                      errors="replace") as fh:
-                text = fh.read()
-        except OSError:
-            continue
-        knobs.update(_TOKEN_RE.findall(text))
-    return knobs
+    found = set()
+    for _name, text in knobs._py_sources(d):
+        found.update(_TOKEN_RE.findall(text))
+    return found
 
 
 def parse_exports(text):
@@ -301,6 +294,13 @@ def _cases():
          lambda: any(getattr(p,"code","") == "envfile.syntax_tool_broken" for p in problems(
              good_env, registry, fe, de, syntax_ok=None,
              scanned=registry.keys()))),
+        # **两个扫描面的默认目录在生产里必须同值**（C4：必须一致的两份要配对账）。
+        # `knobs.*` 用工具的 `_zdir()`，本闸门用被检查仓的 `repo("zreflect")` ——
+        # 生产里两者同值，夹具里不同。这个「恰好同值」此前没有任何判据钉住：
+        # 改了任一边的默认目录，幻影扫描会静默地从另一个目录读。
+        ("★ envfile.scan_dir_agrees_with_knobs",
+         lambda: (os.path.abspath(repo("zreflect"))
+                  == os.path.abspath(knobs._zdir()))),
         # ③ 空输入必须报
         ("★ envfile.no_effective_export（零值守卫）",
          lambda: problems({}, registry, fe, de, syntax_ok=True,

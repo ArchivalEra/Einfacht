@@ -139,6 +139,38 @@ def kinds_of(name):
     return entry[0] if entry else None
 
 
+def _py_sources(base):
+    """`base` 目录下所有 `.py` 的 `(文件名, 文本)`（读不了 ⇒ 跳过）。
+
+    **唯一产地**：此前这段 `listdir` + `open(errors="replace")` 在
+    `scan_surface_problems`、`used_codes`、`check_envfile.known_knobs` 各写一遍
+    （三处）。目录读不了时返回空 —— 每个调用方自己判空（「空」在它们眼里
+    含义不同：幻影扫描当「没有可疑」、`used_codes` 当「没有 code」、
+    `envfile` 当「闸门坏了」）。
+
+    ⚠️ **base 必须显式传**，不给默认：三个上游默认的目录不一样
+    （`knobs.*` 用 `_zdir()`＝**工具**的 zreflect；`check_envfile` 用
+    `repo("zreflect")`＝**被检查仓**的 zreflect）。生产里它们恰好同值，
+    夹具里不同 —— 给个默认就会把这条差别藏起来（实测：同一 GATE_REPO
+    夹具下两个扫描器看到的东西不同）。
+    """
+    out = []
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return out
+    for n in names:
+        if not n.endswith(".py"):
+            continue
+        try:
+            with open(os.path.join(base, n), encoding="utf-8",
+                      errors="replace") as fh:
+                out.append((n, fh.read()))
+        except OSError:
+            continue
+    return out
+
+
 def scan_surface_problems(py_dir=None):
     """扫描面（zreflect/*.py）里出现、登记表里没有的 REFLECT_* 记号。
 
@@ -148,21 +180,10 @@ def scan_surface_problems(py_dir=None):
     （实测踩到）。`py_dir` 可注入（自证用假源码树）。
     """
     d = py_dir if py_dir is not None else _zdir()
-    out = []
-    try:
-        names = sorted(os.listdir(d))
-    except OSError:
-        return out
     toks = set()
-    for n in names:
-        if not n.endswith(".py"):
-            continue
-        try:
-            toks.update(_TOKEN_RE.findall(
-                open(os.path.join(d, n), encoding="utf-8",
-                     errors="replace").read()))
-        except OSError:
-            continue
+    for _name, text in _py_sources(d):
+        toks.update(_TOKEN_RE.findall(text))
+    out = []
     for tok in sorted(toks):
         if tok not in REGISTRY:
             out.append(M("knobs.phantom_token", token=tok))
@@ -460,18 +481,7 @@ def used_codes(py_dir=None):
     import ast                                           # noqa: PLC0415
     d = py_dir if py_dir is not None else _zdir()
     out = set()
-    try:
-        names = sorted(os.listdir(d))
-    except OSError:
-        return set()
-    for n in names:
-        if not n.endswith(".py"):
-            continue
-        try:
-            src = open(os.path.join(d, n), encoding="utf-8",
-                       errors="replace").read()
-        except OSError:
-            continue
+    for n, src in _py_sources(d):
         try:
             tree = ast.parse(src)
         except SyntaxError:
