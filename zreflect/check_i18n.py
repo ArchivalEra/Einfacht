@@ -40,6 +40,34 @@ KNOB = "REFLECT_I18N_ROOT"
 CJK_LO, CJK_HI = 0x4E00, 0x9FFF
 
 
+PINNED_MARK = "PINNED:"
+
+
+def _declares_pinned(doc):
+    """docstring 里有没有 `PINNED:` 声明。"""
+    return bool(doc) and PINNED_MARK in doc
+
+
+def _pinned_by_comment(src, node):
+    """该赋值语句**紧邻的上方**（前面连续注释块里）有没有 `PINNED:`。
+
+    模块级常量没有 docstring，声明只能写在注释里。只向上看紧邻的注释块
+    （遇到空行或非注释行就停）—— 不扫全文，避免「文件里任何一处写了
+    PINNED: 就全豁免」。
+    """
+    lines = src.splitlines()
+    i = node.lineno - 2                      # 上一行（0-based）
+    while i >= 0:
+        line = lines[i].strip()
+        if line.startswith("#"):
+            if PINNED_MARK in line:
+                return True
+            i -= 1
+            continue
+        break                                # 注释块结束
+    return False
+
+
 def cjk(text):
     """含中日韩统一表意文字？"""
     return any(CJK_LO <= ord(c) <= CJK_HI for c in text)
@@ -123,10 +151,16 @@ def problems(paths):
                     for n in ast.walk(node):
                         if isinstance(n, ast.Constant):
                             exempt_ids.add(id(n))
-        # 豁免形状②：「整个函数体」——AUTO 机器块渲染函数（PINNED）：
-        # `render_block` / `render_gates` 的文本**必须固定一种语言**
-        # （用户决策 #2：不算违规）—— 它写进 STATE.md 并被 --check 逐字节
-        # 对账，跟随语言就「同一提交在不同环境结果不同」（不收敛）。
+        # 豁免形状②：「PINNED 声明面」——AUTO 机器块渲染函数与常量。
+        # 文本**必须固定一种语言**（用户决策 #2：不算违规）—— 它写进 STATE.md
+        # 并被 --check 逐字节对账，跟随语言就「同一提交在不同环境结果不同」。
+        #
+        # ⚠️ **按声明收编，不按名字**（deepening 第 8 轮）：此前这里是两份硬编码
+        # 名单（函数名元组 + 常量名元组），本仓 AGENTS 明写「手写名录一定会漂」——
+        # 实测：新写一个返回中文的 PINNED 渲染器（`render_world_block`）⇒ 立刻被
+        # 误报为违规，除非有人记得回去改名单。
+        # 现在：**生产 PINNED 文本的地方自己声明** `PINNED:`（docstring 或
+        # 紧邻注释均可），本闸门扫标记。名字不再承重（与 C1 同一原则）。
         # 豁免形状⑤：「语言包装载器自身的错误」—— `i18n.py` 里 `MissingPack`
         # 的文案**不能用 M()**（循环依赖：M 依赖语言包，语言包坏了才抛它）。
         # 这是设计上的合法例外，不是漏迁。文件级豁免，因为该文件通篇是
@@ -139,22 +173,21 @@ def problems(paths):
         # （`GOOD`/`BARE`/`LABEL` 的多行字符串）正是本闸门自证要扫的对象，
         # 豁免它们会让三条反向断言失效（实测踩到 2 PASS / 3 FAIL）。
         # 夹具**源码文本**豁免，夹具**标签**不豁免 —— 后者按 1C 必须 id 化。
+        # 声明式收编：「PINNED:」出现在**该节点自己的 docstring** 里 ⇒ 整段豁免。
+        # 函数（渲染器）与模块级常量（机器块样板）都认同一套标记。
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name in (
-                    "render_block", "render_gates", "_gates_header"):
-                for n in ast.walk(node):
-                    if isinstance(n, ast.Constant):
-                        exempt_ids.add(id(n))
-        # 豁免形状③：「AUTO 块的常量」——`PREAMBLE` / `GATES_*` 这类模块级
-        # 常量同为 PINNED 文本（同决策 #2）。
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign) and len(node.targets) == 1 \
-                    and isinstance(node.targets[0], ast.Name) \
-                    and node.targets[0].id in ("PREAMBLE", "GATES_BEGIN",
-                                                "GATES_END", "_PREAMBLE"):
-                for n in ast.walk(node):
-                    if isinstance(n, ast.Constant):
-                        exempt_ids.add(id(n))
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if _declares_pinned(ast.get_docstring(node, clean=False)):
+                    for n in ast.walk(node):
+                        if isinstance(n, ast.Constant):
+                            exempt_ids.add(id(n))
+            elif isinstance(node, ast.Assign):
+                # 常量：`PINNED:` 可以写在紧邻的前置注释里（模块级常量的
+                # 「docstring」不存在）—— 用源码行区间回查。
+                if _pinned_by_comment(src, node):
+                    for n in ast.walk(node):
+                        if isinstance(n, ast.Constant):
+                            exempt_ids.add(id(n))
 
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
@@ -214,6 +247,28 @@ def _cj(n):
     return "".join(chr(CJK_LO + i) for i in range(n))
 
 
+def _cjk_src(doc):
+    """造一段含 CJK 字面量的源码（字面量用码点构造，本文件源码里不出现中文）。"""
+    return ('def render_world_block(w):\n'
+            '    """%s"""\n'
+            '    return "%s"\n') % (doc, chr(CJK_LO) * 2)
+
+
+PINNED_FN = _cjk_src("PINNED: fixed language machine block.")
+BARE_FN = _cjk_src("ordinary renderer.")
+
+
+def _cjk_src(doc):
+    """造一段含 CJK 字面量的源码（字面量用码点构造，本文件源码里不出现中文）。"""
+    return ('def render_world_block(w):\n'
+            '    """%s"""\n'
+            '    return "%s"\n') % (doc, chr(CJK_LO) * 2)
+
+
+PINNED_FN = _cjk_src("PINNED: fixed language machine block.")
+BARE_FN = _cjk_src("ordinary renderer.")
+
+
 def _cases():
     SAMPLE = _cj(4)          # 夹具里的中文样例
     GOOD = f'''
@@ -248,6 +303,14 @@ def _cases():
                   ] == ["i18n_cover.bare_text"]),
         ("★ i18n_cover.parse_error（解析失败不许当通过）",
          lambda: [x.code for x in problems([("bad.py", "def (")])] == ["i18n_cover.parse_error"]),
+        # ② PINNED 按**声明**收编，不按名字（此前两份硬编码名单会漂）
+        ("i18n_cover.pinned_by_declaration",
+         # 带 `PINNED:` 声明的渲染器 ⇒ 豁免（名字随意 —— 不承重）
+         lambda: problems([("r.py", PINNED_FN)]) == []),
+        ("★ i18n_cover.undeclared_pinned_still_fires",
+         # 同样函数**不带声明** ⇒ 必须报（否则豁免变成放水）
+         lambda: [p.code for p in problems([("r.py", BARE_FN)])
+                  ] == ["i18n_cover.bare_text"]),
         # ③ 空输入必须报
         ("★ i18n_cover.empty_scan（零值守卫）", lambda: problems([]) != []),
     ]
