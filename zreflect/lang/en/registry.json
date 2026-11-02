@@ -6,12 +6,13 @@
  "registry.name_dependent_wrong": "`%(file)s` is flagged name_dependent but none of the knobs it consumes has a default name in the rename fixture list — the flag is wrong (either drop the flag or add the new default name to registry.RENAMED_DEFAULTS)",
  "registry.no_module_selftest": "no platform module self-test could be discovered — zero-value guard: an empty input is not a pass",
  "registry.phase_off": "  off    %(file)s (off — never checked, not a pass)",
- "registry.phase_summary": "phase %(phase)s: ran %(ran)d / off %(off)d / failed %(failed)d / fatal %(fatal)d",
+ "registry.phase_summary": "phase %(phase)s: ran %(ran)d / off %(off)d / failed %(failed)d / fatal %(fatal)d / error %(error)d",
  "registry.roster_problems": "the roster has problems (%(count)d)",
  "registry.selftest_no_entry": "these modules declare selftest=True but have no --selftest entry point — a self-test written but never run is decoration: %(files)s",
  "registry.selftest_no_entry_cli": "  ❌ %(file)s declares a self-test but has no --selftest entry point (written but never run = decoration)",
  "registry.undeclared_module": "these .py files are neither gates (no GATE declaration) nor declared platform modules (no MODULE = module_meta(…)) — a platform module must declare itself, even with selftest=False (state plainly that it needs no self-test): %(files)s",
  "registry.unknown_phase": "`%(file)s` declares runs_at=%(runs_at)r which is not a known phase (%(phases)s) — the frequency is a declaration field; a bad value makes the execution surface skip it",
  "registry.usage": "usage: registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]",
- "registry.phase_fatal": "  FATAL %(file)s (config/environment broken — not a check failure; different fix)"
+ "registry.phase_fatal": "  FATAL %(file)s (config/environment broken — not a check failure; different fix)",
+ "registry.phase_error": "  ERROR %(file)s (executor-level breakage: rc<0 killed by signal, or >2 an unagreed code)"
 }

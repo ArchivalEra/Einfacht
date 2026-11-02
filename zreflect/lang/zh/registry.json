@@ -6,12 +6,13 @@
  "registry.name_dependent_wrong": "`%(file)s` 标了 name_dependent，但消费的旋钮没有一个默认名在换名自证的改名清单里 —— 旗标错了（要么去掉旗标，要么把新默认名加进 registry.RENAMED_DEFAULTS）",
  "registry.no_module_selftest": "没有任何平台模块自证可发现 —— 零值守卫：空输入不是通过",
  "registry.phase_off": "  off    %(file)s（未启用 —— 没查，不是通过）",
- "registry.phase_summary": "相位 %(phase)s：ran %(ran)d / off %(off)d / failed %(failed)d / fatal %(fatal)d",
+ "registry.phase_summary": "相位 %(phase)s：ran %(ran)d / off %(off)d / failed %(failed)d / fatal %(fatal)d / error %(error)d",
  "registry.roster_problems": "名录有问题（%(count)d）",
  "registry.selftest_no_entry": "以下模块声明了 selftest=True 却没有 --selftest 入口 —— 写而不跑的自证 = 装饰：%(files)s",
  "registry.selftest_no_entry_cli": "  ❌ %(file)s 写了自证却没有 --selftest 入口（写而不跑 = 装饰）",
  "registry.undeclared_module": "以下 .py 既非闸门（无 GATE 声明）也非已声明的平台模块（无 MODULE = module_meta(…)）—— 平台模块必须声明自己，哪怕 selftest=False（正面说「我不用自证」）：%(files)s",
  "registry.unknown_phase": "`%(file)s` 的 runs_at=%(runs_at)r 不是已知相位（%(phases)s）—— 频率是声明字段，写错值会让执行面漏掉它",
  "registry.usage": "用法：registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]",
- "registry.phase_fatal": "  FATAL %(file)s（配置/环境坏 —— 不是检查失败，修法不同）"
+ "registry.phase_fatal": "  FATAL %(file)s（配置/环境坏 —— 不是检查失败，修法不同）",
+ "registry.phase_error": "  ERROR %(file)s（执行器层面坏了：rc<0 被信号杀，或 >2 未约定的码）"
 }

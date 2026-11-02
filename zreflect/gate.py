@@ -517,8 +517,8 @@ def run_phase(phase, gates, runner=None, repo_root=None):
                            cwd=repo_root or GATE_REPO)
         return p.returncode, p.stdout
     run = runner or _default
-    res = {"ran": 0, "off": 0, "failed": 0, "fatal": 0,
-           "off_list": [], "fail_list": [], "fatal_list": []}
+    res = {"ran": 0, "off": 0, "failed": 0, "fatal": 0, "error": 0,
+           "off_list": [], "fail_list": [], "fatal_list": [], "error_list": []}
     for item in gates:
         f = item["file"] if isinstance(item, dict) else item
         if isinstance(item, dict) and item.get("runs_at") not in (None, phase):
@@ -528,6 +528,13 @@ def run_phase(phase, gates, runner=None, repo_root=None):
             # 配置 / 环境坏：不是「检查发现的问题」，单列（见 docstring）
             res["fatal"] += 1
             res["fatal_list"].append(f)
+        elif rc < 0 or rc > 2:
+            # ⚠️ rc<0（被信号杀掉）/ rc>2（脚本用了未约定的码）既不是「判据红」
+            # 也不是「配置坏」——它们是**执行器层面坏了**。此前一律塞进 failed，
+            # 于是「闸门报了个问题」与「闸门被 SIGKILL」不可区分（review 实测
+            # rc=3 / rc=-9 都落进 failed）。单列成 error 档。
+            res["error"] += 1
+            res["error_list"].append(f)
         elif rc != 0:
             res["failed"] += 1
             res["fail_list"].append(f)

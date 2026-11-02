@@ -269,11 +269,6 @@ def _cjk_src(doc):
             '    return "%s"\n') % (doc, chr(CJK_LO) * 2)
 
 
-PINNED_FN = _cjk_src("PINNED: AUTO 机器块固定语言，逐字节对账。")
-PINNED_BARE = _cjk_src("PINNED: x")
-BARE_FN = _cjk_src("ordinary renderer.")
-
-
 def _cjk_src(doc):
     """造一段含 CJK 字面量的源码（字面量用码点构造，本文件源码里不出现中文）。"""
     return ('def render_world_block(w):\n'
@@ -281,7 +276,8 @@ def _cjk_src(doc):
             '    return "%s"\n') % (doc, chr(CJK_LO) * 2)
 
 
-PINNED_FN = _cjk_src("PINNED: AUTO 机器块固定语言，逐字节对账。")
+# 理由用码点构造（本文件源码里不出现中文 —— 否则会被自己的覆盖闸门收编）
+PINNED_FN = _cjk_src("PINNED: " + chr(CJK_LO) * 10 + " pinned, byte-exact.")
 PINNED_BARE = _cjk_src("PINNED: x")
 BARE_FN = _cjk_src("ordinary renderer.")
 
