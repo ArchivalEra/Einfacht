@@ -599,7 +599,17 @@ def run_phase(phase, gates, runner=None, repo_root=None):
     return res
 
 
-MODULE = module_meta("闸门平台", "rc 契约 + 零值守卫 + 三档自证 + 相位执行器（提供 selftest，自己不消费）", selftest=False)
+# `selftest=False` 的**真实含义**：本模块**没有 `--selftest` 入口**（它提供
+# `selftest()` 本身，自举会打架）。**这不等于它的逻辑没有自证**——它的逻辑
+# 住在 `registry._cases()` 里：`finish` / `meta` / `run_phase` / `default_runner`
+# / `zdir` / `tool_repo` / `never_falsifiable`（经 `_nf_catches`）都有实质断言。
+# 此前描述只写「提供 selftest，自己不消费」—— 读起来像「没有自证义务」，
+# 与事实不符（第 23 轮对齐）。
+MODULE = module_meta(
+    "闸门平台",
+    "rc 契约 + 零值守卫 + 三档自证 + 相位执行器（无 --selftest 入口：自举会打架；"
+    "逻辑自证住在 registry._cases）",
+    selftest=False)
 
 
 if __name__ == "__main__":
