@@ -14,5 +14,8 @@
  "registry.unknown_phase": "`%(file)s` deklariert runs_at=%(runs_at)r, was keine bekannte Phase ist (%(phases)s) — die Frequenz ist ein Deklarationsfeld; ein schlechter Wert lässt die Ausführungsoberfläche es überspringen",
  "registry.usage": "Aufruf: registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]",
  "registry.phase_fatal": "  FATAL %(file)s (Konfiguration/Umgebung defekt — kein Prüfungsfehler; andere Behebung)",
- "registry.phase_error": "  ERROR %(file)s (Bruch auf Executor-Ebene: rc<0 durch Signal beendet oder >2 ein unvereinbarter Code)"
+ "registry.phase_error": "  ERROR %(file)s (Bruch auf Executor-Ebene: rc<0 durch Signal beendet oder >2 ein unvereinbarter Code)",
+ "registry.off_without_reason": "`%(file)s` kann `off()` aufrufen, deklariert aber kein `off_reason` in `meta()` — ein grundloses off ist nicht von 'dieses Repo nutzt diesen Mechanismus nicht' zu unterscheiden",
+ "registry.off_reason_too_short": "`%(file)s`' `off_reason` ist zu kurz (%(reason)r) — eine Ausnahme muss den Grund nennen, dieselbe Disziplin wie `PINNED:`",
+ "registry.off_reason_without_off": "`%(file)s` deklariert `off_reason`, ruft `off()` aber nie auf — der Grund ist umsonst geschrieben (eine Lüge)"
 }

@@ -338,7 +338,8 @@ def _cases():
 
 
 GATE = meta("world 闸门", "声明式验证对象：多线仓库共享验证环境的世界对账",
-            knobs=("REFLECT_WORLD", "REFLECT_WORLD_LINE"))
+            knobs=("REFLECT_WORLD", "REFLECT_WORLD_LINE"),
+            off_reason="本仓是单线仓库：没有 world.json 多线验证环境 ⇒ 明说未启用")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_world", _cases(), run))

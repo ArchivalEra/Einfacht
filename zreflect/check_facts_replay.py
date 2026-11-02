@@ -313,7 +313,9 @@ def _cases():
 
 
 GATE = meta("复跑闸门", "台账 cmd 逐字复跑（裸值契约：stdout 必须等于值）",
-            knobs=("REFLECT_FACTS", "REFLECT_REPLAY", "REFLECT_REPLAY_TIMEOUT"), name_dependent=True)
+            knobs=("REFLECT_FACTS", "REFLECT_REPLAY", "REFLECT_REPLAY_TIMEOUT"),
+            name_dependent=True,
+            off_reason="REFLECT_REPLAY 未配时整道闸门明说未启用（复跑是可选开销）")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],

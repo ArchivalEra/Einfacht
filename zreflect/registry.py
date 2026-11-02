@@ -35,7 +35,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import module_meta, fatal, repo, main_selftest_or             # noqa: E402
+import gate                                            # noqa: E402
+from gate import module_meta, fatal, repo, main_selftest_or  # noqa: E402
 from i18n import M                                        # noqa: E402
 from knobs import REGISTRY                                # noqa: E402
 
@@ -237,8 +238,9 @@ def _module_meta(call, rel):
 
 
 def _gate_meta(call, rel):
-    """`GATE = gate.meta(…)` → {file, name, desc, knobs, name_dependent, runs_at}。"""
-    knobs, name_dep, runs_at = (), False, "commit"
+    """`GATE = gate.meta(…)` → {file, name, desc, knobs, name_dependent, runs_at,
+    off_reason}。"""
+    knobs, name_dep, runs_at, off_reason = (), False, "commit", None
     for kw in call.keywords:
         if kw.arg == "knobs":
             knobs = ast.literal_eval(kw.value)
@@ -246,12 +248,15 @@ def _gate_meta(call, rel):
             name_dep = ast.literal_eval(kw.value)
         elif kw.arg == "runs_at":
             runs_at = ast.literal_eval(kw.value)
+        elif kw.arg == "off_reason":
+            off_reason = ast.literal_eval(kw.value)
     return {"file": rel,
             "name": ast.literal_eval(call.args[0]),
             "desc": ast.literal_eval(call.args[1]),
             "knobs": tuple(knobs),
             "name_dependent": bool(name_dep),
-            "runs_at": str(runs_at)}
+            "runs_at": str(runs_at),
+            "off_reason": off_reason}
 
 
 def _declaration(path, rel, attr="GATE", func="meta"):
@@ -401,6 +406,56 @@ def problems(gs, missing, mods=None, mods_missing=None,
     out += _selftest_roster_problems(mods, mods_missing)
     out += _undeclared_module_problems(undeclared)
     out += _knob_problems(knob_problems, gs)
+    out += off_reason_problems(gs)
+    return out
+
+
+MUST_REASON_MIN = 8      # 理由的最短字数（同 `PINNED:` 的纪律）
+
+
+def off_reason_problems(gs, sources=None):
+    """C4 对账⑥：**会 `off()` 的闸门必须声明它为何可以未启用**。
+
+    为什么这条需要判据：本仓真的有过「8/13 道 off 而『全绿』不可见」的历史
+    （C2 的教训）。`off` 是合法状态，但**没有理由的 off** 与「本仓根本不用这套
+    机制」不可区分 —— 于是「闸门永远不跑」可以伪装成「设计如此」。
+
+    判据（三向，AST）：
+      · 源码里**会调 `off(`** 但声明行没有 `off_reason`（或太短）⇒ 报
+      · 声明行有 `off_reason` 但源码**从不调 `off(`** ⇒ 报（谎言：理由白写）
+    发现式：扫 `gs`（registry 已抽好的声明）+ 各文件源码，不写任何名录。
+    """
+    import ast                                           # noqa: PLC0415
+    out = []
+    for g in gs:
+        rel = g["file"]
+        reason = g.get("off_reason")
+        if sources is not None:
+            text = sources.get(rel)
+            if text is None:
+                continue
+        else:
+            try:
+                text = open(os.path.join(gate.GATE_REPO, rel),
+                            encoding="utf-8", errors="replace").read()
+            except OSError:
+                continue
+        calls_off = "off(" in text and "def off(" not in text
+        # 更精确：AST 找 `off(...)` 调用（排除定义处与注释）
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        calls_off = any(isinstance(n, ast.Call)
+                        and getattr(n.func, "id", "") == "off"
+                        for n in ast.walk(tree))
+        if calls_off and not reason:
+            out.append(M("registry.off_without_reason", file=rel))
+        elif calls_off and reason and len(str(reason).strip()) < MUST_REASON_MIN:
+            out.append(M("registry.off_reason_too_short",
+                         file=rel, reason=str(reason)))
+        elif not calls_off and reason:
+            out.append(M("registry.off_reason_without_off", file=rel))
     return out
 
 
@@ -657,6 +712,18 @@ def _captures_stderr():
         shutil.rmtree(d, True)
 
 
+def _off_reason_ok(_label, sources, ok, reason=None):
+    """构造一条假声明行 + 假源码，验 `off_reason_problems` 的判定方向。
+
+    `sources` 的值是**源码片段**；用 `_off(` 占位再替换成真调用，避免本文件
+    自己被这个判据收编（它本身是可 off 的闸门）。"""
+    import ast                                           # noqa: PLC0415
+    body = sources["check_x.py"].replace("_off(", "off(")
+    gs = [{"file": "check_x.py", "off_reason": reason}]
+    got = off_reason_problems(gs, sources={"check_x.py": body})
+    return (got == []) if ok else (got != [])
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -769,6 +836,18 @@ def _cases():
         # 这条钉的是**默认执行器**的行为（注入 runner 测不到它）。
         ("★ registry.run_phase_captures_stderr",
          lambda: _captures_stderr()),
+        # **off 必须有理由**（第 12 轮）：会调 `off()` 却没声明 `off_reason`、
+        # 理由太短、或声明了理由却不调 off —— 三个方向都要报。
+        ("★ registry.off_without_reason", lambda: _off_reason_ok(
+            "no-reason", {"check_x.py": "_off()"}, ok=False)),
+        ("★ registry.off_reason_too_short", lambda: _off_reason_ok(
+            "too-short", {"check_x.py": "_off()"}, ok=False, reason="x")),
+        ("★ registry.off_reason_without_off", lambda: _off_reason_ok(
+            "declared-but-never-off", {"check_x.py": "pass\n"}, ok=False,
+            reason="a real justification long enough")),
+        ("registry.off_reason_ok", lambda: _off_reason_ok(
+            "complete", {"check_x.py": "_off()"}, ok=True,
+            reason="a real justification long enough")),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
