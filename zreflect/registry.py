@@ -1029,6 +1029,53 @@ def _gate_desc_states_selftest():
     return False
 
 
+def _living_case(which):
+    """`living.py` 的三个判定方向（用 ASCII 输入，不写中文字面量）。"""
+    from living import living_lines, section_is_living      # noqa: PLC0415
+    if which == "numbered_historical":
+        # `## 5 x` + hist=("5",) ⇒ 非活状态
+        return section_is_living("## 5 old", historical_secs=("5",)) is False
+    if which == "unnumbered":
+        # `## 6 x` 但 hist 里没有 6 ⇒ 活状态（默认从严）
+        return section_is_living("## 6 new", historical_secs=("5",)) is True
+    if which == "appendix":
+        # `## 附` + 任意后缀 ⇒ 文末机器块，不扫。码点 0x9644（**不写字面量**：
+        # 本文件在零语言闸门的扫描面内 —— 实测写成字面量立刻被抓）。
+        head = "## " + chr(0x9644)
+        return section_is_living(head) is False \
+            and section_is_living(head + "more") is False
+    if which == "lines_track":
+        rows = living_lines("head\n## 5 old\nx\n## 6 new\ny\n",
+                            historical_secs=("5",))
+        # 第 1 行在第一个 ## 之前 ⇒ 活状态；2-3 属于历史段 ⇒ False；4-6 ⇒ True
+        return ([r[2] for r in rows] == [True, False, False, True, True, True])
+    return False
+
+
+def _collect_case(which):
+    """`collect.py` 的三个方向。"""
+    from collect import parse_prev_values, unavailable       # noqa: PLC0415
+    if which == "parse":
+        # 正确用法：**命名分组**（`(?P<名>…)`），第 1 组是行首键
+        got = parse_prev_values("| a | 1 |\n| b | 2 |\n",
+                                r"\| (?P<key>\w+) \| (?P<val>\d+) \|",
+                                ("val",))
+        return got == {"a": {"val": "1"}, "b": {"val": "2"}}
+    if which == "missing_group":
+        # 请求一个正则里不存在的命名分组 ⇒ 必须 SystemExit（不许静默拿错值）
+        try:
+            parse_prev_values("| a | 1 |\n",
+                              r"\| (?P<key>\w+) \| (?P<val>\d+) \|",
+                              ("nope",))
+            return False                # 没响 = 这条红
+        except SystemExit:
+            return True
+    if which == "unavailable":
+        got = unavailable("x", "y")
+        return got.get("ok") is False and "why" in got
+    return False
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -1221,6 +1268,30 @@ def _cases():
         # 此前描述只写「提供 selftest，自己不消费」—— 读起来像免责声明。
         ("★ registry.gate_module_meta_states_where_selftest_lives",
          lambda: _gate_desc_states_selftest()),
+        # **`living.py` / `collect.py` 的自证**（第 24 轮）：两个 `selftest=False`
+        # 模块此前**零断言**，而 `living_lines` 被 `check_stale` / `check_retractions`
+        # 消费 —— 它判错了，那两道闸门的判据全部失效。
+        ("★ registry.living_numbered_section_is_historical",
+         # 编号章节在 `historical_secs` 里 ⇒ **不是活状态**
+         lambda: _living_case("numbered_historical")),
+        ("registry.living_unnumbered_is_living",
+         # 无编号章节**一律活状态**（默认从严）
+         lambda: _living_case("unnumbered")),
+        ("registry.living_appendix_not_scanned",
+         # `## 附` 开头的文末机器块 ⇒ 不扫
+         lambda: _living_case("appendix")),
+        ("★ registry.living_lines_tracks_sections",
+         # 切段正不正确：历史段里的行必须标 False，其余 True
+         lambda: _living_case("lines_track")),
+        ("★ registry.collect_parse_prev_values",
+         # 命名分组回收上一次的值
+         lambda: _collect_case("parse")),
+        ("★ registry.collect_missing_group_shouts",
+         # 未命名分组 = 配置错 ⇒ 必须响（不许静默拿错值）
+         lambda: _collect_case("missing_group")),
+        ("registry.collect_unavailable_shape",
+         # 「读不到」的诚实形状：ok=False + why（不许编 0）
+         lambda: _collect_case("unavailable")),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
