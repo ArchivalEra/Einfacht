@@ -226,7 +226,12 @@ def readme_problems(files=None):
 
 
 def _zdir():
-    return os.path.dirname(os.path.abspath(__file__))
+    """工具自己的 `zreflect/` —— **调 `gate.zdir()`，不自己算**。
+
+    此前这里与 `registry._zdir()` / `i18n._TOOL_DIR` 各算一遍同一件事；
+    今天同值（靠巧合），改任一处就会分裂。location 规则只留一个产地。
+    """
+    return gate.zdir()
 
 
 def declared_vs_read_problems(gates, sources=None):
