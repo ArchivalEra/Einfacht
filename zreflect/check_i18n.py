@@ -15,6 +15,21 @@
   它会在 en 用户屏幕上显示中文，且**没有任何东西会报**——正是本仓立身
   要消灭的静默退化。这条闸门把「本体零语言」从口号变成可判定。
 
+## 它现在有四条判据族（第 16 轮的审视结论：**不拆**）
+
+  1. **裸中文**（`bare_text`）—— 输出位置的 CJK 字符串常量
+  2. **PINNED 声明面** —— `PINNED:` 标记的函数/常量整段豁免（AUTO 机器块必须
+     固定语言，跟随语言就不收敛）
+  3. **夹具字面量**（`fixture_literal`）—— `_cases()` 里的中文只许在**标签**
+     与 **docstring**；夹具源码必须码点构造（同一错误犯三次后补的判据）
+  4. **消息必须走 M()** —— `_is_msg_call` / `_is_output_call` 的形状判据
+
+**为什么不拆成四个闸门**：它们共享同一次 `ast.parse(src)` 与同一轮文件遍历。
+拆开 = 四份重复的解析与遍历，而每一份都可能独立漂（本仓最痛的那种）。
+四条判据族的**差异只在「什么算合法」**，那已经由各自的 helper 隔离
+（`_declares_pinned` / `_fixture_literal_problems` / `cjk`）。共享解析是拆不动
+的真实理由 —— 不是因为「它们看起来像一类」。
+
 诚实边界（写明的缺口）：判据是 **AST 级**的——抓「裸中文字面量出现在输出位置」，
 抓不到「用英文写的消息」（那仍是本体语言，但主体已零中文；要抓它需要
 更复杂的语言识别，代价过大）。所以本闸门的强度 = 「零中文 + 消息必须走 M()」。
@@ -243,9 +258,22 @@ def _fixture_literal_problems(name, tree):
     if not fns:
         return []
     fn = fns[0]
+    # ⚠️ **范围要覆盖辅助函数**：`_cases()` 调用的同文件 helper 也在自证路径上
+    # （实测踩到：判据锚点写进 `_streams_documented()`，本判据扫不到 ⇒ bare_text
+    # 由主判据报出、这条漏）。把 `_cases` 里**被引用的顶层函数**一并纳入。
+    called = {n.func.id for n in ast.walk(fn)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    # ⚠️ **PINNED 的函数不算夹具 helper**：`_cases()` 会调用 `render_gates()`
+    # 来测「渲染确定性」，但那个函数的文本是 AUTO 机器块、**本来就固定语言**
+    # （第 3 族已豁免）。把它拉进夹具扫描会误报（实测：7 条 PINNED 行被
+    # `fixture_literal` 抓）。豁免面之间必须互相尊重。
+    helpers = [n for n in tree.body
+               if isinstance(n, ast.FunctionDef) and n.name in called
+               and not _declares_pinned(ast.get_docstring(n, clean=False))]
+    bodies = [fn] + helpers                          # 统一遍历的节点清单
     # 合法节点：docstring
     docs = set()
-    for node in ast.walk(fn):
+    for node in [n for b in bodies for n in ast.walk(b)]:
         if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
             d = ast.get_docstring(node, clean=False)
             if d:
@@ -255,12 +283,12 @@ def _fixture_literal_problems(name, tree):
                         break
     # 合法节点：自证标签（元组首元素）
     labels = set()
-    for node in ast.walk(fn):
+    for node in [n for b in bodies for n in ast.walk(b)]:
         if isinstance(node, ast.Tuple) and len(node.elts) == 2 \
                 and isinstance(node.elts[0], ast.Constant):
             labels.add(id(node.elts[0]))
     out = []
-    for node in ast.walk(fn):
+    for node in [n for b in bodies for n in ast.walk(b)]:
         if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
             continue
         if not cjk(node.value):
@@ -332,13 +360,6 @@ def _cjk_src(doc):
             '    return "%s"\n') % (doc, chr(CJK_LO) * 2)
 
 
-def _cjk_src(doc):
-    """造一段含 CJK 字面量的源码（字面量用码点构造，本文件源码里不出现中文）。"""
-    return ('def render_world_block(w):\n'
-            '    """%s"""\n'
-            '    return "%s"\n') % (doc, chr(CJK_LO) * 2)
-
-
 # 理由用码点构造（本文件源码里不出现中文 —— 否则会被自己的覆盖闸门收编）
 PINNED_FN = _cjk_src("PINNED: " + chr(CJK_LO) * 10 + " pinned, byte-exact.")
 PINNED_BARE = _cjk_src("PINNED: x")
@@ -349,6 +370,11 @@ FIXTURE_BAD = ("def _cases():\n"
                "    return [(\"ok.label\", lambda: SAMPLE == SAMPLE)]\n")
 FIXTURE_LABEL = ("def _cases():\n"
                  "    return [(\"ok.label" + _CJ4 + "\", lambda: True)]\n")
+FIXTURE_HELPER = ("def _helper():\n"
+                  "    return \"" + _CJ4 + "\"\n"
+                  "\n"
+                  "def _cases():\n"
+                  "    return [(\"ok\", lambda: _helper() == \"x\")]\n")
 FIXTURE_DOC = ("def _cases():\n"
                "    \"\"\"doc " + _CJ4 + "\"\"\"\n"
                "    return [(\"ok\", lambda: True)]\n")
@@ -406,6 +432,11 @@ def _cases():
         ("★ i18n_cover.fixture_literal",
          lambda: [p.code for p in problems([("t.py", FIXTURE_BAD)])
                   ] == ["i18n_cover.bare_text", "i18n_cover.fixture_literal"]),
+        # helper 也在自证路径上 —— 判据必须覆盖 `_cases()` 调用的同文件函数
+        # （实测踩到：锚点写进 helper，本判据漏判、只有主判据报）
+        ("★ i18n_cover.fixture_literal_in_helper",
+         lambda: "i18n_cover.fixture_literal" in
+         [p.code for p in problems([("t.py", FIXTURE_HELPER)])]),
         ("i18n_cover.fixture_label_cjk_is_allowed",
          lambda: problems([("t.py", FIXTURE_LABEL)]) == []),
         ("i18n_cover.fixture_docstring_cjk_is_allowed",
