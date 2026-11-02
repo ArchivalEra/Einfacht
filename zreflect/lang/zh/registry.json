@@ -17,5 +17,6 @@
  "registry.phase_error": "  ERROR %(file)s（执行器层面坏了：rc<0 被信号杀，或 >2 未约定的码）",
  "registry.off_without_reason": "`%(file)s` 会调 `off()` 却没在 `meta()` 里声明 `off_reason` —— 没有理由的 off 与「本仓不用这套机制」不可区分",
  "registry.off_reason_too_short": "`%(file)s` 的 `off_reason` 太短（%(reason)r）—— 豁免必须说明为什么，同 `PINNED:` 的纪律",
- "registry.off_reason_without_off": "`%(file)s` 声明了 `off_reason` 但源码从不调 `off()` —— 理由白写了（谎）"
+ "registry.off_reason_without_off": "`%(file)s` 声明了 `off_reason` 但源码从不调 `off()` —— 理由白写了（谎）",
+ "registry.off_reason_stale": "`%(file)s` 的 `off_reason` 声称本仓没有 `%(name)s`，但它**真实存在** —— 理由已失效：闸门该启用而没启用（`off` 变成了永久免死金牌）"
 }

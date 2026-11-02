@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -430,32 +431,65 @@ def off_reason_problems(gs, sources=None):
     for g in gs:
         rel = g["file"]
         reason = g.get("off_reason")
+        # 源码读不到**不该跳过整条判据**：理由真实性（下面 `_reason_files`）
+        # 不依赖源码，只依赖「仓里有没有那个文件」。此前 `continue` 会让
+        # 读不到源码的闸门绕过全部三向检查（自证随手的 fixture 就撞上）。
+        text = None
         if sources is not None:
             text = sources.get(rel)
-            if text is None:
-                continue
         else:
             try:
                 text = open(os.path.join(gate.GATE_REPO, rel),
                             encoding="utf-8", errors="replace").read()
             except OSError:
-                continue
-        calls_off = "off(" in text and "def off(" not in text
+                text = None
         # 更精确：AST 找 `off(...)` 调用（排除定义处与注释）
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            continue
-        calls_off = any(isinstance(n, ast.Call)
-                        and getattr(n.func, "id", "") == "off"
-                        for n in ast.walk(tree))
-        if calls_off and not reason:
-            out.append(M("registry.off_without_reason", file=rel))
-        elif calls_off and reason and len(str(reason).strip()) < MUST_REASON_MIN:
-            out.append(M("registry.off_reason_too_short",
-                         file=rel, reason=str(reason)))
-        elif not calls_off and reason:
-            out.append(M("registry.off_reason_without_off", file=rel))
+        calls_off = False
+        if text is not None:
+            try:
+                tree = ast.parse(text)
+                calls_off = any(isinstance(n, ast.Call)
+                                and getattr(n.func, "id", "") == "off"
+                                for n in ast.walk(tree))
+            except SyntaxError:
+                calls_off = False
+        # ⚠️ **读不到源码 ≠ 不调 off**：夹具仓里没有该文件时 `text` 为 None，
+        # 若把 `calls_off=False` 当真就会报一堆假的「理由白写」（实测：
+        # `GATE_REPO=$tmp registry --gates` 报 8 条）。源码读不到时**只做
+        # 理由真实性检查**，跳过「有没有调 off」这一向。
+        if text is not None:
+            if calls_off and not reason:
+                out.append(M("registry.off_without_reason", file=rel))
+            elif calls_off and reason and len(str(reason).strip()) < MUST_REASON_MIN:
+                out.append(M("registry.off_reason_too_short",
+                             file=rel, reason=str(reason)))
+            elif not calls_off and reason:
+                out.append(M("registry.off_reason_without_off", file=rel))
+        # **理由真实性**：理由里点名「本仓没有 X.json」——那 X.json 若实际存在，
+        # 理由就已经失效（闸门早该启用而没启用）。第 17 轮补的对称判据：
+        # 第 12 轮只要求「必须有理由」，没要求「理由得是真的」。
+        for tok, exists in _reason_files(reason):
+            if exists:
+                out.append(M("registry.off_reason_stale", file=rel,
+                             name=tok))
+    return out
+
+
+_FILE_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.[A-Za-z0-9]+")
+
+
+def _reason_files(reason, repo_root=None):
+    """`off_reason` 里提到的文件名 → [(名字, 该文件在仓里是否存在)]。
+
+    只认「带扩展名的 token」（`ab.json` / `Einfacht.env` / `world.json`），
+    不认句子里的普通词 —— 否则「本仓不做 A/B 对照」会被切成假文件名。
+    """
+    if not reason:
+        return []
+    root = repo_root if repo_root is not None else gate.GATE_REPO
+    out = []
+    for tok in _FILE_TOKEN.findall(str(reason)):
+        out.append((tok, os.path.exists(os.path.join(root, tok))))
     return out
 
 
@@ -780,6 +814,35 @@ def _streams_documented():
             ("stdout" in r and "stdout" in g))
 
 
+def _off_reason_stale_ok():
+    """声称没有 `ab.json`，而 `ab.json` 真实存在 ⇒ 必须报 stale。
+
+    用临时目录做仓根（不碰真仓），并给源码让 `off()` 调用成立，
+    以隔离出**只由「理由失效」**触发的那一条。
+    """
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        with open(os.path.join(d, "ab.json"), "w", encoding="utf-8") as fh:
+            fh.write("{}")
+        reason = ("no " + "ab.json" + " spec in this repo")   # ASCII，避免触发零语言闸门
+        gs = [{"file": "check_ab.py", "off_reason": reason}]
+        src = {"check_ab.py": "def run():\n    return off(null)\n"}
+        old = gate.GATE_REPO
+        gate.GATE_REPO = d
+        try:
+            got = [p.code for p in off_reason_problems(gs, sources=src)]
+            # 文件不在的对照组：把 ab.json 删掉 ⇒ 不该有 stale
+            os.remove(os.path.join(d, "ab.json"))
+            got2 = [p.code for p in off_reason_problems(gs, sources=src)]
+        finally:
+            gate.GATE_REPO = old
+        return got == ["registry.off_reason_stale"] and got2 == []
+    finally:
+        shutil.rmtree(d, True)
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -915,6 +978,11 @@ def _cases():
         # 这条钉的是「两端语义分开写明白了」—— 判据是两处措辞都在。
         ("registry.aggregator_streams_documented",
          lambda: _streams_documented()),
+        # **理由真实性**（第 17 轮）：`off_reason` 声称「本仓没有 X.json」，
+        # 而 X.json 实际存在 ⇒ 理由已失效（闸门早该启用而没启用）。
+        # 第 12 轮只要求「必须有理由」，这是它的对称缺口：
+        # 不要求「理由得是真的」，理由就会变成永久免死金牌。
+        ("★ registry.off_reason_stale", lambda: _off_reason_stale_ok()),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
