@@ -159,6 +159,17 @@ never been proven:
   (`registry.selftest_false_modules_state_where_selftest_lives`, discovery-based: no name list).
   A description reading "no independent self-test" is a disclaimer, not a fact.
 
+**And the dependency chain is now swept mechanically.** `living_lines()` was not a freak
+case: a systematic scan found **four more** platform functions consumed by gates with zero
+assertions of their own (`gate.guard_nonempty`, `gate.load_spec`, `ledger.value_of`,
+`runner.default_timeout`). Each got one, and `registry.dependency_coverage_problems()`
+(C4 reconciler ⑨) keeps it that way — discovery-based: it reads the AST for *who consumes
+what* in `check_*.py` / `doctor.py`, then for *what is asserted* (the Load names inside each
+`_cases()` **and the helpers it calls**). Framework APIs are excluded by breadth (≥3 gates
+share them), so `gate.meta` / `main_selftest_or` / `i18n.M` are not demanded to test
+themselves. A consumed-but-untested function is a dead link: it misjudges, the consuming
+gate loses its criteria, and that gate's own self-test still passes.
+
 The lesson is the one this whole repo is built on: **the narration drifts exactly like the numbers
 do.** The gate *set* was discovered, but "how many gates are there and which" was hand-written prose
 — and it was wrong. It is now derived from the same declaration lines the runner reads.

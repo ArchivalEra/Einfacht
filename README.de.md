@@ -143,6 +143,18 @@ Dinge waren nie bewiesen:
   Namensliste). Eine Beschreibung, die "kein unabhängiger Selbsttest" liest, ist ein
   Haftungsausschluss, keine Tatsache.
 
+**Und die Abhängigkeitskette wird jetzt mechanisch durchgesehen.** `living_lines()` war kein
+Einzelfall: ein systematischer Scan fand **vier weitere** Plattformfunktionen, die von Gates
+konsumiert werden, aber null eigene Zusicherungen hatten (`gate.guard_nonempty`,
+`gate.load_spec`, `ledger.value_of`, `runner.default_timeout`). Jede bekam eine;
+`registry.dependency_coverage_problems()` (C4-Abgleicher ⑨) hält das fest —
+entdeckungsbasiert: es liest im AST von `check_*.py` / `doctor.py`, *wer wen konsumiert*,
+und dann, *was zugesichert ist* (die Load-Namen in jedem `_cases()` **und in den von ihm
+aufgerufenen Hilfsfunktionen**). Framework-APIs werden über die Breite ausgeschlossen (≥3
+Gates teilen sie), damit `gate.meta` / `main_selftest_or` / `i18n.M` sich nicht selbst testen
+müssen. Eine konsumierte, aber ungetestete Funktion ist ein totes Glied: urteilt sie falsch,
+verliert das konsumierende Gate seine Kriterien — und dessen eigener Selbsttest bleibt grün.
+
 **Vertieft (2026-10-07).** Die drei Fallklassen waren erzwungen, aber die *Verkabelung darum
 herum* nicht: jeder der 13 Prüfer kopierte seinen `run()`-Schwanz von Hand (15–45 Zeilen), und die
 Kopien waren bereits in drei Konventionen abgedriftet — mal gingen Problemzeilen nach stdout, mal

@@ -132,6 +132,15 @@
   （`registry.selftest_false_modules_state_where_selftest_lives`，发现式：不写名单）。
   只写「无独立自证」的描述是免责声明，不是事实。
 
+**依赖链现在是机械扫描的。** `living_lines()` 不是孤例：系统扫描又查出**四条**平台函数
+被闸门消费却自身零断言（`gate.guard_nonempty` / `gate.load_spec` / `ledger.value_of` /
+`runner.default_timeout`），各自补了一条；`registry.dependency_coverage_problems()`
+（C4 对账⑨）把它钉住 —— 发现式：从 `check_*.py` / `doctor.py` 的 AST 读「谁消费谁」，
+再从各 `_cases()` **及其调用的 helper** 里的 Load 名字读「谁被断言」。框架 API 按广度
+排除（≥3 个闸门共用 ⇒ 不要求自测），所以 `gate.meta` / `main_selftest_or` / `i18n.M`
+不会被迫自举。**被消费但没被测的函数是哑火环节**：它判错，消费它的闸门失去判据，
+而那道闸门自己的自证照样通过。
+
 教训就是本仓整个立身的那一条：**叙述和数字一样会漂。** 闸门的**集合**是发现式的，
 但「有几道、都是谁」是手写散文 —— 而且写错了。现在它从 runner 读的同一份声明行派生。
 
