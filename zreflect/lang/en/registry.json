@@ -17,5 +17,6 @@
  "registry.phase_error": "  ERROR %(file)s (executor-level breakage: rc<0 killed by signal, or >2 an unagreed code)",
  "registry.off_without_reason": "`%(file)s` can call `off()` but declares no `off_reason` in `meta()` — a reasonless off is indistinguishable from 'this repo does not use this mechanism'",
  "registry.off_reason_too_short": "`%(file)s`'s `off_reason` is too short (%(reason)r) — an exemption must say why, same discipline as `PINNED:`",
- "registry.off_reason_without_off": "`%(file)s` declares `off_reason` but never calls `off()` — the reason is unwritten back (a lie)"
+ "registry.off_reason_without_off": "`%(file)s` declares `off_reason` but never calls `off()` — the reason is unwritten back (a lie)",
+ "registry.off_reason_stale": "`%(file)s`'s `off_reason` claims this repo has no `%(name)s`, but it **does exist** — the reason is stale: the gate should be enabled and is not (off became a permanent exemption)"
 }
