@@ -18,5 +18,6 @@
  "registry.off_without_reason": "`%(file)s` kann `off()` aufrufen, deklariert aber kein `off_reason` in `meta()` — ein grundloses off ist nicht von 'dieses Repo nutzt diesen Mechanismus nicht' zu unterscheiden",
  "registry.off_reason_too_short": "`%(file)s`' `off_reason` ist zu kurz (%(reason)r) — eine Ausnahme muss den Grund nennen, dieselbe Disziplin wie `PINNED:`",
  "registry.off_reason_without_off": "`%(file)s` deklariert `off_reason`, ruft `off()` aber nie auf — der Grund ist umsonst geschrieben (eine Lüge)",
- "registry.off_reason_stale": "`%(file)s`' `off_reason` behauptet, dieses Repo habe kein `%(name)s`, aber es **existiert** — der Grund ist veraltet: das Gate sollte aktiv sein und ist es nicht (off wurde zu einer Dauerausnahme)"
+ "registry.off_reason_stale": "`%(file)s`' `off_reason` behauptet, dieses Repo habe kein `%(name)s`, aber es **existiert** — der Grund ist veraltet: das Gate sollte aktiv sein und ist es nicht (off wurde zu einer Dauerausnahme)",
+ "registry.path_rule_split": "`%(file)s`.`%(function)s()` berechnet das Werkzeugverzeichnis selbst (`dirname(abspath(__file__))`) — dieser Wert darf nur einen Erzeuger haben (`gate.zdir()`), sonst spaltet eine Änderung ihn"
 }

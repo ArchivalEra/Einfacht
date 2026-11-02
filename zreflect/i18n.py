@@ -47,8 +47,16 @@ import os
 import re
 from types import MappingProxyType
 
-_TOOL_DIR = os.path.dirname(os.path.abspath(__file__))        # .../zreflect
-_TOOL_REPO = os.path.dirname(_TOOL_DIR)                       # 承载套件的仓根
+# ⚠️ **懒取**：本模块被 `gate` 懒导入，模块级反向 `import gate` 会成环。
+# 值本身由 `gate.zdir()` / `gate.tool_repo()` 唯一生产 —— 不在这里再算一遍。
+def _tool_dir():
+    import gate                                          # noqa: PLC0415
+    return gate.zdir()
+
+
+def _tool_repo_dir():
+    import gate                                          # noqa: PLC0415
+    return gate.tool_repo()
 # 未设 `REFLECT_I18N` 时用的**内建包目录**（相对工具仓根）。
 BUILTIN_PACKS = "zreflect/lang"
 
@@ -228,7 +236,7 @@ def pack_dir():
     """
     raw = os.environ.get("REFLECT_I18N", "").strip()
     if not raw:
-        return os.path.join(_TOOL_REPO, BUILTIN_PACKS)
+        return os.path.join(_tool_repo_dir(), BUILTIN_PACKS)
     if os.path.isabs(raw):
         return raw
     # 懒导入：本模块被 `gate` 懒导入，模块级反向 import 会成环。

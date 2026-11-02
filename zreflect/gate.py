@@ -42,6 +42,28 @@ def repo(*parts):
     return os.path.join(GATE_REPO, *parts)
 
 
+def zdir():
+    """**工具自己**的 `zreflect/` 目录 —— 全仓唯一产地。
+
+    用途是「扫我自己的源码」（发现式名录 / 幻影旋钮 / 代码覆盖）。这与
+    `GATE_REPO`（**被检查仓**根）是两件事：跨仓夹具里 `GATE_REPO` 指向临时
+    目录，但工具源码仍在套件里。
+
+    ⚠️ 此前 `knobs._zdir()` / `registry._zdir()` / 各处的
+    `dirname(abspath(__file__))` 各自算一遍 —— 今天同值（靠巧合），
+    改任一处就会分裂。location 规则只该有一个产地。
+    """
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def tool_repo():
+    """**工具仓**根（`zreflect/` 的上一级）—— 全仓唯一产地。
+
+    `i18n.pack_dir()` 的「未设 ⇒ 用套件自带包」锚的就是它。
+    """
+    return os.path.dirname(zdir())
+
+
 def require_nonempty(name, seq, what=None):
     """零值守卫：收集阶段什么都没收到 ⇒ 报错，**不许当「干净」**。
 

@@ -47,14 +47,16 @@ GATES_END = "<!-- /AUTO:GATES -->"
 
 
 def _zdir():
-    """闸门名录所在的目录 = **本文件所在处**，与 GATE_REPO 无关。
+    """工具自己的 `zreflect/` —— **调 `gate.zdir()`，不自己算**。
+
+    闸门名录所在的目录 = **本文件所在处**，与 GATE_REPO 无关。
 
     名录是**工具**的属性（`zreflect/` 里的 check_*.py 就是工具自带的那批），
     不是**被检查仓库**的属性：GATE_REPO 指向「被检查的仓库」（可能是换名
     夹具、别的仓库），那里根本没有 zreflect/ 目录 —— 用 repo("zreflect")
     会让夹具里名录为空、render 拒绝（实测踩到：换名自证的夹具里
     check_facts 因「名录空」而红）。"""
-    return os.path.dirname(os.path.abspath(__file__))
+    return gate.zdir()
 
 # 换名自证的夹具把哪些默认名改掉了（gates-selftest.sh 跨仓库节的改名面）。
 # 名册纪律同 knobs：只登记真的被夹具改名的默认名 —— 这是红名单对账的判据数据。
@@ -545,6 +547,56 @@ def _reason_files(reason, repo_root=None):
     return out
 
 
+def path_rule_problems(sources=None):
+    """C4 对账⑧：**「工具的 zreflect/」只能有一个产地**。
+
+    此前 `knobs._zdir()` / `registry._zdir()` / `i18n` 的 `_TOOL_DIR` 各自
+    `dirname(abspath(__file__))` 算一遍 —— 今天同值（靠巧合），改任一处就会
+    分裂。location 规则与所有「必须一致」同款：**得有一个产地 + 一个对账器**。
+
+    判据（AST，发现式）：扫描面里出现 `dirname(os.path.abspath(__file__))`
+    这种**自算工具目录**的地方，除 `gate.py`（唯一产地在它）外都报。
+    `i18n` 的懒代理 `return gate.zdir()` 不算自算（它没有那个表达式）。
+    """
+    import ast                                           # noqa: PLC0415
+    out = []
+    base = gate.zdir()
+    # `sources` 给了 ⇒ **只扫那些**（自证注入假文件系统）；否则扫真目录。
+    if sources is not None:
+        items = sorted(sources.items())
+    else:
+        items = []
+        for n in sorted(os.listdir(base)):
+            if not n.endswith(".py"):
+                continue
+            try:
+                items.append((n, open(os.path.join(base, n),
+                                      encoding="utf-8").read()))
+            except OSError:
+                continue
+    for n, text in items:
+        if n == "gate.py":
+            continue                    # gate.py 是唯一产地，它自己有
+        # ⚠️ **只抓「作为返回值的自算」**，不抓 `sys.path.insert(0, …)` ——
+        # 后者是**导入引导**（每个闸门顶部都有，22 处），它不表达「工具目录
+        # 是什么」，只是让脚本能找到兄弟模块。抓它会把判据变成 22 条噪音。
+        # 判据形状：函数体里 `return dirname(abspath(__file__))`。
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Return) and sub.value is not None \
+                        and "dirname(os.path.abspath(__file__)" in ast.unparse(sub.value):
+                    out.append(M("registry.path_rule_split", file=n,
+                                 function=node.name))
+                    break
+    return out
+
+
 def _pinned_under(lang):
     """自证帮手：在指定 REFLECT_LANG 下渲染 AUTO 块（用于证明它不随语言变）。"""
     old = os.environ.get("REFLECT_LANG", "")
@@ -920,6 +972,17 @@ def _stale_in_hooks_dir():
         shutil.rmtree(d, True)
 
 
+def _path_rule_single_source():
+    """真仓只有 gate.py 自算工具目录；再造一份假的 ⇒ 必须报。"""
+    ok_real = path_rule_problems() == []
+    # 判据只抓**函数体里的 return**（不是模块级赋值 —— 那是导入引导 / 常量）
+    fake = {"splitter.py":
+            "def f():\n"
+            "    return os.path.dirname(os.path.abspath(__file__))\n"}
+    got = [p.code for p in path_rule_problems(sources=fake)]
+    return ok_real and got == ["registry.path_rule_split"]
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -1070,6 +1133,10 @@ def _cases():
         # 载体，两边都必须看得见。只查仓根 ⇒ RED。
         ("★ registry.reason_bases_match_env_plugin",
          lambda: reason_bases_agree()),
+        # **口径分裂**（C4 对账⑧）：工具的 zreflect/ 只能有一个产地。
+        # 别处再写一份 `dirname(abspath(__file__))` ⇒ 报（改一处就会分裂）。
+        ("★ registry.path_rule_single_source",
+         lambda: _path_rule_single_source()),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
