@@ -126,6 +126,23 @@ Darum liefert `gate.py` zwei Dinge:
   eine leere Fallliste ab** — der `0/0`-Unfall oben passierte früher den grep des Runners; jetzt
   ist es ein Formfehler, der auf der Stelle feuert.
 
+**Erneut vertieft (2026-11-02): die Abhängigkeitskette und die Deklarationen.** Zwei weitere
+Dinge waren nie bewiesen:
+
+- `living.living_lines()` entscheidet, *welche Zeilen als Lebendzustand zählen*, und
+  `check_stale` / `check_retractions` **konsumieren es** — es hatte **null Zusicherungen**.
+  Hätte es ein Dokument falsch geschnitten, verlören diese zwei Gates jedes Kriterium,
+  während ihre eigenen Selbsttests grün blieben. Sieben Zusicherungen decken jetzt seine
+  Entscheidungszweige ab (nummerierter historischer Abschnitt / unnummeriert gilt als lebend /
+  Anhang wird nicht gescannt / Zeile-zu-Abschnitt) plus `collect.py`s `parse_prev_values`
+  und `unavailable`.
+- **`selftest=False` heißt nicht "kein Selbsttest"** — es heißt "kein `--selftest`-Einstieg"
+  (diese Module sind reine Verträge/Hilfen; ein CLI würde ihre Rolle bekämpfen). Ihre Logik
+  *ist* zugesichert, in `registry._cases()`, und die Modulbeschreibung muss das sagen
+  (`registry.selftest_false_modules_state_where_selftest_lives`, entdeckungsbasiert: keine
+  Namensliste). Eine Beschreibung, die "kein unabhängiger Selbsttest" liest, ist ein
+  Haftungsausschluss, keine Tatsache.
+
 **Vertieft (2026-10-07).** Die drei Fallklassen waren erzwungen, aber die *Verkabelung darum
 herum* nicht: jeder der 13 Prüfer kopierte seinen `run()`-Schwanz von Hand (15–45 Zeilen), und die
 Kopien waren bereits in drei Konventionen abgedriftet — mal gingen Problemzeilen nach stdout, mal
