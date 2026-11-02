@@ -15,6 +15,10 @@ from i18n import M                                        # noqa: E402
 BLOCK_BEGIN = "<!-- AUTO:FACTS -->"
 BLOCK_END = "<!-- /AUTO:FACTS -->"
 
+# PINNED: AUTO 机器块固定语言（不随 REFLECT_LANG 变）——
+# 它写进 STATE.md 并被 `facts.py --check` 逐字节对账；跟随语言会让
+# 「同一提交在不同环境结果不同」（不收敛）。check_i18n 扫 `PINNED:` 标记，
+# **不认名字**（名字承重 = 名录会漂）。
 PREAMBLE = [
     "> 本区块由 `zreflect/facts.py --render-doc` 从 `FACTS.json` 渲染，**不要手改**"
     "（pre-commit 会重算并 `git add`）。",
@@ -29,7 +33,10 @@ def _fmt(v):
 
 
 def render_block(ledger):
-    """台账 → 机器块（含首尾标记）。**纯函数**：同一份台账渲染两次逐字节相同。"""
+    """台账 → 机器块（含首尾标记）。**纯函数**：同一份台账渲染两次逐字节相同。
+
+    PINNED: AUTO 机器块固定语言（见 PREAMBLE 上的说明）。
+    """
     from ledger import facts_of                          # noqa: PLC0415
 
     f = facts_of(ledger)

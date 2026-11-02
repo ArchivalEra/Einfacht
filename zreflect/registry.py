@@ -39,6 +39,7 @@ from gate import module_meta, fatal, repo, main_selftest_or             # noqa: 
 from i18n import M                                        # noqa: E402
 from knobs import REGISTRY                                # noqa: E402
 
+# PINNED: AUTO 机器块固定语言（同 render.PREAMBLE 的理由）。
 GATES_BEGIN = "<!-- AUTO:GATES -->"
 GATES_END = "<!-- /AUTO:GATES -->"
 
@@ -460,7 +461,7 @@ def render_gates(gs):
     """闸门名录 → AUTO:GATES 机器块（含首尾标记）。**纯函数**：
     同一名录渲染两次逐字节相同。
 
-    ⚠️ **PINNED**（issue #26，D' 的洞见）：本块的文本**永远用固定语言**，
+    PINNED: 本块的文本**永远用固定语言**（issue #26，D' 的洞见），
     不跟随 `REFLECT_LANG`。理由：它写进 `STATE.md` 并被 `facts.py --check`
     逐字节对账 —— 若随语言变，`REFLECT_LANG=de --render-doc` 之后
     `REFLECT_LANG=zh --check` 必然红，**同一提交在不同语言环境下结果不同**
