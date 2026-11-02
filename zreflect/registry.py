@@ -372,7 +372,9 @@ def _knob_problems(knob_problems, gs):
                          + knobs.pack_sync_problems()
                          # C4 对账④：**源码用到的 code 必须在每个已装包里**
                          # （zh↔en 差集看不见「两边一起缺」，那是静默退化）
-                         + knobs.pack_coverage_problems())
+                         + knobs.pack_coverage_problems()
+                         # 声明了却从不使用的 DEFAULT_*（闸门假装配好了）
+                         + knobs.dead_default_problems())
     return list(knob_problems)
 
 

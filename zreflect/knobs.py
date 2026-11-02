@@ -449,6 +449,67 @@ class PacksUnreadable(RuntimeError):
 
 
 
+def dead_default_problems(py_dir=None):
+    """C4 对账⑤：闸门/模块里**定义了却从不使用**的 `DEFAULT_*` 常量。
+
+    为什么这条值得一个判据：`check_i18n` 曾经有 `DEFAULT_ROOT = "zreflect"`，
+    而 `run()` 只读环境变量、**从不用它** —— 于是本仓最核心的覆盖闸门在活体
+    路径上**永远 off**（「存在、自证绿、从没跑过」）。`check_snapshots` 犯过
+    同一个错。一个「声明了默认值但不生效」的常量，比没有默认值更坏：它让人
+    **以为**配好了。
+
+    判据（AST）：模块级 `DEFAULT_X = …` 若在该文件里**没有任何 Load 引用**
+    ⇒ 报。只扫 `check_*.py` + 平台模块（即 `zreflect/*.py`）。
+    """
+    import ast                                           # noqa: PLC0415
+    d = py_dir if py_dir is not None else _zdir()
+    out = []
+    try:
+        names = sorted(os.listdir(d))
+    except OSError:
+        return out
+    for n in names:
+        if not n.endswith(".py"):
+            continue
+        try:
+            tree = ast.parse(open(os.path.join(d, n), encoding="utf-8").read())
+        except (OSError, SyntaxError):
+            continue
+        defined = {t.id for node in tree.body if isinstance(node, ast.Assign)
+                   for t in node.targets
+                   if isinstance(t, ast.Name) and t.id.startswith("DEFAULT_")}
+        loaded = {node.id for node in ast.walk(tree)
+                  if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)}
+        for dead in sorted(defined - loaded):
+            out.append(M("knobs.dead_default", file=n, name=dead))
+    return out
+
+
+def _dead_default_ok():
+    """定义了 `DEFAULT_X` 却从不 Load ⇒ 必须报；用了就不报。"""
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        dead = ("DEFAULT_X = 'v'\n"
+                "def run():\n"
+                "    return os.environ.get('K') or 'hardcoded'\n")
+        live = ("DEFAULT_X = 'v'\n"
+                "def run():\n"
+                "    return os.environ.get('K') or DEFAULT_X\n")
+        # 先只放「死的」那个
+        with open(os.path.join(d, "check_dead.py"), "w", encoding="utf-8") as fh:
+            fh.write(dead)
+        got_dead = [p.code for p in dead_default_problems(py_dir=d)]
+        # 换成「活的」⇒ 应不报
+        with open(os.path.join(d, "check_dead.py"), "w", encoding="utf-8") as fh:
+            fh.write(live)
+        got_live = dead_default_problems(py_dir=d)
+        return got_dead == ["knobs.dead_default"] and got_live == []
+    finally:
+        shutil.rmtree(d, True)
+
+
 def a_pack_lang():
     """取一个**已装**的语言包名（自证「读真包」类判据用）；一个都没装 ⇒ None。
 
@@ -861,6 +922,8 @@ def _cases():
         ("knobs.registry_vs_readme_empty_tables",
          # 一张表都没有 ⇒ 无可比对；返回空是对的
          lambda: registry_vs_readme_problems(tables={}) == []),
+        # **死默认值**：定义了 `DEFAULT_*` 却从不使用 —— 「声明了但不生效」
+        ("★ knobs.dead_default", lambda: _dead_default_ok()),
         # ③ 空输入必须报
         ("★ knobs.pack_sync_empty",
          lambda: [p.code for p in pack_sync_problems(
