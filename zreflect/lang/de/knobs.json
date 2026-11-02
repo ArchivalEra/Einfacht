@@ -38,5 +38,6 @@
  "knobs.pack_extra_keys": "das Paket %(lang)s hat Schlüssel, die in %(reference)s fehlen (die andere Seite zeigt dann nackte Codes): %(keys)s",
  "knobs.pack_placeholder_mismatch": "die Platzhalternamen von `%(key)s` im Paket %(lang)s unterscheiden sich von %(reference_lang)s (%(reference_lang)s: %(expected_params)s / %(lang)s: %(actual_params)s) — das Rendern würde KeyError geben",
  "knobs.pack_unreadable": "das Paket %(lang)s konnte nicht gelesen werden (%(error)s) — ein kaputtes Paket darf nicht wie nicht installiert übersprungen werden",
- "knobs.pack_missing_code": "der Kern emittiert Codes, die im Paket %(lang)s fehlen (davon %(count)d) — Nutzer dieser Sprache würden nackte Codes sehen: %(codes)s"
+ "knobs.pack_missing_code": "der Kern emittiert Codes, die im Paket %(lang)s fehlen (davon %(count)d) — Nutzer dieser Sprache würden nackte Codes sehen: %(codes)s",
+ "knobs.dead_default": "`%(file)s` definiert `%(name)s`, nutzt es aber **nie** — ein deklarierter Standardwert ohne Wirkung ist schlimmer als keiner (man glaubt, es sei konfiguriert)"
 }

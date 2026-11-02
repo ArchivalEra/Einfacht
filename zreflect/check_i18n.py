@@ -222,10 +222,9 @@ def problems(paths):
     return out
 
 
-def collect(root):
-    """读 root 下所有 .py 的源码（(名字, 文本) 列表）。"""
+def collect_from(d, root):
+    """读目录 `d` 下所有 .py 的源码（(名字, 文本) 列表）。"""
     out = []
-    d = repo(root)
     if not os.path.isdir(d):
         return out
     for n in sorted(os.listdir(d)):
@@ -242,10 +241,24 @@ def collect(root):
 
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    root = os.environ.get(KNOB, "").strip()
-    if not root:
-        return off(M("i18n_cover.off", knob=KNOB))
-    paths = collect(root)
+    # ⚠️ 默认扫描根**不是空**：本闸门守的正是**套件自己**的代码，所以未配旋钮
+    # 时扫**工具仓**的 `zreflect/`。此前 `DEFAULT_ROOT` 定义了却**从不使用**，
+    # 旋钮没人配 ⇒ 活体 `registry --run commit` 里它永远 `off` ——
+    # 「闸门存在、自证绿、但从没跑过」。与 `check_snapshots` 同一个病。
+    #
+    # 两条口径（与 `i18n.pack_dir()` 同款，别混）：
+    #   · 未配 ⇒ **工具仓**的 `zreflect/`（跟着套件走，跨仓夹具也对）
+    #   · 配了 ⇒ **被检查仓**相对的路径（env 里写的「相对仓库根的名字」）
+    # 混成一条会导致跨仓夹具里 FATAL（实测：GATE_REPO=$tmp 时扫不到 zreflect/）。
+    configured = os.environ.get(KNOB, "").strip()
+    if configured:
+        root = configured
+        d = repo(root)
+    else:
+        root = DEFAULT_ROOT
+        d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", root)
+        d = os.path.abspath(d)
+    paths = collect_from(d, root)
     if not paths:
         return fatal(M("i18n_cover.scan_empty_dir", root=root))
     return finish(M("i18n_cover.title"), problems(paths),
