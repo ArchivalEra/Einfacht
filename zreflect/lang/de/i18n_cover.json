@@ -5,5 +5,6 @@
  "i18n_cover.empty_scan": "Scan-Fläche ist leer — keine Quelle gefunden ist kein sprachfreies Bestehen (Nullwert-Wächter)",
  "i18n_cover.scan_empty_dir": "Scan-Fläche %(root)s ist leer — keine Quelle gefunden ist kein sprachfreies Bestehen",
  "i18n_cover.parse_error": "%(file)s lässt sich nicht parsen: %(error)s — ein Parse-Fehler darf nicht als Bestehen zählen",
- "i18n_cover.bare_text": "%(file)s:%(lineno)d nackter natürlichsprachlicher Text im Kern %(text)r — benutzersichtbare Meldungen müssen über M(<wörtlichem code>, **params) laufen; Selbsttest-Labels müssen laut Entscheidung 1C ids sein"
+ "i18n_cover.bare_text": "%(file)s:%(lineno)d nackter natürlichsprachlicher Text im Kern %(text)r — benutzersichtbare Meldungen müssen über M(<wörtlichem code>, **params) laufen; Selbsttest-Labels müssen laut Entscheidung 1C ids sein",
+ "i18n_cover.fixture_literal": "`%(file)s:%(lineno)d` enthält ein chinesisches Literal in einem Selbsttest-Fixture (%(text)r) — Fixtures landen in der Scanfläche; aus Codepoints bauen (`chr(CJK_LO)` / `_cj(n)`) oder rein englische Beispiele nutzen"
 }
