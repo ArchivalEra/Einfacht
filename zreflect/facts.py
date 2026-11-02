@@ -32,7 +32,11 @@ import registry                                          # noqa: E402
 
 REPO_REAL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
-OUT = repo(LEDGER_NAME)
+def _out():
+    """台账写盘路径。**函数而不是模块常量**：`repo()` 读的是 `gate.GATE_REPO`，
+    而夹具会改它 —— 存成模块级字符串会让路径停在被 import 的那一刻。
+    实测：改 `gate.GATE_REPO` 后，旧的 `OUT` 常量仍是原仓路径（陈旧快照）。"""
+    return repo(LEDGER_NAME)
 DOC = os.environ.get("REFLECT_DOC", "STATE.md")
 
 
@@ -229,7 +233,8 @@ def measure(argv):
     """
     facts = _measure()
 
-    old = facts_of(load(OUT)) if os.path.exists(OUT) else {}
+    out = _out()
+    old = facts_of(load(out)) if os.path.exists(out) else {}
 
     verdict, problems, notes = guard.decide(old, facts,
                                             accepted=guard.accepted_keys(argv),
@@ -255,7 +260,7 @@ def measure(argv):
     # 盲写守卫（issue #20 ②）：写盘前查目标 —— 被 gitignore 覆盖 ⇒ FATAL；
     # 仓里有 Einfacht.env 而本次没设旋钮 ⇒ warn（两个产地此刻分叉）。
     fatal_w, warn_w = guard.write_target_problems(
-        OUT, knob_set=bool(os.environ.get("REFLECT_FACTS", "").strip()))
+        out, knob_set=bool(os.environ.get("REFLECT_FACTS", "").strip()))
     if warn_w:
         print("⚠ %s" % warn_w, file=sys.stderr)
     if fatal_w:
@@ -266,11 +271,11 @@ def measure(argv):
     doc = {"schema": 1, "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
            "_why": M("facts.ledger_why"),
            "facts": facts}
-    with open(OUT, "w", encoding="utf-8") as fh:
+    with open(out, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, indent=1, ensure_ascii=False)
         fh.write("\n")
     print(M("facts.measure_written",
-            path=os.path.relpath(OUT, gate.GATE_REPO), count=len(facts)))
+            path=os.path.relpath(out, gate.GATE_REPO), count=len(facts)))
     for k, v in sorted(facts.items()):
         print("  %-20s %s（%s）" % (k, v["value"], _age_human(v)))
     return 0
@@ -297,16 +302,17 @@ def _load_or_die():
     为什么单列：新仓库第一次用时台账还不存在，而这个脚本今天会直接抛
     FileNotFoundError —— 那是"为本仓写死"的味道（我们那边永远有 FACTS.json）。
     语义仍是 fail-loud（空台账照样拒绝渲染），只是**把下一步写在错误里**。"""
-    if not os.path.exists(OUT):
+    out = _out()
+    if not os.path.exists(out):
         # issue #20 ② 补充 2：旧提示「先在仓库根跑一遍量测」正是写出野文件
         # 的那个动作 —— 提示文本本身也是「默认值产地」的一部分，不许教人
         # 踩坑。改说「先确认 REFLECT_FACTS 指向哪里」。
         print("FATAL: %s" % M("facts.no_ledger_yet",
-                              name=os.path.basename(OUT),
-                              path=os.path.relpath(OUT, gate.GATE_REPO)),
+                              name=os.path.basename(out),
+                              path=os.path.relpath(out, gate.GATE_REPO)),
               file=sys.stderr)
         raise SystemExit(2)
-    return load(OUT)
+    return load(out)
 
 
 def main(argv):

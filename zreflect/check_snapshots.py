@@ -105,6 +105,55 @@ def _uses_global(tree, name):
     return False
 
 
+def _functions_reading(src_tree, src_mod, name):
+    """`src_mod` 里**读** `name` 的顶层函数名（`repo()` 这类薄封装）。
+
+    派生快照常经由这种封装出现：`OUT = repo(LEDGER_NAME)`，
+    表达式文本里没有 `gate.GATE_REPO`，但 `repo()` 的体里有 —— 只看文本会漏。
+    """
+    out = set()
+    for node in src_tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for n in ast.walk(node):
+            if isinstance(n, ast.Name) and n.id == name \
+                    and isinstance(n.ctx, ast.Load):
+                out.add(node.name)
+                break
+    return out
+
+
+def _module_level_derivations(tree, src_mod, name, readers=()):
+    """模块顶层有没有 `OTHER = <表达式里含 src_mod.name>`？那是**同一类快照**。
+
+    两种写法都会在 import 那一刻冻结：
+        from gate import GATE_REPO      # 值拷贝
+        OUT = repo(LEDGER_NAME)        # repo() 内部读 gate.GATE_REPO ⇒ 冻结成字符串
+
+    只抓第一种会漏掉第二种 —— 而那正是本仓实际存在的一处（`facts.py:35`，
+    实测：改 `gate.GATE_REPO` 后 `facts.OUT` 仍是旧路径）。
+    """
+    hits = []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        text = ast.unparse(node.value)
+        hit = ("%s.%s" % (src_mod, name)) in text
+        # 或者：表达式调用了源模块里「会读 name」的函数（如 repo()）
+        if not hit and readers:
+            for n in ast.walk(node.value):
+                if isinstance(n, ast.Call):
+                    fn = getattr(n.func, "id", None) or getattr(n.func, "attr", None)
+                    if fn in readers:
+                        hit = True
+                        break
+        if hit:
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    hits.append(t.id)
+    return hits
+
+
 def _used_in_module(tree, name):
     """导入方**真的用到**这个名字了吗（排除「import 了没用」的死导入）。"""
     for node in ast.walk(tree):
@@ -140,6 +189,19 @@ def problems(paths=None, sources=None):
     assigned = {mod: _module_level_assigns(tree) for mod, tree in trees.items()}
 
     out = []
+    # ② **派生快照**：模块顶层把「含可变全局的表达式」存成常量（同 import 一样会冻住）
+    for mod, tree in sorted(trees.items()):
+        for src_mod, names in sorted(assigned.items()):
+            for name in sorted(names):
+                if not _reassigned_elsewhere(trees, src_mod, name):
+                    continue
+                readers = _functions_reading(trees[src_mod], src_mod, name)
+                for derived in _module_level_derivations(tree, src_mod, name,
+                                                         readers):
+                    if _used_in_module(tree, derived):
+                        out.append(M("snapshot.derived_copy",
+                                     file=mod + ".py", derived=derived,
+                                     source=src_mod, imported=name))
     for mod, tree in sorted(trees.items()):
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
@@ -195,6 +257,16 @@ def run(argv=None):
                   M("snapshot.ok", files=len(paths)))
 
 
+GATE_WITH_REPO = """
+GATE_REPO = "/repo"
+def repo(*parts):
+    return os.path.join(GATE_REPO, *parts)
+def set_repo(p):
+    global GATE_REPO
+    GATE_REPO = p
+"""
+
+
 def _cases():
     # 正常：常量只赋值一次 ⇒ 拷贝安全
     GOOD = '''
@@ -241,6 +313,13 @@ def f():
         ("snapshot.dead_import_not_reported",
          lambda: problems(sources={"gate": BAD_GATE,
                                    "check_x": "from gate import GATE_REPO\n"}) == []),
+        # ② 派生快照：模块顶层把「经薄封装读到可变全局」的表达式存成常量
+        #    （`OUT = repo(NAME)`，repo() 体内读 GATE_REPO ⇒ 冻在 import 那一刻）
+        ("★ snapshot.derived_copy",
+         lambda: [p.code for p in problems(sources={
+             "gate": GATE_WITH_REPO,
+             "facts": "OUT = repo('L.json')\nprint(OUT)\n"})
+         ] == ["snapshot.derived_copy"]),
         # ③ 空输入必须报
         ("★ snapshot.empty_scan", lambda: problems(sources={}) != []),
     ]
