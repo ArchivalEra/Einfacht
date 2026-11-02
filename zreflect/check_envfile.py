@@ -88,6 +88,35 @@ def known_knobs(py_dir=None):
     return found
 
 
+def _known_knobs_scans_repo():
+    """`known_knobs()` 的默认扫描面必须是**被检查仓**的 zreflect，不是工具的。
+
+    判据考的是**行为**：在一个夹具仓里放一个幻影旋钮，`known_knobs()` 必须
+    看得见它。工具的 zreflect 里没有那个记号 ⇒ 若默认目录漂到工具那边，这条红。
+    """
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(d, "zreflect"))
+        marker = "REFLECT_" + "PROBEONLY"        # 拼接构造：不污染扫描面
+        with open(os.path.join(d, "zreflect", "probe.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("X = os.environ.get('%s')\n" % marker)
+        # ⚠️ `gate.repo()` 读的是**模块级 `GATE_REPO`**（import 时快照），
+        # 改 `os.environ` 对它无效（实测：改环境变量后 known_knobs 仍扫真仓）。
+        # 必须直接改模块属性。
+        import gate                                      # noqa: PLC0415
+        prev = gate.GATE_REPO
+        gate.GATE_REPO = d
+        try:
+            return marker in known_knobs()
+        finally:
+            gate.GATE_REPO = prev
+    finally:
+        shutil.rmtree(d, True)
+
+
 def parse_exports(text):
     """解析 env 文件的生效 export（纯函数：自证要用）。
 
@@ -294,13 +323,13 @@ def _cases():
          lambda: any(getattr(p,"code","") == "envfile.syntax_tool_broken" for p in problems(
              good_env, registry, fe, de, syntax_ok=None,
              scanned=registry.keys()))),
-        # **两个扫描面的默认目录在生产里必须同值**（C4：必须一致的两份要配对账）。
-        # `knobs.*` 用工具的 `_zdir()`，本闸门用被检查仓的 `repo("zreflect")` ——
-        # 生产里两者同值，夹具里不同。这个「恰好同值」此前没有任何判据钉住：
-        # 改了任一边的默认目录，幻影扫描会静默地从另一个目录读。
-        ("★ envfile.scan_dir_agrees_with_knobs",
-         lambda: (os.path.abspath(repo("zreflect"))
-                  == os.path.abspath(knobs._zdir()))),
+        # ⚠️ 曾写过一条 `repo("zreflect") == knobs._zdir()` 的「对账」——**那是错的**：
+        # 它断言的只是一个配置事实（GATE_REPO 没被覆盖），与 `known_knobs` 实际
+        # 扫哪里**无关**。实测：把 known_knobs 的默认目录改成 `knobs._zdir()`
+        # （真正的漂移），那条断言照样绿。判据必须考**代码路径**，不是考巧合。
+        # 换成下面这条：默认目录必须指向被检查仓（夹具下真的会红）。
+        ("★ envfile.known_knobs_scans_checked_repo",
+         lambda: _known_knobs_scans_repo()),
         # ③ 空输入必须报
         ("★ envfile.no_effective_export（零值守卫）",
          lambda: problems({}, registry, fe, de, syntax_ok=True,

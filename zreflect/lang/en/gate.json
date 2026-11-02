@@ -31,5 +31,7 @@
  "gate.title.runner": "runner (verbatim executor: bare-value contract + pipefail + timeout)",
  "gate.title.questions": "check_questions (an open question must carry a runnable settling case)",
  "gate.title.ledger": "ledger (two guards)",
- "gate.title.render": "render (the single place numbers are produced)"
+ "gate.title.render": "render (the single place numbers are produced)",
+ "gate.never_falsifiable_delegated": "the assertion body is a **delegated call**, so tautology detection cannot see inside it (inline the assertion, or self-verify the callee separately)",
+ "gate.selftest_delegated": "selftest summary: %(name)s also has %(count)d **delegated** assertion(s) (body lives in a helper, so tautology detection cannot see inside)"
 }
