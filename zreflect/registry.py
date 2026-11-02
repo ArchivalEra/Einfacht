@@ -483,6 +483,46 @@ _FILE_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.[A-Za-z0-9]+")
 _REASON_BASES = ("", "reflect-hooks")
 
 
+def reason_bases_agree(hook=False):
+    """C4 对账⑦：`_REASON_BASES` 必须与 `einfacht-env.sh` 的载体查找口径一致。
+
+    `einfacht-env.sh` 先找**钩子目录**、再找**仓根**（两个位置）。本文件的
+    `_REASON_BASES`（理由真实性判据的合法落点）必须与它同口径 —— 否则
+    「载体真住在 reflect-hooks/ 却判据只看仓根」会让失效的理由漏判（第 18 轮
+    实测过）。
+
+    判据是**行为级**的，不是文本匹配：在临时仓里两个位置各放一份载体，
+    要求 `_reason_files` 都能看见。这样不依赖 `einfacht-env.sh` 的具体写法
+    （它改成 `.env` 后缀或换变量名都不会误伤）。
+
+    `hook` 可注入（自证用假实现）。默认跑真代码。
+    """
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    probe = hook or _reason_files
+    d = tempfile.mkdtemp()
+    try:
+        name = "ProbeCarrier" + ".env"                   # 拼接构造
+        reason = "no " + name + " here"
+        ok_both = True
+        for base in ("", "reflect-hooks"):
+            target = os.path.join(d, base) if base else d
+            if base:
+                os.makedirs(target, exist_ok=True)
+            path = os.path.join(target, name)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("export X=1\n")
+            try:
+                got = probe(reason, repo_root=d)
+            finally:
+                os.remove(path)
+            if not got or not got[0][1]:
+                ok_both = False
+        return ok_both
+    finally:
+        shutil.rmtree(d, True)
+
+
 def _reason_files(reason, repo_root=None):
     """`off_reason` 里提到的文件名 → [(名字, 该文件是否存在于**任一合法落点**)]。
 
@@ -1025,6 +1065,11 @@ def _cases():
         # 只查仓根会让「载体真放进 reflect-hooks/」的情形漏判（实测 []）。
         ("★ registry.off_reason_stale_in_hooks_dir",
          lambda: _stale_in_hooks_dir()),
+        # **口径对账**（C4）：`_REASON_BASES` 必须与 `einfacht-env.sh` 的
+        # 载体查找一致（钩子目录 + 仓根）。判据是行为级的：两个位置各放一份
+        # 载体，两边都必须看得见。只查仓根 ⇒ RED。
+        ("★ registry.reason_bases_match_env_plugin",
+         lambda: reason_bases_agree()),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
