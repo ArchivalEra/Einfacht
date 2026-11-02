@@ -531,14 +531,23 @@ def render_gates(gs):
              "> 执行面（hooks / CI）读 `registry --run <相位>` —— 相位是声明字段"
              "（`runs_at`），不是文件名。",
              "",
-             "| 闸门 | 相位 | 它挡住什么 | 消费的旋钮 |", "|---|---|---|---|"]
+             # ⚠️ 「可未启用的理由」是**声明**（静态），不是**运行时状态**。
+             # 运行时 off 要看 `registry --run <相位>` —— 把它渲染进本块会让
+             # AUTO 块每次运行都变 ⇒ 不收敛（本仓大忌，见 PINNED 说明）。
+             "| 闸门 | 相位 | 它挡住什么 | 消费的旋钮 | 可未启用的理由 |",
+             "|---|---|---|---|---|"]
     for g in sorted(gs, key=lambda x: (x.get("runs_at", "commit"), x["file"])):
-        lines.append("| `%s`（%s） | %s | %s | %s |"
+        lines.append("| `%s`（%s） | %s | %s | %s | %s |"
                      % (os.path.basename(g["file"]), g["name"],
                         g.get("runs_at", "commit"), g["desc"],
-                        ", ".join("`%s`" % k for k in g["knobs"]) or "—"))
-    lines += ["", "%d 道闸门（发现式名录派生 —— 手写清单会漂，加闸门 = "
-              "落一个声明行，这里自动长出来）。" % len(gs), GATES_END]
+                        ", ".join("`%s`" % k for k in g["knobs"]) or "—",
+                        g.get("off_reason") or "—"))
+    off_capable = sum(1 for g in gs if g.get("off_reason"))
+    lines += ["",
+              "%d 道闸门（发现式名录派生 —— 手写清单会漂，加闸门 = 落一个声明行，"
+              "这里自动长出来）；其中 %d 道**可未启用**（末列是**声明**理由，"
+              "不是运行时状态 —— 此刻谁 off 要看 `registry --run <相位>`）。"
+              % (len(gs), off_capable), GATES_END]
     return "\n".join(lines)
 
 
@@ -724,6 +733,29 @@ def _off_reason_ok(_label, sources, ok, reason=None):
     return (got == []) if ok else (got != [])
 
 
+def _render_shows_off_reason():
+    """声明了 `off_reason` 的假闸门 ⇒ AUTO 块里必须出现那段文字。"""
+    gs = [{"file": "zreflect/check_probe.py", "name": "probe",
+           "desc": "probe gate", "knobs": (), "runs_at": "commit",
+           "off_reason": "a declared justification long enough"}]
+    body = render_gates(gs)
+    # ⚠️ **不写中文字面量**（本文件在零语言闸门的扫描面内 —— 实测踩到
+    # bare_text）。改判可机器读的部分：off_reason 那段文字必须出现在行尾，
+    # 且该行的列数与表头一致。
+    return ("a declared justification long enough" in body
+            and body.count("|") >= 6)
+
+
+def _render_off_reason_dash():
+    """没声明 `off_reason` ⇒ 该格是 `—`（不是空串、不是 None）。"""
+    gs = [{"file": "zreflect/check_probe.py", "name": "probe",
+           "desc": "probe gate", "knobs": (), "runs_at": "commit",
+           "off_reason": None}]
+    row = [ln for ln in render_gates(gs).splitlines()
+           if ln.startswith("| `check_probe.py`")][0]
+    return row.rstrip().endswith("| — |") and "None" not in row
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -794,6 +826,13 @@ def _cases():
          lambda: render_gates(gs) == render_gates(gs)
          and "gate_a" in render_gates(gs)
          and GATES_BEGIN in render_gates(gs) and GATES_END in render_gates(gs)),
+        # **`off_reason` 必须渲染进 AUTO 块**（让读者一眼看到哪些闸门可未启用、
+        # 为什么）—— 且它是**声明**不是运行时状态（后者会让块每次变、不收敛）。
+        ("★ registry.render_gates_shows_off_reason",
+         lambda: _render_shows_off_reason()),
+        # 没声明的闸门那一格必须是 `—`（不写空、不写 "None"）
+        ("registry.render_gates_off_reason_dash",
+         lambda: _render_off_reason_dash()),
         # ② 该报的必须报
         ("★ registry.missing_declaration",
          lambda: missing == ["zreflect/check_bare.py"]),
