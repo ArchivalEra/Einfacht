@@ -983,6 +983,38 @@ def _path_rule_single_source():
     return ok_real and got == ["registry.path_rule_split"]
 
 
+def _nf_catches(which):
+    """用**真文件里的 lambda** 测 `never_falsifiable`（它按行号定位 AST，`-c`
+    里的 lambda 没有源码文件 ⇒ 会瞎）。
+
+    四个形状各造一个：
+      · `or_true`      —— `or True`（布尔被常量短路）
+      · `and_false`    —— `and False`
+      · `self_compare` —— `x == x`
+      · `real`         —— 真断言（必须返回 None）
+    """
+    from gate import never_falsifiable                   # noqa: PLC0415
+    y = 1                                                # 供 self_compare 用
+    shapes = {
+        "or_true": lambda: (1 == 1) or True,
+        "and_false": lambda: (1 == 1) and False,
+        "self_compare": lambda: y == y,
+        "real": lambda: y > 0,
+    }
+    return never_falsifiable(shapes[which])
+
+
+def _nf_no_source():
+    """没有 `co_filename`（如 `-c` 里的 lambda / 内建）⇒ 必须返回 None（不猜）。
+
+    这条钉的是边界③：`never_falsifiable` 依赖 `ast` 定位**真文件**；
+    读不到就明说不猜，而不是当成「恒真」或「干净」。
+    """
+    from gate import never_falsifiable                   # noqa: PLC0415
+    f = eval("lambda: True")                             # 无源码文件的 lambda
+    return never_falsifiable(f)
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -1155,6 +1187,21 @@ def _cases():
          # 是个真实存在的目录（不是算出来的空字符串 / 错路径）
          lambda: os.path.isdir(gate.zdir())
          and os.path.basename(gate.zdir()) == "zreflect"),
+        # **`never_falsifiable` 的自证**（第 22 轮）：它是 `gate.selftest()` 的
+        # 核心守卫（`gate.py:36` 起），用来抓「恒真断言」—— 此前**全仓零自证**。
+        # 「检测器的检测器」没被测过：它失效时，所有断言都会静默失去牙。
+        ("★ registry.never_falsifiable_catches_or_true",
+         lambda: _nf_catches("or_true") is not None),
+        ("★ registry.never_falsifiable_catches_and_false",
+         lambda: _nf_catches("and_false") is not None),
+        ("★ registry.never_falsifiable_catches_self_compare",
+         lambda: _nf_catches("self_compare") is not None),
+        # **阳性对照**：真断言必须**不报**（否则「总是报」也能骗过自证）
+        ("registry.never_falsifiable_allows_real",
+         lambda: _nf_catches("real") is None),
+        # 边界③：「读不到源码」⇒ 不猜（返回 None，不是「恒真」也不是「干净」）
+        ("★ registry.never_falsifiable_no_source_no_guess",
+         lambda: _nf_no_source() is None),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
