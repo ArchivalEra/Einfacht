@@ -478,18 +478,30 @@ def off_reason_problems(gs, sources=None):
 _FILE_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.[A-Za-z0-9]+")
 
 
+# 名字型旋钮的合法落点：仓根 + `reflect-hooks/`（后者优先）。
+# 与 `reflect-hooks/einfacht-env.sh` 同一口径（它先找钩子目录、再找仓根）。
+_REASON_BASES = ("", "reflect-hooks")
+
+
 def _reason_files(reason, repo_root=None):
-    """`off_reason` 里提到的文件名 → [(名字, 该文件在仓里是否存在)]。
+    """`off_reason` 里提到的文件名 → [(名字, 该文件是否存在于**任一合法落点**)]。
 
     只认「带扩展名的 token」（`ab.json` / `Einfacht.env` / `world.json`），
     不认句子里的普通词 —— 否则「本仓不做 A/B 对照」会被切成假文件名。
+
+    ⚠️ **两处都要查**：`Einfacht.env` 可以住在仓根**或** `reflect-hooks/`
+    （`einfacht-env.sh` 就是先看钩子目录、再看仓根的）。此前只查仓根 ⇒
+    载体真放进 `reflect-hooks/` 时判据漏判（实测：`off_reason_problems` 返回
+    `[]`，而那正是「理由已失效」的情形）。
     """
     if not reason:
         return []
     root = repo_root if repo_root is not None else gate.GATE_REPO
     out = []
     for tok in _FILE_TOKEN.findall(str(reason)):
-        out.append((tok, os.path.exists(os.path.join(root, tok))))
+        found = any(os.path.exists(os.path.join(root, base, tok))
+                    for base in _REASON_BASES)
+        out.append((tok, found))
     return out
 
 
@@ -843,6 +855,31 @@ def _off_reason_stale_ok():
         shutil.rmtree(d, True)
 
 
+def _stale_in_hooks_dir():
+    """载体在 `reflect-hooks/`（不是仓根）时，stale 判据必须照样报。"""
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        hooks = os.path.join(d, "reflect-hooks")
+        os.makedirs(hooks)
+        name = "Probe" + ".env"                          # 拼接构造：不写死在仓里
+        with open(os.path.join(hooks, name), "w", encoding="utf-8") as fh:
+            fh.write("export X=1\n")
+        reason = "no " + name + " carrier in this repo"   # ASCII
+        gs = [{"file": "check_probe.py", "off_reason": reason}]
+        src = {"check_probe.py": "def run():\n    return off(null)\n"}
+        old = gate.GATE_REPO
+        gate.GATE_REPO = d
+        try:
+            return [p.code for p in off_reason_problems(gs, sources=src)] \
+                == ["registry.off_reason_stale"]
+        finally:
+            gate.GATE_REPO = old
+    finally:
+        shutil.rmtree(d, True)
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -983,6 +1020,11 @@ def _cases():
         # 第 12 轮只要求「必须有理由」，这是它的对称缺口：
         # 不要求「理由得是真的」，理由就会变成永久免死金牌。
         ("★ registry.off_reason_stale", lambda: _off_reason_stale_ok()),
+        # **理由里的文件名要在两个合法落点都查**：`Einfacht.env` 可以住在仓根
+        # **或** `reflect-hooks/`（`einfacht-env.sh` 先看钩子目录、再看仓根）。
+        # 只查仓根会让「载体真放进 reflect-hooks/」的情形漏判（实测 []）。
+        ("★ registry.off_reason_stale_in_hooks_dir",
+         lambda: _stale_in_hooks_dir()),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
