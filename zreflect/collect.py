@@ -89,4 +89,13 @@ def parse_prev_values(doc_text, row_pattern, group_names):
     return out
 
 
-MODULE = module_meta("采集器契约", "measure() 的四条原则 + 帮手（无独立自证）", selftest=False)
+# `selftest=False` 的真实含义：**没有 `--selftest` 入口**（本模块是纯契约 +
+# 两个帮手，塞一个 CLI 入口会与「被 facts.measure 调用」的角色打架）。
+# **这不等于没有自证**：`parse_prev_values`（命名分组回收 / 缺组必须响）与
+# `unavailable`（读不到 = ok False，不许编 0）都有实质断言，住在
+# `registry._cases()`。此前描述写「无独立自证」，与事实不符（第 25 轮对齐）。
+MODULE = module_meta(
+    "采集器契约",
+    "measure() 的四条原则 + 帮手（无 --selftest 入口；"
+    "parse_prev_values / unavailable 的自证住在 registry._cases）",
+    selftest=False)
