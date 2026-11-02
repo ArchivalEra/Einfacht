@@ -61,6 +61,20 @@ def run_cmd(cmd, timeout=None):
     return p.returncode, p.stdout
 
 
+def _timeout_falls_back():
+    """`REFLECT_REPLAY_TIMEOUT` 是坏值 ⇒ 必须回落 10.0（不是 raise）。"""
+    import os                                            # noqa: PLC0415
+    prev = os.environ.get("REFLECT_REPLAY_TIMEOUT")
+    try:
+        os.environ["REFLECT_REPLAY_TIMEOUT"] = "not-a-number"
+        return default_timeout() == 10.0
+    finally:
+        if prev is None:
+            os.environ.pop("REFLECT_REPLAY_TIMEOUT", None)
+        else:
+            os.environ["REFLECT_REPLAY_TIMEOUT"] = prev
+
+
 def _cases():
     """三档自证（真跑 shell —— runner 的判据就是 shell 行为，假 runner 自证
     runner 是循环论证；但命令都是 echo/printf/false，无副作用、无网络）。"""
@@ -84,6 +98,9 @@ def _cases():
          lambda: quote("a" * 100).endswith("…'")),
         ("runner.quote_keeps_short",
          lambda: quote("ok") == "'ok'"),
+        # 稳态：`default_timeout()` 读到坏值时必须回落 10（不是崩）
+        ("runner.default_timeout_bad_value_falls_back",
+         lambda: _timeout_falls_back()),
         # ③ 空输入必须报（对 runner 而言，「空」是空输出/空命令的形状）
         ("★ runner.quote_empty_is_visible",
          lambda: quote("") == "''"),
