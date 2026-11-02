@@ -47,9 +47,11 @@ from gate import fatal, finish, main_selftest_or, meta, off, selftest  # noqa: E
 from i18n import M                                        # noqa: E402
 
 KNOB = "REFLECT_SNAPSHOT_ROOT"
-# 本地模块名（可 import 的兄弟模块）—— 只关心这些，不扫第三方库。
-LOCAL_MODULES = ("gate", "knobs", "i18n", "ledger", "render", "collect",
-                 "living", "guard", "runner", "facts", "registry", "doctor")
+# ⚠️ **不再用手写名单**。此前这里是一串硬编码模块名（`("gate", "knobs", …)`），
+# 违反 AGENTS「手写名录一定会漂」：全仓 28 个 `zreflect/*.py` 里只有 12 个在册，
+# 另外 16 个（全部 `check_*.py`）作为**被导入源**时判据完全看不到。
+# 现在是**发现式**：扫描面里每个 `.py` 都是候选源模块 —— 名单 = 扫描面本身。
+# （第三方库不会被误收：只认 `from X import …` 且 X 在扫描面里。）
 
 
 def _module_level_assigns(tree):
@@ -65,6 +67,18 @@ def _module_level_assigns(tree):
     return out
 
 
+def _aliases_of(trees, src_mod):
+    """扫描面里 `import <src_mod> as <alias>` 的别名集合（`_reassigned_elsewhere` 用）。"""
+    out = set()
+    for _mod, tree in trees.items():
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.name == src_mod and a.asname:
+                        out.add(a.asname)
+    return out
+
+
 def _reassigned_elsewhere(trees, src_mod, name):
     """有没有**任何模块**在运行期给 `src_mod.name` 赋值（`src_mod.name = …`）？
 
@@ -72,9 +86,10 @@ def _reassigned_elsewhere(trees, src_mod, name):
     而是「**别人会不会改它**」—— `check_envfile` / `i18n` 的自证都在
     `gate.GATE_REPO = …` 改它。那才是拷贝变陈旧的真正条件。
 
-    只赋值一次、无人改写的常量（`REGISTRY`、`LOCAL_MODULES`）不报 ——
+    只赋值一次、无人改写的常量（`REGISTRY`）不报 ——
     它们的语义是「一个数据表」，拷贝与引用没区别。
     """
+    aliases = _aliases_of(trees, src_mod)
     for _mod, tree in trees.items():
         for node in ast.walk(tree):
             targets = []
@@ -84,9 +99,11 @@ def _reassigned_elsewhere(trees, src_mod, name):
                 targets = [node.target]
             for t in targets:
                 # 形状①：`<src_mod>.<name> = …`（**别的模块**从外面改）
+                # 形状①b：`<alias>.<name> = …`，其中 `import <src_mod> as <alias>`
+                #   —— 别名是同一件事的另一种写法，此前漏报（实测 `[]`）。
                 if isinstance(t, ast.Attribute) and t.attr == name \
                         and isinstance(t.value, ast.Name) \
-                        and t.value.id == src_mod:
+                        and (t.value.id == src_mod or t.value.id in aliases):
                     return True
             # 形状②：源模块自己用 `global NAME` + 再赋值（同一模块内改写）
             if _mod == src_mod and isinstance(node, (ast.Assign, ast.AugAssign)):
@@ -206,8 +223,8 @@ def problems(paths=None, sources=None):
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
                 continue
-            if node.module not in LOCAL_MODULES:
-                continue
+            if node.module not in trees:
+                continue                # 不在扫描面里 ⇒ 不是本地兄弟模块（如第三方）
             src_mod = node.module
             if src_mod not in assigned:
                 continue                    # 源模块不在扫描面里 ⇒ 不猜
@@ -256,6 +273,14 @@ def run(argv=None):
     return finish(M("snapshot.title"), problems(paths),
                   M("snapshot.ok", files=len(paths)))
 
+
+ALIAS_GATE = 'GATE_REPO = "/repo"\n'
+ALIAS_USER = 'import gate as g\ng.GATE_REPO = "/other"\n'
+ALIAS_VICTIM = 'from gate import GATE_REPO\ndef f():\n    return GATE_REPO\n'
+# 一个此前不在 LOCAL_MODULES 里的模块（`check_zzz`）作为**源模块**
+CHECK_AS_SOURCE = 'SHARED = "/x"\n'
+CHECK_AS_VICTIM = ('import check_zzz\ncheck_zzz.SHARED = "/y"\n'
+                   'from check_zzz import SHARED\ndef f():\n    return SHARED\n')
 
 GATE_WITH_REPO = """
 GATE_REPO = "/repo"
@@ -313,6 +338,18 @@ def f():
         ("snapshot.dead_import_not_reported",
          lambda: problems(sources={"gate": BAD_GATE,
                                    "check_x": "from gate import GATE_REPO\n"}) == []),
+        # ② 别名模块赋值（`import gate as g; g.GATE_REPO = …`）—— 与
+        #    `gate.GATE_REPO = …` 是同一件事的另一种写法，此前漏报（实测 []）
+        ("★ snapshot.mutable_copy_via_alias",
+         lambda: [p.code for p in problems(sources={
+             "gate": ALIAS_GATE, "usr": ALIAS_USER, "victim": ALIAS_VICTIM})
+         ] == ["snapshot.mutable_copy"]),
+        # ② 发现式源模块：**扫描面里的任何 .py** 都可作为源模块，不再只认
+        #    手写名单里的 12 个名字（此前 16 个 check_*.py 全部看不见）
+        ("★ snapshot.source_from_any_module",
+         lambda: [p.code for p in problems(sources={
+             "check_zzz": CHECK_AS_SOURCE, "victim": CHECK_AS_VICTIM})
+         ] == ["snapshot.mutable_copy"]),
         # ② 派生快照：模块顶层把「经薄封装读到可变全局」的表达式存成常量
         #    （`OUT = repo(NAME)`，repo() 体内读 GATE_REPO ⇒ 冻在 import 那一刻）
         ("★ snapshot.derived_copy",
