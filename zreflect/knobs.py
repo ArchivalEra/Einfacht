@@ -169,15 +169,24 @@ def scan_surface_problems(py_dir=None):
     return out
 
 
-def readme_problems(files=None, readmes=None):
+def readme_names():
+    """三语 README 的名单（`REFLECT_READMES`，默认取 `REGISTRY` 里登记的那条）。
+
+    ⚠️ 此前两个对账器各写一遍同一段「解析环境变量 + 默认字面量」，默认名单
+    因此有**三个**产地（两处字面量 + REGISTRY 一项）—— 正是本仓「数字只生产
+    一次」要消灭的形状。现在只剩 `REGISTRY` 一处。
+    """
+    raw = os.environ.get("REFLECT_READMES", "").strip()
+    if not raw:
+        raw = REGISTRY["REFLECT_READMES"][1]      # 登记表里的默认值
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def readme_problems(files=None):
     """三语 README（REFLECT_READMES 名单）里出现、登记表里没有的 REFLECT_*
     名字（文档侧幻影防御）。`files` 可注入假文件系统（自证用）。"""
     out = []
-    names = readmes if readmes is not None else [
-        s.strip() for s in os.environ.get(
-            "REFLECT_READMES",
-            "README.md,README.zh.md,README.de.md").split(",") if s.strip()]
-    for name in names:
+    for name in readme_names():
         if files is not None:
             if name not in files:
                 continue
@@ -233,7 +242,7 @@ def declared_vs_read_problems(gates, sources=None):
     return out
 
 
-def registry_vs_readme_problems(readmes=None, tables=None):
+def registry_vs_readme_problems(tables=None):
     """C4 对账②：登记表里的旋钮 ⊆ 三语 README 配置表。
 
     `knobs.REGISTRY` 与三语 README 的配置表是两份「旋钮清单」，此前只查
@@ -243,11 +252,7 @@ def registry_vs_readme_problems(readmes=None, tables=None):
     """
     row = re.compile(r"\|\s*`(REFLECT_[A-Z0-9_]+)`\s*\|")
     out = []
-    names = readmes if readmes is not None else [
-        s.strip() for s in os.environ.get(
-            "REFLECT_READMES",
-            "README.md,README.zh.md,README.de.md").split(",") if s.strip()]
-    for name in names:
+    for name in readme_names():
         if tables is not None:
             if name not in tables:
                 continue
@@ -301,7 +306,7 @@ def _semantic_packs_intact(langs=None):
             return False
     # ② 占位符名一致性**走同一个对账器**（与 `pack_sync_problems` 同一份判据：
     # 两处各写一遍循环，规则就会漂 —— C4）。
-    if pack_sync_problems(langs=sorted(tables),
+    if pack_sync_problems(discovery=lambda: sorted(tables),
                           loader=lambda l: tables[l]):
         return False
     # 每个包里都真渲染出句子（不是回落成 code）
@@ -520,7 +525,7 @@ def _unreadable_dir_is_loud():
         shutil.rmtree(d, True)
 
 
-def pack_coverage_problems(codes=None, langs=None, loader=None, discovery=None):
+def pack_coverage_problems(codes=None, loader=None, discovery=None):
     """C4 对账④：**源码用到的每个 code 都必须在每个已装包里**。
 
     zh↔en 的差集比较（`pack_sync_problems`）看不见「两边一起缺」——
@@ -539,12 +544,10 @@ def pack_coverage_problems(codes=None, langs=None, loader=None, discovery=None):
     """
     load = loader if loader is not None else load_pack
     codes = used_codes() if codes is None else set(codes)
-    if langs is None:
-        try:
-            langs = (discovery or installed_langs)()
-        except PacksUnreadable as e:
-            return [M("knobs.pack_unreadable", lang="*", error=e)]
-    langs = list(langs)
+    try:
+        langs = list((discovery or installed_langs)())
+    except PacksUnreadable as e:
+        return [M("knobs.pack_unreadable", lang="*", error=e)]
     if not codes or not langs:
         return []                       # 零包 / 零 code：没有可比的两侧
     out = []
@@ -561,27 +564,26 @@ def pack_coverage_problems(codes=None, langs=None, loader=None, discovery=None):
     return out
 
 
-def pack_sync_problems(langs=None, loader=None, discovery=None):
+def pack_sync_problems(loader=None, discovery=None):
     """C4 对账③：各语言包的**键集**与**占位符名**必须一致。
 
     此前无任何东西强制这件事 —— 手工把一条 code 加进 zh 却忘了 en，
     `REFLECT_LANG=en` 的用户就静默看到裸 code（本仓立身要消灭的静默退化）。
     实测现状两份是相等的，但「相等」是运气不是判据。
 
-    `langs=None` ⇒ 用 `discovery()` 发现（默认 `installed_langs()`）。
-    `discovery` 可注入，**好让自证真的考 discovery** —— 此前那条用例显式传
-    `langs=(…)`，把发现整个绕开了：把 discovery 换回手写名单，自证照样绿
-    （实测）。断言没覆盖它声称保护的东西。
+    `discovery` 决定「哪些语言算数」（默认 `installed_langs()`）。
+    ⚠️ 此前还有一个 `langs=` 参数，能**直接塞一组语言名** —— 那让六条自证
+    全都绕开发现通道：把 `installed_langs()` 换回手写名单，5/6 条用例照样绿
+    （实测 BLIND）。同一件事两个参数，弱的那条就成了后门。已删除：
+    要指定语言就注入 `discovery`，与生产路径走同一个缝。
     `loader` 可注入（自证用假包）；默认走 `i18n.load_pack`（**合并视图**，
     与真装载器看同一张表 —— 只读单个分片会与装载器分叉）。
     """
     load = loader if loader is not None else load_pack
-    if langs is None:
-        try:
-            langs = (discovery or installed_langs)()
-        except PacksUnreadable as e:
-            return [M("knobs.pack_unreadable", lang="*", error=e)]
-    langs = list(langs)
+    try:
+        langs = list((discovery or installed_langs)())
+    except PacksUnreadable as e:
+        return [M("knobs.pack_unreadable", lang="*", error=e)]
     tables = {}
     for lang in langs:
         try:
@@ -659,6 +661,16 @@ def _semantics_are_codes_under(cm):
         cm.__exit__(None, None, None)
 
 
+def _declared_not_read_ok():
+    """声明了却不实读 ⇒ 报且点名（纯函数，避免用例里嵌 lambda 套 lambda）。"""
+    ps = declared_vs_read_problems(
+        [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
+        sources={"check_x.py": "X = 1\n"})
+    return ([p.code for p in ps] == ["knobs.declared_not_read"]
+            and ps[0].params["knobs"] == "REFLECT_FACTS"
+            and ps[0].params["file"] == "check_x.py")
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -719,11 +731,9 @@ def _cases():
         # `declared_vs_read_problems` 连注入缝都没有（直读 gate.GATE_REPO），
         # 所以先补缝（sources=）、再补这两个反证。
         ("★ knobs.declared_not_read",
-         # 声明了某个旋钮，但源码里根本不出现它 ⇒ 必须报
-         lambda: [p.code for p in declared_vs_read_problems(
-             [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
-             sources={"check_x.py": "X = 1\n"})
-         ] == ["knobs.declared_not_read"]),
+         # 声明了某个旋钮，但源码里根本不出现它 ⇒ 必须报，
+         # 且**点名那个旋钮**（否则报个空壳也算通过）。
+         lambda: _declared_not_read_ok()),
         ("knobs.declared_and_read_is_clean",
          # 声明了、也确实读了 ⇒ 不许报（阳性对照，否则「总是报」也能骗过自证）
          lambda: declared_vs_read_problems(
@@ -731,20 +741,26 @@ def _cases():
              sources={"check_x.py":
                       'X = os.environ.get("REFLECT_FACTS")\n'}) == []),
         ("★ knobs.readme_missing_rows",
-         # 登记表里有、README 配置表里缺 ⇒ 必须报（方向与 readme_phantom 相反）
+         # 登记表里有、README 配置表里缺 ⇒ 必须报（方向与 readme_phantom 相反）。
+         # ⚠️ 断言**钉死 code**，不是只判 `!= []`：此前那样任何错误 code 都能
+         # 让这条通过（实测：换成一个 `readme_phantom` 冒充，用例照样绿）。
          lambda: [p.code for p in registry_vs_readme_problems(tables={
              name: "| `REFLECT_FACTS` | x |\n" for name in
              ("README.md", "README.zh.md", "README.de.md")})
-         ] != []),
+         ] == ["knobs.readme_missing_rows"] * 3),
+        # 以下五条考的是**规则本身**（差集 / 占位符 / 空包），注入 discovery
+        # 是**有意**的：它们不该依赖发现通道（那由 `pack_sync_sees_every_installed_lang`
+        # 单独考）。留着 `discovery=` 显式传，是把「我在测规则」写明白 ——
+        # 此前用 `langs=` 传同一个东西，看起来像在测发现，其实绕开了它。
         # 对账器本身必须能红（否则它只是一条恒绿的装饰）
         ("★ knobs.pack_missing_keys",
          lambda: [p.code for p in pack_sync_problems(
-             langs=("zh", "en"), loader=lambda l: {
+             discovery=lambda: ("zh", "en"), loader=lambda l: {
              "zh": {"a": "x"}, "en": {"a": "x", "b": "y"}}[l])
          ] == ["knobs.pack_missing_keys"]),
         ("★ knobs.pack_placeholder_mismatch",
          lambda: [p.code for p in pack_sync_problems(
-             langs=("zh", "en"), loader=lambda l: {
+             discovery=lambda: ("zh", "en"), loader=lambda l: {
              "zh": {"a": "x %(k)s"}, "en": {"a": "x %(j)s"}}[l])
          ] == ["knobs.pack_placeholder_mismatch"]),
         # 多键方向也必须能报（此前只测了缺键 —— 「多出来一个键」同样会让
@@ -753,7 +769,7 @@ def _cases():
         # extra_keys；反过来会被报成 en 缺键（同一个洞，两种措辞）。
         ("★ knobs.pack_extra_keys",
          lambda: [p.code for p in pack_sync_problems(
-             langs=("zh", "en"), loader=lambda l: {
+             discovery=lambda: ("zh", "en"), loader=lambda l: {
              "zh": {"a": "x", "b": "y"}, "en": {"a": "x"}}[l])
          ] == ["knobs.pack_extra_keys"]),
         # 发现式（不写名单）：磁盘上多装一个半残的包也必须被对账器看见。
@@ -782,7 +798,7 @@ def _cases():
              len(seen) == 1))([])),
         ("★ knobs.pack_missing_code",
          lambda: [p.code for p in pack_coverage_problems(
-             codes={"a.b", "c.d"}, langs=("zh", "en"),
+             codes={"a.b", "c.d"}, discovery=lambda: ("zh", "en"),
              loader=lambda l: ({"a.b": "x", "c.d": "y"} if l == "en"
                                else {"a.b": "x"}))
          ] == ["knobs.pack_missing_code"]),
@@ -791,10 +807,21 @@ def _cases():
         # 与「零包」塌缩成同一个假值 ⇒ 对账全绿（实测 chmod 000 ⇒ []）。
         ("★ knobs.pack_unreadable_on_oserror",
          lambda: _unreadable_dir_is_loud()),
+        # ③ **空输入**档（AGENTS 规则 4 的第三类）：两个对账器此前只有
+        # 「不报」与「该报」两档，空输入返回 `[]` —— 与「干净」不可区分。
+        # 这里把空输入**明说为不适用**（不是假装通过）：没有可比的两侧时
+        # 返回空是对的，但必须有一条用例把它钉住，否则「实现坏了」也会返回空。
+        ("knobs.declared_vs_read_empty_in_scope",
+         # 没有任何声明 ⇒ 无可比对；返回空是对的（且与「声明了却读不到」区分开）
+         lambda: declared_vs_read_problems([{"file": "x.py", "knobs": ()}],
+                                          sources={}) == []),
+        ("knobs.registry_vs_readme_empty_tables",
+         # 一张表都没有 ⇒ 无可比对；返回空是对的
+         lambda: registry_vs_readme_problems(tables={}) == []),
         # ③ 空输入必须报
         ("★ knobs.pack_sync_empty",
          lambda: [p.code for p in pack_sync_problems(
-             langs=("zh", "en"), loader=lambda l: {})]
+             discovery=lambda: ("zh", "en"), loader=lambda l: {})]
          == ["knobs.pack_sync_empty"]),
         ("★ knobs.registry_empty", lambda: bool(REGISTRY)),
         ("knobs.phases_registered", lambda: "REFLECT_PHASES" in REGISTRY),
