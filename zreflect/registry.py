@@ -1015,6 +1015,20 @@ def _nf_no_source():
     return never_falsifiable(f)
 
 
+def _gate_desc_states_selftest():
+    """`gate.py` 的 MODULE 描述必须说明「逻辑自证住在 registry._cases」。"""
+    mods, _und = modules()
+    for m in mods:
+        if m["file"].endswith("gate.py"):
+            d = m["desc"]
+            # 锚点**全用 ASCII**：`registry._cases`（自证住在哪）+ `--selftest`
+            # （为什么没有入口）。不写中文字面量（本文件在零语言闸门扫描面内，
+            # 码点拼又容易拼错 —— 实测把 0x72EC 写成「独」）。
+            return ("registry._cases" in d) and ("--selftest" in d) \
+                and ("selftest" in d)
+    return False
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -1202,6 +1216,11 @@ def _cases():
         # 边界③：「读不到源码」⇒ 不猜（返回 None，不是「恒真」也不是「干净」）
         ("★ registry.never_falsifiable_no_source_no_guess",
          lambda: _nf_no_source() is None),
+        # **`gate.py` 的 `selftest=False` 必须说清真实含义**（第 23 轮）：
+        # 它不表示「没有自证义务」，只表示「没有 `--selftest` 入口（自举会打架）」。
+        # 此前描述只写「提供 selftest，自己不消费」—— 读起来像免责声明。
+        ("★ registry.gate_module_meta_states_where_selftest_lives",
+         lambda: _gate_desc_states_selftest()),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
