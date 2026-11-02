@@ -503,7 +503,12 @@ def run_phase(phase, gates, runner=None, repo_root=None):
     `OFF:` 机器标记把 off 单列，于是「全绿」永远附带「其中 N 道 off（没查）」。
     `runner` 可注入（自证用假执行器）。
 
-    返回 {ran, off, failed, off_list, fail_list}。
+    返回 `{ran, off, failed, fatal, off_list, fail_list, fatal_list}`。
+
+    ⚠️ **rc=2 与 rc=1 必须分开**：本平台的 rc 契约明写「配置性失败 ≠ 检查失败，
+    混进 1 会让『发现问题』与『配置坏了』不可区分」。此前这里把所有 rc≠0 塞进
+    同一个 `failed`，聚合结果看不出「有三道闸门报了真实问题」还是「有一道闸门
+    配置坏了」—— 修复动作完全不同（改配置 vs 修问题）。
     """
     import subprocess                                    # noqa: PLC0415
 
@@ -512,13 +517,18 @@ def run_phase(phase, gates, runner=None, repo_root=None):
                            cwd=repo_root or GATE_REPO)
         return p.returncode, p.stdout
     run = runner or _default
-    res = {"ran": 0, "off": 0, "failed": 0, "off_list": [], "fail_list": []}
+    res = {"ran": 0, "off": 0, "failed": 0, "fatal": 0,
+           "off_list": [], "fail_list": [], "fatal_list": []}
     for item in gates:
         f = item["file"] if isinstance(item, dict) else item
         if isinstance(item, dict) and item.get("runs_at") not in (None, phase):
             continue
         rc, out = run(f)
-        if rc != 0:
+        if rc == 2:
+            # 配置 / 环境坏：不是「检查发现的问题」，单列（见 docstring）
+            res["fatal"] += 1
+            res["fatal_list"].append(f)
+        elif rc != 0:
             res["failed"] += 1
             res["fail_list"].append(f)
         elif any(ln.startswith("OFF:") for ln in (out or "").splitlines()):

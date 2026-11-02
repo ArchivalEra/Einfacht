@@ -6,11 +6,12 @@
  "registry.name_dependent_wrong": "`%(file)s` ist als name_dependent markiert, aber keiner der konsumierten Knöpfe hat einen Standardnamen in der Umbenennungs-Fixture-Liste — die Markierung ist falsch (entweder Markierung entfernen oder den neuen Standardnamen zu registry.RENAMED_DEFAULTS hinzufügen)",
  "registry.no_module_selftest": "kein Selbsttest eines Plattformmoduls entdeckbar — Nullwert-Wächter: eine leere Eingabe ist kein Bestehen",
  "registry.phase_off": "  off    %(file)s (off — nie geprüft, kein Bestehen)",
- "registry.phase_summary": "Phase %(phase)s: ausgeführt %(ran)d / off %(off)d / fehlgeschlagen %(failed)d",
+ "registry.phase_summary": "Phase %(phase)s: ran %(ran)d / off %(off)d / failed %(failed)d / fatal %(fatal)d",
  "registry.roster_problems": "die Namensliste hat Probleme (%(count)d)",
  "registry.selftest_no_entry": "diese Module deklarieren selftest=True, haben aber keinen --selftest-Einstiegspunkt — ein geschriebener, aber nie ausgeführter Selbsttest ist Dekoration: %(files)s",
  "registry.selftest_no_entry_cli": "  ❌ %(file)s deklariert einen Selbsttest, hat aber keinen --selftest-Einstiegspunkt (geschrieben, aber nie ausgeführt = Dekoration)",
  "registry.undeclared_module": "diese .py-Dateien sind weder Tore (keine GATE-Deklaration) noch deklarierte Plattformmodule (kein MODULE = module_meta(…)) — ein Plattformmodul muss sich selbst deklarieren, auch mit selftest=False (sage klar, dass es keinen Selbsttest braucht): %(files)s",
  "registry.unknown_phase": "`%(file)s` deklariert runs_at=%(runs_at)r, was keine bekannte Phase ist (%(phases)s) — die Frequenz ist ein Deklarationsfeld; ein schlechter Wert lässt die Ausführungsoberfläche es überspringen",
- "registry.usage": "Aufruf: registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]"
+ "registry.usage": "Aufruf: registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]",
+ "registry.phase_fatal": "  FATAL %(file)s (Konfiguration/Umgebung defekt — kein Prüfungsfehler; andere Behebung)"
 }

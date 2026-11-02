@@ -503,12 +503,15 @@ def _main_run(argv):
         return fatal(M("registry.empty_phase", phase=phase))
     res = run_phase(phase, gs)
     print(M("registry.phase_summary", phase=phase, ran=res["ran"],
-            off=res["off"], failed=res["failed"]))
+            off=res["off"], failed=res["failed"], fatal=res.get("fatal", 0)))
     for f in res["off_list"]:
         print(M("registry.phase_off", file=f))
+    for f in res.get("fatal_list", ()):
+        print(M("registry.phase_fatal", file=f), file=sys.stderr)
     for f in res["fail_list"]:
         print("  FAILED %s" % f, file=sys.stderr)
-    return 1 if res["failed"] else 0
+    # 配置坏（rc=2）与判据红（rc=1）都要非零退出，但消息不同（修法不同）
+    return 1 if (res["failed"] or res.get("fatal")) else 0
 
 
 def cli_selftest_missing_lines(missing):
@@ -599,6 +602,21 @@ def main(argv):
         return _main_gates()
     print(_usage(), file=sys.stderr)
     return 2
+
+
+def _phase_tiers_ok():
+    """`run_phase` 必须把 ran / off / failed / fatal 四档分清楚。"""
+    from gate import run_phase                          # noqa: PLC0415
+    script = {"fatal.py": (2, "FATAL: cfg"),
+              "fail.py": (1, "gate.problems_header"),
+              "off.py": (0, "OFF: x"),
+              "ok.py": (0, "")}
+    res = run_phase("commit", list(script),
+                    runner=lambda f: script[f])
+    return (res["fatal"] == 1 and res["fatal_list"] == ["fatal.py"]
+            and res["failed"] == 1 and res["fail_list"] == ["fail.py"]
+            and res["off"] == 1 and res["off_list"] == ["off.py"]
+            and res["ran"] == 1)
 
 
 def _cases():
@@ -701,6 +719,12 @@ def _cases():
              [], [], mods=["zreflect/x.py"], mods_missing=[],
              knob_problems=[],
              undeclared=["zreflect/orphan_mod.py"]))),
+        # **`run_phase` 是 hooks/CI 的唯一执行入口**，此前零自证。
+        # 三档聚合必须真的分开：rc=2（配置坏）≠ rc=1（判据红）≠ off。
+        # 混成一档的话，「有三道闸门报了真问题」与「有一道配置坏了」不可区分，
+        # 而修法完全不同（修问题 vs 改配置）。
+        ("★ registry.phase_tiers_separate",
+         lambda: _phase_tiers_ok()),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
