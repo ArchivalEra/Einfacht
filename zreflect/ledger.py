@@ -206,6 +206,9 @@ def _cases():
          lambda: raises(lambda: fact(1, "c", "s", calibrate="cal"))),
         ("★ ledger.calibrate_expect_only",
          lambda: raises(lambda: fact(1, "c", "s", calibrate_expect="e"))),
+        # 稳态：`value_of` 容忍 dict 与裸值两种形状（它是三处闸门的 interface）
+        ("ledger.value_of_both_shapes",
+         lambda: value_of({"value": 3}) == 3 and value_of(7) == 7),
         # ⑤ first_seen（issue #6 ① 恒常检测的状态）
         ("ledger.fact_stamps_first_seen",
          lambda: fact(1, "c", "s").get("first_seen")

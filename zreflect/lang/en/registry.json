@@ -19,5 +19,6 @@
  "registry.off_reason_too_short": "`%(file)s`'s `off_reason` is too short (%(reason)r) — an exemption must say why, same discipline as `PINNED:`",
  "registry.off_reason_without_off": "`%(file)s` declares `off_reason` but never calls `off()` — the reason is unwritten back (a lie)",
  "registry.off_reason_stale": "`%(file)s`'s `off_reason` claims this repo has no `%(name)s`, but it **does exist** — the reason is stale: the gate should be enabled and is not (off became a permanent exemption)",
- "registry.path_rule_split": "`%(file)s`'s `%(function)s()` computes the tool directory itself (`dirname(abspath(__file__))`) — that value must have exactly one producer (`gate.zdir()`), otherwise changing one place splits it"
+ "registry.path_rule_split": "`%(file)s`'s `%(function)s()` computes the tool directory itself (`dirname(abspath(__file__))`) — that value must have exactly one producer (`gate.zdir()`), otherwise changing one place splits it",
+ "registry.dependency_untested": "`%(module)s.%(function)s()` is consumed by a gate but has **zero assertions** — if it judges wrong, the consuming gate loses its criteria while its own self-test stays green (a dead link in the dependency chain)"
 }

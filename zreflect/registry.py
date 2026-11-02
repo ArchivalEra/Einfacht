@@ -597,6 +597,150 @@ def path_rule_problems(sources=None):
     return out
 
 
+def dependency_coverage_problems(zdir=None, sources=None):
+    """C4 对账⑨：**被闸门消费的平台函数，必须在某处有断言**。
+
+    为什么：第 24 轮发现 `living.living_lines()` 被 `check_stale` /
+    `check_retractions` 消费，而它**自身零断言** —— 判错了，那两道闸门的判据
+    全部失效，而它们各自的自证照样绿。一个被消费但没被测的模块，是依赖链上的
+    哑火环节。
+
+    判据（全发现式，不写名单）：
+      · 消费关系：`check_*.py` / `doctor.py` 里**真的引用**了某个平台模块的
+        顶层函数（`mod.fn(` 或 `from mod import fn`）
+      · 断言面：该函数的模块自己的 `_cases()`，或 `registry._cases()`
+    两者都没有 ⇒ 报。
+
+    诚实边界：AST 只看「引用」，看不出「引用得对不对」；注释/docstring 里的
+    提及不算引用（用 `Name`/`Attribute` 节点，不扫文本）。
+    """
+    import ast                                           # noqa: PLC0415
+    d = zdir if zdir is not None else _zdir()
+    # 平台模块（非 check_）的顶层公开函数
+    platform = {}
+    gate_cases = ""
+    files = {}
+    # ⚠️ `sources` 注入 ⇒ 遍历**注入的 key**，不是真目录的 `listdir` ——
+    # 此前遍历真目录再 `sources.get(n)`，夹具里那些文件不在真仓就全被跳过
+    # （实测：fake 永远返回 []，判据的隔离模式等于没跑）。
+    if sources is not None:
+        names = sorted(sources)
+    else:
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
+            return []
+    for n in names:
+        if not n.endswith(".py"):
+            continue
+        if sources is not None:
+            text = sources.get(n)
+            if text is None:
+                continue
+        else:
+            try:
+                text = open(os.path.join(d, n), encoding="utf-8").read()
+            except OSError:
+                continue
+        files[n] = text
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        if n.startswith("check_") or n == "doctor.py":
+            continue
+        fn = {f.name for f in tree.body if isinstance(f, ast.FunctionDef)
+              and not f.name.startswith("_")}
+        if fn:
+            platform[n[:-3]] = fn
+        if n == "registry.py":
+            gate_cases = text
+    # 断言面：**AST 节点**，不是文本。收集每个 `_cases()` 体里被**读取**
+    # （Load）的名字集合 —— 这样「函数名出现在夹具字符串里」不算断言。
+    # ⚠️ 此前用子串匹配，`helper` 出现在我自己的 fake 源码字符串里就被当成
+    # 「已断言」⇒ 判据永远不报（实测：fake 返回 []）。
+    # 这是第 19–24 轮反复出现的同一个病：**文本匹配代替结构匹配**。
+    asserted = set()
+    # ⚠️ `sources` 注入 ⇒ **完全隔离**：只用注入的源码做断言面。
+    # 此前还会合并真 `registry._cases`，于是夹具里随便一个常见函数名都会被
+    # 真仓的断言「假装」覆盖（实测：fake 永远返回 []）。
+    case_bodies = [t for t in files.values() if "def _cases(" in t]
+    for text in case_bodies:
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        # `_cases()` **以及它调用的同文件 helper** —— 断言的实质常常住在
+        # helper 里（`_living_case("…")` / `_timeout_falls_back()`），只扫
+        # `_cases` 本身会把它们当成「没断言」（实测：真仓报 living_lines /
+        # default_timeout，而那两条刚补过）。
+        tops = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+        roots = [n for n in tops.values() if n.name == "_cases"]
+        if not roots:
+            continue
+        pending = list(roots)
+        seen = set()
+        while pending:
+            node = pending.pop()
+            if node.name in seen:
+                continue
+            seen.add(node.name)
+            called = {c.func.id for c in ast.walk(node)
+                      if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+            for cname in called:
+                if cname in tops:
+                    pending.append(tops[cname])
+            for n in ast.walk(node):
+                if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load):
+                    asserted.add(n.id)
+                elif isinstance(n, ast.Attribute) and isinstance(n.ctx, ast.Load):
+                    asserted.add(n.attr)
+    # 消费关系：只扫 check_* / doctor 的 Import 与属性访问
+    consumed = set()
+    consumers = {}
+    for n, text in files.items():
+        if not (n.startswith("check_") or n == "doctor.py"):
+            continue
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        aliases = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module in platform:
+                for a in node.names:
+                    if a.name in platform[node.module]:
+                        consumed.add((node.module, a.name))
+                        consumers.setdefault((node.module, a.name), set()).add(n)
+            elif isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.name in platform:
+                        aliases[a.asname or a.name] = a.name
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) \
+                    and isinstance(node.value, ast.Name):
+                mod = aliases.get(node.value.id, node.value.id)
+                if mod in platform and node.attr in platform[mod]:
+                    consumed.add((mod, node.attr))
+                    consumers.setdefault((mod, node.attr), set()).add(n)
+    # ⚠️ **框架 API 不要求断言**：`gate.meta` / `main_selftest_or` / `i18n.M`
+    # 被 16 个闸门**全部**消费 —— 它们是入口脚手架，不是某个闸门消费的
+    # 「领域函数」。要求它们的断言等于要求「框架给框架写测试」，那是自举。
+    # 判据只对**少数闸门消费**的领域函数生效（阈值：消费方 < 半数闸门）。
+    # 阈值用**绝对值**（≥3 个闸门共用 ⇒ 框架 API），不用「半数闸门」：
+    # 后者在单闸门夹具里退化成 1，会把夹具里唯一那个消费关系也当框架跳过
+    # （实测：fake 期望 1 条却返回 0）。
+    FRAMEWORK_MIN_GATES = 3
+    out = []
+    for mod, fn in sorted(consumed):
+        if fn in asserted:
+            continue
+        if len(consumers[(mod, fn)]) >= FRAMEWORK_MIN_GATES:
+            continue                    # 框架 API
+        out.append(M("registry.dependency_untested", module=mod, function=fn))
+    return out
+
+
 def _pinned_under(lang):
     """自证帮手：在指定 REFLECT_LANG 下渲染 AUTO 块（用于证明它不随语言变）。"""
     old = os.environ.get("REFLECT_LANG", "")
@@ -1093,6 +1237,36 @@ def _selftest_false_states_it():
     return checked >= 1          # 零值守卫：一个都没查到 ⇒ 不看
 
 
+def _dependency_coverage_ok():
+    """真仓：被消费的平台函数都有断言；再造一个「被消费但无断言」的 ⇒ 必须报。"""
+    ok_real = dependency_coverage_problems() == []
+    # 名字必须**全仓唯一**：`helper` 那种常见词会被真 registry._cases 里的
+    # 同名变量命中 ⇒ 断言面「假装」覆盖了它（实测：fake 返回 []）。
+    fake = {
+        "check_probe.py":
+            "import probe\ndef run():\n    return probe.zzz_uniquely_named()\n",
+        "probe.py": "def zzz_uniquely_named():\n    return 1\n",
+    }
+    got = [p.code for p in dependency_coverage_problems(sources=fake)]
+    return ok_real and got == ["registry.dependency_untested"]
+
+
+def _selftest_refuses_empty():
+    """`gate.selftest(name, [])` 必须 SystemExit（0/0 洞不许绿着退场）。"""
+    try:
+        gate.selftest("probe", [])
+        return False                    # 没拒 ⇒ 这条红
+    except SystemExit:
+        return True
+
+
+def _load_spec_ok():
+    """`load_spec` 读不到时返回 `(None, 错误句)`，**不 raise**。"""
+    got = gate.load_spec("/nonexistent-probe.json")
+    return isinstance(got, tuple) and len(got) == 2 \
+        and got[0] is None and got[1] is not None
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -1315,6 +1489,23 @@ def _cases():
         # `registry._cases()`。描述若只写「无自证」= 免责声明。
         ("★ registry.selftest_false_modules_state_where_selftest_lives",
          lambda: _selftest_false_states_it()),
+        # **依赖链覆盖**（C4 对账⑨）：被闸门消费的平台函数必须在某处有断言。
+        # 第 24 轮的 `living.living_lines` 就是这么漏的（消费两道闸门，自身零断言）。
+        ("★ registry.dependency_coverage",
+         lambda: _dependency_coverage_ok()),
+        # 依赖链判据刚点名的两条 `gate` 函数（消费方多，自身零断言）
+        ("★ registry.guard_nonempty_returns_2",
+         # 空 ⇒ rc 2（FATAL）；非空 ⇒ None
+         lambda: gate.guard_nonempty("x", []) == 2
+         and gate.guard_nonempty("x", [1]) is None),
+        ("★ registry.load_spec_returns_error_not_raise",
+         # 坏路径 ⇒ (None, 错误句)；不抛异常（调用方要拼自己的措辞）
+         lambda: _load_spec_ok()),
+        # `gate.selftest` 被两道闸门直接调用 —— 它**执行**所有断言，但自身的
+        # 零值守卫（空 cases 必须拒收）此前零断言。测它不算自举：测的是
+        # 「0/0 洞会不会被拦住」，不是「断言跑得对不对」。
+        ("★ registry.selftest_refuses_empty_cases",
+         lambda: _selftest_refuses_empty()),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
