@@ -1137,6 +1137,24 @@ def _cases():
         # 别处再写一份 `dirname(abspath(__file__))` ⇒ 报（改一处就会分裂）。
         ("★ registry.path_rule_single_source",
          lambda: _path_rule_single_source()),
+        # **`gate.zdir()` / `tool_repo()` 的自证**（第 21 轮）：它们是全仓地基，
+        # 此前只有「别的模块委托它」的判据，没有「它自己算得对」的判据。
+        ("★ registry.zdir_matches_file",
+         # 值必须是**本文件所在目录**（`registry.py` 也在 zreflect/ 里）。
+         # ⚠️ 这里**不许**自己写 `dirname(abspath(__file__))` —— 那正好是
+         # 本闸门要禁的形状，写了就会被 `path_rule_single_source` 抓
+         # （实测：这条断言自己触发了那个判据）。改用 `os.path.dirname` 的
+         # 显式字面量对比：`gate.zdir()` 必须以 `zreflect` 结尾且可导入本文件。
+         lambda: os.path.basename(gate.zdir()) == "zreflect"
+         and os.path.exists(os.path.join(gate.zdir(), "registry.py"))),
+        ("★ registry.tool_repo_is_zdir_parent",
+         # `tool_repo()` 必须是 `zdir()` 的**上一级**（不是别的什么）
+         lambda: os.path.abspath(gate.tool_repo())
+         == os.path.dirname(os.path.abspath(gate.zdir()))),
+        ("★ registry.zdir_is_a_dir",
+         # 是个真实存在的目录（不是算出来的空字符串 / 错路径）
+         lambda: os.path.isdir(gate.zdir())
+         and os.path.basename(gate.zdir()) == "zreflect"),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
