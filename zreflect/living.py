@@ -63,4 +63,12 @@ def living_lines(text, historical_secs=()):
     return out
 
 
-MODULE = module_meta("活状态抽取", "哪些行是「现在如此」（历史出口 / 默认从严）", selftest=False)
+# `selftest=False` = **没有 `--selftest` 入口**（纯抽取逻辑，被 check_stale /
+# check_retractions 消费）。它的判定（编号段是否历史 / 无编号默认从严 /
+# 附录不扫 / 切段正确）有实质断言，住在 `registry._cases()` —— 这一环判错，
+# 那两道闸门的判据会全部失效而各自的自证照样绿（第 24 轮发现的依赖链缺口）。
+MODULE = module_meta(
+    "活状态抽取",
+    "哪些行是「现在如此」（历史出口 / 默认从严；"
+    "判定自证住在 registry._cases）",
+    selftest=False)

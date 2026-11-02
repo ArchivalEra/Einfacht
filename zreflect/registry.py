@@ -1076,6 +1076,23 @@ def _collect_case(which):
     return False
 
 
+def _selftest_false_states_it():
+    """每个 `selftest=False` 的模块，描述里都必须点明「自证住在 registry._cases」。
+
+    三个都查（`collect.py` / `living.py` / `gate.py`）—— 发现式：从 `modules()`
+    取所有 `selftest=False` 的，不写名单。
+    """
+    mods, _und = modules()
+    checked = 0
+    for m in mods:
+        if m.get("selftest"):
+            continue
+        checked += 1
+        if "registry._cases" not in m["desc"]:
+            return False
+    return checked >= 1          # 零值守卫：一个都没查到 ⇒ 不看
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -1292,6 +1309,12 @@ def _cases():
         ("registry.collect_unavailable_shape",
          # 「读不到」的诚实形状：ok=False + why（不许编 0）
          lambda: _collect_case("unavailable")),
+        # **`selftest=False` 的模块描述必须说清自证住在哪**（第 25 轮，
+        # 与第 23 轮 `gate.py` 同类）：`collect.py` / `living.py` / `gate.py`
+        # 都声明了 `selftest=False`，但它们的逻辑**有实质断言**在
+        # `registry._cases()`。描述若只写「无自证」= 免责声明。
+        ("★ registry.selftest_false_modules_state_where_selftest_lives",
+         lambda: _selftest_false_states_it()),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
