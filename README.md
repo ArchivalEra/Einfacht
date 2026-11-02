@@ -144,6 +144,21 @@ gate lifecycle's single home:
   and `guard.py` (the ledger write guards' decision, separated from execution so the path that
   actually refuses has selftests — a guard here once shipped dead from birth).
 
+**Deepened again (2026-11-02): the dependency chain and the declarations.** Two more things had
+never been proven:
+
+- `living.living_lines()` decides *which lines count as living state*, and `check_stale` /
+  `check_retractions` **consume it** — yet it had **zero assertions**. Had it mis-split a
+  document, those two gates would lose every criterion while their own selftests stayed green.
+  Seven assertions now cover its decision branches (numbered historical section / unnumbered
+  defaults to living / appendix not scanned / line-to-section tracking) plus `collect.py`'s
+  `parse_prev_values` and `unavailable`.
+- **`selftest=False` does not mean "no self-test"** — it means "no `--selftest` entry point"
+  (these modules are pure contracts/helpers; adding a CLI would fight their role). Their logic
+  *is* asserted, inside `registry._cases()`, and the module description must say so
+  (`registry.selftest_false_modules_state_where_selftest_lives`, discovery-based: no name list).
+  A description reading "no independent self-test" is a disclaimer, not a fact.
+
 The lesson is the one this whole repo is built on: **the narration drifts exactly like the numbers
 do.** The gate *set* was discovered, but "how many gates are there and which" was hand-written prose
 — and it was wrong. It is now derived from the same declaration lines the runner reads.
