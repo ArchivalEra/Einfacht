@@ -22,7 +22,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import module_meta, GATE_REPO, main_selftest_or, repo  # noqa: E402
+import gate                                            # noqa: E402
+from gate import module_meta, main_selftest_or, repo  # noqa: E402
 from i18n import M                                        # noqa: E402
 from ledger import age_days, fact, facts_of, load, value_of  # noqa: E402
 from render import BLOCK_BEGIN, BLOCK_END, render_block  # noqa: E402
@@ -47,7 +48,7 @@ def measure_example():
     n_py = 0
     n_md = 0
     lines_py = 0
-    for root, _dirs, files in os.walk(GATE_REPO):
+    for root, _dirs, files in os.walk(gate.GATE_REPO):
         if "/.git" in root:
             continue
         for f in files:
@@ -82,7 +83,7 @@ def measure_example():
     facts["md_lines"] = fact(
         int(subprocess.run(md_lines_cmd, shell=True, capture_output=True,
                              text=True, check=True,
-                             cwd=GATE_REPO).stdout.strip()),
+                             cwd=gate.GATE_REPO).stdout.strip()),
         md_lines_cmd, "repo",
         M("facts.note.excludes_machine_block"))
 
@@ -196,23 +197,23 @@ def _age_human(entry):
 def _measure():
     """采集入口（issue #15 A1/C3）：`REFLECT_MEASURE_MODULE` 旋钮分派。
 
-    · 旋钮未配 / 模块导入失败 / 夹具场景（GATE_REPO 不是本仓）⇒ 回落
+    · 旋钮未配 / 模块导入失败 / 夹具场景（gate.GATE_REPO 不是本仓）⇒ 回落
       `measure_example()`（占位），并**打印警告** —— 下游实测过：手动跑
       facts.py 忘带旋钮 ⇒ 空表 + `--allow-drop` 诱惑（OM 仓「会掉 24 条」
       的吓人 FATAL，真因只是旋钮没传）。回落必须可闻，不许静默。
-    · 旋钮已配且导入成功且 GATE_REPO 是真仓 ⇒ 用旋钮指定的 measure()。
+    · 旋钮已配且导入成功且 gate.GATE_REPO 是真仓 ⇒ 用旋钮指定的 measure()。
     """
     mod_name = os.environ.get("REFLECT_MEASURE_MODULE", "").strip()
     if mod_name:
         try:
             _m = __import__(mod_name)
             fn = getattr(_m, "measure")   # noqa: B009 — 模块是变量，属性名固定是契约
-            if os.path.abspath(GATE_REPO) == os.path.abspath(REPO_REAL):
+            if os.path.abspath(gate.GATE_REPO) == os.path.abspath(REPO_REAL):
                 return fn()
         except Exception as e:                            # noqa: BLE001
             print("⚠ %s" % M("facts.measure_module_unusable",
                              module=mod_name, error=repr(e)), file=sys.stderr)
-    elif os.path.abspath(GATE_REPO) == os.path.abspath(REPO_REAL):
+    elif os.path.abspath(gate.GATE_REPO) == os.path.abspath(REPO_REAL):
         print("⚠ %s" % M("facts.measure_placeholder_used"), file=sys.stderr)
     return measure_example()
 
@@ -269,7 +270,7 @@ def measure(argv):
         json.dump(doc, fh, indent=1, ensure_ascii=False)
         fh.write("\n")
     print(M("facts.measure_written",
-            path=os.path.relpath(OUT, GATE_REPO), count=len(facts)))
+            path=os.path.relpath(OUT, gate.GATE_REPO), count=len(facts)))
     for k, v in sorted(facts.items()):
         print("  %-20s %s（%s）" % (k, v["value"], _age_human(v)))
     return 0
@@ -302,7 +303,7 @@ def _load_or_die():
         # 踩坑。改说「先确认 REFLECT_FACTS 指向哪里」。
         print("FATAL: %s" % M("facts.no_ledger_yet",
                               name=os.path.basename(OUT),
-                              path=os.path.relpath(OUT, GATE_REPO)),
+                              path=os.path.relpath(OUT, gate.GATE_REPO)),
               file=sys.stderr)
         raise SystemExit(2)
     return load(OUT)

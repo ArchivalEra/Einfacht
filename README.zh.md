@@ -565,6 +565,7 @@ install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
 | `REFLECT_ENV_FILE` | `Einfacht.env` | 钩子旋钮载体的文件名（issue #8），由可拔插件 `einfacht-env.sh` 解析（钩子目录优先、仓库根次之） |
 | `REFLECT_LANG` | 空 | 输出语言包名。自带 `zh`（中文）、`en`（英语）、`de`（德语）；往 `zreflect/lang/` 里放一份包，任何别的语言名也认。**空 = null 包：本体不发任何自然语言**，只输出 `code(param=value)`（issue #26）。注释串（`OFF:` / `FATAL:` / `=== N PASS / M FAIL ===`）永不翻译 —— 它们是发射点的字面量 |
 | `REFLECT_I18N` | 空 | 语言包目录。**空 ⇒ 用套件自带的那份**（工具旁的 `zreflect/lang`），跨仓跑也能找到。设了 ⇒ 绝对路径，或**相对被检查仓根**的路径。两种形状都认且合并：`<lang>.json`（单文件）或 `<lang>/*.json`（按闸门命名空间分文件 —— 合并，后者覆盖） |
+| `REFLECT_SNAPSHOT_ROOT` | 空 | 模块级快照闸门扫描的源码目录。它抓 `from <本地模块> import 大写全局名` —— 那个全局若被别人重新赋值，值拷贝会停在 import 那一刻变成陈旧快照。空 ⇒ 该闸门明说未启用 |
 | `REFLECT_I18N_ROOT` | 空 | 覆盖闸门扫描的源码目录（本体零语言检查）。空 ⇒ 该闸门明说未启用 |
 | `REFLECT_ENV_HINT` | 空（开） | `off` ⇒ 关闭**裸跑提示**。凡是旋钮来自 `Einfacht.env` 的闸门，在「手工裸跑且一个旋钮都没设」时会提示 *try running it with `Einfacht.env`*，并给出确切的 `set -a; . …; set +a` 一行。它是**提示不是判据**：不改 rc、不碰 stdout；没有载体的仓保持安静（那里裸跑是正常用法） |
 | `REFLECT_RETRACTIONS` | `retractions.json` | 翻案台账（翻案闸门扫 `REFLECT_DOCS` 文档里的重现行） |

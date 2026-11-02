@@ -1,37 +1,37 @@
 {
  "schema": 1,
- "generated": "2026-11-02T11:12:44+0800",
+ "generated": "2026-11-02T11:24:55+0800",
  "_why": "facts.ledger_why",
  "facts": {
   "py_files": {
-   "value": 29,
+   "value": 30,
    "cmd": "find . -name '*.py' -not -path './.git/*' | wc -l",
    "source": "repo",
-   "measured_at": "2026-11-02T11:12:44+0800",
-   "first_seen": "2026-10-31",
+   "measured_at": "2026-11-02T11:24:55+0800",
+   "first_seen": "2026-11-02",
    "note": "facts.note.example_fact"
   },
   "md_files": {
    "value": 8,
    "cmd": "find . -name '*.md' -not -path './.git/*' | wc -l",
    "source": "repo",
-   "measured_at": "2026-11-02T11:12:44+0800",
+   "measured_at": "2026-11-02T11:24:55+0800",
    "first_seen": "2026-11-01"
   },
   "py_lines": {
-   "value": 8134,
+   "value": 8394,
    "cmd": "find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l",
    "source": "repo",
-   "measured_at": "2026-11-02T11:12:44+0800",
+   "measured_at": "2026-11-02T11:24:55+0800",
    "first_seen": "2026-11-02",
    "note": "facts.note.bare_number_demo"
   },
   "md_lines": {
-   "value": 2550,
+   "value": 2553,
    "cmd": "find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l",
    "source": "repo",
-   "measured_at": "2026-11-02T11:12:44+0800",
-   "first_seen": "2026-11-01",
+   "measured_at": "2026-11-02T11:24:55+0800",
+   "first_seen": "2026-11-02",
    "note": "facts.note.excludes_machine_block"
   }
  }

@@ -22,7 +22,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import GATE_REPO, fatal, finish, main_selftest_or, meta  # noqa: E402
+import gate                                            # noqa: E402
+from gate import fatal, finish, main_selftest_or, meta  # noqa: E402
 from i18n import M                                  # noqa: E402
 
 VALID_STATUS = ("needs-triage", "needs-info", "ready-for-agent",
@@ -74,7 +75,7 @@ def problems(files, exists=None):
     if not files:
         # 零值守卫：一条悬案都没收到 ⇒ 「没有缺结算件的悬案」是空话。
         return [M("questions.empty")]
-    chk = exists or (lambda p: os.path.exists(os.path.join(GATE_REPO, p)))
+    chk = exists or (lambda p: os.path.exists(os.path.join(gate.GATE_REPO, p)))
     for name, text in sorted(files.items()):
         st = field(text, "Status")
         if not st:
@@ -104,7 +105,7 @@ def problems(files, exists=None):
 def collect(d=None):
     # 名字可配（issue #1 ②）：默认 questions/，可用 REFLECT_QUESTIONS 换
     d = d or os.environ.get("REFLECT_QUESTIONS", "questions")
-    root = os.path.join(GATE_REPO, d)
+    root = os.path.join(gate.GATE_REPO, d)
     files = {}
     if os.path.isdir(root):
         for f in sorted(os.listdir(root)):

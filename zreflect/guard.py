@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import os
 
-from gate import GATE_REPO
+import gate
 from i18n import M
 from ledger import changed_keys, dropped_keys, short_value
 
@@ -40,7 +40,7 @@ def _gitignored(path):
     """路径是否被 .gitignore 覆盖；非 git 仓库 / git 不在 ⇒ None（无法判断，不猜）。"""
     import subprocess                                    # noqa: PLC0415
     try:
-        r = subprocess.run(["git", "-C", GATE_REPO, "check-ignore", "-q", path],
+        r = subprocess.run(["git", "-C", gate.GATE_REPO, "check-ignore", "-q", path],
                            capture_output=True)
     except OSError:
         return None
@@ -75,8 +75,8 @@ def write_target_problems(path, knob_set, ignored=None, carrier_exists=None):
         warn = M("guard.write_target_no_git")
     if carrier_exists is None:
         carrier_exists = any(os.path.exists(os.path.join(d, "Einfacht.env"))
-                             for d in (os.path.join(GATE_REPO, "reflect-hooks"),
-                                       GATE_REPO))
+                             for d in (os.path.join(gate.GATE_REPO, "reflect-hooks"),
+                                       gate.GATE_REPO))
     if carrier_exists and not knob_set and ig is not True:
         # 两条 warn 可能并列（前一条是「非 git 目录」）—— 拼装归语言包：
         # 有前缀走 `_after`（模板里带分隔符），没有走裸句。

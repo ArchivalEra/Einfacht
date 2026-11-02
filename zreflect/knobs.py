@@ -120,6 +120,8 @@ REGISTRY = {
                      _Semantic("knobs.sem.reflect_i18n")),
     "REFLECT_I18N_ROOT": ("dir", "",
                           _Semantic("knobs.sem.reflect_i18n_root")),
+    "REFLECT_SNAPSHOT_ROOT": ("dir", "",
+                              _Semantic("knobs.sem.reflect_snapshot_root")),
 }
 
 KINDS = ("file", "list", "dir", "number", "flag", "value")

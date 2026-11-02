@@ -27,7 +27,8 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import module_meta, GATE_REPO                                # noqa: E402
+import gate                                            # noqa: E402
+from gate import module_meta                          # noqa: E402
 from i18n import M                                                    # noqa: E402
 
 
@@ -51,7 +52,7 @@ def run_cmd(cmd, timeout=None):
     bash = shutil.which("bash")
     argv = [bash, "-o", "pipefail", "-c", cmd] if bash else ["/bin/sh", "-c", cmd]
     try:
-        p = subprocess.run(argv, cwd=GATE_REPO, capture_output=True, text=True,
+        p = subprocess.run(argv, cwd=gate.GATE_REPO, capture_output=True, text=True,
                            timeout=t)
     except subprocess.TimeoutExpired:
         return None, ""
