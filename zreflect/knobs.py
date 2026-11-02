@@ -197,25 +197,34 @@ def _zdir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-def declared_vs_read_problems(gates):
+def declared_vs_read_problems(gates, sources=None):
     """C4 对账①：闸门**声明**消费的旋钮 ⊆ 它**实际读**的旋钮。
 
     声明在 `GATE = meta(…, knobs=(…))`，实读在源码里的
     `os.environ.get("REFLECT_…")`（旋钮名一定以字面量出现在源码某处 ——
     否则它读不到那个环境变量）。两者此前无任何比较 —— AUTO:GATES 表
     可能列着闸门根本不读的旋钮（声明与实现不符，静默）。
+
     `gates` = registry.gates() 的结果（含 file / knobs）。
+    `sources` 可注入（`{file: 源码文本}`）—— 此前**没有这个缝**，它直接读
+    `gate.GATE_REPO`，于是这条判据**零自证用例**：一个从落地起从未被证明
+    会红的守卫（AGENTS 规则 4 的硬违规）。有了缝它才能被反向断言考到。
     """
     out = []
     for g in gates:
         declared = set(g.get("knobs") or ())
         if not declared:
             continue
-        try:
-            text = open(os.path.join(gate.GATE_REPO, g["file"]), encoding="utf-8",
-                        errors="replace").read()
-        except OSError:
-            continue
+        if sources is not None:
+            text = sources.get(g["file"])
+            if text is None:
+                continue
+        else:
+            try:
+                text = open(os.path.join(gate.GATE_REPO, g["file"]),
+                            encoding="utf-8", errors="replace").read()
+            except OSError:
+                continue
         read = set(_TOKEN_RE.findall(text))
         ghost = sorted(k for k in declared if k not in read)
         if ghost:
@@ -522,12 +531,17 @@ def pack_coverage_problems(codes=None, langs=None, loader=None, discovery=None):
 
     参照面是**源码**（`used_codes()`），不是另一个包 —— 这样两个包一起漂
     也照样被抓。零包是合法态 ⇒ 无包可查，返回空。
+
+    `langs=None` ⇒ 用 `discovery()` 发现（默认 `installed_langs()`）。
+    ⚠️ 此前这个参数**接受了却从不调用**（签名里有、实现里没有）—— 传一个假的
+    discovery 进去，结果毫无变化（实测）。那是本仓最痛恨的形态：接口声称可注入，
+    实际不可。现在与 `pack_sync_problems` 走同一条通道。
     """
     load = loader if loader is not None else load_pack
     codes = used_codes() if codes is None else set(codes)
     if langs is None:
         try:
-            langs = installed_langs()
+            langs = (discovery or installed_langs)()
         except PacksUnreadable as e:
             return [M("knobs.pack_unreadable", lang="*", error=e)]
     langs = list(langs)
@@ -700,6 +714,28 @@ def _cases():
          lambda: any(x.code == "knobs.readme_phantom" for x in readme_problems(files={
              "README.md": "see " + "REFLECT_" + "GHOSTY" + ".",
              "README.zh.md": "x", "README.de.md": "x"}))),
+        # ⚠️ 这两条此前**零用例**：`declared_vs_read_problems` 与
+        # `registry_vs_readme_problems` 从落地起从未被证明会红（AGENTS 规则 4）。
+        # `declared_vs_read_problems` 连注入缝都没有（直读 gate.GATE_REPO），
+        # 所以先补缝（sources=）、再补这两个反证。
+        ("★ knobs.declared_not_read",
+         # 声明了某个旋钮，但源码里根本不出现它 ⇒ 必须报
+         lambda: [p.code for p in declared_vs_read_problems(
+             [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
+             sources={"check_x.py": "X = 1\n"})
+         ] == ["knobs.declared_not_read"]),
+        ("knobs.declared_and_read_is_clean",
+         # 声明了、也确实读了 ⇒ 不许报（阳性对照，否则「总是报」也能骗过自证）
+         lambda: declared_vs_read_problems(
+             [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
+             sources={"check_x.py":
+                      'X = os.environ.get("REFLECT_FACTS")\n'}) == []),
+        ("★ knobs.readme_missing_rows",
+         # 登记表里有、README 配置表里缺 ⇒ 必须报（方向与 readme_phantom 相反）
+         lambda: [p.code for p in registry_vs_readme_problems(tables={
+             name: "| `REFLECT_FACTS` | x |\n" for name in
+             ("README.md", "README.zh.md", "README.de.md")})
+         ] != []),
         # 对账器本身必须能红（否则它只是一条恒绿的装饰）
         ("★ knobs.pack_missing_keys",
          lambda: [p.code for p in pack_sync_problems(
@@ -736,6 +772,14 @@ def _cases():
         # 双向共缺会全绿，用户看到裸 code（实测：两包同删 locks.ok ⇒ 全绿）。
         ("knobs.coverage_real_repo_clean",
          lambda: pack_coverage_problems() == []),
+        # **`discovery=` 必须真的被调用**（此前签名里接受、实现里从不调用：
+        # 传假 discovery 进去结果毫无变化）。这条钉的就是「可注入」这个承诺：
+        # 注入的 discovery 若没被用，下面的断言会拿到默认（真实）语言列表 ⇒ 空。
+        ("★ knobs.coverage_honours_discovery",
+         lambda: (lambda seen: ([p.code for p in pack_coverage_problems(
+             codes={"a.b"}, discovery=lambda: seen.append(1) or ["zz"],
+             loader=lambda l: {})] == ["knobs.pack_missing_code"] and
+             len(seen) == 1))([])),
         ("★ knobs.pack_missing_code",
          lambda: [p.code for p in pack_coverage_problems(
              codes={"a.b", "c.d"}, langs=("zh", "en"),
