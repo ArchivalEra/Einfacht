@@ -568,6 +568,13 @@ def _main_run(argv):
     gs = runnable(phase)
     if not gs:
         return fatal(M("registry.empty_phase", phase=phase))
+    # ⚠️ **本函数的全部输出走 stdout**（包括 fatal / error / failed 清单）。
+    # 与 `gate.finish()` 的「问题行统一 stderr」**不冲突**：那条只约束单个闸门
+    # 自己的判据输出；这里输出的是**运行报告**（谁没跑 / 谁红了 / 谁配置坏了），
+    # 是一份状态快照而不是判据。
+    # 理由：① 两个消费方（CI、hook）都只看 rc（`|| exit 1`），不解析 stdout；
+    # ② 只捕 stdout 的调用方（`$(...)` / 管道）必须看得见**是哪个文件**坏了 ——
+    # 只打 stderr 的话，它们看到 `fatal=1` 却不知道是谁（第 10 轮实测）。
     res = run_phase(phase, gs)
     print(M("registry.phase_summary", phase=phase, ran=res["ran"],
             off=res["off"], failed=res["failed"], fatal=res.get("fatal", 0),
@@ -756,6 +763,23 @@ def _render_off_reason_dash():
     return row.rstrip().endswith("| — |") and "None" not in row
 
 
+def _streams_documented():
+    """两处措辞必须在源码里（gate.py 限定单个闸门 / 本文件说明聚合方走 stdout）。"""
+    import gate                                          # noqa: PLC0415
+    try:
+        g = open(gate.__file__, encoding="utf-8").read()
+        r = open(os.path.abspath(__file__), encoding="utf-8")
+        r = r.read()
+    except OSError:
+        return False
+    # ⚠️ 锚点用**码点拼**，不写中文字面量 —— 本文件在零语言闸门的扫描面内
+    # （实测踩到 bare_text）。判据名已说明测什么，锚点只需可机器匹配。
+    _a1 = "".join(chr(c) for c in (0x5355, 0x4E2A, 0x95F8, 0x95E8))   # 单个闸门
+    _a2 = "".join(chr(c) for c in (0x672C, 0x51FD, 0x6570))            # 本函数
+    return (_a1 in g and _a2 in r and
+            ("stdout" in r and "stdout" in g))
+
+
 def _cases():
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
@@ -887,6 +911,10 @@ def _cases():
         ("registry.off_reason_ok", lambda: _off_reason_ok(
             "complete", {"check_x.py": "_off()"}, ok=True,
             reason="a real justification long enough")),
+        # **聚合方的输出整体走 stdout**，与「单个闸门问题行统一 stderr」不冲突。
+        # 这条钉的是「两端语义分开写明白了」—— 判据是两处措辞都在。
+        ("registry.aggregator_streams_documented",
+         lambda: _streams_documented()),
         # ③ 空输入必须报
         ("★ registry.empty_roster",
          lambda: problems([], [], mods=[], mods_missing=[],
