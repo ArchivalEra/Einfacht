@@ -330,6 +330,7 @@ def never_falsifiable(fn):
     发现」变成「自证当场红」。
     """
     import ast as _ast                                   # noqa: PLC0415
+    import i18n                                          # noqa: PLC0415
     code = getattr(fn, "__code__", None)
     if code is None:
         return None                                      # 非 Python 函数 ⇒ 不猜
@@ -345,12 +346,39 @@ def never_falsifiable(fn):
         # 明说」同一条纪律：这里宁可漏报也不误伤（本仓 99% 的断言都独占一行，
         # 这个退化只影响把多条断言挤一行的写法）。
         return None
+    # ⚠️ **纯委托**（lambda 体就是一次 Call）⇒ 断言逻辑住在被调用函数里，
+    # 本判据**看不见**它。此前这种情况返回 None（与「扫过且干净」不可区分），
+    # 于是「提取成 helper」就成了关掉恒真检测的合法手段（实测：helper 改成
+    # `return True` 后自证 26 PASS / 0 FAIL 全绿）。
+    # 现在把它**明说成未审计**，而不是假装干净 —— 与「读不到就明说」同一条纪律。
+    # 只看「委托给**自己写的**函数」：`any(... for …)` / `all(...)` / `bool(x)`
+    # 这类内建是**在 lambda 里内联逻辑**，不是委托 —— 它们的生成器/实参就在
+    # 这个 AST 里，恒真检测照样能扫（把内建也判成委托会误伤一半的断言，
+    # 实测 6 条假阳性）。
+    _BUILTIN_OK = {"any", "all", "bool", "len", "sorted", "sum", "min", "max",
+                   "isinstance", "getattr", "hasattr", "str", "int", "set",
+                   "list", "tuple", "dict", "repr"}
     for node in nodes:
+        if isinstance(node.body, _ast.Call):
+            f = node.body.func
+            fname = getattr(f, "id", None) or getattr(f, "attr", None)
+            if fname not in _BUILTIN_OK:
+                return i18n.M("gate.never_falsifiable_delegated")
         for n in _ast.walk(node):
             reason = _short_circuit_reason(n)
             if reason:
                 return reason
     return None
+
+
+def _is_delegated(why):
+    """这条 `why` 是不是「委托断言」判据（而不是恒真短路）。
+
+    ⚠️ 必须看 `.code`，不能看 `str(why)`：`why` 是一个 `Message`，它的 str 值
+    已被**当前语言**渲染 —— 在 `zh` 下变成中文，按英文 code 匹配就永远落空，
+    于是委托断言被当成恒真短路报出去（实测：`KeyError: 'label'`）。
+    """
+    return getattr(why, "code", None) == "gate.never_falsifiable_delegated"
 
 
 def selftest(name, cases):
@@ -369,10 +397,19 @@ def selftest(name, cases):
         raise SystemExit("FATAL: %s"
                          % i18n.M("gate.selftest_empty_cases", name=name))
     bad = 0
+    delegated = 0
     for label, fn in cases:
         # issue #23：恒真断言探测 —— 一条 `or True` 的断言与真断言
         # 在「返回 0 + 打摘要行」这个面上同形，必须单独判。
         why = never_falsifiable(fn)
+        # 「委托」是可接受但**必须可见**的状态：断言体在 helper 里（搭临时夹具
+        # 的场景没法内联）。允许它，但下一行打成 `note |`（机器可读），
+        # 并在摘要里单列计数 —— 不许静默当干净（此前返回 None，与「扫过且
+        # 干净」不可区分，于是提取 helper 就成了关掉恒真检测的合法手段）。
+        if why and _is_delegated(why):
+            delegated += 1
+            print("note | %s | delegated" % label)
+            why = None
         if why:
             # `fail | ` 是自证机器行前缀 —— 发射点字面量，不进语言包
             print("fail | %s" % i18n.M("gate.case_unfalsifiable",
@@ -395,6 +432,11 @@ def selftest(name, cases):
         bad += 0 if ok else 1
     # 人读摘要行。`=== ` 前缀与收尾 ` ===` 都是机器行形状 —— 两侧留在
     # **发射点**字面量（语言包值不许以 `^===` 开头，见 i18n._validate）。
+    if delegated:
+        # 摘要里**单列**：委托断言有多少条。它们不是失败，但也不是「扫过且干净」
+        # —— 静默把它们算进 PASS 就是本仓最痛恨的假绿。
+        print("=== %s ===" % i18n.M("gate.selftest_delegated",
+                                    name=name, count=delegated))
     print("=== %s ===" % i18n.M("gate.selftest_summary",
                                 name=name, passed=len(cases) - bad,
                                 failed=bad))

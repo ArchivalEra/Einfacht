@@ -31,5 +31,7 @@
  "gate.title.runner": "runner (wörtlicher Ausführer: nackter-Wert-Vertrag + pipefail + Timeout)",
  "gate.title.questions": "check_questions (eine offene Frage muss einen ausführbaren Klärungsfall tragen)",
  "gate.title.ledger": "ledger (zwei Wächter)",
- "gate.title.render": "render (der einzige Ort, an dem Zahlen entstehen)"
+ "gate.title.render": "render (der einzige Ort, an dem Zahlen entstehen)",
+ "gate.never_falsifiable_delegated": "der Zusicherungskörper ist ein **delegierter Aufruf**; die Tautologie-Prüfung kann nicht hineinsehen (Zusicherung inline schreiben oder die aufgerufene Funktion separat selbst prüfen)",
+ "gate.selftest_delegated": "Selbsttest-Zusammenfassung: %(name)s hat zusätzlich %(count)d **delegierte** Zusicherung(en) (Körper in einer Hilfsfunktion, Tautologie-Prüfung kann nicht hineinsehen)"
 }

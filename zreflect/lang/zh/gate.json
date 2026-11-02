@@ -31,5 +31,7 @@
  "gate.title.runner": "runner（逐字执行器：裸值契约 + pipefail + 超时）",
  "gate.title.questions": "check_questions（悬案必须挂结算件）",
  "gate.title.ledger": "ledger（两道守卫）",
- "gate.title.render": "render（数字的唯一产地）"
+ "gate.title.render": "render（数字的唯一产地）",
+ "gate.never_falsifiable_delegated": "断言体是**委托调用**，恒真检测看不见它内部（把断言写回 lambda 内，或被调函数单独自证）",
+ "gate.selftest_delegated": "自证摘要：%(name)s 另有 %(count)d 条**委托断言**（断言体在 helper 里，恒真检测看不见内部）"
 }

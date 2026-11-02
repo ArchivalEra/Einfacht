@@ -658,6 +658,27 @@ def null_pack():
     return bind(NULL)
 
 
+def _semantics_can_red():
+    """`_semantics_are_codes_under()` 有牙吗？给一张**不会渲染成 code** 的表 ⇒ 必须 False。"""
+    sem = [(k, w) for k, _d, w in REGISTRY.values() if isinstance(w, _Semantic)]
+    if not sem:
+        return False
+    # 用一个「每条 code 都被翻成句子」的假包：str(w) != w.code ⇒ 应返回 False
+    fake = {w.code: "SENTENCE %s" % w.code for _k, w in sem}
+    return _semantics_are_codes_under(
+        bind(Catalog.load("xx", {"xx": fake}))) is False
+
+
+def _planted_red_when_blind():
+    """把 discovery 通道关掉（回手写名单），种植式检查必须红。"""
+    prev = installed_langs
+    globals()["installed_langs"] = lambda: ["zh", "en"]     # 假装发现坏了
+    try:
+        return _discovery_sees_planted_lang() is False
+    finally:
+        globals()["installed_langs"] = prev
+
+
 def _semantics_are_codes_under(cm):
     """在 `cm` 语言包作用域下，每条旋钮语义都渲染成 code（且非空）。"""
     sem = [(k, w) for k, _d, w in REGISTRY.values()
@@ -669,16 +690,6 @@ def _semantics_are_codes_under(cm):
         return all(str(w) == w.code for _k, w in sem)
     finally:
         cm.__exit__(None, None, None)
-
-
-def _declared_not_read_ok():
-    """声明了却不实读 ⇒ 报且点名（纯函数，避免用例里嵌 lambda 套 lambda）。"""
-    ps = declared_vs_read_problems(
-        [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
-        sources={"check_x.py": "X = 1\n"})
-    return ([p.code for p in ps] == ["knobs.declared_not_read"]
-            and ps[0].params["knobs"] == "REFLECT_FACTS"
-            and ps[0].params["file"] == "check_x.py")
 
 
 def _cases():
@@ -713,7 +724,11 @@ def _cases():
          # 自带 **null 作用域**：这条测的是「没装包时是 code」，与入口激活了
          # 什么包无关。此前直接读 `str(w)`，`REFLECT_LANG=zh` 下渲染成句子
          # 于是全红（实测）—— 断言没声明作用域 = 跑在什么环境就考什么。
+         # 委托给 helper（搭 null 作用域必须进出配对，内联会变成不可读的一行）。
+         # 恒真检测看不见委托体 ⇒ 由 gate 判「未审计」；下面补一条同源反证，
+         # 证明 helper 本体确实有牙。
          lambda: _semantics_are_codes_under(null_pack())),
+        ("★ knobs.semantics_are_codes_can_red", lambda: _semantics_can_red()),
         # 语义延迟渲染的**正向证据**：真 zh 包里每条语义都有条目，且在 zh 包
         # 下渲染出的是那句话（不是 code）。读磁盘真包 = 证明迁移没丢语义
         # （注入假表只能证明「我写的模板渲染出我写的字」—— 循环论证）。
@@ -743,7 +758,19 @@ def _cases():
         ("★ knobs.declared_not_read",
          # 声明了某个旋钮，但源码里根本不出现它 ⇒ 必须报，
          # 且**点名那个旋钮**（否则报个空壳也算通过）。
-         lambda: _declared_not_read_ok()),
+         # ⚠️ 断言**不许**提取成 helper：`never_falsifiable` 只扫 lambda 的 AST，
+         # 委托给一个函数就让它瞎掉 —— 此前那样做过，helper 改成 `return True`
+         # 后 26 PASS / 0 FAIL 全绿（实测）。宁可写长一行，也不关掉检测器。
+         lambda: [p.code for p in declared_vs_read_problems(
+             [{"file": "check_x.py",
+               "knobs": ("REFLECT_FACTS",)}],
+             sources={"check_x.py": "X = 1\n"})
+         ] == ["knobs.declared_not_read"]
+         and [p.params for p in declared_vs_read_problems(
+             [{"file": "check_x.py",
+               "knobs": ("REFLECT_FACTS",)}],
+             sources={"check_x.py": "X = 1\n"})
+         ] == [{"file": "check_x.py", "knobs": "REFLECT_FACTS"}]),
         ("knobs.declared_and_read_is_clean",
          # 声明了、也确实读了 ⇒ 不许报（阳性对照，否则「总是报」也能骗过自证）
          lambda: declared_vs_read_problems(
@@ -793,6 +820,10 @@ def _cases():
          # 对象把答案递过去（实测：那样即使把 installed_langs 换回手写
          # 名单，这条仍 PASS）。
          lambda: _discovery_sees_planted_lang()),
+        # ⚠️ 上面那条是**委托**（搭临时夹具，没法内联）⇒ 恒真检测看不见它内部。
+        # 按 gate 的新判据它会被判「未审计」；所以这里补一条**同源反证**：
+        # 把 discovery 通道关掉，种植式检查必须红。两条一起才叫证明。
+        ("★ knobs.discovery_planted_can_red", lambda: _planted_red_when_blind()),
         # ④ **包完整性**（C4 对账④）：源码用到的 code 必须在每个已装包里。
         # 这条抓的是「两边一起缺」——此前 `pack_sync_problems` 只比差集，
         # 双向共缺会全绿，用户看到裸 code（实测：两包同删 locks.ok ⇒ 全绿）。
