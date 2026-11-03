@@ -47,13 +47,20 @@ def _next_block():
     return last + ([""] + pending if pending else [])
 
 
-def _collect():
-    """注入内容（纯文本行列表）。与输出形状解耦：信封由 main() 决定。"""
+def _collect(next_lines=None, questions=None, ledger_count=None,
+             retraction_count=None):
+    """注入内容（纯文本行列表）。与输出形状解耦：信封由 main() 决定。
+
+    ⚠️ 四个参数**只给判据用**（`check_i18n` 的模板层自证）：全给 None 时走真读
+    （git / questions/ / 台账 / 翻案）—— 那是生产路径。给了值就不碰任何 I/O，
+    于是「模板里有没有中文」可以在**零数据**下测，不会被 commit title 这类
+    用户数据搅进来（那是数据，不是文案）。
+    """
     from i18n import M                                   # noqa: PLC0415
     lines = [str(M("inject.banner"))]
 
     # 0) 接着上一轮 —— **最要紧的一条**，放最前（压缩后 agent 第一眼看到的）
-    nb = _next_block()
+    nb = _next_block() if next_lines is None else next_lines
     if nb:
         lines.append(str(M("inject.next_header")))
         lines.extend("   " + ln.strip() for ln in nb[:8])
@@ -62,10 +69,14 @@ def _collect():
 
     # 1) 未结案的悬案
     try:
-        from check_questions import collect, field           # noqa: PLC0415
-        qs = collect("questions")
-        open_qs = [(n, field(t, "Status") or "?") for n, t in sorted(qs.items())
-                   if (field(t, "Status") or "") != "resolved"]
+        if questions is None:
+            from check_questions import collect, field       # noqa: PLC0415
+            qs = collect("questions")
+            open_qs = [(n, field(t, "Status") or "?")
+                       for n, t in sorted(qs.items())
+                       if (field(t, "Status") or "") != "resolved"]
+        else:
+            qs, open_qs = questions, list(questions)
         if not qs:
             lines.append(str(M("inject.questions_none")))
         elif not open_qs:
@@ -83,17 +94,23 @@ def _collect():
 
     # 2) 台账规模
     try:
-        from ledger import facts_of, load                    # noqa: PLC0415
-        f = facts_of(load(os.path.join(GATE_REPO, os.environ.get("REFLECT_FACTS", "FACTS.json"))))
-        lines.append(str(M("inject.ledger_size", count=len(f))))
+        if ledger_count is None:
+            from ledger import facts_of, load                # noqa: PLC0415
+            f = facts_of(load(os.path.join(
+                GATE_REPO, os.environ.get("REFLECT_FACTS", "FACTS.json"))))
+            ledger_count = len(f)
+        lines.append(str(M("inject.ledger_size", count=ledger_count)))
     except Exception as e:                                   # noqa: BLE001
         lines.append(str(M("inject.ledger_unreadable", error=e)))
 
     # 3) 翻案条数
     try:
-        from ledger import load as _load                     # noqa: PLC0415
-        r = _load(os.path.join(GATE_REPO, "retractions.json")).get("retractions") or []
-        lines.append(str(M("inject.retractions_size", count=len(r))))
+        if retraction_count is None:
+            from ledger import load as _load                 # noqa: PLC0415
+            r = (_load(os.path.join(GATE_REPO, "retractions.json"))
+                 .get("retractions") or [])
+            retraction_count = len(r)
+        lines.append(str(M("inject.retractions_size", count=retraction_count)))
     except Exception:                                        # noqa: BLE001
         pass
     return lines

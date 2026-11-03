@@ -68,23 +68,23 @@ Python 代码 [[py_lines]] 行。
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `md_files` | **9** | 2026-11-03T18:49:57+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `md_lines` | **2656** | 2026-11-03T18:49:57+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
-| `principle.assertion_lifecycle` | **ok** | 2026-11-03T18:49:57+0800 | `python3 zreflect/check_retractions.py` |
-| `principle.declared_not_globbed` | **ok** | 2026-11-03T18:49:57+0800 | `python3 zreflect/registry.py --gates` |
-| `principle.falsifiable` | **ok** | 2026-11-03T18:49:57+0800 | `python3 zreflect/registry.py --selftest` |
-| `principle.machine_rows` | **ok** | 2026-11-03T18:49:57+0800 | `python3 zreflect/machine.py --selftest` |
-| `principle.no_retired_names` | **ok** | 2026-11-03T18:49:57+0800 | `python3 zreflect/check_stale.py` |
-| `principle.number_once` | **ok** | 2026-11-03T18:49:57+0800 | `python3 zreflect/check_facts.py` |
-| `principle.off_is_visible` | **ok** | 2026-11-03T18:49:57+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;gs=registry.gates()[0];p=registry.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)"` |
-| `principle.only_measured` | **ok** | 2026-11-03T18:49:57+0800 | `python3 -c "import json,sys;d=json.load(open('FACTS.json'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
-| `principle.open_questions_settle` | **ok** | 2026-11-03T18:49:57+0800 | `python3 zreflect/check_questions.py` |
-| `principle.selfcert_harness` | **ok** | 2026-11-03T18:49:57+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)"` |
-| `principle.snapshot_hygiene` | **ok** | 2026-11-03T18:49:57+0800 | `python3 zreflect/check_snapshots.py` |
-| `principle.three_readmes` | **ok** | 2026-11-03T18:49:57+0800 | `python3 zreflect/check_readme_sync.py` |
-| `principle.zero_language` | **ok** | 2026-11-03T18:49:57+0800 | `python3 zreflect/check_i18n.py` |
-| `py_files` | **36** | 2026-11-03T18:49:57+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **12794** | 2026-11-03T18:49:57+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **9** | 2026-11-03T20:15:31+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `md_lines` | **2656** | 2026-11-03T20:15:31+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
+| `principle.assertion_lifecycle` | **ok** | 2026-11-03T20:15:31+0800 | `python3 zreflect/check_retractions.py` |
+| `principle.declared_not_globbed` | **ok** | 2026-11-03T20:15:31+0800 | `python3 zreflect/registry.py --gates` |
+| `principle.falsifiable` | **ok** | 2026-11-03T20:15:31+0800 | `python3 zreflect/registry.py --selftest` |
+| `principle.machine_rows` | **ok** | 2026-11-03T20:15:31+0800 | `python3 zreflect/machine.py --selftest` |
+| `principle.no_retired_names` | **ok** | 2026-11-03T20:15:31+0800 | `python3 zreflect/check_stale.py` |
+| `principle.number_once` | **ok** | 2026-11-03T20:15:31+0800 | `python3 zreflect/check_facts.py` |
+| `principle.off_is_visible` | **ok** | 2026-11-03T20:15:31+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;gs=registry.gates()[0];p=registry.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)"` |
+| `principle.only_measured` | **ok** | 2026-11-03T20:15:31+0800 | `python3 -c "import json,sys;d=json.load(open('FACTS.json'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
+| `principle.open_questions_settle` | **ok** | 2026-11-03T20:15:31+0800 | `python3 zreflect/check_questions.py` |
+| `principle.selfcert_harness` | **ok** | 2026-11-03T20:15:31+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)"` |
+| `principle.snapshot_hygiene` | **ok** | 2026-11-03T20:15:31+0800 | `python3 zreflect/check_snapshots.py` |
+| `principle.three_readmes` | **ok** | 2026-11-03T20:15:31+0800 | `python3 zreflect/check_readme_sync.py` |
+| `principle.zero_language` | **ok** | 2026-11-03T20:15:31+0800 | `python3 zreflect/check_i18n.py` |
+| `py_files` | **36** | 2026-11-03T20:15:31+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **12778** | 2026-11-03T20:15:31+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 17 条事实。
 <!-- /AUTO:FACTS -->
@@ -98,7 +98,7 @@ Python 代码 [[py_lines]] 行。
 | `check_ab.py`（A/B 闸门） | commit | A/B 同旗标不变式（非 allow 轴差异 = 混淆变量，A/B 作废） | `REFLECT_AB` | 本仓不做 A/B 对照实验：没有 ab.json 规格 ⇒ 明说未启用 |
 | `check_envfile.py`（env 文件闸门） | commit | 守钩子的 REFLECT_* 载体（旋钮 typo / 指向缺失 / 空值） | `REFLECT_ENV_FILE` | 本仓没有 Einfacht.env 载体：旋钮全用默认值 ⇒ 明说未启用 |
 | `check_facts.py`（事实闸门） | commit | 块一致性 / 裸数字 / 坏引用 | `REFLECT_FACTS`, `REFLECT_DOC`, `REFLECT_NAKED_MIN` | — |
-| `check_facts_replay.py`（复跑闸门） | commit | 台账 cmd 逐字复跑（裸值契约：stdout 必须等于值） | `REFLECT_FACTS`, `REFLECT_REPLAY`, `REFLECT_REPLAY_TIMEOUT` | REFLECT_REPLAY 未配时整道闸门明说未启用（复跑是可选开销） |
+| `check_facts_replay.py`（复跑闸门） | commit | 台账 cmd 逐字复跑（裸值契约：stdout 必须等于值） | `REFLECT_FACTS`, `REFLECT_REPLAY`, `REFLECT_REPLAY_TIMEOUT` | 显式设 REFLECT_REPLAY=off 时整道闸门关闭（这是整仓出口；未配时照跑） |
 | `check_i18n.py`（语言覆盖闸门） | commit | 本体零语言：用户可见文本必须走 M(code)；语言包可选 | `REFLECT_I18N_ROOT` | — |
 | `check_instruments.py`（仪器生命周期闸门） | commit | 恒常检测（first_seen）+ 被证伪量法登记 | `REFLECT_INSTRUMENTS`, `REFLECT_INSTRUMENT_DAYS`, `REFLECT_FACTS` | 两个旋钮都未配 ⇒ 特化机制没启用（可插拔，本仓按需再开） |
 | `check_invariants.py`（不变量闸门） | commit | 声明式不变量：仓库文件必须/不得含某片段（grep 级） | `REFLECT_INVARIANTS` | 本仓没有 invariants.json 规格 ⇒ 声明式不变量未启用（可插拔） |

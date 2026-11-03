@@ -1,5 +1,6 @@
 {
  "registry.builtin_phase_repeated": "%(phases)s in REFLECT_PHASES are built-in phases (commit / start-of-work cannot be duplicated and need not be re-declared) — drop them and keep only the custom phases",
+ "registry.dead_interface": "public function `%(function)s` (in %(module)s) has **zero consumers** — defined but never used (zombie interface). Delete it, or make it private with a `_` prefix",
  "registry.dependency_untested": "`%(module)s.%(function)s()` is consumed by a gate but has **zero assertions** — if it judges wrong, the consuming gate loses its criteria while its own self-test stays green (a dead link in the dependency chain)",
  "registry.empty_phase": "phase %(phase)s has no runnable gates — zero-value guard: an empty list is not a pass (is the predicate or a declaration broken?)",
  "registry.empty_roster": "not a single gate was found — zero-value guard: an empty input is not a pass",

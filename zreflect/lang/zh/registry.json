@@ -1,5 +1,6 @@
 {
  "registry.builtin_phase_repeated": "REFLECT_PHASES 里的 %(phases)s 是内置相位（commit / start-of-work 不可重名也不必重报）—— 删掉它们，只留自定义相位",
+ "registry.dead_interface": "公开函数 `%(function)s`（在 %(module)s）**零消费者** —— 定义了却没人用（僵尸接口）。删掉，或改名私有（`_` 前缀）",
  "registry.dependency_untested": "`%(module)s.%(function)s()` 被闸门消费，但**自身零断言** —— 它判错了，消费它的闸门会失去判据而各自的自证照样绿（依赖链上的哑火环节）",
  "registry.empty_phase": "相位 %(phase)s 没有可跑的闸门 —— 零值守卫：空清单不是通过（谓词或声明坏了？）",
  "registry.empty_roster": "一个闸门都没发现 —— 零值守卫：空输入不是通过",

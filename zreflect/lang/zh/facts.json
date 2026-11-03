@@ -1,4 +1,6 @@
 {
+ "facts.accept_principles_ok": "原则已写入台账",
+ "facts.accept_usage": "用法：facts.py --accept <键> <裸值> <复跑命令> <出处> —— 手动注册一条事实（它会进台账；之后同一条复跑闸门逐字执行它的 cmd）",
  "facts.age.days_ago": "%(days)d 天前测的",
  "facts.age.today": "今天测的",
  "facts.age.unrecorded": "未记录测量时间",

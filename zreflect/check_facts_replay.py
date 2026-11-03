@@ -369,7 +369,10 @@ def _cases():
 GATE = meta("复跑闸门", "台账 cmd 逐字复跑（裸值契约：stdout 必须等于值）",
             knobs=("REFLECT_FACTS", "REFLECT_REPLAY", "REFLECT_REPLAY_TIMEOUT"),
             name_dependent=True,
-            off_reason="REFLECT_REPLAY 未配时整道闸门明说未启用（复跑是可选开销）")
+            # ⚠️ 此前这里写的是「未配时明说未启用」——**假的**：未配时照跑，
+            # 只有显式 `REFLECT_REPLAY=off` 才关（实测三种状态）。复跑现在承载
+            # 「principle 每提交强制运行」这条需求，不能默认关。
+            off_reason="显式设 REFLECT_REPLAY=off 时整道闸门关闭（这是整仓出口；未配时照跑）")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],

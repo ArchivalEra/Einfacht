@@ -38,26 +38,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
 from gate import repo                                     # noqa: E402
+import gate                                               # noqa: E402
 from i18n import M                                        # noqa: E402
 
 DEFAULT_SPEC = "ab.json"
 
 
 def resolve_spec(argv, knob=""):
-    """规格名解析：--spec 显式 > REFLECT_AB 旋钮 > 默认名（纯函数，自证要用）。
-
-    返回 (规格名, 是否显式指定)。显式指定（argv / 旋钮）而文件不在 ⇒ 调用方
-    必须 FATAL（配置了却不存在的规格是「部署了 ≠ 在跑」家族，静默当「未启用」
-    会掩盖坏配置）；默认名不在 ⇒ 未启用退 0。docstring 承诺过的旋钮必须
-    真实现：只写在文档里、代码不读的旋钮是幻影，配了静默无效，比没有更坏。
-    """
-    for i, a in enumerate(argv):
-        if a == "--spec":
-            return argv[i + 1], True
-    k = (knob or "").strip()
-    if k:
-        return k, True
-    return DEFAULT_SPEC, False
+    """见 `gate.resolve_spec`：实现只有一处，这里只绑定本闸门的默认名。"""
+    return gate.resolve_spec(argv, knob, DEFAULT_SPEC)
 
 
 def _load(path):

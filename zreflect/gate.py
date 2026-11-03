@@ -131,6 +131,26 @@ def fatal(msg):
     return 2
 
 
+def resolve_spec(argv, knob, default):
+    """规格名解析：`--spec` 显式 > 旋钮 > 默认名。返回 `(名字, 是否显式指定)`。
+
+    纯函数，三处闸门（ab / locks / pins）此前各抄一份**逐字相同**的实现，
+    只差各自的 `DEFAULT_SPEC` 常量 —— 那是三份会漂的拷贝（C4）。现在那三处只
+    传自己的默认名进来。
+
+    显式指定（argv / 旋钮）而文件不在 ⇒ 调用方必须 FATAL（配置了却不存在的
+    规格是「部署了 ≠ 在跑」家族，静默当「未启用」会掩盖坏配置）；
+    默认名不在 ⇒ 未启用退 0。
+    """
+    for i, a in enumerate(argv):
+        if a == "--spec":
+            return argv[i + 1], True
+    k = (knob or "").strip()
+    if k:
+        return k, True
+    return default, False
+
+
 def load_spec(path):
     """读 JSON 规格，返回 (spec, 错误句)。错误句非 None ⇒ 调用方 `fatal()`。
 
