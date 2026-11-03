@@ -243,10 +243,10 @@ def _no_zreflect_case(mk_repo, shutil):
 
 
 def _summary_shape_ok():
-    import re                                                # noqa: PLC0415
-    pat = re.compile(r"^=== [0-9]+ PASS / [0-9]+ FAIL ===$")
-    return bool(pat.match("=== 3 PASS / 0 FAIL ===")) and \
-        not bool(pat.match("=== 3 PASS / 0 fail ==="))
+    """判据在 `machine.is_summary()`（唯一产地，不再各写一份正则）。"""
+    import machine                                           # noqa: PLC0415
+    return machine.is_summary("=== 3 PASS / 0 FAIL ===") and \
+        not machine.is_summary("=== 3 PASS / 0 fail ===")
 
 
 def _refs_case():

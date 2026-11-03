@@ -64,7 +64,7 @@ def tool_repo():
     return os.path.dirname(zdir())
 
 
-def _machine():
+def machine():
     """懒取 `machine`（机器行协议）。
 
     ⚠️ **不能模块级 `import machine`**：`machine` 要 `from gate import module_meta`
@@ -92,7 +92,7 @@ def require_nonempty(name, seq, what=None):
         # `FATAL:` 是机器契约前缀 —— 在**发射点**字面量（不进语言包）。
         # `what` 可能是调用方给的 Message（如 `M("stale.scanned_docs")`）：
         # 先 str() 拍平，否则 null 包里会渲染成嵌套的 `repr(Message)`。
-        raise SystemExit(_machine().emit("fatal", i18n.M("gate.require_nonempty",
+        raise SystemExit(machine().emit("fatal", i18n.M("gate.require_nonempty",
                                                      name=name, what=str(what))))
     return items
 
@@ -120,15 +120,46 @@ def off(notice):
     「全部闸门绿」实为「N 道通过 + M 道从未运行」不可见（本仓实测 8/13 道
     off —— 与本仓立身要消灭的假绿同形）。
     """
-    print(_machine().emit("off", notice))
+    print(machine().emit("off", notice))
     _maybe_hint()
     return 0
 
 
 def fatal(msg):
     """配置 / 环境坏：FATAL + 退 2。"""
-    print(_machine().emit("fatal", msg), file=sys.stderr)
+    print(machine().emit("fatal", msg), file=sys.stderr)
     return 2
+
+
+def py_sources(base):
+    """`base` 目录下所有 `.py` 的 `(文件名, 文本)`；读不了 ⇒ 跳过。
+
+    **唯一产地**：这段 `listdir` + `open(errors="replace")` 曾在**三处**
+    各写一遍 —— `knobs._py_sources`（它自己的 docstring 声称「唯一产地」，
+    但只合并了它那一族的三处，另两份从没动过：`check_snapshots.collect` /
+    `check_i18n.collect_from`，逐字相同）。现在三处都调这里。
+
+    读不了 ⇒ 返回该文件跳过（不是整目录失败）：每个调用方自己判空 ——
+    「空」在它们眼里含义不同（幻影扫描当「没有可疑」、`used_codes` 当
+    「没有 code」、`envfile` 当「闸门坏了」）。
+
+    ⚠️ `base` 必须显式传：上游默认目录不一样（工具仓的 `zreflect` vs
+    被检查仓的 `zreflect`），给默认会把这差别藏起来（实测）。
+    """
+    import os                                            # noqa: PLC0415
+    out = []
+    if not os.path.isdir(base):
+        return out
+    for n in sorted(os.listdir(base)):
+        if not n.endswith(".py"):
+            continue
+        try:
+            with open(os.path.join(base, n), encoding="utf-8",
+                      errors="replace") as fh:
+                out.append((n, fh.read()))
+        except OSError:
+            continue
+    return out
 
 
 def resolve_spec(argv, knob, default):
@@ -478,7 +509,7 @@ def selftest(name, cases):
         # 0/0 洞（本文件开头记载的第三种事故）：空用例清单的自证什么都没查，
         # 却打印「0 PASS / 0 FAIL」绿着退场 —— runner 的 grep 照样认它。
         # 空清单是写自证时的形状错误，当场响，不许绿。
-        raise SystemExit(_machine().emit("fatal",
+        raise SystemExit(machine().emit("fatal",
                          i18n.M("gate.selftest_empty_cases", name=name)))
     bad = 0
     delegated = 0
@@ -492,44 +523,44 @@ def selftest(name, cases):
         # 干净」不可区分，于是提取 helper 就成了关掉恒真检测的合法手段）。
         if why and _is_delegated(why):
             delegated += 1
-            print(_machine().emit("note", "%s | delegated" % label))
+            print(machine().emit("note", "%s | delegated" % label))
             why = None
         if why:
             # `fail | ` 是自证机器行前缀 —— 发射点字面量，不进语言包
-            print(_machine().emit("fail", i18n.M("gate.case_unfalsifiable",
+            print(machine().emit("fail", i18n.M("gate.case_unfalsifiable",
                                               label=label, why=why)))
             bad += 1
             continue
         try:
             ok = bool(fn())
         except SystemExit as e:
-            print(_machine().emit("fail", i18n.M("gate.case_unexpected_systemexit",
+            print(machine().emit("fail", i18n.M("gate.case_unexpected_systemexit",
                                               label=label, error=e)))
             bad += 1
             continue
         except Exception as e:                      # noqa: BLE001
-            print(_machine().emit("fail", i18n.M("gate.case_raised",
+            print(machine().emit("fail", i18n.M("gate.case_raised",
                                               label=label, error=e)))
             bad += 1
             continue
         # 通过行是 `PASS | `，失败行是 `fail | ` —— 两种 kind，一张表
-        print(_machine().emit("pass" if ok else "fail", label))
+        print(machine().emit("pass" if ok else "fail", label))
         bad += 0 if ok else 1
     # 人读摘要行。`=== ` 前缀与收尾 ` ===` 都是机器行形状 —— 两侧留在
     # **发射点**字面量（语言包值不许以 `^===` 开头，见 i18n._validate）。
     if delegated:
         # 摘要里**单列**：委托断言有多少条。它们不是失败，但也不是「扫过且干净」
         # —— 静默把它们算进 PASS 就是本仓最痛恨的假绿。
-        print(_machine().emit("human_summary",
+        print(machine().emit("human_summary",
                            i18n.M("gate.selftest_delegated",
                                   name=name, count=delegated)))
-    print(_machine().emit("human_summary",
+    print(machine().emit("human_summary",
                        i18n.M("gate.selftest_summary",
                               name=name, passed=len(cases) - bad,
                               failed=bad)))
     # 机器摘要行（issue #3 ③）：与检查器名无关的固定格式，runner/CI 直接
     # grep；gates-selftest.sh 会校验每个自证都有这一行（缺了 ⇒ 红）。
-    print(_machine().emit_summary(len(cases) - bad, bad))
+    print(machine().emit_summary(len(cases) - bad, bad))
     return 1 if bad else 0
 
 
@@ -553,7 +584,7 @@ def activate_or_fatal():
     except Exception as e:                               # noqa: BLE001
         # 装配失败时进程默认仍是上一档 `Catalog`（通常是 null 包）⇒ M() 照样
         # 渲染得出来（`MissingPack` 的 `str()` 本身就是 null 形状的 code）。
-        print(_machine().emit("fatal",
+        print(machine().emit("fatal",
                            i18n.M("gate.pack_assembly_failed", error=e)),
               file=sys.stderr)
         return 2
@@ -634,7 +665,7 @@ def run_phase(phase, gates, runner=None, repo_root=None):
         elif rc != 0:
             res["failed"] += 1
             res["fail_list"].append(f)
-        elif any(kind == "off" for _i, kind, _ln in _machine().scan(out)):
+        elif any(kind == "off" for _i, kind, _ln in machine().scan(out)):
             res["off"] += 1
             res["off_list"].append(f)
         else:

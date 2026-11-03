@@ -158,22 +158,6 @@ def selftest_modules(zdir=None):
     return mods, missing
 
 
-def _has_cases(tree):
-    """模块里**写**了自证用例（`_cases` 或 `CASES` 赋值/定义）。
-
-    只认这两个名字：`selftest` 不算 —— gate.py 自己**定义** selftest（平台
-    函数），拿它当判据会把平台本身误收进名录（实测踩到：gate.py 被当模块
-    自证跑，却没有用例清单、也不该有）。
-    """
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            for t in node.targets:
-                if isinstance(t, ast.Name) and t.id in ("_cases", "CASES"):
-                    return True
-        if isinstance(node, ast.FunctionDef) and node.name == "_cases":
-            return True
-    return False
-
 
 def gates(zdir=None):
     """发现式闸门名录：**声明即闸门** —— ast 解析 zreflect/*.py 的模块级
@@ -412,7 +396,11 @@ def problems(gs, missing, mods=None, mods_missing=None,
     out += off_reason_problems(gs)
     out += trailing_newline_problems()
     out += shell_surface_problems()
-    out += dead_interface_problems()
+    # ⚠️ 注入模式（`mods=` 给了）下**不扫死接口**：那条判据看的是真目录，
+    # 注入模式验的是「名录判据本身」，两者混在一张清单里会让断言被真仓状态
+    # 连坐（实测：`unknown_phase` 的断言多出一条 `dead_interface`）。
+    if mods is None:
+        out += dead_interface_problems()
     return out
 
 

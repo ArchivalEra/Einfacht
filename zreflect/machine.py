@@ -65,11 +65,12 @@ U+2028 U+2029`），不认 `\\t \\xa0 \\u200b \\ufeff`。防线必须用**同一
 
   · `REFLECT_LANG` 下的**人读摘要行**会变（翻译），所以 `human` 那一档 per-line
     判形状不判内容；机器摘要行是发射点字面量，不随语言变。
-  · shell 消费方（`gates-selftest.sh` / `reflect-hooks/*.sh` / CI）不能 import
-    Python。机器摘要的正则在那里有**一份有界拷贝**，由 `summary_agrees_with_shell()`
-    做**行为对账**（同一批样本，两边各判一次，结论必须逐条相同）——
-    不是文本比对，所以等价写法不算漂；接在 `registry.problems()` 里。
-    grep 级强度是那里的上限，写明的。
+  · shell 侧仍有**一份**机器摘要形状：`reflect-hooks/einfacht-env.sh`（它必须是
+    shell —— 被钩子 `source` 以导出变量）。守它的**不是**正则对账，而是
+    `harness.run_plugins()`：它实跑那个脚本，摘要行形状不对就报
+    `harness.no_machine_summary(file=…)`（实测改坏那行，它会点名）。
+    （此前这里有一个 `summary_agrees_with_shell()` 的对账器；实测与 harness
+    功能重叠且归因更差，已删。）
 """
 from __future__ import annotations
 
@@ -152,6 +153,16 @@ def _is_sharp(line):
 def _is_broad(line):
     """这**一整行**落在保留前缀里吗？（宽表，用于语言包装载期）"""
     return bool(_BROAD.match(line))
+
+
+def is_summary(line):
+    """这一整行是**机器摘要**（`=== N PASS / M FAIL ===`）吗？
+
+    **唯一产地**：`harness.py` 与 `reflect-hooks/gate.py` 此前各有一份
+    字节相同的正则（`^=== [0-9]+ PASS / [0-9]+ FAIL ===$`）。三份会漂 —— 现在
+    都问这里（`ROWS` 里那条 `machine_summary` 的语法）。
+    """
+    return re.match(_BY_KIND["machine_summary"].grammar, line) is not None
 
 
 def scan(text, keepends=False):
@@ -359,28 +370,6 @@ def _cases():
     return cases
 
 
-def _shell_grep_agrees():
-    """真仓的 shell 正则与 Python 表一致（不是夹具）。"""
-    return summary_agrees_with_shell() == ()
-
-
-def _shell_reconciler_catches_weak_pattern():
-    """对账器**有牙**吗？把一个明显不等价的正则喂给它 ⇒ 必须报不一致。
-
-    恒真的对账器（两边都恒 True）与没有对账器一样 —— 所以这一条是反向断言。
-    """
-    import re                                            # noqa: PLC0415
-    import subprocess                                    # noqa: PLC0415
-    weak = r"^=== (PASS|FAIL)"
-    pat = _BY_KIND["machine_summary"].grammar
-    diffs = []
-    for s in SUMMARY_SAMPLES:
-        py = bool(re.match(pat, s))
-        r = subprocess.run(["sh", "-c", 'printf "%s\\n" "$1" | grep -qE "$2"',
-                            "sh", s, weak], capture_output=True)
-        if py != (r.returncode == 0):
-            diffs.append(s)
-    return len(diffs) > 0
 
 
 def _emit_unknown_kind_raises():
@@ -424,3 +413,4 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import machine as _mod                               # noqa: PLC0415
     sys.exit(_mod._selftest())
+

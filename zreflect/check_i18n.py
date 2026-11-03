@@ -42,6 +42,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gate                                               # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, off, repo, selftest  # noqa: E402
 from i18n import M                                        # noqa: E402
 
@@ -106,11 +107,6 @@ def _pinned_by_comment(src, node):
 # 两份区间常量会漂（C4）。
 cjk = han
 
-
-def _literal_text(node):
-    """一个表达式里所有字符串常量的拼接（用于判断是否含中文）。"""
-    return "".join(c.value for c in ast.walk(node)
-                   if isinstance(c, ast.Constant) and isinstance(c.value, str))
 
 
 def _is_msg_call(node):
@@ -308,20 +304,8 @@ def _fixture_literal_problems(name, tree):
 
 
 def collect_from(d, root):
-    """读目录 `d` 下所有 .py 的源码（(名字, 文本) 列表）。"""
-    out = []
-    if not os.path.isdir(d):
-        return out
-    for n in sorted(os.listdir(d)):
-        if not n.endswith(".py"):
-            continue
-        p = os.path.join(d, n)
-        try:
-            with open(p, encoding="utf-8", errors="replace") as fh:
-                out.append((n, fh.read()))
-        except OSError:
-            continue
-    return out
+    """见 `gate.py_sources`：实现只有一处。`root` 只为兼容签名保留（不再被读）。"""
+    return gate.py_sources(d)
 
 
 def run(argv=None):

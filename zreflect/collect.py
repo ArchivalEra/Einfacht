@@ -48,13 +48,10 @@
 import re
 
 from gate import module_meta, repo                                    # noqa: F401  (re-export 便利)
+from gate import machine                                  # noqa: E402
 from i18n import M                                        # noqa: E402
 
 
-def _machine():
-    """懒取 `machine`（模块级导入会成环：它末尾 `from gate import module_meta`）。"""
-    import machine                                       # noqa: PLC0415
-    return machine
 
 def unavailable(what, why):
     """「读不到」的诚实形状。调用方（渲染/闸门）必须把它渲染成明说，不许当成 0。
@@ -88,7 +85,7 @@ def parse_prev_values(doc_text, row_pattern, group_names):
             except IndexError as error:
                 # 未命名分组 = 配置错，必须响，不许静默拿错值。
                 raise SystemExit(
-                    _machine().emit("fatal", M("collect.regex_missing_group", name=name))
+                    machine().emit("fatal", M("collect.regex_missing_group", name=name))
                 ) from error
         out[key] = rec
     return out

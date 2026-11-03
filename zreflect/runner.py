@@ -29,13 +29,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate                                            # noqa: E402
 from gate import module_meta                          # noqa: E402
+from gate import machine                                  # noqa: E402
 from i18n import M                                                    # noqa: E402
 
 
-def _machine():
-    """懒取 `machine`（模块级导入会成环：它末尾 `from gate import module_meta`）。"""
-    import machine                                       # noqa: PLC0415
-    return machine
 
 def default_timeout():
     """逐字执行的默认超时秒数（`REFLECT_REPLAY_TIMEOUT`；坏值 ⇒ 默认 10）。"""
@@ -71,7 +68,7 @@ def run_cmd(cmd, timeout=None):
     except subprocess.TimeoutExpired:
         return None, ""
     except OSError as e:                # 连 shell 起不来 —— 报成失败，不许算通过
-        return 127, _machine().emit("fatal", e)
+        return 127, machine().emit("fatal", e)
     return p.returncode, p.stdout
 
 

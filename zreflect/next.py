@@ -84,30 +84,6 @@ def working_tree(repo):
     return changed, untracked
 
 
-def open_questions(repo):
-    """未结案的悬案文件名。读不到 questions/ ⇒ None（不是 0）。"""
-    d = os.path.join(repo, os.environ.get("REFLECT_QUESTIONS", "questions"))
-    if not os.path.isdir(d):
-        return None
-    out = []
-    for n in sorted(os.listdir(d)):
-        if not n.endswith(".md"):
-            continue
-        try:
-            text = open(os.path.join(d, n), encoding="utf-8",
-                        errors="replace").read()
-        except OSError:
-            continue
-        # 与 check_questions 同一个字段形状：`**Status:** <value>`
-        status = ""
-        for ln in text.splitlines():
-            if ln.strip().lower().startswith("**status:**"):
-                status = ln.split(":", 1)[1].strip().lower()
-                break
-        if status != "resolved":
-            out.append(n)
-    return out
-
 
 def collect(repo):
     """采集「接着上一轮」的输入。返回 `(last_turn, pending)` 两个字符串列表。
@@ -207,8 +183,6 @@ def _cases():
         # ② 该报的必须报 —— **读不到不许编 0**
         ("★ next.missing_repo_is_loud_not_zero",
          lambda: _missing_repo_loud()),
-        ("★ next.no_questions_dir_is_loud",
-         lambda: _no_questions_loud()),
         # 渲染的确定性：同输入两次逐字节相同（它是纯函数）
         ("★ next.render_is_deterministic", lambda: _render_deterministic()),
         # 空待办必须**明说**「若你认为应该有 —— 那是记录的缺口」

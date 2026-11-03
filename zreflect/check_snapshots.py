@@ -53,6 +53,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gate                                               # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, off, selftest  # noqa: E402
 from i18n import M                                        # noqa: E402
 
@@ -374,21 +375,8 @@ def problems(paths=None, sources=None):
 
 
 def collect(root):
-    """读 root 下所有 .py 的源码。"""
-    out = []
-    d = root
-    if not os.path.isdir(d):
-        return out
-    for n in sorted(os.listdir(d)):
-        if not n.endswith(".py"):
-            continue
-        p = os.path.join(d, n)
-        try:
-            with open(p, encoding="utf-8", errors="replace") as fh:
-                out.append((n, fh.read()))
-        except OSError:
-            continue
-    return out
+    """见 `gate.py_sources`：实现只有一处。"""
+    return gate.py_sources(root)
 
 
 def run(argv=None):
