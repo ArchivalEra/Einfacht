@@ -297,7 +297,7 @@ HISTORY §5.86/§5.83）：重启杀掉验收站点与
 pre-commit 频率错、还拖慢每次提交（所以文件名
 是 `doctor.py` 而不是 `check_doctor.py` ——
 `for g in zreflect/check_*.py` 扫不到它；
-`gates-selftest.sh` 点名一次证明它能红，与
+`zreflect/harness.py` 点名一次证明它能红，与
 env 插件同体例）。活性是瞬时事实 ⇒ **不进台账
 replay**，每次开工真跑即可。边界明说：doctor
 只探**活性**，内容校验归既有闸门 / 验收；
@@ -413,7 +413,8 @@ Settling: <可执行的路径或命令> —— rc=0 ⇒ 结论A；rc=7 ⇒ 结�
 
 ### 五、闸门名录：发现，不是清单
 
-`gates-selftest.sh` **不接受手写名单**。它扫描 `zreflect/check_*.py`，要求每个都广告
+`zreflect/harness.py` **不接受手写名单**。它问 `registry --all-runnable`——**声明面**，
+不是文件名 glob——要求名录里每个都广告
 `--selftest`，缺了就红。
 
 手写名录的现实是：它一定会漂。加新检查器时忘了登记，那个检查器就变成"没人盯着的检查器"——
@@ -421,7 +422,7 @@ Settling: <可执行的路径或命令> —— rc=0 ⇒ 结论A；rc=7 ⇒ 结�
 
 每个 `--selftest` 以机器可读摘要行收尾：`=== N PASS / M FAIL ===`（与人读行并存，
 issue #3 ③）—— runner / CI 不论检查器叫什么都能 grep 同一个固定格式；
-`gates-selftest.sh` 发现自证缺这行即红。
+`zreflect/harness.py` 发现自证缺这行即红。
 
 **插件**的自证也接在同一个 runner 里：
 `reflect-hooks/einfacht-env.sh --selftest`
@@ -483,7 +484,8 @@ python3 reflect-hooks/install.py --chain      # 或：链式装进 .git/hooks（
 #     cp zreflect/world.json.example world.json   # 改：lines、
 #     active、stamps —— 多条独立维护线共享同一个验证
 #     环境的仓库用；单线仓库不用建（闸门明说未启用）
-# 2e. 迁移期纪律（issue #20 ①）：一个仓只许有一份**职责重叠**的 gates-selftest。
+# 2e. 迁移期纪律（issue #20 ①）：一个仓只许有一份**职责重叠**的自证 harness
+#     （现在是 `zreflect/harness.py`；`gates-selftest.sh` 只是兼容薄壳，不算第二份）。
 #     若确实需要两份（平台件在 zreflect/ + 仓专属件在别处），必须加一条
 #     **交集为空**的自证 —— 否则两边都会收同一项，职责必然漂（下游实测：
 #     pre-commit 同时跑两份、名单不同跑了几个月）。重叠才是病，两份文件不是。
@@ -614,7 +616,7 @@ install.py 的机器；CI 才是承诺的正面（issue #4 ②）。
 `GATE_REPO`（`zreflect/gate.py`）指向**被检查的仓库根** —— 自证靠它在夹具树上跑，
 不碰真仓库。
 
-**跨仓库自证**（可复跑）：`gates-selftest.sh` 的最后一节会在一个**临时夹具仓库**里，
+**跨仓库自证**（可复跑）：`zreflect/harness.py` 的最后一节会在一个**临时夹具仓库**里，
 把上面这些名字**全**换成别的（`LEDGER.json` / `NOTES.md` / `RETRACT.json` / `cases/` /
 换名的 README trio），仍要求闸门全绿；再用**默认名字**跑同一夹具 —— 依赖这些名字的闸门
 必须全红。这就是"没有硬编码"的**可证伪**判据；名字改不动，那一节会红。

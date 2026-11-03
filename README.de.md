@@ -392,7 +392,7 @@ Dinge, die *sterben* — läuft also beim
 Commit verlangsamen). (Also heißt die Datei
 `doctor.py`, nicht `check_doctor.py`: die
 Discovery-Schleife `for g in zreflect/
-check_*.py` sieht sie nie; `gates-selftest.sh`
+check_*.py` sieht sie nie; `zreflect/harness.py`
 nennt sie einmal beim Namen, um Rot-Fähigkeit
 zu beweisen, dieselbe Behandlung wie das
 Env-Plugin.) Liveness ist eine augenblickliche
@@ -552,8 +552,11 @@ als nichts.
 
 ### 5. Gate-Register: entdeckt, nicht gelistet
 
-`gates-selftest.sh` **akzeptiert keine handgeschriebene Liste**. Es scannt `zreflect/check_*.py`,
-verlangt von jedem File das `--selftest`-Bekenntnis, und wird rot, wenn eins fehlt.
+`zreflect/harness.py` **akzeptiert keine handgeschriebene Liste**. Es fragt `registry --all-runnable`
+— die **Deklarationsfläche**, kein Dateinamen-Glob — und verlangt von jedem gelisteten Tor das
+`--selftest`-Bekenntnis; fehlt eins, wird es rot.
+(`gates-selftest.sh` bleibt nur als 11-Zeilen-Kompatibilitäts-Shim, das es per `exec` aufruft:
+die CI anderer Repos ruft diese Zeile noch auf, ein Löschen würde ihre Builds mit rc=127 rot machen.)
 
 Die Realität handgeschriebener Register: sie driften immer. Ein Prüfer, beim Hinzufügen nicht
 registriert, wird zu „einem Prüfer, den niemand beobachtet" — während das Register selbst grün
@@ -562,7 +565,7 @@ nicht erinnert.**
 
 Jedes `--selftest` endet mit einer maschinenlesbaren Zusammenfassungszeile,
 `=== N PASS / M FAIL ===` (neben der Menschenzeile, issue #3 ③) — Runner und CI
-greifen ein festes Format, unabhängig vom Namen des Prüfers; `gates-selftest.sh`
+greifen ein festes Format, unabhängig vom Namen des Prüfers; `zreflect/harness.py`
 wird rot, wenn eine Selbstprüfung sie fehlt.
 
 Die **Plugin**-Selbstprüfung hängt am selben Runner:
@@ -800,7 +803,7 @@ Design-Absicht wegräumt, hinterlässt ein schlechteres Repo mit einer besseren 
 `GATE_REPO` (`zreflect/gate.py`) zeigt auf **die Wurzel des geprüften Repos** — Selftests laufen
 über es gegen Fixture-Bäume und fassen das echte Repo nie an.
 
-**Cross-Repo-Selftest** (wiederholbar): Der letzte Abschnitt von `gates-selftest.sh` baut ein
+**Cross-Repo-Selftest** (wiederholbar): Der letzte Abschnitt von `zreflect/harness.py` baut ein
 **wegwerfbares Fixture-Repo**, benennt **alle** diese Namen um (`LEDGER.json` / `NOTES.md` /
 `RETRACT.json` / `cases/` / das README-Trio unter anderen Namen) und verlangt von allen Gates
 Grün — und fährt dasselbe Fixture unter den **Default-Namen**, wo jedes namenabhängige Gate rot

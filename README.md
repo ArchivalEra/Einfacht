@@ -365,7 +365,7 @@ of work, not in pre-commit** — wrong frequency
 there, and it would slow every commit. (So it is
 `doctor.py`, not `check_doctor.py`: the discovery
 loop `for g in zreflect/check_*.py` never sees it;
-`gates-selftest.sh` names it once to prove it can
+`zreflect/harness.py` names it once to prove it can
 turn red, same as the env plugin.) Liveness is an
 instantaneous fact ⇒ **not in ledger replay** — it
 runs for real at every start of work. Boundary,
@@ -508,8 +508,11 @@ a wolf-crying gate gets blanket-`--accept`ed, and that is worse than nothing.
 
 ### 5. Gate registry: discovered, not listed
 
-`gates-selftest.sh` **takes no hand-written list**. It scans `zreflect/check_*.py`, requires every
-file to advertise `--selftest`, and turns red if one is missing.
+`zreflect/harness.py` **takes no hand-written list**. It asks `registry --all-runnable` — the
+*declaration* surface, not a filename glob — and requires every listed gate to advertise
+`--selftest`, turning red if one is missing.
+(`gates-selftest.sh` survives only as an 11-line compatibility shim that `exec`s it: other repos'
+CI still calls that line, so deleting it would turn their builds red with rc=127.)
 
 The reality of hand-written registries: they always drift. Add a checker, forget to register it,
 and that checker becomes "a checker nobody watches" — while the registry itself stays green,
@@ -517,7 +520,7 @@ reporting all-is-well. So it works the other way here: **registration is discove
 
 Every `--selftest` ends with a machine-readable summary line, `=== N PASS / M FAIL ===`
 (kept alongside the human line, issue #3 ③) — runners and CI grep one fixed format
-regardless of the checker's name, and `gates-selftest.sh` turns red when a selftest
+regardless of the checker's name, and `zreflect/harness.py` turns red when a selftest
 lacks it.
 
 The **plugin's** selftest is wired into the same runner:
@@ -736,8 +739,8 @@ and design intent is a worse repo with a better number.
 `GATE_REPO` (`zreflect/gate.py`) points at **the repo being checked** — selftests run against
 fixture trees through it and never touch the real repo.
 
-**Cross-repo selftest** (re-runnable): the last section of `gates-selftest.sh` builds a **throwaway
-fixture repo**, renames **all of these** (`LEDGER.json` / `NOTES.md` / `RETRACT.json` / `cases/` /
+**Cross-repo selftest** (re-runnable): the last section of `zreflect/harness.py` builds a
+**throwaway fixture repo**, renames **all of these** (`LEDGER.json` / `NOTES.md` / `RETRACT.json` / `cases/` /
 the README trio under different names) and requires every gate green — then runs the same fixture
 under the **default** names and requires every name-dependent gate red. That is the falsifiable
 criterion for "no hardcoded names": if a name cannot be changed, that section turns red.
