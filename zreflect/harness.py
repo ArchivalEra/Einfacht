@@ -299,11 +299,20 @@ def _configurable_impl(repo, tmp, registry):
 
 # 端到端零语言的探针：这些入口**都会产出用户可见文本**。
 # 未装语言包时它们必须只输出 code —— 一个中文字符都不许有。
+# ⚠️ 探针只选**不把用户数据填进输出**的入口。
+#
+# `inject-state.py` 曾在这里，但它会列出未推送提交的**标题** —— 提交标题是
+# 作者写的自然语言（中文），那是**用户数据**，作为 `%(count)s` 之外的参数值
+# 原样输出。零语言制度管的是**模板**（`M()` 的话术），不是数据。
+# 把它当探针会让「刚用中文写了提交信息」变成假红（实测：这条正是被自己的
+# 提交标题打红的）。
+#
+# 它仍然在别处被测：`inject.no_cli` 等模板的零语言由 `check_i18n` 的
+# `null_pack_output_has_no_cjk` 覆盖（那条**只喂固定参数**，不碰 git 状态）。
 ZERO_LANG_PROBES = (
     ("zreflect/gate.py", []),
     ("zreflect/facts.py", ["--check"]),
     ("zreflect/knobs.py", ["--list"]),
-    (".zcode/inject-state.py", []),
 )
 
 
