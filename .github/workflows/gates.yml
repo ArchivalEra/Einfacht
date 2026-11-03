@@ -1,5 +1,5 @@
 # 事实新鲜度与全部闸门的正面 CI 落点（issue #4 ②）：
-# reflect-hooks/pre-commit / pre-push 只装在跑过 install.sh 的机器上，
+# reflect-hooks/pre-commit / pre-push 只装在跑过 install.py 的机器上，
 # 且可被 git push --no-verify 跳过 —— 只在自己方便时生效的闸门
 # = 本仓最擅长的那种"从未跑过的闸门"。这里正面执行与本地 hook
 # 同一条判据：facts --check（机器块 ↔ 台账）+ 发现式名录里的
@@ -30,12 +30,16 @@ jobs:
           # 名录对账（缺声明 / 孤儿 / 旗标错 / 写而不跑的自证 / 幻影旋钮）
           python3 zreflect/registry.py --gates >/dev/null
           python3 zreflect/registry.py --selftest-modules >/dev/null
-          python3 zreflect/facts.py --check "${REFLECT_DOC:-STATE.md}"
+          # 不给文档名 ⇒ 查全部有机器块的文档（STATE + PRINCIPLES）：
+          # 「唯二必须丈量的东西」少查一份，那份的「不要手改」就是空话。
+          python3 zreflect/facts.py --check
           # 执行面唯一产地（C1）：跑 runs_at="commit" 的闸门，聚合 ran/off/failed
           # （off 不是通过 —— 输出里单列）。别再 glob check_*.py。
           python3 zreflect/registry.py --run commit
-      - name: 平台模块自证（gate / runner / knobs / registry / guard / ledger / render / facts）
+      - name: 全量自证（闸门 + 插件 + 平台模块 + 跨仓可配置性 + 端到端零语言）
         run: |
-          for m in $(python3 zreflect/registry.py --selftest-modules); do
-            echo "--- $m"; python3 "$m" --selftest || exit 1
-          done
+          # 唯一入口：zreflect/harness.py（原文是 gates-selftest.sh 那 287 行 shell，
+          # 已全 Python 化 —— 跨平台，且它的文案走语言包，不再绕过零语言制度）。
+          # 它自己会跑：每个闸门先证明能红 / 插件 / 平台模块 / 换名夹具 /
+          # 未装语言包时零中文。
+          python3 zreflect/harness.py

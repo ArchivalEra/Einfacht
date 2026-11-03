@@ -16,6 +16,11 @@ from gate import module_meta
 from i18n import M
 
 
+def _machine():
+    """懒取 `machine`（模块级导入会成环：它末尾 `from gate import module_meta`）。"""
+    import machine                                       # noqa: PLC0415
+    return machine
+
 def load(path, missing_ok=False):
     """读 JSON。`missing_ok=True` 时**缺文件返回空表** ——
     给"新仓库第一次跑"用：那时台账还不存在，而 `facts.py` 的两道守卫
@@ -79,7 +84,7 @@ def changed_keys(old_facts, new_facts):
 
 def fact(value, cmd, source, note="", replay=True,
          witness=None, witness_expect=None,
-         calibrate=None, calibrate_expect=None):
+         calibrate=None, calibrate_expect=None, kind="value"):
     """造一条事实：值 + 复跑命令 + 出处（+ 可选备注）。
 
     ⚠️ **`cmd` 的裸值契约（issue #2 ①）**：`check_facts_replay.py` 会**逐字执行**它
@@ -116,7 +121,7 @@ def fact(value, cmd, source, note="", replay=True,
                        (calibrate, calibrate_expect, "calibrate")):
         if (a is None) != (b is None):
             raise SystemExit(
-                "FATAL: %s" % M("ledger.shape_incomplete", name=name))
+                _machine().emit("fatal", M("ledger.shape_incomplete", name=name)))
     d = {"value": value, "cmd": cmd, "source": source,
          "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
          "first_seen": time.strftime("%Y-%m-%d")}
@@ -130,6 +135,12 @@ def fact(value, cmd, source, note="", replay=True,
     if calibrate is not None:
         d["calibrate"] = calibrate
         d["calibrate_expect"] = calibrate_expect
+    # `kind` 决定**复跑契约**：
+    #   "value"     stdout 必须等于 value（数值事实）
+    #   "principle" rc==0 即可，且 stdout **必须为空**（判定，不是一个值）
+    # 两条契约都活在同一个执行器（`check_facts_replay`），不新增复跑路径。
+    if kind != "value":
+        d["kind"] = kind
     return d
 
 

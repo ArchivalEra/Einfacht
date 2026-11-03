@@ -410,7 +410,102 @@ def problems(gs, missing, mods=None, mods_missing=None,
     out += _undeclared_module_problems(undeclared)
     out += _knob_problems(knob_problems, gs)
     out += off_reason_problems(gs)
+    out += machine_vocab_problems()
+    out += trailing_newline_problems()
+    out += shell_surface_problems()
     return out
+
+
+# 允许存在的 shell 文件（**有界白名单**）。全 Python 化的目标下，shell 是例外，
+# 每一个例外都要有理由；新长出来的（或没登记的）⇒ 报。
+ALLOWED_SHELL = (
+    # 兼容薄壳：老仓的 `sh gates-selftest.sh` 仍有效（一行 exec、零文案）
+    "gates-selftest.sh",
+    # 钩子 env 插件：**必须**是 shell（被 `source` 以 export 变量），文案已走 M()
+    "reflect-hooks/einfacht-env.sh",
+    # 旧装法的两个钩子名（git 要求这两个名字，内容是一行 exec）
+    "reflect-hooks/pre-commit",
+    "reflect-hooks/pre-push",
+)
+
+
+def shell_surface_problems(repo_root=None):
+    """`.sh` 只许出现在 `ALLOWED_SHELL` 里 —— 全 Python 化的**守卫**。
+
+    为什么值得判据：本轮之前有 4 个 shell（662 行、67 处 `echo` 中文），它们
+    整份绕过了零语言制度（`check_i18n` 是 AST 扫描器，只认 `.py`）。把它们搬进
+    Python 之后，若不设守卫，下次又会有人「顺手写个 .sh」—— 然后同样的事故
+    重演。白名单是**有界的**：每个例外都必须写在这里，且必须有理由。
+    """
+    import os                                            # noqa: PLC0415
+    root = repo_root or gate.GATE_REPO
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        if "/.git" in dirpath or "/node_modules" in dirpath:
+            continue
+        for n in filenames:
+            if not n.endswith(".sh"):
+                continue
+            rel = os.path.relpath(os.path.join(dirpath, n), root)
+            if rel not in ALLOWED_SHELL:
+                out.append(M("registry.unexpected_shell", file=rel))
+    return out
+
+
+def trailing_newline_problems(zdir=None):
+    """`.py` 文件必须以换行结尾。
+
+    为什么值得一条判据：`py_lines` 这个事实有**两条**量法 —— `facts.measure()`
+    用 `open()` 逐行数（保留最后那个无换行的行），台账里的 `cmd` 用
+    `cat | wc -l`（只数换行符）。一个没有末尾换行的文件让两者差 1，
+    于是 `check_facts_replay` **永远红**，而红的原因与代码毫无关系。
+    实测踩了**四次**（每次都是新建文件时写入器没补末尾换行）。
+
+    修的是根：文件该有末尾换行（POSIX 文本定义，也是 diff 工具的前提）。
+    判据报出来，人补一行即可。
+    """
+    import os                                            # noqa: PLC0415
+    base = zdir or _zdir()
+    out = []
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return out
+    for n in names:
+        if not n.endswith(".py"):
+            continue
+        p = os.path.join(base, n)
+        try:
+            with open(p, "rb") as fh:
+                fh.seek(0, os.SEEK_END)
+                if fh.tell() == 0:
+                    continue                 # 空文件不在这条判据的射程内
+                fh.seek(-1, os.SEEK_END)
+                last = fh.read(1)
+        except OSError:
+            continue
+        if last != b"\n":
+            out.append(M("registry.no_trailing_newline", file=n))
+    return out
+
+
+def machine_vocab_problems():
+    """C4 对账⑦：shell 侧的机器摘要 grep 与 `machine.ROWS` **行为一致**。
+
+    `gates-selftest.sh` 不能 import Python，所以 `=== N PASS / M FAIL ===` 的
+    正则在那里有一份拷贝。`machine.py` 的 docstring 曾声称「由 registry 的对账器
+    盯着」——那时那个对账器**不存在**（review 抓出来的假承诺）。这是它。
+
+    行为对账，不是文本比对：同一批样本喂给两边的判据，结论必须逐条相同。
+    文本比对会把 `\\d` 与 `[0-9]` 这种等价写法误报成漂。
+    """
+    import machine                                       # noqa: PLC0415
+    diffs = machine.summary_agrees_with_shell()
+    if not diffs:
+        return []
+    return [M("registry.machine_vocab_drift",
+              samples=", ".join(repr(s) for s in diffs[:3]),
+              count=len(diffs))]
 
 
 MUST_REASON_MIN = 8      # 理由的最短字数（同 `PINNED:` 的纪律）
@@ -771,11 +866,11 @@ def red_need(gs=None):
 
 
 def plugins(hooks_dir=None):
-    """自证点名的**插件**清单：reflect-hooks/*.sh 带自证标记的（发现式收编）。
+    """自证点名的**插件**清单：`reflect-hooks/` 下带 `--selftest` 的脚本。
 
-    doctor 不再是「点名特殊件」—— C1 起它是正常声明的闸门
-    （`runs_at="start-of-work"`），由 gates()/runnable() 收编，不再需要
-    旁路点名（此前它靠 SPECIAL_PLUGINS 手写一行，是「名字承重」时代的产物）。
+    发现式：`.sh` 与 `.py` 都收 —— 全 Python 化之后入口是 `.py`，但
+    `einfacht-env.sh` 永远得是 shell（它被 `source` 以导出环境变量），
+    所以两种都存在。判据是「文件里有没有 `--selftest`」，不是扩展名。
     """
     d = hooks_dir if hooks_dir is not None else repo("reflect-hooks")
     out = []
@@ -784,7 +879,7 @@ def plugins(hooks_dir=None):
     except OSError:
         names = []
     for n in names:
-        if not n.endswith(".sh"):
+        if not (n.endswith(".sh") or n.endswith(".py")):
             continue
         try:
             text = open(os.path.join(d, n), encoding="utf-8",
@@ -1220,6 +1315,46 @@ def _collect_case(which):
     return False
 
 
+def _unexpected_shell_case():
+    """造一个未登记的 .sh ⇒ 必须报；登记过的 ⇒ 不报。"""
+    import tempfile, shutil, os                        # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        open(os.path.join(d, "probe.sh"), "w").write("# probe\n")
+        if not shell_surface_problems(repo_root=d):
+            return False
+        # 登记过的名字（路径相对根）不该报
+        open(os.path.join(d, "gates-selftest.sh"), "w").write("# ok\n")
+        got = [str(p) for p in shell_surface_problems(repo_root=d)]
+        return len(got) == 1 and "probe.sh" in got[0]
+    finally:
+        shutil.rmtree(d, True)
+
+
+def _han_predicate_case():
+    """`i18n.han()` 认中文、不认 ASCII、不认码点构造之外的近亲。"""
+    from i18n import han                                 # noqa: PLC0415
+    # 夹具里的中文用码点构造（本仓纪律：字面量会进扫描面）
+    return (han(chr(0x4E2D)) and han("a" + chr(0x6587) + "b")
+            and not han("plain ascii")
+            and not han("")
+            and not han(chr(0x3042)))     # 平假名不在 CJK 统一表意区间内
+
+
+def _trailing_newline_case():
+    """造一个缺末尾换行的文件 ⇒ 必须报；补上 ⇒ 不报。"""
+    import tempfile, shutil, os                        # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        open(os.path.join(d, "bad.py"), "w").write("x = 1")
+        if not trailing_newline_problems(zdir=d):
+            return False
+        open(os.path.join(d, "bad.py"), "w").write("x = 1\n")
+        return trailing_newline_problems(zdir=d) == []
+    finally:
+        shutil.rmtree(d, True)
+
+
 def _selftest_false_states_it():
     """每个 `selftest=False` 的模块，描述里都必须点明「自证住在 registry._cases」。
 
@@ -1487,6 +1622,17 @@ def _cases():
         # 与第 23 轮 `gate.py` 同类）：`collect.py` / `living.py` / `gate.py`
         # 都声明了 `selftest=False`，但它们的逻辑**有实质断言**在
         # `registry._cases()`。描述若只写「无自证」= 免责声明。
+        # 全 Python 化的守卫：未登记的 .sh ⇒ 必须报（造一个假的证明它有牙）
+        ("★ registry.unexpected_shell_detected",
+         lambda: _unexpected_shell_case()),
+        # `i18n.han()`：零语言制度的判据（`check_i18n` 与 `harness` 都消费它）。
+        # 它是「有没有中文」的**唯一产地** —— 判错了两道判据一起失效。
+        ("★ registry.han_predicate",
+         lambda: _han_predicate_case()),
+        # 末尾换行（踩了四次）：一个没有末尾换行的 .py 让 `py_lines` 的两条
+        # 量法差 1，复跑闸门永远红 —— 报出来让人补，而不是每次手工发现。
+        ("★ registry.trailing_newline_detected",
+         lambda: _trailing_newline_case()),
         ("★ registry.selftest_false_modules_state_where_selftest_lives",
          lambda: _selftest_false_states_it()),
         # **依赖链覆盖**（C4 对账⑨）：被闸门消费的平台函数必须在某处有断言。
@@ -1541,3 +1687,4 @@ if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],
                               M("gate.title.registry"),
                               _cases, main))
+

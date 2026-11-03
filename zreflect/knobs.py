@@ -66,7 +66,7 @@ REGISTRY = {
                       _Semantic("knobs.sem.reflect_facts")),
     "REFLECT_DOC": ("file", "STATE.md",
                     _Semantic("knobs.sem.reflect_doc")),
-    "REFLECT_DOCS": ("list", "STATE.md,AGENTS.md,README.md,README.zh.md,README.de.md",
+    "REFLECT_DOCS": ("list", "STATE.md,AGENTS.md,PRINCIPLES.md,README.md,README.zh.md,README.de.md",
                      _Semantic("knobs.sem.reflect_docs")),
     "REFLECT_HISTORY_SECS": ("value", "",
                              _Semantic("knobs.sem.reflect_history_secs")),
@@ -114,6 +114,12 @@ REGISTRY = {
                                _Semantic("knobs.sem.reflect_measure_module")),
     "REFLECT_PHASES": ("value", "",
                        _Semantic("knobs.sem.reflect_phases")),
+    # 明确拒绝本套件的原则（不想每提交跑那些判定命令的仓用这个出口）。
+    "REFLECT_NO_PRINCIPLES": ("flag", "",
+                              _Semantic("knobs.sem.reflect_no_principles")),
+    # SessionStart 注入用的语言：未设 `REFLECT_LANG` 时的兜底（注入是人读的）。
+    "REFLECT_INJECT_LANG": ("value", "",
+                            _Semantic("knobs.sem.reflect_inject_lang")),
     "REFLECT_LANG": ("value", "",
                      _Semantic("knobs.sem.reflect_lang")),
     "REFLECT_I18N": ("dir", "",
@@ -125,6 +131,21 @@ REGISTRY = {
 }
 
 KINDS = ("file", "list", "dir", "number", "flag", "value")
+
+
+def knobs_table(rows=None):
+    """旋钮名录的**人读表**（`--list` 的输出）。**纯函数**。
+
+    语义走 `_Semantic`（`str()` 会按当前语言包渲染）；未装语言包时输出
+    `knobs.sem.<name>` 这种 code —— 那是诚实的「没装语言包」。
+    """
+    rows = REGISTRY if rows is None else rows
+    lines = ["| knob | kind | default | meaning |", "|---|---|---|---|"]
+    for name in sorted(rows):
+        kind, default, sem = rows[name]
+        lines.append("| `%s` | %s | %s | %s |"
+                     % (name, kind, default or "—", sem))
+    return "\n".join(lines)
 
 # 占位符记号（`%(name)s`）—— 自证对账 zh / en 的占位符名是否一致。
 _PLACEHOLDER_RE = re.compile(r"%\((\w+)\)")
@@ -947,6 +968,11 @@ if __name__ == "__main__":
     from gate import main_selftest_or                    # noqa: PLC0415
 
     def _run(argv):
+        # `--list`：用户查旋钮语义的**官方出口**（AGENTS.md 路由到这里）。
+        # 此前它不存在 —— 文档指了一个 rc=2 的命令（review 抓到）。
+        if "--list" in argv:
+            print(knobs_table())
+            return 0
         print(M("knobs.module_only"), file=sys.stderr)
         return 2
     # 自证标题是**开发者界面**（check_i18n 的豁免面 ②），按设计保留一种语言。

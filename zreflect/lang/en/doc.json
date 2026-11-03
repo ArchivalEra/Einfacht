@@ -1,0 +1,8 @@
+{
+ "doc.next_block_intro": "> This block is updated automatically by the `Stop` hook (`.zcode/stop-refresh.py`); **do not edit by hand**.",
+ "doc.next_block_why": "> Its only reason to exist: after a context compaction the agent should not start from scratch.",
+ "doc.next_last_turn": "**Last turn**:",
+ "doc.next_last_turn_none": "**Last turn**: no record (new repo / hook not wired).",
+ "doc.next_pending": "**Pending**:",
+ "doc.next_pending_none": "**Pending**: none (if you think there should be some — that is a recording gap, not 'all clear')."
+}

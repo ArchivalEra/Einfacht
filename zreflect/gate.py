@@ -64,6 +64,18 @@ def tool_repo():
     return os.path.dirname(zdir())
 
 
+def _machine():
+    """懒取 `machine`（机器行协议）。
+
+    ⚠️ **不能模块级 `import machine`**：`machine` 要 `from gate import module_meta`
+    来声明自己（registry 的收编要求），模块级导入就成环（实测 ImportError）。
+    这与 `i18n.py` 的懒导入同一个理由 —— 环只能靠「谁先谁后」打破，不能靠
+    在循环里各取一部分。
+    """
+    import machine                                       # noqa: PLC0415
+    return machine
+
+
 def require_nonempty(name, seq, what=None):
     """零值守卫：收集阶段什么都没收到 ⇒ 报错，**不许当「干净」**。
 
@@ -80,8 +92,8 @@ def require_nonempty(name, seq, what=None):
         # `FATAL:` 是机器契约前缀 —— 在**发射点**字面量（不进语言包）。
         # `what` 可能是调用方给的 Message（如 `M("stale.scanned_docs")`）：
         # 先 str() 拍平，否则 null 包里会渲染成嵌套的 `repr(Message)`。
-        raise SystemExit("FATAL: %s" % i18n.M("gate.require_nonempty",
-                                              name=name, what=str(what)))
+        raise SystemExit(_machine().emit("fatal", i18n.M("gate.require_nonempty",
+                                                     name=name, what=str(what))))
     return items
 
 
@@ -108,14 +120,14 @@ def off(notice):
     「全部闸门绿」实为「N 道通过 + M 道从未运行」不可见（本仓实测 8/13 道
     off —— 与本仓立身要消灭的假绿同形）。
     """
-    print("OFF: %s" % notice)
+    print(_machine().emit("off", notice))
     _maybe_hint()
     return 0
 
 
 def fatal(msg):
     """配置 / 环境坏：FATAL + 退 2。"""
-    print("FATAL: %s" % msg, file=sys.stderr)
+    print(_machine().emit("fatal", msg), file=sys.stderr)
     return 2
 
 
@@ -140,6 +152,13 @@ def finish(name, problems, ok):
                      name=name, count=len(problems)), file=sys.stderr)
         for p in problems:
             print("  · " + p, file=sys.stderr)
+            # `.forged` 的**消费者**：渲染期把伪造行按住了（不是拒绝），
+            # 但「按住了」必须**可见** —— 否则文件名里带换行这件事永远没人知道，
+            # 用户只看到一个奇怪的 `\OFF:`。只说在一行里，不刷屏。
+            forged = getattr(p, "forged", ())
+            if forged:
+                print("  " + i18n.M("gate.forged_row_neutralised",
+                                    count=len(forged)), file=sys.stderr)
         _maybe_hint()
         return 1
     print(ok)
@@ -439,8 +458,8 @@ def selftest(name, cases):
         # 0/0 洞（本文件开头记载的第三种事故）：空用例清单的自证什么都没查，
         # 却打印「0 PASS / 0 FAIL」绿着退场 —— runner 的 grep 照样认它。
         # 空清单是写自证时的形状错误，当场响，不许绿。
-        raise SystemExit("FATAL: %s"
-                         % i18n.M("gate.selftest_empty_cases", name=name))
+        raise SystemExit(_machine().emit("fatal",
+                         i18n.M("gate.selftest_empty_cases", name=name)))
     bad = 0
     delegated = 0
     for label, fn in cases:
@@ -453,41 +472,44 @@ def selftest(name, cases):
         # 干净」不可区分，于是提取 helper 就成了关掉恒真检测的合法手段）。
         if why and _is_delegated(why):
             delegated += 1
-            print("note | %s | delegated" % label)
+            print(_machine().emit("note", "%s | delegated" % label))
             why = None
         if why:
             # `fail | ` 是自证机器行前缀 —— 发射点字面量，不进语言包
-            print("fail | %s" % i18n.M("gate.case_unfalsifiable",
-                                       label=label, why=why))
+            print(_machine().emit("fail", i18n.M("gate.case_unfalsifiable",
+                                              label=label, why=why)))
             bad += 1
             continue
         try:
             ok = bool(fn())
         except SystemExit as e:
-            print("fail | %s" % i18n.M("gate.case_unexpected_systemexit",
-                                       label=label, error=e))
+            print(_machine().emit("fail", i18n.M("gate.case_unexpected_systemexit",
+                                              label=label, error=e)))
             bad += 1
             continue
         except Exception as e:                      # noqa: BLE001
-            print("fail | %s" % i18n.M("gate.case_raised",
-                                       label=label, error=e))
+            print(_machine().emit("fail", i18n.M("gate.case_raised",
+                                              label=label, error=e)))
             bad += 1
             continue
-        print("%s | %s" % ("PASS" if ok else "fail", label))
+        # 通过行是 `PASS | `，失败行是 `fail | ` —— 两种 kind，一张表
+        print(_machine().emit("pass" if ok else "fail", label))
         bad += 0 if ok else 1
     # 人读摘要行。`=== ` 前缀与收尾 ` ===` 都是机器行形状 —— 两侧留在
     # **发射点**字面量（语言包值不许以 `^===` 开头，见 i18n._validate）。
     if delegated:
         # 摘要里**单列**：委托断言有多少条。它们不是失败，但也不是「扫过且干净」
         # —— 静默把它们算进 PASS 就是本仓最痛恨的假绿。
-        print("=== %s ===" % i18n.M("gate.selftest_delegated",
-                                    name=name, count=delegated))
-    print("=== %s ===" % i18n.M("gate.selftest_summary",
-                                name=name, passed=len(cases) - bad,
-                                failed=bad))
+        print(_machine().emit("human_summary",
+                           i18n.M("gate.selftest_delegated",
+                                  name=name, count=delegated)))
+    print(_machine().emit("human_summary",
+                       i18n.M("gate.selftest_summary",
+                              name=name, passed=len(cases) - bad,
+                              failed=bad)))
     # 机器摘要行（issue #3 ③）：与检查器名无关的固定格式，runner/CI 直接
     # grep；gates-selftest.sh 会校验每个自证都有这一行（缺了 ⇒ 红）。
-    print("=== %d PASS / %d FAIL ===" % (len(cases) - bad, bad))
+    print(_machine().emit_summary(len(cases) - bad, bad))
     return 1 if bad else 0
 
 
@@ -511,7 +533,8 @@ def activate_or_fatal():
     except Exception as e:                               # noqa: BLE001
         # 装配失败时进程默认仍是上一档 `Catalog`（通常是 null 包）⇒ M() 照样
         # 渲染得出来（`MissingPack` 的 `str()` 本身就是 null 形状的 code）。
-        print("FATAL: %s" % i18n.M("gate.pack_assembly_failed", error=e),
+        print(_machine().emit("fatal",
+                           i18n.M("gate.pack_assembly_failed", error=e)),
               file=sys.stderr)
         return 2
     return 0
@@ -591,7 +614,7 @@ def run_phase(phase, gates, runner=None, repo_root=None):
         elif rc != 0:
             res["failed"] += 1
             res["fail_list"].append(f)
-        elif any(ln.startswith("OFF:") for ln in (out or "").splitlines()):
+        elif any(kind == "off" for _i, kind, _ln in _machine().scan(out)):
             res["off"] += 1
             res["off_list"].append(f)
         else:

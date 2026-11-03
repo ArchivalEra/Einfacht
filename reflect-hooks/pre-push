@@ -1,10 +1,5 @@
 #!/bin/sh
-# 薄壳：真正的判据在 einfacht-gate.sh（唯一入口）。
-#
-# 保留本文件是为了**不破坏旧装法**（`install.sh --legacy` 设 core.hooksPath
-# 指向本目录时，git 找的就是这两个名字）。新装法请用 `--chain`，或直接在你的
-# 钩子里调 `einfacht-gate.sh`。
-set -e
-HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-REPO=$(CDPATH= cd -- "$HERE/.." && pwd)
-exec sh "$HERE/einfacht-gate.sh" push "$REPO"
+# 薄壳 —— 只供**旧装法**（`core.hooksPath reflect-hooks`）使用：git 找的就是
+# 这两个名字。新装法用 `install.py --chain`，或直接在你的钩子里调 gate.py。
+# 逻辑与文案全在 `reflect-hooks/gate.py`（此处零文案，不会漏中文）。
+exec python3 "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/gate.py" push "$(git rev-parse --show-toplevel)"

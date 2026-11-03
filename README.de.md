@@ -611,7 +611,7 @@ drei gemeinsam aktualisieren.**
 ## Benutzung
 
 ```bash
-cp -r zreflect reflect-hooks gates-selftest.sh /path/to/your-repo/
+cp -r zreflect reflect-hooks /path/to/your-repo/
 # 1. Dein measure() schreiben: FACTS.json mit gemessenen Fakten füllen (siehe measure_example in facts.py)
 #    ⚠️ die vier Collector-Prinzipien stehen in zreflect/collect.py — nur persistentes Disk,
 #    keine selbständernden Eingänge, „unavailable" laut sagen, das Teure cachen.
@@ -621,9 +621,9 @@ python3 zreflect/facts.py --get py_lines          # Bare-Wert eines Fakts (für 
 # 2. In Commit/Push einhängen (Block neu rechnen + alle Gates;
 #    Push weist außerdem Pushes ab, die das README-Trio nicht gemeinsam aktualisieren).
 #    Einfacht **belegt den Hook-Platz nicht**: es exponiert einen Einstiegspunkt
-#    (reflect-hooks/einfacht-gate.sh), den jedes Hook-System aufrufen kann.
-sh reflect-hooks/install.sh              # druckt die Verdrahtung, schreibt nichts
-sh reflect-hooks/install.sh --chain      # oder: verkettet in .git/hooks (deins bleibt, läuft zuerst)
+#    (reflect-hooks/gate.py), den jedes Hook-System aufrufen kann.
+python3 reflect-hooks/install.py              # druckt die Verdrahtung, schreibt nichts
+python3 reflect-hooks/install.py --chain      # oder: verkettet in .git/hooks (deins bleibt, läuft zuerst)
 # ⚠️ `--legacy` setzt core.hooksPath — dann ignoriert git .git/hooks **komplett**
 #    (husky / lefthook / pre-commit / handgeschriebene Hooks sterben still).
 # 2b. (optional) den Hooks einen dauerhaften Knopf-Träger geben (Issue #8):
@@ -652,7 +652,7 @@ sh reflect-hooks/install.sh --chain      # oder: verkettet in .git/hooks (deins 
 #     Harnesses mit verschiedenen Listen aus dem pre-commit). Überlappung ist
 #     die Krankheit, zwei Dateien nicht.
 # 3. manuelle Nachprüfung (dieselben Befehle, die die Hooks fahren)
-sh gates-selftest.sh                             # jedes Gate muss erst beweisen, dass es rot kann
+python3 zreflect/harness.py                      # jedes Gate muss erst beweisen, dass es rot kann
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # Entdeckungsregister — keine handgeschriebenen Listen, nicht mal hier
 ```
 
@@ -667,7 +667,7 @@ damit der **fremde** Wert eines anderen Schlüssels (issue #4 ④).
 CI fährt dieselbe Prüfung bei jedem Push (`.github/workflows/gates.yml`):
 `facts.py --check` plus jedes entdeckte Gate — `check_facts_replay`
 eingeschlossen, also wird jeder `cmd` in CI wirklich ausgeführt. Lokale
-Hooks binden nur Maschinen, die `install.sh` liefen; CI ist die Frontlinie
+Hooks binden nur Maschinen, die `install.py` liefen; CI ist die Frontlinie
 des Versprechens (issue #4 ②).
 
 (Repo-interne Docs: `STATE.md` ist das Living-State-Beispiel, `AGENTS.md` enthält die
@@ -766,6 +766,8 @@ Defaults zurück (der Mechanismus ist nach Bauart aussteckbar).
 | `REFLECT_INSTRUMENTS` | leer (fehlt ⇒ aus) | Register widerlegter Meßmethoden (Issue #6 ①): `{"methods": [{text, why, fixed_in}]}` |
 | `REFLECT_INSTRUMENT_DAYS` | leer (fehlt ⇒ aus) | Schwelle der Konstanten-Erkennung in Tagen (Issue #6 ①): `first_seen` älter ⇒ „mißt dieses cmd, oder liefert es immer dieselbe Zahl?" |
 | `REFLECT_ENV_FILE` | `Einfacht.env` | Dateiname des Knopf-Trägers der Hooks (Issue #8), aufgelöst vom entfernbaren Plugin `einfacht-env.sh` (Hooks-Verzeichnis zuerst, Repo-Wurzel zweitens) |
+| `REFLECT_NO_PRINCIPLES` | leer | auf `1` ⇒ dieses Repo registriert die Prinzipien aus `PRINCIPLES.md` **nicht** im Register, ihre Urteilsbefehle laufen nicht pro Commit. Das ist der ausdrückliche Ausstieg — nicht die Datei löschen |
+| `REFLECT_INJECT_LANG` | leer | Sprache, die **nur** die SessionStart-Injektion nutzt (der injizierte Text ist zum Lesen gedacht). Rückfall: `REFLECT_LANG` → installiertes `zh`/`en` → Null-Paket. Sie beeinflusst die Tor-Ausgabe **nicht** — Tore folgen nur `REFLECT_LANG` |
 | `REFLECT_LANG` | leer | Name des Ausgabe-Sprachpakets. Mitgeliefert: `zh` (Chinesisch), `en` (Englisch), `de` (Deutsch); jeder andere Name funktioniert, wenn ein Paket unter `zreflect/lang/` liegt. **Leer = Null-Paket: der Kern gibt keine natürliche Sprache aus**, nur `code(param=value)` (Issue #26). Vertragszeichenketten (`OFF:`, `FATAL:`, `=== N PASS / M FAIL ===`) werden nie übersetzt — sie sind Literale am Ausgabeort |
 | `REFLECT_I18N` | leer | Verzeichnis der Sprachpakete. **Leer ⇒ das mitgelieferte Paketverzeichnis** (`zreflect/lang` neben dem Werkzeug), damit ein Lauf in einem anderen Repo sie trotzdem findet. Gesetzt ⇒ absoluter Pfad oder ein Pfad relativ zur **geprüften Repo-Wurzel**. Beide Formen werden akzeptiert und zusammengeführt: `<lang>.json` (eine Datei) oder `<lang>/*.json` (eine Datei pro Gate-Namespace — zusammengeführt, letztere gewinnt) |
 | `REFLECT_SNAPSHOT_ROOT` | leer | Quellverzeichnis, das das Modul-Snapshot-Tor scannt. Es meldet `from <lokales Modul> import GROSS_GLOBAL`, wenn dieses Global anderswo neu zugewiesen wird — eine Wertkopie veraltet beim Import. Leer ⇒ dieses Tor sagt laut, dass es aus ist |

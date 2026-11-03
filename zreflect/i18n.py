@@ -47,6 +47,9 @@ import os
 import re
 from types import MappingProxyType
 
+# `machine` 只依赖标准库 ⇒ 无环。装载期判据与渲染期净化都从它来。
+import machine                                           # noqa: E402
+
 # ⚠️ **懒取**：本模块被 `gate` 懒导入，模块级反向 `import gate` 会成环。
 # 值本身由 `gate.zdir()` / `gate.tool_repo()` 唯一生产 —— 不在这里再算一遍。
 def _tool_dir():
@@ -60,15 +63,23 @@ def _tool_repo_dir():
 # 未设 `REFLECT_I18N` 时用的**内建包目录**（相对工具仓根）。
 BUILTIN_PACKS = "zreflect/lang"
 
-# 契约前缀：语言包的值**不许**以这些形状开头（否则一条翻译就能伪装成机器行，
-# 让 run_phase 的 `startswith("OFF:")`、runner 的 `=== N PASS` grep 全部失效）。
-# ⚠️ 只在**成品行首**生效，不是对模板的子串扫描（正文里出现「A | B」是正常内容）。
-_CONTRACT_SHAPES = (
-    re.compile(r"^[A-Z][A-Z0-9_]*:"),      # OFF: / FATAL: / DOWN: / SKIP:
-    re.compile(r"^==="),                   # === N PASS / M FAIL ===
-    re.compile(r"^PASS \| "),
-    re.compile(r"^fail \| "),
-)
+# 契约前缀的判据现在**只在一个地方**：`machine.REJECT` 那张表（逐行判）。
+# 此前这里有一份 `_CONTRACT_SHAPES`，用 `^` 锚定的 `.match()` **只判第一行** ——
+# 一条 `"ctx\nOFF: x"` 的语言包值因此被接受，渲染后自成一行 `OFF:`，
+# `run_phase` 就把它归类成 `off`（实测，十个分行符全中）。同一张表还要被
+# 生产方（`gate.off`）、消费方（`gate.run_phase`）与 shell 消费者共用 ——
+# 七份拷贝必漂（C4）。见 `zreflect/machine.py`。
+
+# 中日韩统一表意文字区间。「这一行里有没有中文」是**零语言制度的判据**，
+# 所以它住在制度持有者这里（`check_i18n` 与 `harness` 都从这里取，
+# 不再各写一份区间常量 —— C4）。
+CJK_LO, CJK_HI = 0x4E00, 0x9FFF
+
+
+def han(text):
+    """含中日韩统一表意文字？"""
+    return any(CJK_LO <= ord(c) <= CJK_HI for c in (text or ""))
+
 
 _MAX_VALUE = 40            # null 包里单个值最多显示多少字符（长命令不撑屏）
 
@@ -79,16 +90,23 @@ class MissingPack(Exception):
     """语言包装配问题（缺失 / 损坏 / 形状非法）。调用方转 FATAL rc 2。
 
     **携带 `(code, params)` 而不是拼好的句子**（issue #26 的硬要求：`REFLECT_LANG=en`
-    时给用户看的任何东西都不许是中文）。包不可用 ⇒ 任何语言包都渲染不了 ⇒
-    按 **null 包形状**输出 `code(params…)`，那是唯一诚实的表示。
+    时给用户看的任何东西都不许是中文）。
 
-    `str(e)` 因此是**机器可读**的 code 形状；`e.code` / `e.params` 可用于判据。
+    `str(e)` 是**机器可读**的 code 形状；`e.code` / `e.params` 可用于判据。
+
+    ## 一条豁免：**装载期**的形状错误可以用本包自己渲染
+
+    `Catalog.load` 在 `_validate` 之前就已经把合并表读出来了，所以「这条值伪装成
+    机器行」这类错误**有包可查** —— 说 null 形状（裸 code）是没必要的可读性损失
+    （review 抓出来的：`REFLECT_LANG=zh` 下这条 FATAL 渲染成裸 code）。
+    其它错误（包缺失 / 分片坏）**确实**没有表可查 ⇒ 继续用 null 形状。
     """
 
     def __init__(self, code, **params):
+        table = params.pop("_table", None)      # `_table` 不是消息参数
         self.code = code
         self.params = params
-        super().__init__(_render(code, params, None))
+        super().__init__(_render(code, params, table))
 
 
 class Catalog:
@@ -168,10 +186,26 @@ class Message(str):
     现有消费者全部继续工作。
     """
 
-    __slots__ = ("code", "params")
+    __slots__ = ("code", "params", "forged")
 
     def __new__(cls, code, params, catalog):
-        return super().__new__(cls, catalog.render(code, params))
+        # ⚠️ **渲染后净化**：模板干净不代表渲染结果干净 —— 参数（文件名、文档行、
+        # 异常文本）是运行时数据，144 个调用点把它们以 `%s` 填进模板，而 58 个
+        # 模板以占位符开头（`%(name)s: …`）。实测：扫到名为
+        # `"evil\nOFF: gate not configured"` 的文件时，渲染出来就是一个伪造的
+        # `OFF:` 行，`run_phase` 会把整道闸门归类成 off。
+        #
+        # 语言包装载期**拒绝**，渲染期**只净化** —— 一个跑到一半的闸门因为
+        # 文件名带换行而崩，是把作者管不了的东西变成事故。
+        #
+        # ⚠️ **渲染只做一次**：`.forged` 的值在 `__new__` 里算好挂到实例上，
+        # `__init__` 只读它。此前两个方法各调一次 `catalog.render()` +
+        # `machine.clean()` —— 一条消息渲染两遍（review 抓出来的）。
+        raw = catalog.render(code, params)
+        text, forged = machine.clean(raw)
+        obj = super().__new__(cls, text)
+        obj.forged = forged
+        return obj
 
     def __init__(self, code, params, catalog):
         self.code = code
@@ -210,16 +244,27 @@ def _render(code, params, table):
 
 
 def _validate(table, lang):
-    """校验语言包形状：值不许伪装成机器行（契约结构上不可被翻译）。"""
+    """校验语言包形状：值不许伪装成机器行（契约结构上不可被翻译）。
+
+    ⚠️ **逐行**判（`machine.reject`），不是只看首行 —— 此前 `^` 锚定的 `.match()`
+    只看第一行，于是 `"ctx\\nOFF: x"` 被接受、渲染后自成一行 `OFF:`（实测，
+    十个分行符全中）。语言包是**静态**资产，作者改个写法就能修好 ⇒ 这里
+    **大声拒绝**（FATAL rc 2），不像渲染输出那样只净化。
+    """
     if not isinstance(table, dict) or not table:
         raise MissingPack("i18n.pack_empty", lang=lang)
     for code, value in table.items():
         if not isinstance(value, str):
             raise MissingPack("i18n.value_not_string", lang=lang, key=code)
-        # 只判**行首**：契约串的危险是「伪装成整行」，不是正文里提到它。
-        if any(s.match(value) for s in _CONTRACT_SHAPES):
-            raise MissingPack("i18n.value_masquerades_contract", lang=lang,
-                              key=code, value=value[:40])
+        hit = machine.reject(value)
+        if hit:
+            # 这句错误文案住在**当前进程已装好的包**里（`_DEFAULT`），不在
+            # 正在校验的这张表里 —— 后者只可能含那条坏值。取当前 Catalog 的表
+            # 渲染，读不到就退回 null 形状（诚实，不编）。
+            cur = _DEFAULT[0].table if _DEFAULT else None
+            raise MissingPack("i18n.value_masquerades_contract", _table=cur,
+                              lang=lang, key=code, line=hit[0],
+                              value=value[:40])
 
 
 # ── 包位置与读取（全仓唯一解析点）────────────────────────────────────────────

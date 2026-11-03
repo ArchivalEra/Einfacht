@@ -168,7 +168,7 @@ def _cases():
         ("★ locks.no_sha256",
          lambda: [p.code for p in check(no_sha, root=d)[0]] == ["locks.no_sha256"]),
         # ③ 空输入必须报
-        ("★ locks.empty（零值守卫）",
+        ("★ locks.empty",
          lambda: [p.code for p in check(empty, root=d)[0]] == ["locks.empty"]),
     ]
 

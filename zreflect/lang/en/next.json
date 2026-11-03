@@ -1,0 +1,9 @@
+{
+ "next.commits_count": "unpushed commits: %(count)d",
+ "next.commits_more": "…and %(count)d more",
+ "next.commits_none": "unpushed commits: 0 (all published)",
+ "next.commits_unreadable": "unpushed commits: unreadable (git unavailable or not a repo)",
+ "next.tree_dirty": "working tree is dirty — decide to commit or discard first",
+ "next.tree_state": "working tree: %(changed)d modified, %(untracked)d untracked",
+ "next.tree_unreadable": "working tree: unreadable"
+}

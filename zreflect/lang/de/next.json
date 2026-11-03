@@ -1,0 +1,9 @@
+{
+ "next.commits_count": "nicht gepushte Commits: %(count)d",
+ "next.commits_more": "…und %(count)d weitere",
+ "next.commits_none": "nicht gepushte Commits: 0 (alle veröffentlicht)",
+ "next.commits_unreadable": "nicht gepushte Commits: nicht lesbar (git nicht verfügbar oder kein Repo)",
+ "next.tree_dirty": "Arbeitsbaum ist schmutzig — erst entscheiden: committen oder verwerfen",
+ "next.tree_state": "Arbeitsbaum: %(changed)d geändert, %(untracked)d nicht verfolgt",
+ "next.tree_unreadable": "Arbeitsbaum: nicht lesbar"
+}

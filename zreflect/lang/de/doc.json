@@ -1,0 +1,8 @@
+{
+ "doc.next_block_intro": "> Dieser Block wird automatisch vom `Stop`-Hook aktualisiert (`.zcode/stop-refresh.py`); **nicht von Hand ändern**.",
+ "doc.next_block_why": "> Sein einziger Daseinsgrund: nach einer Kontext-Kompaktierung soll der Agent nicht bei null anfangen.",
+ "doc.next_last_turn": "**Letzter Durchgang**:",
+ "doc.next_last_turn_none": "**Letzter Durchgang**: kein Eintrag (neues Repo / Hook nicht verbunden).",
+ "doc.next_pending": "**Offen**:",
+ "doc.next_pending_none": "**Offen**: nichts (wenn du glaubst, es müsste etwas sein — das ist eine Aufzeichnungslücke, kein 'alles erledigt')."
+}

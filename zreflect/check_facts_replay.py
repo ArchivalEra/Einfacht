@@ -85,6 +85,30 @@ def _replay_one(k, raw_entry, run, seconds, out, stats):
                      command=cmd))
         return
     stats["ran"] += 1
+    # 原则档：rc==0 **还不够**。
+    #
+    # ⚠️ 这里踩过一个**方向性错误**，而且它正是本仓立身要杀的那件事：
+    # 一条闸门在 `off`（没跑）时 rc 也是 0，只看 rc ⇒「没跑」被记成「通过」。
+    # 本仓历史上的「8/13 道 off 而全绿不可见」就是这个形状；在「杀它」的机制里
+    # 再造一遍，是最严重的自相矛盾（review 抓到）。
+    #
+    # 所以原则档的契约是**两条一起**：
+    #   · stdout **非空** —— 真的跑过的闸门会表态（`ok(…)` 或 `OFF: …`）；
+    #     一条什么都不说的命令，我们无法区分「跑过且通过」与「根本没跑」。
+    #   · stdout **不含 `OFF:` 行** —— 那是「未启用」，不是「通过」。
+    # 只看 rc 的写法把 off 洗成绿；只看 stdout 会把「静默通过」误判 —— 两条都要。
+    if entry.get("kind") == "principle":
+        got = stdout.strip()
+        if not got:
+            out.append(M("replay.principle_said_nothing", key=k, command=cmd))
+            return
+        import machine                                    # noqa: PLC0415
+        if any(kind == "off" for _i, kind, _ln in machine.scan(got)):
+            out.append(M("replay.principle_is_off", key=k,
+                         command=cmd, detail=quote(got[:120])))
+            return
+        stats["ok"] += 1
+        return
     got = stdout.strip()
     want = str(value_of(entry))
     if got != want:
@@ -94,12 +118,42 @@ def _replay_one(k, raw_entry, run, seconds, out, stats):
     stats["ok"] += 1
 
 
+# ⚠️ **环守卫**（实测把内存打爆过：OOM）。
+#
+# 一条原则的 cmd 可以是**另一个闸门**（那是复用）。但若那个闸门自己也会
+# 触发复跑（`registry --run commit` 会跑到本闸门；`gates-selftest.sh` 也是），
+# 就形成 `A → B → A` 的环。没有守卫时它会无限 spawn 子进程，直到 OOM
+# （实测：`principle.only_measured` 的 cmd 就是本文件自己 —— 自己复跑自己）。
+#
+# 两道守卫，都必须有：
+#   · **进程内**：本模块正在复跑时，再次调用 `replay_all` 直接返回空结果并
+#     记一条 `replay.nested`（静默返回会变成「嵌套层说一切正常」）；
+#   · **跨进程**：子进程继承环境变量 `EINFACHT_REPLAY_DEPTH`；超过上限 ⇒
+#     整道闸门报 `replay.too_deep`（不是静默跳过 —— 环是一个配置错，
+#     要人改台账，不是运行时噪音）。
+_DEPTH_ENV = "EINFACHT_REPLAY_DEPTH"
+_MAX_DEPTH = 2          # 顶层(1) → 子闸门(2) 为止；再深就是环
+
+
+def _depth():
+    try:
+        return int(os.environ.get(_DEPTH_ENV, "0") or 0)
+    except ValueError:
+        return 0
+
+
 def replay_all(ledger, runner=None):
     """逐条复跑，返回 {problems, ok, attempts, skipped}。**纯副作用只经由 runner**。
 
     `runner(cmd) -> (rc, stdout)` 可注入（自证用假 runner —— 真 shell 进了自证，
     自证就依赖机器了）。纯函数保持安静：这里一行都不 print。
     """
+    if _depth() >= _MAX_DEPTH:
+        return {"problems": [M("replay.too_deep", depth=_depth(),
+                               limit=_MAX_DEPTH)],
+                "ok": 0, "attempts": 0, "ran": 0, "skipped": 0,
+                "witness_attempts": 0, "witnessed": 0,
+                "calibrate_attempts": 0, "calibrated": 0}
     run = runner or run_cmd
     out = []
     f = facts_of(ledger)

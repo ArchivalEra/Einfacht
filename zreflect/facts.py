@@ -4,6 +4,7 @@
 用法
     python3 zreflect/facts.py                      # 量一遍并写 FACTS.json（掉条/改口会拒绝）
     python3 zreflect/facts.py --allow-drop         # 允许本次掉条（掉掉的键会打出来）
+    python3 zreflect/facts.py                      # 量一遍（数值事实 + 原则的判定命令）
     python3 zreflect/facts.py --accept-changes     # 允许本次改口（旧值→新值会打出来）
     python3 zreflect/facts.py --accept-changes=k1,k2  # 只接受列出的键，其余改口仍拒绝（issue #3 ①）
     python3 zreflect/facts.py --render-doc [文件]  # 把机器块写进文档（默认 STATE.md）
@@ -32,6 +33,11 @@ import registry                                          # noqa: E402
 
 REPO_REAL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
+def _machine():
+    """懒取 `machine`（模块级导入会成环：它末尾 `from gate import module_meta`）。"""
+    import machine                                       # noqa: PLC0415
+    return machine
+
 def _out():
     """台账写盘路径。**函数而不是模块常量**：`repo()` 读的是 `gate.GATE_REPO`，
     而夹具会改它 —— 存成模块级字符串会让路径停在被 import 的那一刻。
@@ -100,24 +106,57 @@ def measure_example():
 
 
 # ══ 以下不用改 ════════════════════════════════════════════════════════════════
-def _machine_blocks(ledger):
-    """文档里要维护的两个机器块（Phase 3 起）：
+def _has_principles_doc():
+    """这个仓接受本套件的原则吗？—— **声明**在 `doc.accepts_principles()`，
+    这里只转发（判断只在那一处）。"""
+    import doc                                           # noqa: PLC0415
+    return doc.accepts_principles()
 
-      · 事实块（AUTO:FACTS）—— 台账渲染，**数字的唯一产地**；
-      · 闸门名录块（AUTO:GATES）—— 发现式名录渲染，**闸门叙述的唯一产地**
-        （手写的「N 道闸门」清单漂过：ab/locks/pins 并入当天清单就少了
-        三道 —— 叙述从声明行派生，手写退役）。
 
-    返回 (blocks, 错误句)。名录对账不过（缺声明 / 孤儿 / 旗标错）⇒ 拒绝渲染
-    —— 判据只有一份产地：`registry.problems()`。
+def _doc_names():
+    """有机器块的文档名（按 `_block_homes` 的归属派生，不手写名单）。"""
+    import doc                                           # noqa: PLC0415
+    return (DOC, doc.PRINCIPLES)
+
+
+def _block_homes(ledger):
+    """**块 ← 文档**的归属（数据，不是散在代码里的 if）。
+
+        AUTO:FACTS → STATE.md        台账渲染，**数字的唯一产地**
+        AUTO:GATES → STATE.md        发现式名录渲染，**闸门叙述的唯一产地**
+        AUTO:RULES → PRINCIPLES.md   纪律表渲染，**规矩叙述的唯一产地**
+
+    为什么纪律块单独一份文档：纪律是「不变的设计原则」，状态是「此刻什么样」，
+    历史是「当年的经过」。混在一份里 ⇒ `check_stale` 只能整份当活状态扫，
+    历史里的旧数字一露面就红。
+
+    返回 ([(文档名, [(begin, end, 渲染结果), …]), …], 错误句)。
+    名录对账不过（缺声明 / 孤儿 / 旗标错）⇒ 拒绝渲染 —— 判据只有一份产地。
     """
     gs, missing = registry.gates()
     probs = registry.problems(gs, missing)
     if probs:
         return None, M("facts.registry_mismatch", entries="\n  · ".join(probs))
-    return ((BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
-            (registry.GATES_BEGIN, registry.GATES_END,
-             registry.render_gates(gs))), None
+    import doc                                           # noqa: PLC0415
+    return [
+        (DOC, [(BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
+               (registry.GATES_BEGIN, registry.GATES_END,
+                registry.render_gates(gs))]),
+        (doc.PRINCIPLES, [(doc.RULES_BEGIN, doc.RULES_END,
+                           doc.render_rules())]),
+    ], None
+
+
+def _machine_blocks(ledger):
+    """**向后兼容**：所有块不分文档（老调用方 / 自证用）。
+
+    返回 (blocks, 错误句)，形状与改造前一致 —— 但多了一个纪律块
+    （它的标记只在 `PRINCIPLES.md` 里，`write_doc` 已按归属分派）。
+    """
+    homes, err = _block_homes(ledger)
+    if err:
+        return None, err
+    return tuple(b for _name, blocks in homes for b in blocks), None
 
 
 def write_doc(path_rel, ledger):
@@ -125,19 +164,36 @@ def write_doc(path_rel, ledger):
     悄悄追加会让「块过期」变成「有两份块」，那是更难查的坏法。"""
     p = path_rel if os.path.isabs(path_rel) else repo(path_rel)
     if not os.path.exists(p):
-        print("FATAL: %s" % M("facts.doc_missing_render", path=p),
+        print(_machine().emit("fatal", M("facts.doc_missing_render", path=p)),
               file=sys.stderr)
         return 2
-    blocks, err = _machine_blocks(ledger)
+    homes, err = _block_homes(ledger)
     if err:
-        print("FATAL: %s" % err, file=sys.stderr)
+        print(_machine().emit("fatal", err), file=sys.stderr)
         return 2
+    # 只校验**属于这个文档**的块。别的块的标记在别的文档里 —— 在这儿找不到是
+    # 正常的（此前把所有块都往一份文档塞：纪律块的标记不在 STATE.md 里 ⇒ 报）。
+    #
+    # ⚠️ 找不到归属 ⇒ **必须报**，不许 `blocks=[]` 静默绿。一个不在归属表里的
+    # 文档（比如老用户传了个自定义名字）没有块可校验，那「返回 0」就是在说
+    # 「没有块过期」—— 一句什么都没查过的话。这是零值守卫。
+    mine = [b for name, blocks in homes
+            if name in (os.path.basename(path_rel), path_rel)
+            for b in blocks]
+    if not mine:
+        print(_machine().emit("fatal",
+                              M("facts.doc_has_no_home", path=path_rel,
+                                known=", ".join(name for name, _ in homes))),
+              file=sys.stderr)
+        return 2
+    blocks = mine
     text = open(p, encoding="utf-8").read()
     new = text
     for begin, end, body in blocks:
         if begin not in new or end not in new:
-            print("FATAL: %s" % M("facts.markers_missing_render",
-                                  path=path_rel, begin=begin, end=end),
+            print(_machine().emit("fatal",
+                                  M("facts.markers_missing_render",
+                                    path=path_rel, begin=begin, end=end)),
                   file=sys.stderr)
             return 2
         pre, _, rest = new.partition(begin)
@@ -150,8 +206,9 @@ def write_doc(path_rel, ledger):
     # 合法嵌套 —— md_lines 的 awk 判据 —— 故不做替换前的计数断言）。
     for begin, end, _ in blocks:
         if begin not in new or end not in new:
-            print("FATAL: %s" % M("facts.marker_swallowed_body",
-                                  path=path_rel, begin=begin),
+            print(_machine().emit("fatal",
+                                  M("facts.marker_swallowed_body",
+                                    path=path_rel, begin=begin)),
                   file=sys.stderr)
             return 2
     if new != text:
@@ -165,23 +222,42 @@ def write_doc(path_rel, ledger):
 def check_doc(path_rel, ledger):
     p = path_rel if os.path.isabs(path_rel) else repo(path_rel)
     if not os.path.exists(p):
-        print("FATAL: %s" % M("facts.doc_missing_check", path=p), file=sys.stderr)
+        print(_machine().emit("fatal", M("facts.doc_missing_check", path=p)), file=sys.stderr)
         return 2
-    blocks, err = _machine_blocks(ledger)
+    homes, err = _block_homes(ledger)
     if err:
-        print("FATAL: %s" % err, file=sys.stderr)
+        print(_machine().emit("fatal", err), file=sys.stderr)
         return 2
+    # 只校验**属于这个文档**的块。别的块的标记在别的文档里 —— 在这儿找不到是
+    # 正常的（此前把所有块都往一份文档塞：纪律块的标记不在 STATE.md 里 ⇒ 报）。
+    #
+    # ⚠️ 找不到归属 ⇒ **必须报**，不许 `blocks=[]` 静默绿。一个不在归属表里的
+    # 文档（比如老用户传了个自定义名字）没有块可校验，那「返回 0」就是在说
+    # 「没有块过期」—— 一句什么都没查过的话。这是零值守卫。
+    mine = [b for name, blocks in homes
+            if name in (os.path.basename(path_rel), path_rel)
+            for b in blocks]
+    if not mine:
+        print(_machine().emit("fatal",
+                              M("facts.doc_has_no_home", path=path_rel,
+                                known=", ".join(name for name, _ in homes))),
+              file=sys.stderr)
+        return 2
+    blocks = mine
     text = open(p, encoding="utf-8").read()
     for begin, end, body in blocks:
         if begin not in text or end not in text:
-            print("FATAL: %s" % M("facts.markers_missing_check",
-                                  path=path_rel, begin=begin, end=end),
+            print(_machine().emit("fatal",
+                                  M("facts.markers_missing_check",
+                                    path=path_rel, begin=begin, end=end)),
                   file=sys.stderr)
             return 2
         cur = text.split(begin, 1)[1].split(end, 1)[0]
         fresh = body.split(begin, 1)[1].split(end, 1)[0]
         if cur != fresh:
-            print("FATAL: %s" % M("facts.block_stale", path=path_rel, begin=begin),
+            print(_machine().emit("fatal",
+                                  M("facts.block_stale",
+                                    path=path_rel, begin=begin)),
                   file=sys.stderr)
             return 1
     print(M("facts.block_consistent", path=path_rel))
@@ -232,6 +308,16 @@ def measure(argv):
     `zreflect/guard.py`（decide()，接线有自证），本函数只执行它。
     """
     facts = _measure()
+    # 原则是与数值事实同处一张表的事实 —— 一起量、一起守、一起复跑。
+    # 「唯二必须丈量的东西」= STATE（这些数值）与 PRINCIPLE（这些判定）。
+    #
+    # ⚠️ 只在**有 PRINCIPLES.md 的仓**里登记原则：跨仓夹具的临时目录没有那份
+    # 文档，把本仓的原则复制进它的台账 ⇒ 每条命令都在外仓语境下跑，全红
+    # （实测）。「这个仓要不要遵守这些原则」由**那份文档存在与否**决定 ——
+    # 与 `_block_homes` 用的是同一个声明（块 ← 文档），不是第二套判断。
+    import doc                                           # noqa: PLC0415
+    if _has_principles_doc():
+        facts.update(doc.facts_of_rules())
 
     out = _out()
     old = facts_of(load(out)) if os.path.exists(out) else {}
@@ -245,7 +331,7 @@ def measure(argv):
         print(x)
     if verdict == "refuse":
         for x in problems:
-            print("FATAL: %s" % x, file=sys.stderr)
+            print(_machine().emit("fatal", x), file=sys.stderr)
         return 2
 
     # 仪器生命周期（issue #6 ①）：值没变的键沿用旧 first_seen
@@ -264,7 +350,7 @@ def measure(argv):
     if warn_w:
         print("⚠ %s" % warn_w, file=sys.stderr)
     if fatal_w:
-        print("FATAL: %s" % fatal_w, file=sys.stderr)
+        print(_machine().emit("fatal", fatal_w), file=sys.stderr)
         return 2
     import json                                         # noqa: PLC0415
     import time                                         # noqa: PLC0415
@@ -307,9 +393,10 @@ def _load_or_die():
         # issue #20 ② 补充 2：旧提示「先在仓库根跑一遍量测」正是写出野文件
         # 的那个动作 —— 提示文本本身也是「默认值产地」的一部分，不许教人
         # 踩坑。改说「先确认 REFLECT_FACTS 指向哪里」。
-        print("FATAL: %s" % M("facts.no_ledger_yet",
-                              name=os.path.basename(out),
-                              path=os.path.relpath(out, gate.GATE_REPO)),
+        print(_machine().emit("fatal",
+                              M("facts.no_ledger_yet",
+                                name=os.path.basename(out),
+                                path=os.path.relpath(out, gate.GATE_REPO))),
               file=sys.stderr)
         raise SystemExit(2)
     return load(out)
@@ -322,14 +409,24 @@ def main(argv):
     if argv and argv[0] == "--render-doc":
         return write_doc(argv[1] if len(argv) > 1 else DOC, _load_or_die())
     if argv and argv[0] == "--check":
-        return check_doc(argv[1] if len(argv) > 1 else DOC, _load_or_die())
+        # 不给文档名 ⇒ 查**全部**有机器块的文档（`_block_homes` 是唯一产地）。
+        # 「唯二必须丈量的东西」= STATE（数值）+ PRINCIPLE（判定）—— 两份文档
+        # 都在这个面上，少查一份就是让那份的「不要手改」变成空话。
+        if len(argv) > 1:
+            return check_doc(argv[1], _load_or_die())
+        ledger = _load_or_die()
+        rc = 0
+        for name in _doc_names():
+            r = check_doc(name, ledger)
+            rc = rc or r
+        return rc
     if argv and argv[0] == "--get":
         if len(argv) < 2:
-            print("FATAL: %s" % M("facts.get_needs_key"), file=sys.stderr)
+            print(_machine().emit("fatal", M("facts.get_needs_key")), file=sys.stderr)
             return 2
         ok, v = get_value(_load_or_die(), argv[1])
         if not ok:
-            print("FATAL: %s" % v, file=sys.stderr)
+            print(_machine().emit("fatal", v), file=sys.stderr)
             return 2
         print(v)                       # 只打印值本身：不解释、不带前缀
         return 0

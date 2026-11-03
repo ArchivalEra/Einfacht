@@ -36,6 +36,11 @@ from i18n import M                                     # noqa: E402
 READMES = "README.md,README.zh.md,README.de.md"
 
 
+def _machine():
+    """懒取 `machine`（模块级导入会成环：它末尾 `from gate import module_meta`）。"""
+    import machine                                       # noqa: PLC0415
+    return machine
+
 def lang_names():
     return tuple(s.strip() for s in os.environ.get("REFLECT_READMES", READMES).split(",")
                  if s.strip())
@@ -108,7 +113,7 @@ def run(argv):
         if src == "-":
             lines = sys.stdin.read().splitlines()
         elif not os.path.exists(src):
-            print("FATAL: %s" % M("readme.changed_file_missing", name=src),
+            print(_machine().emit("fatal", M("readme.changed_file_missing", name=src)),
                   file=sys.stderr)
             return 2
         else:

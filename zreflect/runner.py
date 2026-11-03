@@ -32,6 +32,11 @@ from gate import module_meta                          # noqa: E402
 from i18n import M                                                    # noqa: E402
 
 
+def _machine():
+    """懒取 `machine`（模块级导入会成环：它末尾 `from gate import module_meta`）。"""
+    import machine                                       # noqa: PLC0415
+    return machine
+
 def default_timeout():
     """逐字执行的默认超时秒数（`REFLECT_REPLAY_TIMEOUT`；坏值 ⇒ 默认 10）。"""
     try:
@@ -51,13 +56,22 @@ def run_cmd(cmd, timeout=None):
     t = default_timeout() if timeout is None else timeout
     bash = shutil.which("bash")
     argv = [bash, "-o", "pipefail", "-c", cmd] if bash else ["/bin/sh", "-c", cmd]
+    # ⚠️ **环守卫的跨进程那一半**：把深度传给子进程。一条 cmd 可以是另一个
+    # 闸门（复用），而那个闸门可能又触发复跑 —— 没有这个变量，环会无限
+    # spawn 直到 OOM（实测）。深度上限由复跑器判（`_MAX_DEPTH`）。
+    env = dict(os.environ)
+    try:
+        env["EINFACHT_REPLAY_DEPTH"] = str(
+            int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0) + 1)
+    except ValueError:
+        env["EINFACHT_REPLAY_DEPTH"] = "1"
     try:
         p = subprocess.run(argv, cwd=gate.GATE_REPO, capture_output=True, text=True,
-                           timeout=t)
+                           timeout=t, env=env)
     except subprocess.TimeoutExpired:
         return None, ""
     except OSError as e:                # 连 shell 起不来 —— 报成失败，不许算通过
-        return 127, "FATAL: %s" % e
+        return 127, _machine().emit("fatal", e)
     return p.returncode, p.stdout
 
 

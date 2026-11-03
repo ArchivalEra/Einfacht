@@ -45,14 +45,18 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import fatal, finish, main_selftest_or, meta, off, repo, selftest  # noqa: E402
 from i18n import M                                        # noqa: E402
 
-DEFAULT_ROOT = "zreflect"
+# 未配旋钮时扫**这些**目录 —— 套件自己的全部 Python。此前只扫 `zreflect/`，
+# `.zcode/` 的两个钩子脚本（`inject-state.py` / `stop-refresh.py`）在面外，
+# 于是它们**整份裸中文**且无人拦（实测：未装语言包时注入吐中文，而闸门吐 code）。
+# 钩子是套件的一部分 ⇒ 同一道判据要管它们。
+DEFAULT_ROOTS = ("zreflect", ".zcode")
 KNOB = "REFLECT_I18N_ROOT"
 
 
 # CJK 统一表意文字的码点区间（U+4E00–U+9FFF）。**用码点常量而不是字面字符**：
 # 写成 `"一"`/`"鿿"` 会让本闸门扫到自己的源码（那两个就是区间端点）——
 # 实测踩到（报了两条「一」「鿿」的假违规）。
-CJK_LO, CJK_HI = 0x4E00, 0x9FFF
+from i18n import CJK_LO, CJK_HI, han                       # noqa: E402
 
 
 PINNED_MARK = "PINNED:"
@@ -98,9 +102,9 @@ def _pinned_by_comment(src, node):
     return False
 
 
-def cjk(text):
-    """含中日韩统一表意文字？"""
-    return any(CJK_LO <= ord(c) <= CJK_HI for c in text)
+# 「含中文吗」的判据住在 `i18n.han()`（零语言制度的持有者），这里只转发 ——
+# 两份区间常量会漂（C4）。
+cjk = han
 
 
 def _literal_text(node):
@@ -175,7 +179,10 @@ def problems(paths):
             if isinstance(node, ast.Call):
                 f = node.func
                 fn = getattr(f, "id", "") or getattr(f, "attr", "")
-                if fn in ("meta", "module_meta",
+                # `Rule(...)` 是**纪律声明数据**：它的 text/why 渲染进
+                # `PRINCIPLES.md` 的 AUTO:RULES 块（PINNED：固定语言、逐字节对账）。
+                # 与 `meta()` 的 desc 同一类 —— 声明面，不进语言包。
+                if fn in ("meta", "module_meta", "Rule",
                           "compile", "startswith", "endswith", "match", "search",
                           "fullmatch", "find"):
                     for n in ast.walk(node):
@@ -329,18 +336,47 @@ def run(argv=None):
     #   · 配了 ⇒ **被检查仓**相对的路径（env 里写的「相对仓库根的名字」）
     # 混成一条会导致跨仓夹具里 FATAL（实测：GATE_REPO=$tmp 时扫不到 zreflect/）。
     configured = os.environ.get(KNOB, "").strip()
-    if configured:
-        root = configured
-        d = repo(root)
-    else:
-        root = DEFAULT_ROOT
-        d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", root)
-        d = os.path.abspath(d)
-    paths = collect_from(d, root)
+    roots = [configured] if configured else list(DEFAULT_ROOTS)
+    paths = []
+    for root in roots:
+        if configured:
+            d = repo(root)
+        else:
+            d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", root)
+            d = os.path.abspath(d)
+        found = collect_from(d, root)
+        if not found and configured:
+            return fatal(M("i18n_cover.scan_empty_dir", root=root))
+        paths.extend(found)
     if not paths:
-        return fatal(M("i18n_cover.scan_empty_dir", root=root))
+        return fatal(M("i18n_cover.scan_empty_dir", root=", ".join(roots)))
     return finish(M("i18n_cover.title"), problems(paths),
                   M("i18n_cover.ok", files=len(paths)))
+
+
+def _null_output_has_no_cjk():
+    """在**显式 null 包**下渲染一批真实消息 + 探针，断言输出无 CJK。
+
+    这是「未装语言包 ⇒ 零中文」的**行为**判据。选择的消息覆盖
+    「直接渲染」「带参数」「多行」「机器行包装」四种形态。
+    """
+    import i18n                                          # noqa: PLC0415
+    probes = 0
+    with i18n.bind(i18n.NULL):
+        for code, params in (
+                ("gate.platform_usage", {}),
+                ("gate.problems_header", {"name": "x", "count": 1}),
+                ("i18n.value_masquerades_contract",
+                 {"lang": "zz", "key": "k", "line": 1, "value": "v"}),
+                ("replay.mismatch", {"key": "k", "actual": "1", "expected": "2"}),
+                ("gate.env_hint", {"file": "Einfacht.env"}),
+                ("probe.unknown.code", {"a": 1})):
+            text = str(i18n.M(code, **params))
+            probes += 1
+            if cjk(text):
+                return False
+    # 零值守卫：一条都没探 ⇒ 不看
+    return probes == 6
 
 
 def _cj(n):
@@ -407,13 +443,13 @@ def _cases():
         # ① 正常不报
         ("i18n_cover.good_fixture", lambda: problems([("good.py", GOOD)]) == []),
         # ② 该报的必须报
-        ("★ i18n_cover.bare_text（本体在说人话）",
+        ("★ i18n_cover.bare_text",
          lambda: [x.code for x in problems([("bare.py", BARE)])
                   ] == ["i18n_cover.bare_text"]),
-        ("★ i18n_cover.bare_text（自证标签按 1C 必须是 id）",
+        ("★ i18n_cover.bare_text_in_label",
          lambda: [x.code for x in problems([("label.py", LABEL)])
                   ] == ["i18n_cover.bare_text"]),
-        ("★ i18n_cover.parse_error（解析失败不许当通过）",
+        ("★ i18n_cover.parse_error",
          lambda: [x.code for x in problems([("bad.py", "def (")])] == ["i18n_cover.parse_error"]),
         # ② PINNED 按**声明**收编，不按名字（此前两份硬编码名单会漂）
         ("i18n_cover.pinned_by_declaration",
@@ -441,8 +477,20 @@ def _cases():
          lambda: problems([("t.py", FIXTURE_LABEL)]) == []),
         ("i18n_cover.fixture_docstring_cjk_is_allowed",
          lambda: problems([("t.py", FIXTURE_DOC)]) == []),
+        # **端到端**：null 包下真渲染几条消息，输出里不许有 CJK。
+        # 静态扫描（本闸门主体）抓「源码里的裸中文」，抓不到「运行时拼出来的
+        # 中文」—— 实测：注入脚本曾自动挑语言包，源码干净、输出全中文。
+        ("★ i18n_cover.null_pack_output_has_no_cjk",
+         lambda: _null_output_has_no_cjk()),
+        # 反向：把一条中文塞进 null 渲染路径 ⇒ 必须被抓（证明上一条有牙）
+        ("★ i18n_cover.cjk_detector_can_red",
+         lambda: cjk(chr(0x4E2D)) and not cjk("ascii only")),
+        # 扫描面必须**包含钩子目录**：`.zcode/` 的两个钩子是套件的一部分，
+        # 曾经整份裸中文且无人拦（实测）。判据是「默认根里有它」。
+        ("★ i18n_cover.hooks_dir_is_scanned",
+         lambda: ".zcode" in DEFAULT_ROOTS),
         # ③ 空输入必须报
-        ("★ i18n_cover.empty_scan（零值守卫）", lambda: problems([]) != []),
+        ("★ i18n_cover.empty_scan", lambda: problems([]) != []),
     ]
 
 
