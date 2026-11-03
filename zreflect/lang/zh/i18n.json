@@ -1,3 +1,4 @@
 {
- "i18n.module_banner": "i18n 是模块（被各闸门与平台模块消费）；--selftest 看自证。"
+ "i18n.module_banner": "i18n 是模块（被各闸门与平台模块消费）；--selftest 看自证。",
+ "i18n.value_masquerades_contract": "语言包 %(lang)s 的值 `%(key)s` 第 %(line)d 行伪装成了机器行（%(value)r）—— 机器契约不许被翻译，请改写这条文案"
 }

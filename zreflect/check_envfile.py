@@ -331,7 +331,7 @@ def _cases():
         ("★ envfile.known_knobs_scans_checked_repo",
          lambda: _known_knobs_scans_repo()),
         # ③ 空输入必须报
-        ("★ envfile.no_effective_export（零值守卫）",
+        ("★ envfile.no_effective_export",
          lambda: problems({}, registry, fe, de, syntax_ok=True,
                           scanned=registry.keys()) != []),
         # 边界（判据归 knobs.py；此处保留一条串联证明搬运没丢语义）：

@@ -1,0 +1,4 @@
+{
+ "stop.no_output": "（无输出）",
+ "stop.refresh_failed": "机器块重渲染失败（rc=%(return_code)s）：%(detail)s"
+}

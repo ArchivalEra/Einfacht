@@ -13,7 +13,7 @@
 
 ```sh
 python3 zreflect/facts.py --selftest     # 两道守卫 + 文档一致性的断言
-sh gates-selftest.sh --selftest          # runner 自己会红（4 类夹具）
+python3 zreflect/harness.py --selftest   # runner 自己会红
 ```
 
 想手工看守卫真会拦（这是本单真正想问的）：

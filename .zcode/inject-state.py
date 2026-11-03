@@ -19,12 +19,46 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "zreflect"))
 
-from gate import GATE_REPO                                   # noqa: E402
+from gate import GATE_REPO, activate_or_fatal                # noqa: E402
+
+# ⚠️ **不许替用户挑语言包**。
+#
+# 这里曾经写过「没设 `REFLECT_LANG` 就自动挑 zh/en」——那是**偷偷装了个中文包**，
+# 直接违反本仓的硬不变式：**没要语言包 ⇒ null 包**，输出 `code(param=value)`。
+# 实测：同一环境里闸门吐 `OFF: locks.off(name=…)`（正确），注入却吐中文。
+#
+# 要中文注入就显式设 `REFLECT_LANG=zh`。「注入是人读的所以可以破例」是同一种
+# 自我豁免 —— 本仓在 `machine_vocab_ok` 上抓过一次，再犯就是明知故犯。
+activate_or_fatal()
+
+
+def _next_block():
+    """「接着上一轮」的行（`next.py` 现算，**不落盘**）。
+
+    ⚠️ 它不进 `STATE.md`：state 是「现在是什么」、被 `--check` 逐字节对账；
+    而这一块**每轮都变**。两者混在一起会让 `--check` 永远红（实测过）。
+    它每次会话开始时现算 —— 便宜（读 git status 与台账计数），且永远新鲜。
+    """
+    try:
+        import next as _next                               # noqa: PLC0415
+        last, pending = _next.collect(GATE_REPO)
+    except Exception:                                      # noqa: BLE001
+        return None
+    return last + ([""] + pending if pending else [])
 
 
 def _collect():
     """注入内容（纯文本行列表）。与输出形状解耦：信封由 main() 决定。"""
-    lines = ["── zcode-reflect · 活状态 ──"]
+    from i18n import M                                   # noqa: PLC0415
+    lines = [str(M("inject.banner"))]
+
+    # 0) 接着上一轮 —— **最要紧的一条**，放最前（压缩后 agent 第一眼看到的）
+    nb = _next_block()
+    if nb:
+        lines.append(str(M("inject.next_header")))
+        lines.extend("   " + ln.strip() for ln in nb[:8])
+    else:
+        lines.append(str(M("inject.next_missing", source=DOC)))
 
     # 1) 未结案的悬案
     try:
@@ -33,32 +67,33 @@ def _collect():
         open_qs = [(n, field(t, "Status") or "?") for n, t in sorted(qs.items())
                    if (field(t, "Status") or "") != "resolved"]
         if not qs:
-            lines.append("悬案：**一条都没有**（questions/ 是空的 —— 这本身可疑，不是好消息）")
+            lines.append(str(M("inject.questions_none")))
         elif not open_qs:
-            lines.append("悬案：%d 条，全部已结案。" % len(qs))
+            lines.append(str(M("inject.questions_all_closed", total=len(qs))))
         else:
-            lines.append("悬案：未结案 %d / 共 %d —— 先读这些，别重新提出已结案的问题："
-                         % (len(open_qs), len(qs)))
+            lines.append(str(M("inject.questions_open", open=len(open_qs),
+                               total=len(qs))))
             for n, st in open_qs[:8]:
                 lines.append("   · %s  [%s]" % (n, st))
             if len(open_qs) > 8:
-                lines.append("   · …还有 %d 条" % (len(open_qs) - 8))
+                lines.append("   " + str(M("inject.questions_more",
+                                            count=len(open_qs) - 8)))
     except Exception as e:                                   # noqa: BLE001
-        lines.append("悬案：读不到（%r）—— 门开着，别把'读不到'当成'没有'" % e)
+        lines.append(str(M("inject.questions_unreadable", error=e)))
 
     # 2) 台账规模
     try:
         from ledger import facts_of, load                    # noqa: PLC0415
         f = facts_of(load(os.path.join(GATE_REPO, os.environ.get("REFLECT_FACTS", "FACTS.json"))))
-        lines.append("台账：%d 条事实（数字请写引用，别手抄）" % len(f))
+        lines.append(str(M("inject.ledger_size", count=len(f))))
     except Exception as e:                                   # noqa: BLE001
-        lines.append("台账：读不到（%r）" % e)
+        lines.append(str(M("inject.ledger_unreadable", error=e)))
 
     # 3) 翻案条数
     try:
         from ledger import load as _load                     # noqa: PLC0415
         r = _load(os.path.join(GATE_REPO, "retractions.json")).get("retractions") or []
-        lines.append("翻案：%d 条（这些断言**不许**再当现状出现）" % len(r))
+        lines.append(str(M("inject.retractions_size", count=len(r))))
     except Exception:                                        # noqa: BLE001
         pass
     return lines

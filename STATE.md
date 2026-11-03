@@ -1,17 +1,19 @@
-# 活状态（示例）
+# STATE · 此刻是什么样
 
-这个文件演示**活状态文档**该怎么写：正文只写「现在是什么」，**数字一律引用台账键**，
-不手抄。机器维护的块在文件末尾。
+> **这是活状态文档。** 正文只写「现在是什么」；数字一律引用台账键（`[[键名]]`），
+> 不手抄 —— 手抄的数字从写下那一刻起就开始腐烂。
+> 不变的设计原则：看 [`PRINCIPLES.md`](PRINCIPLES.md)。
+>
+> **没有历史文档**：append-only 的经过只在「当时那个条件」下可复现，
+> 复不了的就不占一个会被判的位置。
 
-- 本仓的脚本数：[[py_files]]（引用，不是手抄）。
-- 本仓的文档数：[[md_files]]。
-- 本仓 Python 代码行数：[[py_lines]]。
+本仓规模（引用，不是手抄）：脚本 [[py_files]] 个、文档 [[md_files]] 份、
+Python 代码 [[py_lines]] 行。
 
-> ⚠️ 上面三行就是正确写法。若把最后一行写成「本仓有 `486` 行 Python」，
-> `check_facts.py` 会报**正文裸数字** —— 因为那个数字从写下的那一刻起就开始腐烂：
-> 代码一增减，它就成了假话，而没人会记得回来改它。引用键名则永远不会过期。
-> （判据默认查 ≥ `100` 的整数，`REFLECT_NAKED_MIN` 可调 —— `1`/`2` 这类小数字
-> 遍地都是，查了全是噪音；围栏代码块 / 行内代码内的数字豁免，复跑命令天然带数字。）
+> ⚠️ 上面这行若写成「本仓有 `10310` 行 Python」，`check_facts.py` 会报**正文裸数字**
+> —— 那个数字从写下的那一刻起就开始腐烂：代码一增减它就是假话，而没人会记得
+> 回来改它。引用键名则永远不会过期。（判据默认查 ≥ `100` 的整数，
+> `REFLECT_NAKED_MIN` 可调；围栏代码块 / 行内代码内的数字豁免，复跑命令天然带数字。）
 
 ## 现在是什么
 
@@ -51,7 +53,7 @@
   对账 + `facts.py --check` + `registry --run commit`（跑 commit 相位的
   全部闸门并聚合 ran/off/failed，off 不是通过）；`readme-sync` 查三语同批。
   闸门清单以文末机器块为准 —— 这里不写数字，手写数字一定会漂。
-  本地 hook 只约束跑过 install.sh 的机器（issue #4 ②）。
+  本地 hook 只约束跑过 install.py 的机器（issue #4 ②）。
 
 ## 那条示例翻案
 
@@ -66,12 +68,25 @@
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `md_files` | **8** | 2026-11-02T16:59:36+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `md_lines` | **2629** | 2026-11-02T16:59:36+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
-| `py_files` | **30** | 2026-11-02T16:59:36+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **9861** | 2026-11-02T16:59:36+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **9** | 2026-11-03T18:33:40+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `md_lines` | **2648** | 2026-11-03T18:33:40+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
+| `principle.assertion_lifecycle` | **ok** | 2026-11-03T18:33:40+0800 | `python3 zreflect/check_retractions.py` |
+| `principle.declared_not_globbed` | **ok** | 2026-11-03T18:33:40+0800 | `python3 zreflect/registry.py --gates` |
+| `principle.falsifiable` | **ok** | 2026-11-03T18:33:40+0800 | `python3 zreflect/registry.py --selftest` |
+| `principle.machine_rows` | **ok** | 2026-11-03T18:33:40+0800 | `python3 zreflect/machine.py --selftest` |
+| `principle.no_retired_names` | **ok** | 2026-11-03T18:33:40+0800 | `python3 zreflect/check_stale.py` |
+| `principle.number_once` | **ok** | 2026-11-03T18:33:40+0800 | `python3 zreflect/check_facts.py` |
+| `principle.off_is_visible` | **ok** | 2026-11-03T18:33:40+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;gs=registry.gates()[0];p=registry.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)"` |
+| `principle.only_measured` | **ok** | 2026-11-03T18:33:40+0800 | `python3 -c "import json,sys;d=json.load(open('FACTS.json'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
+| `principle.open_questions_settle` | **ok** | 2026-11-03T18:33:40+0800 | `python3 zreflect/check_questions.py` |
+| `principle.selfcert_harness` | **ok** | 2026-11-03T18:33:40+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)"` |
+| `principle.snapshot_hygiene` | **ok** | 2026-11-03T18:33:40+0800 | `python3 zreflect/check_snapshots.py` |
+| `principle.three_readmes` | **ok** | 2026-11-03T18:33:40+0800 | `python3 zreflect/check_readme_sync.py` |
+| `principle.zero_language` | **ok** | 2026-11-03T18:33:40+0800 | `python3 zreflect/check_i18n.py` |
+| `py_files` | **36** | 2026-11-03T18:33:40+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **12736** | 2026-11-03T18:33:40+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
-4 条事实。
+17 条事实。
 <!-- /AUTO:FACTS -->
 
 <!-- AUTO:GATES -->

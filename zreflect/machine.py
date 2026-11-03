@@ -1,0 +1,588 @@
+#!/usr/bin/env python3
+"""机器行协议：**「哪一行是机器行」的唯一产地**（C1 + C4）。
+
+本仓此前这条知识有**七份互不相认的拷贝**，于是同一个洞在七处各漏一次：
+
+  · `gate.run_phase` 用 `ln.startswith("OFF:")`
+  · `gate.finish` / `fatal` / `off` 各自拼 `"OFF: %s"` / `"FATAL: %s"`
+  · `gate.selftest` 打 `PASS | ` / `fail | ` / `note | ` / `=== N PASS / M FAIL ===`
+  · `gates-selftest.sh` 用 `grep -E '^=== [0-9]+ PASS / [0-9]+ FAIL ===$'`
+  · `reflect-hooks/*.sh` 各打一份 `PASS | ` / `fail | `
+  · `i18n._CONTRACT_SHAPES` 用四条 `^` 锚定的正则**只看值的首行**
+  · 十来个闸门直接 `print("FATAL: %s" % M(...))`
+
+## 这个洞的形状（实测，不是推演）
+
+`i18n._validate` 的判据是 `shape.match(value)` —— `^` 锚定 ⇒ 只判**第一行**。
+一条 `"context\\nOFF: masquerading"` 的语言包值因此被接受，渲染后自成一行
+`OFF:`，`run_phase` 就把它归类成 `off`。
+
+但更常走的那条通道是**参数**：144 个调用点把运行时数据（文件名、文档行、异常
+文本）以 `%s` 填进模板，58 个模板以占位符开头（`%(name)s: …` —— 34 个 `name`、
+6 个 `path`、6 个 `file`）。实测：扫到名为 `"evil\\nOFF: gate not configured"` 的
+文件时，渲染出来就是一个伪造的机器行。**语言包是静态资产（要改它得过 code
+review），文件名不是。**
+
+`s.splitlines()` 认 **10 个**分隔符（`\\n \\r \\x0b \\x0c \\x1c \\x1d \\x1e \\x85
+U+2028 U+2029`），不认 `\\t \\xa0 \\u200b \\ufeff`。防线必须用**同一套**切行语义，
+否则防线与消费方各数各的。
+
+## interface
+
+一张表 + 两个方向：
+
+    Row(kind, grammar, frame)          # 声明：这种行长什么样、怎么发射
+    ROWS                               # 全部声明（含 human 那一档）
+    scan(text) -> tuple[(行号, kind, 行, 是否被安全化)]   # 消费：这堆输出里有机器行吗
+    emit(kind, body) -> str            # 生产：发一条机器行（**保证**只有第一行是机器行）
+    clean(text) -> (text', tuple)      # 净化：把**渲染结果**里的伪造行打断
+    reject(value) -> 首个伪造行 | None  # 装载期：语言包值里有伪造行吗（宽表）
+
+两条通道策略**不同**，这是有意的：
+
+  · **语言包**（静态，作者改一个词就修好）⇒ `reject` **大声拒绝**，FATAL rc 2。
+    用**宽表**：任何 `^[A-Z][A-Z0-9_]*:` 都算保留前缀（`OFF:` / `FATAL:` /
+    `HTTP: 500` / `DNS: failed` …… 作者换个写法即可，不值得为它放宽对面）。
+  · **渲染输出**（动态，文件名不能改）⇒ `clean` **只净化不拒绝**。用**窄表**：
+    只打断消费方**真的会解析**的形状（`OFF:` / `FATAL:` / 四个自证前缀 /
+    机器摘要）。`HTTP: 500` 这类不是机器行，不该被无故改写。
+
+## 为什么净化用 `\\` 前缀而不是报错
+
+一个跑到一半的闸门因为**文件名**带换行而崩，是把作者管不了的东西变成事故。
+`\\` 是唯一不会被消费方还原的字符：`strip()` 会吃掉前导空格，正则 `^` 不会因为
+`\\` 而不锚定。代价是用户看到一个 `\\OFF: x` —— 那是**有意可见**的：「这一行本来
+想伪装成机器行，我把它按住了」。`clean` 同时把被打断的行**回报**给调用方。
+
+## 为什么 `human` 单独一档
+
+`=== ` 有两种行：机器摘要 `=== N PASS / M FAIL ===`（`gates-selftest.sh` grep）
+与人读摘要 `=== gate.title.facts selftest: 18 PASS / 0 fail ===`（要翻译）。
+两套语法**互斥**（实测逐条验过），所以 `^===` 整段禁止是错的 —— 它会禁掉合法
+的人读行。
+
+## 诚实边界
+
+  · `REFLECT_LANG` 下的**人读摘要行**会变（翻译），所以 `human` 那一档 per-line
+    判形状不判内容；机器摘要行是发射点字面量，不随语言变。
+  · shell 消费方（`gates-selftest.sh` / `reflect-hooks/*.sh` / CI）不能 import
+    Python。机器摘要的正则在那里有**一份有界拷贝**，由 `summary_agrees_with_shell()`
+    做**行为对账**（同一批样本，两边各判一次，结论必须逐条相同）——
+    不是文本比对，所以等价写法不算漂；接在 `registry.problems()` 里。
+    grep 级强度是那里的上限，写明的。
+"""
+from __future__ import annotations
+
+import re
+from typing import NamedTuple
+
+# `str.splitlines()` 认的全部分隔符。**不许手写一份近似表** —— 少一个就等于
+# 在自己与消费方之间开一条缝（实测：`\x1c` 与 `U+2029` 都是真的分行符）。
+LINE_BREAKS = ("\r\n", "\n", "\r", "\x0b", "\x0c",
+               "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029")
+
+
+class Row(NamedTuple):
+    """一种机器行：`grammar` 判**一整行**，`frame` 是发射模板。"""
+    kind: str
+    grammar: str
+    frame: str
+
+
+# ⚠️ **顺序即优先级**：`machine_summary` 必须先于 `human_summary` 试 ——
+# 否则 `=== 3 PASS / 0 FAIL ===` 会先被 human 的宽松语法吃掉（两套语法对这条
+# 行**都**能匹配，互斥是靠 human 里的否定前瞻 + 先后顺序共同保证的）。
+ROWS = (
+    Row("off",            r"^OFF:",                                     "OFF: %s"),
+    Row("fatal",          r"^FATAL:",                                   "FATAL: %s"),
+    Row("skip",           r"^SKIP:",                                    "SKIP: %s"),
+    Row("down",           r"^DOWN: ",                                   "DOWN: %s"),
+    Row("pass",           r"^PASS \| ",                                 "PASS | %s"),
+    Row("fail",           r"^fail \| ",                                 "fail | %s"),
+    Row("note",           r"^note \| ",                                 "note | %s"),
+    Row("machine_summary",
+        r"^=== [0-9]+ PASS / [0-9]+ FAIL ===$",                         "=== %d PASS / %d FAIL ==="),
+    Row("human_summary",
+        r"^=== (?!(?:[0-9]+ PASS / [0-9]+ FAIL) ===$).* ===$",          "=== %s ==="),
+)
+
+_KIND = {r.kind for r in ROWS}
+_BY_KIND = {r.kind: r for r in ROWS}
+# 用 `%s` 填一条 `body` 就能发射的 kind。`machine_summary` 要两个整数，
+# 走 `emit_summary` —— 两个入口，因为参数形状本来就不同（硬塞进一个会退化成
+# 「参数是 str 还是 tuple」的运行时猜测）。
+_EMITTABLE = _KIND - {"machine_summary"}
+
+# 窄表：消费方**真的**会解析的形状。只有这些会在渲染输出里被打断。
+# `HTTP: 500` / `DNS: failed` / `README: see docs` 不在内 —— 没有消费方解析它们，
+# 为它们改写用户可见文本是画蛇添足。
+_SHARP = re.compile(r"^(?:"
+                    r"OFF:|FATAL:|SKIP:|DOWN: |PASS \| |fail \| |note \| "
+                    r"|=== [0-9]+ PASS / [0-9]+ FAIL ===$"
+                    r")")
+
+# 宽表：语言包装载期。任何大写词 + 冒号都算保留前缀（含 `HTTP:`）。
+# 理由：语言包是**静态**的，作者改个写法就好；而放宽它会让 `WARN:` / `ACHTUNG:`
+# 这类「以后可能被某个消费方解析」的前缀悄悄溜进包里。
+_BROAD = re.compile(r"^[A-Z][A-Z0-9_]*:")
+
+# 净化前缀。`\` 不会被 `strip()` 吃掉，也不会被任何 `^` 锚定还原。
+GUARD = "\\"
+
+# 语言包值里**允许**出现的多行（实测：现有 3 条正当多行值的续行都以空格缩进）。
+# 这不是白名单，只是说明为什么逐行判不会误杀它们 —— 它们没一行以机器形状开头。
+
+
+def _body(part):
+    """`splitlines(keepends=True)` 的一块 → 去掉**至多一个**行尾分隔符的正文。
+
+    ⚠️ 不许用 `rstrip(...)`：那会把正文里**合法**含有的 `\\x0b` 也剥掉。
+    """
+    for sep in LINE_BREAKS:
+        if part.endswith(sep):
+            return part[:-len(sep)]
+    return part
+
+
+def _is_sharp(line):
+    """这**一整行**是消费方会解析的机器行吗？（窄表，用于渲染输出）"""
+    return bool(_SHARP.match(line))
+
+
+def _is_broad(line):
+    """这**一整行**落在保留前缀里吗？（宽表，用于语言包装载期）"""
+    return bool(_BROAD.match(line))
+
+
+def scan(text, keepends=False):
+    """返回 `text` 里的机器行：`[(行号, kind, 行正文)]`。
+
+    切行用 `str.splitlines()` 的**同一套**语义（`LINE_BREAKS` 就是它的分隔符集），
+    所以本模块与 `run_phase` / `grep` 不可能对「几行」有分歧。
+
+    `keepends=False`（默认）⇒ 返回的**行正文不带**行尾分隔符（调用方拿它去打印 /
+    比对，带个 `\\n` 只会让人踩坑）。`keepends=True` ⇒ 保留分隔符（用于重拼整段）。
+    此前两个分支写反了：默认路径返回**带**分隔符的行。
+    """
+    out = []
+    for i, part in enumerate((text or "").splitlines(keepends=True), 1):
+        body = part if keepends else _body(part)
+        kind = _kind_of(_body(part))
+        if kind:
+            out.append((i, kind, body))
+    return tuple(out)
+
+
+def _kind_of(line):
+    """这一行属于哪种已声明行？顺序即优先级（见 `ROWS` 上方注释）。"""
+    for r in ROWS:
+        if re.match(r.grammar, line):
+            return r.kind
+    return None
+
+
+def emit(kind, body=""):
+    """发一条机器行。**保证**返回串里只有第一行是本 `kind`，其余行都不是机器行。
+
+    这是「生产方」的唯一产地：`frame` 里的前缀是字面量，`body` 里的任何内容
+    都不许再造出一行机器行。
+    """
+    if kind not in _EMITTABLE:
+        raise KeyError("machine.emit_undeclared_kind(kind=%r, available=%r)"
+                       % (kind, ", ".join(sorted(_EMITTABLE))))
+    text = _BY_KIND[kind].frame % (body,)
+    # 第一行是我们**要**的机器行，保留；body 带来的其余行照常打断。
+    cleaned, _hits = clean(text, preserve_first=True)
+    return cleaned
+
+
+def emit_summary(passed, failed):
+    """机器摘要行（`=== N PASS / M FAIL ===`）。数字只许是整数。"""
+    if not isinstance(passed, int) or not isinstance(failed, int):
+        raise TypeError("machine.emit_summary_needs_ints(passed=%r, failed=%r)"
+                        % (passed, failed))
+    return "=== %d PASS / %d FAIL ===" % (passed, failed)
+
+
+def clean(text, kinds=None, preserve_first=False):
+    """把渲染结果里的伪造机器行**打断**。返回 `(净化后的文本, 被打断的行)`。
+
+    `kinds` 可限定只打断某几档。默认打断窄表里的全部形状 —— 那是消费方真的会
+    解析的集合。
+
+    `preserve_first=True`：**第一行原样保留**（`emit` 用 —— 它造的第一行本来就
+    是「我们要的那条机器行」，打断它等于把自己发出去的命令行废掉）。
+    其余行照常打断：body 里塞进来的伪造行不许借机成行。
+    """
+    parts = (text or "").splitlines(keepends=True)
+    hits = []
+    out = []
+    for i, part in enumerate(parts, 1):
+        body = _body(part)
+        if not (preserve_first and i == 1) and _is_sharp(body):
+            kind = _kind_of(body)
+            if kinds is None or kind in kinds:
+                out.append(GUARD + part)
+                hits.append((i, kind, body))
+                continue
+        out.append(part)
+    return "".join(out), tuple(hits)
+
+
+def reject(value):
+    """语言包值的装载期判据：返回**首个**伪造行 `(行号, 行正文)`，或 None。
+
+    宽表：任何大写词 + 冒号开头的整行都算。**逐行**，不只是第一行 ——
+    那正是此前漏掉的地方。
+
+    ⚠️ 这里只用**两张明确的表**（`_BROAD` 管大写词+冒号，`_SHARP` 管消费方真的
+    会解析的窄集），不是「所有 kind」。否则 `human_summary`（`=== … ===`，人读、
+    要翻译）会被误判成伪造 —— 伪装成人读摘要行不是洞，消费方不解析它；伪装成
+    **机器**摘要行才是（那条在 `_SHARP` 里）。
+    """
+    for i, ln in enumerate((value or "").splitlines(), 1):
+        if _is_broad(ln) or _is_sharp(ln):
+            return i, ln
+    return None
+
+
+# ── 自证 ──────────────────────────────────────────────────────────────────────
+
+def _try_reject(value):
+    """`reject` 对这条值必须报（反向断言用）。"""
+    return reject(value) is not None
+
+
+def _clean_has_no_row(value):
+    """净化之后，任何一行都不再是消费方能解析的机器行。"""
+    cleaned, _hits = clean(value)
+    return not any(_is_sharp(ln) for ln in cleaned.splitlines())
+
+
+def _emit_is_single_row(kind, body):
+    """`emit` 出来的串：第一行是本 kind，其余行不是任何机器行。"""
+    text = emit_summary(1, 0) if kind == "machine_summary" else emit(kind, body)
+    rows = scan(text, keepends=True)
+    return (len(rows) == 1 and rows[0][0] == 1 and rows[0][1] == kind)
+
+
+def _packs_have_no_forgery():
+    """**真包**逐值逐行过一遍宽表（不是夹具）—— 修复前这里对 `"x\\nOFF: y"` 是绿的。"""
+    import i18n                                          # noqa: PLC0415
+    bad = []
+    for lang in ("zh", "en", "de"):
+        try:
+            table = i18n.load_pack(lang)
+        except Exception as e:                           # noqa: BLE001
+            return [("load_failed", lang, e)]
+        for code, value in sorted(table.items()):
+            hit = reject(value)
+            if hit:
+                bad.append((lang, code, hit[0], hit[1][:40]))
+    return bad
+
+
+def _cases():
+    """自证：每条都是**实测过的洞**或**实测过的正当内容**。"""
+    # 十个真实分行符逐个来 —— 少验一个就等于留一条缝
+    breaks = [("\n", "LF"), ("\r", "CR"), ("\x0b", "VT"), ("\x0c", "FF"),
+              ("\x1c", "FS"), ("\x1d", "GS"), ("\x1e", "RS"), ("\x85", "NEL"),
+              ("\u2028", "LS"), ("\u2029", "PS")]
+    cases = [
+        # ① 正常不报
+        ("machine.clean_text_is_untouched",
+         lambda: clean("all fine here")[0] == "all fine here"),
+        # 正当多行：续行缩进，没有一行以机器形状开头（真包的形状）
+        ("machine.legit_multiline_passes",
+         lambda: reject("hint\n  set -a; . x; set +a") is None),
+        # 正文**提到**契约串是正当内容（文案要能写「OFF: 不是失败」）
+        ("machine.body_mention_is_fine",
+         lambda: reject("`OFF:` is not a failure") is None),
+        # 人读摘要行必须放行（它要翻译）
+        ("machine.human_summary_is_not_machine",
+         lambda: reject("=== gate.title.facts selftest: 18 PASS / 0 fail ===") is None),
+        # ② 该报的必须报 —— 十个分行符逐个
+        *[("★ machine.forgery_%s" % name,
+            (lambda sep: lambda: _try_reject("ctx" + sep + "OFF: masquerading"))(sep))
+          for sep, name in breaks],
+        # 宽表：大写词+冒号都算保留前缀（语言包作者改个写法即可）
+        ("★ machine.broad_prefix_reserved",
+         lambda: _try_reject("HTTP: 500")),
+        # `note | ` —— 此前**完全**漏网（形状表里没有它）
+        ("★ machine.note_prefix",
+         lambda: _try_reject("note | delegated")),
+        # 机器摘要的**伪造**必须被认出（而人读摘要不许）
+        ("★ machine.machine_summary_is_machine",
+         lambda: _try_reject("=== 9 PASS / 0 FAIL ===")),
+        # ③ 空输入必须报 —— 「空」在这里有三种含义，逐条钉住：
+        #  · 空**正文**发射：行还在（`OFF: `），不许塌成空串或丢掉行
+        ("★ machine.empty_body_keeps_the_row",
+         lambda: emit("off", "") == "OFF: "),
+        #  · 空值的语言包：`""` 本身不是伪造（那是「这条消息没写」，由
+        #    `i18n._validate` 的 `pack_empty` 管）。判据不许把它当成机器行。
+        ("machine.empty_value_is_not_a_forgery",
+         lambda: reject("") is None),
+        #  · 空输出扫描：零行 ⇒ 零个机器行（`run_phase` 据此判 ran 而非 off）
+        ("★ machine.empty_scan_reports_nothing",
+         lambda: scan("") == ()),
+        # 参数通道：文件名带换行 ⇒ 净化后消费方解析不出机器行
+        ("★ machine.param_filename_neutralised",
+         lambda: _clean_has_no_row("evil\nOFF: gate not configured.py")),
+        ("★ machine.off_concat_neutralised",
+         lambda: _clean_has_no_row("OFF: a\nOFF: b: cfg")),
+        # 净化**不误伤**窄表之外的内容（`HTTP: 500` 不是机器行，不许改写）
+        ("machine.narrow_does_not_touch_http",
+         lambda: clean("HTTP: 500 upstream")[0] == "HTTP: 500 upstream"),
+        # `\` 前缀不会被 strip / 正则 ^ 还原（换成空格就会被 strip 吃掉）
+        ("★ machine.guard_survives_strip",
+         lambda: clean("OFF: x")[0].strip().startswith(GUARD)),
+        # 正文里合法的 \x0b 不许被 rstrip 连带剥掉
+        ("machine.keeps_inner_separator_bytes",
+         lambda: clean("a\x0bOFF: x")[0] == "a\x0b" + GUARD + "OFF: x"),
+        # 幂等：已经净化的文本再净化一次不变
+        ("machine.clean_is_idempotent",
+         lambda: (lambda once: clean(once)[0] == once)(clean("OFF: x")[0])),
+        # emit 的保证：body 里塞伪造行也造不出第二行机器行
+        ("★ machine.emit_single_row",
+         lambda: _emit_is_single_row("fail", "x\nOFF: y")),
+        ("★ machine.emit_summary_exact",
+         lambda: emit_summary(3, 0) == "=== 3 PASS / 0 FAIL ==="),
+        ("★ machine.emit_unknown_kind_raises", lambda: _emit_unknown_kind_raises()),
+        # scan 的行号与 kind 要准（消费方用它分类）
+        ("machine.scan_reports_kind_and_line",
+         lambda: scan("ok\nOFF: x\nok")[0][0] == 2
+         and scan("ok\nOFF: x\nok")[0][1] == "off"),
+        # 真包逐值逐行（不是夹具）
+        ("★ machine.real_packs_have_no_forgery",
+         lambda: _packs_have_no_forgery() == []),
+        # C4 对账：shell 那份 grep 拷贝与 Python 的表**行为一致**。
+        # （docstring 曾声称「由 registry 的对账器盯着」，那时没有 —— review
+        # 抓出来的假承诺。这条是它的机器判据。）
+        ("★ machine.shell_grep_agrees", lambda: _shell_grep_agrees()),
+        # 反向：对账器有牙吗？喂一个真的弱的 shell 正则 ⇒ 必须报不一致。
+        ("★ machine.shell_grep_reconciler_can_red",
+         lambda: _shell_reconciler_catches_weak_pattern()),
+    ]
+    return cases
+
+
+def _shell_grep_agrees():
+    """真仓的 shell 正则与 Python 表一致（不是夹具）。"""
+    return summary_agrees_with_shell() == ()
+
+
+def _shell_reconciler_catches_weak_pattern():
+    """对账器**有牙**吗？把一个明显不等价的正则喂给它 ⇒ 必须报不一致。
+
+    恒真的对账器（两边都恒 True）与没有对账器一样 —— 所以这一条是反向断言。
+    """
+    import re                                            # noqa: PLC0415
+    import subprocess                                    # noqa: PLC0415
+    weak = r"^=== (PASS|FAIL)"
+    pat = _BY_KIND["machine_summary"].grammar
+    diffs = []
+    for s in SUMMARY_SAMPLES:
+        py = bool(re.match(pat, s))
+        r = subprocess.run(["sh", "-c", 'printf "%s\\n" "$1" | grep -qE "$2"',
+                            "sh", s, weak], capture_output=True)
+        if py != (r.returncode == 0):
+            diffs.append(s)
+    return len(diffs) > 0
+
+
+def _emit_unknown_kind_raises():
+    try:
+        emit("bogus", "x")
+        return False
+    except KeyError:
+        return True
+
+
+def _selftest():
+    import sys                                           # noqa: PLC0415
+    # ⚠️ 悬在**函数内**：`gate` 顶层导入本模块（机器行协议的消费方要用它），
+    # 模块级 `from gate import ...` 会成环。与 `i18n.py` 同一个理由。
+    from gate import main_selftest_or                    # noqa: PLC0415
+    from i18n import M                                   # noqa: PLC0415
+
+    def _run(argv):
+        # 本模块没有 CLI：它是纯函数库。跑成普通程序 ⇒ 明说怎么自证。
+        print(M("machine.no_cli"), file=sys.stderr)
+        return 0
+    return main_selftest_or(sys.argv[1:], M("gate.title.machine"),
+                            _cases, _run)
+
+
+# ⚠️ 声明行**必须是这个字面形状**（`MODULE = module_meta(...)`）——
+# `registry.modules()` 是 ast 解析，不执行代码；写成 `MODULE = _declare()` 或
+# 放进 `if` 分支都收不到（实测：registry.real_modules_declared 当场红）。
+# 成环问题用**懒导入**解决（见上方 `_selftest` 的注释），不是靠改写声明形状。
+from gate import module_meta                             # noqa: E402
+
+MODULE = module_meta(
+    "机器行协议",
+    "「哪一行是机器行」的唯一产地：一张表 + scan/emit/clean/reject"
+    "（生产、消费、语言包装载、渲染净化四条路径共用同一张表）",
+    selftest=True)
+
+if __name__ == "__main__":
+    import sys                                           # noqa: PLC0415
+    import os                                            # noqa: PLC0415
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import machine as _mod                               # noqa: PLC0415
+    sys.exit(_mod._selftest())
+
+
+# ── 对账器：shell 侧那份**有界拷贝**（C4）──────────────────────────────────────
+# ── 对账器：shell 侧那份**有界拷贝**（C4）──────────────────────────────────────
+#
+# `gates-selftest.sh` / `reflect-hooks/*.sh` 不能 import Python，所以机器摘要
+# 的正则在那里有一份拷贝。`machine.py` 的 docstring 曾声称「由 registry 的对账器
+# 盯着」——那时那个对账器**不存在**（review 抓出来的假承诺）。这里是真的那个。
+#
+# 判据是**行为对账**，不是文本比对：同一批样本，让 Python 的 `ROWS` 与 shell 的
+# `grep -E` 各自判一次，结论必须逐条相同。文本比对会被 `[0-9]` vs `\d` 这种
+# 等价写法误报。
+#
+# ⚠️ 正则**从文件里读**（`shell_summary_patterns`），本文件不许再写一份常量 ——
+# 写死一份去跟 shell 比，比的是「抄得对不对」，shell 里那份改弱了也全绿。
+# （实测踩到：把 `gates-selftest.sh` 的正则改弱成 `^===` 之后对账仍绿。）
+
+# shell 侧的**生产者**（会 `echo "=== N PASS / M FAIL ==="` 的插件自证）。
+# 消费侧已经全 Python 化（`gates-selftest.sh` 退化成一行 exec，逻辑在
+# `harness.py`）—— 但插件的自证仍由 shell 发，所以这个对账器**还**需要：
+# 它保证「shell 发出的摘要行与 `machine.ROWS` 是同一个形状」。
+SHELL_PRODUCERS = ("reflect-hooks/einfacht-env.sh",
+                   "reflect-hooks/einfacht-gate.sh")
+
+# 样本：机器摘要行该认的与不该认的（每一条都是真会出现的形状）。
+SUMMARY_SAMPLES = (
+    "=== 3 PASS / 0 FAIL ===",
+    "=== 0 PASS / 1 FAIL ===",
+    "=== 12 PASS / 3 FAIL ===",
+    "=== gate.title.facts selftest: 18 PASS / 0 fail ===",   # 人读，不该认
+    "=== 3 PASS / 0 FAIL",                                   # 缺尾
+    "  === 3 PASS / 0 FAIL ===",                             # 前缀多空格
+    "=== x PASS / 0 FAIL ===",                               # 非数字
+)
+
+# 每条样本的**期望**（由 `machine_summary` 的语法决定；改语法就得改这里 ——
+# 这是有意的手写对照，因为"什么是机器摘要"是设计决定，不是可推导的）。
+SUMMARY_SAMPLE_EXPECT = {
+    "=== 3 PASS / 0 FAIL ===": True,
+    "=== 0 PASS / 1 FAIL ===": True,
+    "=== 12 PASS / 3 FAIL ===": True,
+    "=== gate.title.facts selftest: 18 PASS / 0 fail ===": False,
+    "=== 3 PASS / 0 FAIL": False,
+    "  === 3 PASS / 0 FAIL ===": False,
+    "=== x PASS / 0 FAIL ===": False,
+}
+
+# ⚠️ 只取**扫 stdin 输出**的那种：`grep -qE '<pat>' "$g"` 是「这文件里有没有
+# 某个字」，不是「这行是不是机器摘要」（实测被它污染：`(main_selftest_or|
+# --selftest)` 被当成摘要正则，于是对账报三条假差异）。
+# 摘要判据的形状固定：`printf ... | grep -qE '<pat>'`。
+# 生产者用 `echo "=== … PASS / … FAIL ==="`。把 `$((...))` / `$var` 之类的
+# 动态片段换成占位，得到一个**形状**样本（够用来对账「是不是同一套语法」）。
+_SHELL_ECHO_RE = re.compile(r'echo\s+"([^"]*PASS\s*/\s*[^"]*FAIL[^"]*)"')
+
+
+def _tool_repo():
+    """工具仓根 —— **懒取 `gate.tool_repo()`**，不自己算。
+
+    ⚠️ 此前这里写的是 `dirname(dirname(abspath(__file__)))`：那是**第二个产地**
+    （`gate.zdir()` / `tool_repo()` 是全仓唯一产地），`registry.path_rule_problems`
+    当场抓到 —— 判据是对的，我踩了它守的那个坑。懒导入破环，不是重算一遍路径。
+    """
+    import gate                                          # noqa: PLC0415
+    return gate.tool_repo()
+
+
+def shell_summary_patterns(repo_root=None):
+    """从 shell 消费方里抽出机器摘要的正则（`grep -qE '<pattern>'` 的实参）。"""
+    import os                                            # noqa: PLC0415
+    base = repo_root or _tool_repo()
+    found = []
+    for name in SHELL_PRODUCERS:
+        try:
+            text = open(os.path.join(base, name), encoding="utf-8",
+                        errors="replace").read()
+        except OSError:
+            continue
+        for m in _SHELL_ECHO_RE.finditer(text):
+            pat = m.group(1)
+            if pat not in found:
+                found.append(pat)
+    return tuple(found)
+
+
+def _shell_shape_to_samples(shape):
+    """把 shell 的 `echo` 形状样本变成**可判**的若干具体行。
+
+    `=== $((6 - _bad)) PASS / $_bad FAIL ===` ⇒ 把每个 `$(...)` / `$var`
+    换成一个具体的数，得到 `=== 6 PASS / 0 FAIL ===` 这样的真实行。
+    「同一套语法」= 这个形状能生成与 `ROWS` 匹配的行，而不是别的形状。
+    """
+    subs = [("$((6 - _bad))", "6"), ("$((5 - _bad))", "5"),
+            ("$_bad", "0"), ("$passed", "3"), ("$failed", "0"),
+            ("$((${6} - _bad))", "6")]
+    out = shape
+    for a, b in subs:
+        out = out.replace(a, b)
+    # 还有别的 `$…` ⇒ 这个形状我们没法实例化，交给调用方当"对不上"处理
+    if "$" in out:
+        return None
+    return out
+
+
+def summary_agrees_with_shell(repo_root=None):
+    """Python 的 `machine_summary` 语法与 shell **生产者**发出的形状一致吗？
+
+    返回不一致的清单（空 = 一致）。找不到 shell 生产者也返回非空 ——
+    「对账没做」不许当「一致」。
+
+    ⚠️ 判据是**行为**：shell 的 `echo` 形状实例化之后，必须被
+    `machine_summary` 的语法**认出**（且不能认出别的形状）。文本比对会被
+    `[0-9]` vs `\\d` 这类等价写法误报。
+    """
+    import re                                            # noqa: PLC0415
+    pats = shell_summary_patterns(repo_root)
+    if not pats:
+        return SUMMARY_SAMPLES       # 对账没做 ⇒ 非空 ⇒ 上层必报
+    pat = _BY_KIND["machine_summary"].grammar
+    diffs = []
+    for shape in pats:
+        sample = _shell_shape_to_samples(shape)
+        if sample is None:
+            diffs.append(shape)      # 实例化不了 ⇒ 没法证明一致
+            continue
+        if not re.match(pat, sample):
+            diffs.append(sample)
+    # 反向：真摘要行必须被认出、`fail` 小写那种人读行必须不被认出
+    for s in SUMMARY_SAMPLES:
+        want = bool(re.match(pat, s))
+        if want != SUMMARY_SAMPLE_EXPECT[s]:
+            diffs.append(s)
+    return tuple(dict.fromkeys(diffs))
+
+
+def _shell_grep_agrees():
+    """真仓的 shell 正则与 Python 表一致（不是夹具）。"""
+    return summary_agrees_with_shell() == ()
+
+
+def _shell_reconciler_catches_weak_pattern():
+    """对账器**有牙**吗：喂一个明显不等价的正则 ⇒ 必须报出差异。
+
+    恒真的对账器与没有对账器一样，所以这一条是反向断言。
+    """
+    import os, tempfile, subprocess                      # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        with open(os.path.join(d, "gates-selftest.sh"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("grep -qE '^==='\n")
+        return len(summary_agrees_with_shell(repo_root=d)) > 0
+    finally:
+        import shutil                                    # noqa: PLC0415
+        shutil.rmtree(d, True)

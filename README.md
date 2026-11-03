@@ -560,7 +560,7 @@ deliberately brutal: **every push must update all three together.**
 ## Usage
 
 ```bash
-cp -r zreflect reflect-hooks gates-selftest.sh /path/to/your-repo/
+cp -r zreflect reflect-hooks /path/to/your-repo/
 # 1. Write your measure(): fill FACTS.json with measured facts (see measure_example in facts.py)
 #    ⚠️ the collector's four principles live in zreflect/collect.py — persistent disk only,
 #    no inputs that change by themselves, say "unavailable" out loud, cache the expensive ones.
@@ -570,9 +570,9 @@ python3 zreflect/facts.py --get py_lines         # bare value of one fact (for s
 # 2. Wire the gates into commit/push (recompute block + run all gates;
 #    push additionally refuses pushes that don't update the README trio together).
 #    Einfacht does NOT take over the hook slot: it exposes one entry
-#    (reflect-hooks/einfacht-gate.sh) that any hook system can call.
-sh reflect-hooks/install.sh              # prints wiring instructions, writes nothing
-sh reflect-hooks/install.sh --chain      # or: chain into .git/hooks (keeps yours, runs it first)
+#    (reflect-hooks/gate.py) that any hook system can call.
+python3 reflect-hooks/install.py              # prints wiring instructions, writes nothing
+python3 reflect-hooks/install.py --chain      # or: chain into .git/hooks (keeps yours, runs it first)
 # ⚠️ `--legacy` sets core.hooksPath, which makes git IGNORE .git/hooks entirely
 #    (husky / lefthook / pre-commit / hand-written hooks go silently dead).
 # 2b. (optional) give the hooks a durable knob carrier (issue #8):
@@ -597,7 +597,7 @@ sh reflect-hooks/install.sh --chain      # or: chain into .git/hooks (keeps your
 #     pre-commit with different lists for months). Overlap is the disease;
 #     two files are not.
 # 3. Manual re-verification (the same commands the hooks run)
-sh gates-selftest.sh                            # every gate must first prove it can turn red
+python3 zreflect/harness.py                     # every gate must first prove it can turn red
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # discovered registry — no hand-written lists, not even here
 ```
 
@@ -611,7 +611,7 @@ substring-matching `"value"` and grabbing **another key's** value (issue #4 ④)
 CI runs the same judgment on every push (`.github/workflows/gates.yml`):
 `facts.py --check` plus every discovered checker — `check_facts_replay` included,
 so every `cmd` is really executed in CI too. Local hooks only bind machines that ran
-`install.sh`; CI is the promise's front line (issue #4 ②).
+`install.py`; CI is the promise's front line (issue #4 ②).
 
 (Repo-local docs: `STATE.md` is the living-state example and `AGENTS.md` holds the agent rules —
 both are kept in Chinese; the trilingual rule applies to the README trio.)
@@ -702,6 +702,8 @@ to plain env vars + default names (the mechanism is removable by design).
 | `REFLECT_INSTRUMENTS` | empty (absent ⇒ off) | falsified-measurement-method registry (issue #6 ①): `{"methods": [{text, why, fixed_in}]}` |
 | `REFLECT_INSTRUMENT_DAYS` | empty (absent ⇒ off) | constant-value detection threshold in days (issue #6 ①): a ledger entry whose `first_seen` is older ⇒ "is this cmd measuring, or always returning the same number?" |
 | `REFLECT_ENV_FILE` | `Einfacht.env` | file name of the hooks' knob carrier (issue #8), resolved by the removable plugin `einfacht-env.sh` (hooks dir first, repo root second) |
+| `REFLECT_NO_PRINCIPLES` | empty | set to `1` ⇒ this repo does **not** register the principles in `PRINCIPLES.md` into the ledger, so their verdict commands are not replayed every commit. This is the explicit opt-out — do not rely on deleting the file |
+| `REFLECT_INJECT_LANG` | empty | language used **only** by the SessionStart injection (the text it feeds the agent is meant to be read). Falls back to `REFLECT_LANG`, then to `zh`/`en` if installed, then to the null pack. It never changes gate output — gates follow `REFLECT_LANG` only |
 | `REFLECT_LANG` | empty | output language pack name. Ships with `zh` (Chinese), `en` (English), `de` (German); any other name works if you drop a pack in `zreflect/lang/`. **Empty = the null pack: the core emits no natural language**, only `code(param=value)` (issue #26). Comment strings (`OFF:`, `FATAL:`, `=== N PASS / M FAIL ===`) are never translated — they are literals at the emission point |
 | `REFLECT_I18N` | empty | directory holding language packs. **Empty ⇒ the pack dir that ships with the toolkit** (`zreflect/lang` beside the tool), so a run in another repo still finds them. Set it ⇒ absolute path, or a path relative to the **repo under check**. Both shapes are accepted and merged: `<lang>.json` (one file) or `<lang>/*.json` (one file per gate namespace — merged, later wins) |
 | `REFLECT_SNAPSHOT_ROOT` | empty | source dir scanned by the module-snapshot gate. It flags `from <localmodule> import SOME_GLOBAL` when that global is reassigned elsewhere — a copy by value goes stale at import time. Empty ⇒ that gate says out loud it is off |

@@ -1,0 +1,13 @@
+{
+ "inject.banner": "── zcode-reflect · Lebendzustand ──",
+ "inject.ledger_size": "Register: %(count)d Fakten (Zahlen zitieren, nicht abschreiben)",
+ "inject.ledger_unreadable": "Register: nicht lesbar (%(error)r)",
+ "inject.next_header": "Übernahme vom letzten Durchgang (pro Sitzung berechnet, nichts auf Platte):",
+ "inject.next_missing": "Übernahme: `%(source)s` hat keinen AUTO:NEXT-Block (Hook nicht verbunden?)",
+ "inject.questions_all_closed": "Offene Fragen: %(total)d gesamt, alle geschlossen.",
+ "inject.questions_more": "…und %(count)d weitere",
+ "inject.questions_none": "Offene Fragen: **überhaupt keine** (questions/ ist leer — das ist verdächtig, keine gute Nachricht)",
+ "inject.questions_open": "Offene Fragen: %(open)d offen / %(total)d gesamt — zuerst diese lesen, geschlossene nicht erneut aufwerfen:",
+ "inject.questions_unreadable": "Offene Fragen: nicht lesbar (%(error)r) — die Tür steht offen; 'nicht lesbar' ist nicht 'keine'",
+ "inject.retractions_size": "Widerrufe: %(count)d (diese Behauptungen dürfen **nie** wieder als aktuell erscheinen)"
+}

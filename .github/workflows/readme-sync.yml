@@ -1,5 +1,5 @@
 # 三语 README「每次推送必须同批更新」是**承诺**，不是本地建议：
-# pre-push 可被 `git push --no-verify` 跳过，也只装在跑过 install.sh 的机器上 ——
+# pre-push 可被 `git push --no-verify` 跳过，也只装在跑过 install.py 的机器上 ——
 # 只在自己方便时生效的闸门 = 本仓最擅长的那种"从未跑过的闸门"。所以 CI 正面执行同一条判据。
 # 判据与 reflect-hooks/pre-push、zreflect/check_readme_sync.py --changed 完全同源（复用闸门本体）。
 name: readme-sync

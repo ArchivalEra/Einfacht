@@ -44,6 +44,6 @@
 
 1. 开工前（要跑套件 / 基准）：`python3
    zreflect/doctor.py` —— 有 `DOWN` 就别开跑。
-2. 改完：`sh gates-selftest.sh` 全绿再提交
+2. 改完：`python3 zreflect/harness.py` 全绿再提交
    （装了钩子则 pre-commit 自动做）。
 3. 推送：pre-push 自动查三语 README 同批。

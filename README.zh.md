@@ -456,7 +456,7 @@ issue #3 ③）—— runner / CI 不论检查器叫什么都能 grep 同一个�
 ## 用法
 
 ```bash
-cp -r zreflect reflect-hooks gates-selftest.sh /path/to/your-repo/
+cp -r zreflect reflect-hooks /path/to/your-repo/
 # 1. 写你的 measure()：把"测出来的事实"填进 FACTS.json（参考 facts.py 的 measure_example）
 #    ⚠️ 采集器四条原则见 zreflect/collect.py —— 只读持久盘、不引入会自己变的输入、
 #    读不到就明说、贵的测量做缓存。
@@ -464,10 +464,10 @@ python3 zreflect/facts.py                      # 量一遍
 python3 zreflect/facts.py --render-doc STATE.md # 把机器块（事实 + 闸门名录）写进文档
 python3 zreflect/facts.py --get 键名             # 只打印一条事实的裸值（脚本 / 其它语言用）
 # 2. 挂进提交 / 推送（重算机器块 + 全部闸门；推送还要求三语 README 同批更新）。
-#    Einfacht **不抢钩子座位**：只暴露一个入口（reflect-hooks/einfacht-gate.sh），
+#    Einfacht **不抢钩子座位**：只暴露一个入口（reflect-hooks/gate.py），
 #    任何钩子体系都可以调它。
-sh reflect-hooks/install.sh              # 打印接入说明，不写任何文件
-sh reflect-hooks/install.sh --chain      # 或：链式装进 .git/hooks（保留你原有的，先跑它）
+python3 reflect-hooks/install.py              # 打印接入说明，不写任何文件
+python3 reflect-hooks/install.py --chain      # 或：链式装进 .git/hooks（保留你原有的，先跑它）
 # ⚠️ `--legacy` 设 core.hooksPath —— 那会让 git **完全不看** .git/hooks，
 #    husky / lefthook / pre-commit / 手写钩子会被静默废掉。
 # 2b.（可选）给 hooks 一个持久的旋钮载体（issue #8）：
@@ -488,7 +488,7 @@ sh reflect-hooks/install.sh --chain      # 或：链式装进 .git/hooks（保�
 #     **交集为空**的自证 —— 否则两边都会收同一项，职责必然漂（下游实测：
 #     pre-commit 同时跑两份、名单不同跑了几个月）。重叠才是病，两份文件不是。
 # 3. 手动复验（也是 hooks 会跑的那几条）
-sh gates-selftest.sh                           # 每个闸门先证明自己会红
+python3 zreflect/harness.py                    # 每个闸门先证明自己会红
 for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # 发现式名录 —— README 也不手写闸门清单
 ```
 
@@ -502,7 +502,7 @@ for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # 发现式名�
 CI 每次推送都正面执行同一条判据（`.github/workflows/gates.yml`）：
 `facts.py --check` + 发现式名录里的全部闸门（含 `check_facts_replay`
 —— 每条 `cmd` 在 CI 里真的逐字执行）。本地 hook 只约束跑过
-install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
+install.py 的机器；CI 才是承诺的正面（issue #4 ②）。
 
 （仓内文档：`STATE.md` 是活状态示例、`AGENTS.md` 是给 agent 的硬规矩 —— 两份都用中文维护；
 三语同批规则只管 README trio。）
@@ -584,6 +584,8 @@ install.sh 的机器；CI 才是承诺的正面（issue #4 ②）。
 | `REFLECT_INSTRUMENTS` | 空（不在 ⇒ 未启用） | 被证伪量法登记（issue #6 ①）：`{"methods": [{text, why, fixed_in}]}` |
 | `REFLECT_INSTRUMENT_DAYS` | 空（不在 ⇒ 未启用） | 恒常检测阈值天（issue #6 ①）：台账条目 `first_seen` 超阈值 ⇒「这条 cmd 是在量，还是恒返回同一个数？」 |
 | `REFLECT_ENV_FILE` | `Einfacht.env` | 钩子旋钮载体的文件名（issue #8），由可拔插件 `einfacht-env.sh` 解析（钩子目录优先、仓库根次之） |
+| `REFLECT_NO_PRINCIPLES` | 空 | 设 `1` ⇒ 本仓**不**把 `PRINCIPLES.md` 里的原则登记进台账，判定命令不每提交复跑。这是显式出口 —— 别靠删文件来表达「不遵守」 |
+| `REFLECT_INJECT_LANG` | 空 | **只**给 SessionStart 注入用的语言（注入进上下文的文本是给人读的）。回退顺序：`REFLECT_LANG` → 装了的 `zh`/`en` → null 包。它**不**影响闸门输出 —— 闸门只认 `REFLECT_LANG` |
 | `REFLECT_LANG` | 空 | 输出语言包名。自带 `zh`（中文）、`en`（英语）、`de`（德语）；往 `zreflect/lang/` 里放一份包，任何别的语言名也认。**空 = null 包：本体不发任何自然语言**，只输出 `code(param=value)`（issue #26）。注释串（`OFF:` / `FATAL:` / `=== N PASS / M FAIL ===`）永不翻译 —— 它们是发射点的字面量 |
 | `REFLECT_I18N` | 空 | 语言包目录。**空 ⇒ 用套件自带的那份**（工具旁的 `zreflect/lang`），跨仓跑也能找到。设了 ⇒ 绝对路径，或**相对被检查仓根**的路径。两种形状都认且合并：`<lang>.json`（单文件）或 `<lang>/*.json`（按闸门命名空间分文件 —— 合并，后者覆盖） |
 | `REFLECT_SNAPSHOT_ROOT` | 空 | 模块级快照闸门扫描的源码目录。它抓 `from <本地模块> import 大写全局名` —— 那个全局若被别人重新赋值，值拷贝会停在 import 那一刻变成陈旧快照。空 ⇒ 该闸门明说未启用 |

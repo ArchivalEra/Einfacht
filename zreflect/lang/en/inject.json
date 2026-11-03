@@ -1,0 +1,13 @@
+{
+ "inject.banner": "── zcode-reflect · live state ──",
+ "inject.ledger_size": "Ledger: %(count)d facts (cite the numbers; do not copy them by hand)",
+ "inject.ledger_unreadable": "Ledger: unreadable (%(error)r)",
+ "inject.next_header": "Carry-over from last turn (computed per session, nothing on disk):",
+ "inject.next_missing": "Carry-over: `%(source)s` has no AUTO:NEXT block (hook not wired?)",
+ "inject.questions_all_closed": "Questions: %(total)d total, all closed.",
+ "inject.questions_more": "…and %(count)d more",
+ "inject.questions_none": "Questions: **none at all** (questions/ is empty — that is suspicious, not good news)",
+ "inject.questions_open": "Questions: %(open)d open / %(total)d total — read these first, do not re-raise settled ones:",
+ "inject.questions_unreadable": "Questions: unreadable (%(error)r) — the door is open; do not treat 'unreadable' as 'none'",
+ "inject.retractions_size": "Retractions: %(count)d (these claims must **never** reappear as current)"
+}

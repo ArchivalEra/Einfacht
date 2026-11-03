@@ -1,0 +1,4 @@
+{
+ "stop.no_output": "(keine Ausgabe)",
+ "stop.refresh_failed": "Neurendern des Maschinenblocks fehlgeschlagen (rc=%(return_code)s): %(detail)s"
+}
