@@ -383,6 +383,19 @@ def get_value(ledger, key):
     return True, value_of(f[key])
 
 
+def _load_or_empty():
+    """读台账；**不存在就给空台账**（`--accept*` 用）。
+
+    为什么和 `_load_or_die` 分开：「手动注册第一条事实」与「渲染/校验」是两件事 ——
+    前者**本来就该能在新仓里创建台账**，后者没有台账就没什么可校验。
+    合用一个读法会让 `--accept` 在新仓里 FATAL（实测）。
+    """
+    out = _out()
+    if not os.path.exists(out):
+        return {"schema": 1, "facts": {}}
+    return load(out)
+
+
 def _load_or_die():
     """读台账；**没有就给出可操作的提示**而不是原始 traceback。
     为什么单列：新仓库第一次用时台账还不存在，而这个脚本今天会直接抛
@@ -430,6 +443,33 @@ def main(argv):
             return 2
         print(v)                       # 只打印值本身：不解释、不带前缀
         return 0
+    if argv and argv[0] == "--accept-principles":
+        # 「原则进台账」的显式出口。**此前只写在 docstring 里，没有实现**
+        # （review 抓到的幻影）—— 而它是用户需求的一部分：「其他的当然也可以
+        # 被手动注册成为被检测的东西」。
+        #
+        # 它写的是**原则的判定命令**（`principle.*`），不碰数值事实；写盘仍过
+        # 同一道守卫（掉条 / 改口都要显式接受）。
+        import doc as _doc                              # noqa: PLC0415
+        led = _load_or_empty()
+        new = facts_of(led)
+        new.update(_doc.facts_of_rules())
+        return _write_ledger(led, new, argv, accept_all=True)
+    if argv and argv[0] == "--accept":
+        # 手动注册一条事实：`--accept <key> <value> <cmd> <source>`
+        # （用户自己的量测，不必改 measure()）。值必须是**裸值**。
+        if len(argv) < 5:
+            print(_machine().emit("fatal", M("facts.accept_usage")), file=sys.stderr)
+            return 2
+        key, value = _arg(argv, 1), _arg(argv, 2)
+        cmd, source = _arg(argv, 3), _arg(argv, 4)
+        if not key or not cmd.strip():
+            print(_machine().emit("fatal", M("facts.accept_usage")), file=sys.stderr)
+            return 2
+        led = _load_or_empty()
+        new = dict(facts_of(led))
+        new[key] = fact(value, cmd, source)
+        return _write_ledger(led, new, argv, accept_all=True)
     if argv and argv[0] == "show":
         led = _load_or_die()
         f = facts_of(led)
@@ -449,6 +489,37 @@ def main(argv):
                 print(M("facts.show.note", value=e["note"]))
         return rc
     return measure(argv)
+
+
+def _arg(argv, i):
+    return argv[i] if len(argv) > i else ""
+
+
+def _write_ledger(led, facts, argv, accept_all=False):
+    """把 `facts` 写回台账（过同一道守卫）。`accept_all` ⇒ 本次改口全部接受。"""
+    out = _out()
+    old = facts_of(led)
+    accepted = None if accept_all else guard.accepted_keys(argv)
+    verdict, problems, notes = guard.decide(old, facts, accepted=accepted,
+                                            allow_drop="--allow-drop" in argv)
+    for x in notes["err"]:
+        print(x, file=sys.stderr)
+    if verdict == "refuse":
+        for x in problems:
+            print(_machine().emit("fatal", x), file=sys.stderr)
+        return 2
+    import json                                          # noqa: PLC0415
+    import time                                          # noqa: PLC0415
+    doc = {"schema": 1,
+           "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+           "_why": M("facts.ledger_why"),
+           "facts": facts}
+    with open(out, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=1, ensure_ascii=False)
+        fh.write("\n")
+    print(M("facts.measure_written",
+            path=os.path.relpath(out, gate.GATE_REPO), count=len(facts)))
+    return 0
 
 
 def _tmp_doc(content, name="doc.md"):
@@ -495,3 +566,4 @@ MODULE = module_meta("台账 CLI", "量一遍 / 渲染 / --get / 两道守卫", 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], M("gate.title.facts_cli"),
                               CASES, main))
+

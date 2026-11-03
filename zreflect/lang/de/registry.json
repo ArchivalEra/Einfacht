@@ -1,5 +1,6 @@
 {
  "registry.builtin_phase_repeated": "%(phases)s in REFLECT_PHASES sind eingebaute Phasen (commit / start-of-work können nicht dupliziert werden und brauchen keine erneute Deklaration) — entferne sie und behalte nur die eigenen Phasen",
+ "registry.dead_interface": "öffentliche Funktion `%(function)s` (in %(module)s) hat **null Konsumenten** — definiert, aber nie benutzt (Zombie-Schnittstelle). Löschen oder mit `_` privat machen",
  "registry.dependency_untested": "`%(module)s.%(function)s()` wird von einem Gate konsumiert, hat aber **null Zusicherungen** — urteilt es falsch, verliert das konsumierende Gate seine Kriterien, während dessen Selbsttest grün bleibt (ein totes Glied in der Abhängigkeitskette)",
  "registry.empty_phase": "Phase %(phase)s hat keine ausführbaren Tore — Nullwert-Wächter: eine leere Liste ist kein Bestehen (ist das Prädikat oder eine Deklaration kaputt?)",
  "registry.empty_roster": "nicht ein einziges Tor gefunden — Nullwert-Wächter: eine leere Eingabe ist kein Bestehen",

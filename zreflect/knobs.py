@@ -156,12 +156,6 @@ _PLACEHOLDER_RE = re.compile(r"%\((\w+)\)")
 _TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_])REFLECT_[A-Z0-9_]+")
 
 
-def kinds_of(name):
-    """旋钮的种类（未登记 ⇒ None —— 调用方该报幻影 / typo）。"""
-    entry = REGISTRY.get(name)
-    return entry[0] if entry else None
-
-
 def _py_sources(base):
     """`base` 目录下所有 `.py` 的 `(文件名, 文本)`（读不了 ⇒ 跳过）。
 
@@ -979,3 +973,4 @@ if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],
                               M("gate.title.knobs"),
                               _cases, _run))
+

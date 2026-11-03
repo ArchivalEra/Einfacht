@@ -410,9 +410,83 @@ def problems(gs, missing, mods=None, mods_missing=None,
     out += _undeclared_module_problems(undeclared)
     out += _knob_problems(knob_problems, gs)
     out += off_reason_problems(gs)
-    out += machine_vocab_problems()
     out += trailing_newline_problems()
     out += shell_surface_problems()
+    out += dead_interface_problems()
+    return out
+
+
+def dead_interface_problems(zdir=None):
+    """**零消费者的公开函数** —— 「严查多余接口」的机器判据。
+
+    为什么值得一条判据：手工枚举全仓公开函数、逐个 grep 调用点，能找出死接口
+    但很慢，且下次新增的没人查。本仓已有 `dependency_coverage_problems`
+    管「被消费但零断言」（哑火环节）；这条管**反方向**：定义了却没人用
+    （僵尸接口）。
+
+    判据（全发现式）：
+      · 平台模块（`zreflect/*.py`，非 `check_*`）里**不以 `_` 开头**的顶层函数；
+      · 该名字在**其它任何 .py** 里出现（`mod.fn` / `from mod import fn` / 直接调用）；
+      · 也允许它被**自己的 `_cases()`** 用到（那是内部缝 / 自证专用助手）；
+      · 三者都没有 ⇒ 报。
+
+    诚实边界：
+      · 只看 `.py`。shell 脚本调 Python 函数不算（全 Python 化之后没有了）。
+      · 不区分「本该公开」与「本该私有」—— 零消费就是零消费，改名或删掉都对。
+      · 豁免：`run` / `main` / `problems` 这类**契约名**（每个闸门都必须有，
+        由 `main_selftest_or` 或 `__main__` 调用 —— 它们在**同文件**里被用，
+        所以本来就不会被报）。
+    """
+    import ast                                           # noqa: PLC0415
+    import os                                            # noqa: PLC0415
+    d = zdir if zdir is not None else _zdir()
+    # ① 收集平台模块的公开顶层函数
+    cand = {}
+    own_text = {}
+    for n in sorted(os.listdir(d)):
+        if not n.endswith(".py") or n.startswith("check_"):
+            continue
+        try:
+            text = open(os.path.join(d, n), encoding="utf-8").read()
+            tree = ast.parse(text)
+        except (OSError, SyntaxError):
+            continue
+        own_text[n] = text
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                    and not node.name.startswith("_"):
+                cand.setdefault(node.name, n)
+    # ② 全仓（含 .zcode / reflect-hooks）的引用文本
+    # ⚠️ 记**文件名**而不是文本：按字符串身份（`is`）跳过自身永远失效
+    # （Python 不保证两个相等字符串是同一对象）—— 实测：植入一个零消费函数
+    # 判据仍然报 clean。按名字排除才可靠。
+    corpus = []          # [(文件名, 文本)]
+    root = os.path.dirname(d)
+    for sub in ("zreflect", ".zcode", "reflect-hooks"):
+        base = os.path.join(root, sub)
+        if not os.path.isdir(base):
+            continue
+        for n in sorted(os.listdir(base)):
+            if n.endswith(".py"):
+                try:
+                    corpus.append((n, open(os.path.join(base, n),
+                                           encoding="utf-8").read()))
+                except OSError:
+                    continue
+    out = []
+    for fn, mod in sorted(cand.items()):
+        # 同文件里被调用几次？（定义本身算一次 match）
+        own = len(re.findall(r"\b%s\b" % re.escape(fn), own_text.get(mod, "")))
+        # 其它文件的引用
+        others = 0
+        for name, text in corpus:
+            if name == mod:
+                continue
+            if re.search(r"\b%s\b" % re.escape(fn), text):
+                others += 1
+        # 同文件里只用了一次（= 只有定义） ⇒ 死
+        if others == 0 and own <= 1:
+            out.append(M("registry.dead_interface", function=fn, module=mod))
     return out
 
 
@@ -489,26 +563,7 @@ def trailing_newline_problems(zdir=None):
     return out
 
 
-def machine_vocab_problems():
-    """C4 对账⑦：shell 侧的机器摘要 grep 与 `machine.ROWS` **行为一致**。
-
-    `gates-selftest.sh` 不能 import Python，所以 `=== N PASS / M FAIL ===` 的
-    正则在那里有一份拷贝。`machine.py` 的 docstring 曾声称「由 registry 的对账器
-    盯着」——那时那个对账器**不存在**（review 抓出来的假承诺）。这是它。
-
-    行为对账，不是文本比对：同一批样本喂给两边的判据，结论必须逐条相同。
-    文本比对会把 `\\d` 与 `[0-9]` 这种等价写法误报成漂。
-    """
-    import machine                                       # noqa: PLC0415
-    diffs = machine.summary_agrees_with_shell()
-    if not diffs:
-        return []
-    return [M("registry.machine_vocab_drift",
-              samples=", ".join(repr(s) for s in diffs[:3]),
-              count=len(diffs))]
-
-
-MUST_REASON_MIN = 8      # 理由的最短字数（同 `PINNED:` 的纪律）
+MUST_REASON_MIN = 8      # off 理由的最短字数（同 `PINNED:` 的纪律）
 
 
 def off_reason_problems(gs, sources=None):
@@ -1315,6 +1370,25 @@ def _collect_case(which):
     return False
 
 
+def _dead_interface_case():
+    """造一个零消费的公开函数 ⇒ 必须报；给它加个外部引用 ⇒ 不报。"""
+    import tempfile, shutil, os                        # noqa: PLC0415
+    root = tempfile.mkdtemp()
+    try:
+        d = os.path.join(root, "zreflect")
+        os.makedirs(d, exist_ok=True)
+        open(os.path.join(d, "probe.py"), "w", encoding="utf-8").write(
+            "def zzz_orphan():\n    return 1\n")
+        if not dead_interface_problems(zdir=d):
+            return False
+        # 加一个外部消费者 ⇒ 不该再报
+        open(os.path.join(d, "check_probe.py"), "w", encoding="utf-8").write(
+            "import probe\ndef run():\n    return probe.zzz_orphan()\n")
+        return dead_interface_problems(zdir=d) == []
+    finally:
+        shutil.rmtree(root, True)
+
+
 def _unexpected_shell_case():
     """造一个未登记的 .sh ⇒ 必须报；登记过的 ⇒ 不报。"""
     import tempfile, shutil, os                        # noqa: PLC0415
@@ -1622,6 +1696,9 @@ def _cases():
         # 与第 23 轮 `gate.py` 同类）：`collect.py` / `living.py` / `gate.py`
         # 都声明了 `selftest=False`，但它们的逻辑**有实质断言**在
         # `registry._cases()`。描述若只写「无自证」= 免责声明。
+        # 「严查多余接口」的机器判据：零消费者的公开函数 ⇒ 必须报。
+        ("★ registry.dead_interface_detected",
+         lambda: _dead_interface_case()),
         # 全 Python 化的守卫：未登记的 .sh ⇒ 必须报（造一个假的证明它有牙）
         ("★ registry.unexpected_shell_detected",
          lambda: _unexpected_shell_case()),
@@ -1687,4 +1764,5 @@ if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],
                               M("gate.title.registry"),
                               _cases, main))
+
 

@@ -210,11 +210,6 @@ def rule(rid):
     return _BY_ID[rid]
 
 
-def ids():
-    """全部原则 id（排序后）。"""
-    return tuple(sorted(_BY_ID))
-
-
 # ── 进台账：复用 ledger.fact，不新造形状 ──────────────────────────────────────
 
 def facts_of_rules():

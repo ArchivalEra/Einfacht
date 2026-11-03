@@ -38,27 +38,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
 from gate import repo                                     # noqa: E402
+import gate                                               # noqa: E402
 from i18n import M                                        # noqa: E402
 
 DEFAULT_SPEC = "upstream-lock.json"
 
 
 def resolve_spec(argv, knob=""):
-    """规格名解析：--spec 显式 > `REFLECT_LOCKS` 旋钮 > 默认名。
-    返回 (规格名, 是否显式指定)。
-
-    显式指定而文件不在 ⇒ 调用方必须 FATAL（配置了却不存在的规格是
-    「部署了 ≠ 在跑」家族）；默认名不在 ⇒ 未启用退 0。
-    （issue #15 C2：无 git 上游的供给件是常见形状，下游此前各自 fork 加
-    这个旋钮 —— 上游化后下游补丁可删。）
-    """
-    for i, a in enumerate(argv):
-        if a == "--spec":
-            return argv[i + 1], True
-    k = (knob or "").strip()
-    if k:
-        return k, True
-    return DEFAULT_SPEC, False
+    """见 `gate.resolve_spec`：实现只有一处，这里只绑定本闸门的默认名。"""
+    return gate.resolve_spec(argv, knob, DEFAULT_SPEC)
 
 
 def _sha(path):
