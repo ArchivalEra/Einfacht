@@ -10,9 +10,9 @@
 `check_i18n` 是 AST 扫描器、只认 `.py`，看不见它。于是「未装语言包却输出中文」
 在那个文件里长期存在且无人拦（review 抓到：`REFLECT_LANG` 未设时它照样打中文）。
 
-搬到 Python 之后，它的全部文案走 `M()`，与其它闸门同一条制度。**同时消灭了
-一份 shell 词汇表拷贝** —— `machine.summary_agrees_with_shell` 那个行为对账器
-存在的唯一理由就是「shell 判不了 Python 的词表」。
+搬到 Python 之后，它的全部文案走 `M()`，与其它闸门同一条制度。**同时消灭了几乎
+全部 shell 词汇表拷贝** —— 只剩 `einfacht-env.sh` 一个（它必须是 shell），
+而它的摘要行形状由 `run_plugins()` 实跑检查。
 
 ## 为什么是「发现」而不是「清单」
 
@@ -50,9 +50,8 @@ from i18n import M                                           # noqa: E402
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# 机器摘要行：`=== N PASS / M FAIL ===`（与 `machine.ROWS` 同一形状）。
-# ⚠️ 这里是**唯一**判它的地方 —— 搬成 Python 之后不再有第二份 grep 拷贝。
-SUMMARY = re.compile(r"^=== [0-9]+ PASS / [0-9]+ FAIL ===$")
+# 机器摘要行：判据在 `machine.is_summary()`（唯一产地）。
+# 此前这里有一份字节相同的正则 —— 三份会漂（另有 reflect-hooks/gate.py 一份）。
 
 # 自证广告标记：有它 = 这个文件声称自己能被 `--selftest` 证明。
 ADVERT = re.compile(r"(main_selftest_or|--selftest)")
@@ -74,7 +73,8 @@ def _tail(text, n=3):
 
 
 def _has_summary(text):
-    return any(SUMMARY.match(ln) for ln in (text or "").splitlines())
+    import machine                                       # noqa: PLC0415
+    return any(machine.is_summary(ln) for ln in (text or "").splitlines())
 
 
 def run_gates(repo, listing=None):
@@ -443,11 +443,15 @@ def _cases():
         # ③ 空输入必须报 —— 零值守卫
         ("★ harness.no_gates_at_all_is_red",
          lambda: not _fixture({}, listing=[])[0]),
-        # 摘要行判据本身有牙
-        ("★ harness.summary_shape_can_red",
-         lambda: bool(SUMMARY.match("=== 3 PASS / 0 FAIL ==="))
-         and not bool(SUMMARY.match("=== 3 PASS / 0 fail ==="))),
+        # 摘要行判据本身有牙（判据在 machine.is_summary）
+        ("★ harness.summary_shape_can_red", lambda: _summary_shape_ok()),
     ]
+
+
+def _summary_shape_ok():
+    import machine                                       # noqa: PLC0415
+    return machine.is_summary("=== 3 PASS / 0 FAIL ===") and \
+        not machine.is_summary("=== 3 PASS / 0 fail ===")
 
 
 def _selftest():

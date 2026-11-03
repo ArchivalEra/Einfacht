@@ -13,13 +13,10 @@ import json
 import time
 from datetime import datetime, timedelta, timezone
 from gate import module_meta
+from gate import machine                                  # noqa: E402
 from i18n import M
 
 
-def _machine():
-    """懒取 `machine`（模块级导入会成环：它末尾 `from gate import module_meta`）。"""
-    import machine                                       # noqa: PLC0415
-    return machine
 
 def load(path, missing_ok=False):
     """读 JSON。`missing_ok=True` 时**缺文件返回空表** ——
@@ -121,7 +118,7 @@ def fact(value, cmd, source, note="", replay=True,
                        (calibrate, calibrate_expect, "calibrate")):
         if (a is None) != (b is None):
             raise SystemExit(
-                _machine().emit("fatal", M("ledger.shape_incomplete", name=name)))
+                machine().emit("fatal", M("ledger.shape_incomplete", name=name)))
     d = {"value": value, "cmd": cmd, "source": source,
          "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
          "first_seen": time.strftime("%Y-%m-%d")}

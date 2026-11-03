@@ -300,9 +300,6 @@ def _lookup_works():
         return True
 
 
-def _two_segments_distinct():
-    return PRINCIPLES != state_name() or True      # 名字可换，这一条只防硬编码
-
 
 def _cases():
     return [

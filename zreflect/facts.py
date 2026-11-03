@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate                                            # noqa: E402
 from gate import module_meta, main_selftest_or, repo  # noqa: E402
+from gate import machine                                  # noqa: E402
 from i18n import M                                        # noqa: E402
 from ledger import age_days, fact, facts_of, load, value_of  # noqa: E402
 from render import BLOCK_BEGIN, BLOCK_END, render_block  # noqa: E402
@@ -33,17 +34,19 @@ import registry                                          # noqa: E402
 
 REPO_REAL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
-def _machine():
-    """懒取 `machine`（模块级导入会成环：它末尾 `from gate import module_meta`）。"""
-    import machine                                       # noqa: PLC0415
-    return machine
 
 def _out():
     """台账写盘路径。**函数而不是模块常量**：`repo()` 读的是 `gate.GATE_REPO`，
     而夹具会改它 —— 存成模块级字符串会让路径停在被 import 的那一刻。
     实测：改 `gate.GATE_REPO` 后，旧的 `OUT` 常量仍是原仓路径（陈旧快照）。"""
     return repo(LEDGER_NAME)
-DOC = os.environ.get("REFLECT_DOC", "STATE.md")
+# ⚠️ **不是模块级常量**：`REFLECT_DOC` 是名字型旋钮，钩子在运行期间可以改它
+# （夹具就换它）。`doc.state_name()` 每次现读 —— 唯一的产地。
+# 此前这里有个 `DOC = os.environ.get(...)` 的 import 时快照，与
+# `doc.state_name()` 构成**两个产地**（snapshot 闸门抓的那种形状）。
+def _doc():
+    import doc                                           # noqa: PLC0415
+    return doc.state_name()
 
 
 # ══ 你的部分 ══════════════════════════════════════════════════════════════════
@@ -116,7 +119,7 @@ def _has_principles_doc():
 def _doc_names():
     """有机器块的文档名（按 `_block_homes` 的归属派生，不手写名单）。"""
     import doc                                           # noqa: PLC0415
-    return (DOC, doc.PRINCIPLES)
+    return (_doc(), doc.PRINCIPLES)
 
 
 def _block_homes(ledger):
@@ -139,7 +142,7 @@ def _block_homes(ledger):
         return None, M("facts.registry_mismatch", entries="\n  · ".join(probs))
     import doc                                           # noqa: PLC0415
     return [
-        (DOC, [(BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
+        (_doc(), [(BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
                (registry.GATES_BEGIN, registry.GATES_END,
                 registry.render_gates(gs))]),
         (doc.PRINCIPLES, [(doc.RULES_BEGIN, doc.RULES_END,
@@ -147,29 +150,18 @@ def _block_homes(ledger):
     ], None
 
 
-def _machine_blocks(ledger):
-    """**向后兼容**：所有块不分文档（老调用方 / 自证用）。
-
-    返回 (blocks, 错误句)，形状与改造前一致 —— 但多了一个纪律块
-    （它的标记只在 `PRINCIPLES.md` 里，`write_doc` 已按归属分派）。
-    """
-    homes, err = _block_homes(ledger)
-    if err:
-        return None, err
-    return tuple(b for _name, blocks in homes for b in blocks), None
-
 
 def write_doc(path_rel, ledger):
     """把机器块写进文档（就地替换）。没有标记就报错，**不悄悄追加** ——
     悄悄追加会让「块过期」变成「有两份块」，那是更难查的坏法。"""
     p = path_rel if os.path.isabs(path_rel) else repo(path_rel)
     if not os.path.exists(p):
-        print(_machine().emit("fatal", M("facts.doc_missing_render", path=p)),
+        print(machine().emit("fatal", M("facts.doc_missing_render", path=p)),
               file=sys.stderr)
         return 2
     homes, err = _block_homes(ledger)
     if err:
-        print(_machine().emit("fatal", err), file=sys.stderr)
+        print(machine().emit("fatal", err), file=sys.stderr)
         return 2
     # 只校验**属于这个文档**的块。别的块的标记在别的文档里 —— 在这儿找不到是
     # 正常的（此前把所有块都往一份文档塞：纪律块的标记不在 STATE.md 里 ⇒ 报）。
@@ -181,7 +173,7 @@ def write_doc(path_rel, ledger):
             if name in (os.path.basename(path_rel), path_rel)
             for b in blocks]
     if not mine:
-        print(_machine().emit("fatal",
+        print(machine().emit("fatal",
                               M("facts.doc_has_no_home", path=path_rel,
                                 known=", ".join(name for name, _ in homes))),
               file=sys.stderr)
@@ -191,7 +183,7 @@ def write_doc(path_rel, ledger):
     new = text
     for begin, end, body in blocks:
         if begin not in new or end not in new:
-            print(_machine().emit("fatal",
+            print(machine().emit("fatal",
                                   M("facts.markers_missing_render",
                                     path=path_rel, begin=begin, end=end)),
                   file=sys.stderr)
@@ -206,7 +198,7 @@ def write_doc(path_rel, ledger):
     # 合法嵌套 —— md_lines 的 awk 判据 —— 故不做替换前的计数断言）。
     for begin, end, _ in blocks:
         if begin not in new or end not in new:
-            print(_machine().emit("fatal",
+            print(machine().emit("fatal",
                                   M("facts.marker_swallowed_body",
                                     path=path_rel, begin=begin)),
                   file=sys.stderr)
@@ -222,11 +214,11 @@ def write_doc(path_rel, ledger):
 def check_doc(path_rel, ledger):
     p = path_rel if os.path.isabs(path_rel) else repo(path_rel)
     if not os.path.exists(p):
-        print(_machine().emit("fatal", M("facts.doc_missing_check", path=p)), file=sys.stderr)
+        print(machine().emit("fatal", M("facts.doc_missing_check", path=p)), file=sys.stderr)
         return 2
     homes, err = _block_homes(ledger)
     if err:
-        print(_machine().emit("fatal", err), file=sys.stderr)
+        print(machine().emit("fatal", err), file=sys.stderr)
         return 2
     # 只校验**属于这个文档**的块。别的块的标记在别的文档里 —— 在这儿找不到是
     # 正常的（此前把所有块都往一份文档塞：纪律块的标记不在 STATE.md 里 ⇒ 报）。
@@ -238,7 +230,7 @@ def check_doc(path_rel, ledger):
             if name in (os.path.basename(path_rel), path_rel)
             for b in blocks]
     if not mine:
-        print(_machine().emit("fatal",
+        print(machine().emit("fatal",
                               M("facts.doc_has_no_home", path=path_rel,
                                 known=", ".join(name for name, _ in homes))),
               file=sys.stderr)
@@ -247,7 +239,7 @@ def check_doc(path_rel, ledger):
     text = open(p, encoding="utf-8").read()
     for begin, end, body in blocks:
         if begin not in text or end not in text:
-            print(_machine().emit("fatal",
+            print(machine().emit("fatal",
                                   M("facts.markers_missing_check",
                                     path=path_rel, begin=begin, end=end)),
                   file=sys.stderr)
@@ -255,7 +247,7 @@ def check_doc(path_rel, ledger):
         cur = text.split(begin, 1)[1].split(end, 1)[0]
         fresh = body.split(begin, 1)[1].split(end, 1)[0]
         if cur != fresh:
-            print(_machine().emit("fatal",
+            print(machine().emit("fatal",
                                   M("facts.block_stale",
                                     path=path_rel, begin=begin)),
                   file=sys.stderr)
@@ -331,7 +323,7 @@ def measure(argv):
         print(x)
     if verdict == "refuse":
         for x in problems:
-            print(_machine().emit("fatal", x), file=sys.stderr)
+            print(machine().emit("fatal", x), file=sys.stderr)
         return 2
 
     # 仪器生命周期（issue #6 ①）：值没变的键沿用旧 first_seen
@@ -350,7 +342,7 @@ def measure(argv):
     if warn_w:
         print("⚠ %s" % warn_w, file=sys.stderr)
     if fatal_w:
-        print(_machine().emit("fatal", fatal_w), file=sys.stderr)
+        print(machine().emit("fatal", fatal_w), file=sys.stderr)
         return 2
     import json                                         # noqa: PLC0415
     import time                                         # noqa: PLC0415
@@ -406,7 +398,7 @@ def _load_or_die():
         # issue #20 ② 补充 2：旧提示「先在仓库根跑一遍量测」正是写出野文件
         # 的那个动作 —— 提示文本本身也是「默认值产地」的一部分，不许教人
         # 踩坑。改说「先确认 REFLECT_FACTS 指向哪里」。
-        print(_machine().emit("fatal",
+        print(machine().emit("fatal",
                               M("facts.no_ledger_yet",
                                 name=os.path.basename(out),
                                 path=os.path.relpath(out, gate.GATE_REPO))),
@@ -420,7 +412,7 @@ def main(argv):
         sys.stdout.write(render_block(_load_or_die()) + "\n")
         return 0
     if argv and argv[0] == "--render-doc":
-        return write_doc(argv[1] if len(argv) > 1 else DOC, _load_or_die())
+        return write_doc(argv[1] if len(argv) > 1 else _doc(), _load_or_die())
     if argv and argv[0] == "--check":
         # 不给文档名 ⇒ 查**全部**有机器块的文档（`_block_homes` 是唯一产地）。
         # 「唯二必须丈量的东西」= STATE（数值）+ PRINCIPLE（判定）—— 两份文档
@@ -435,11 +427,11 @@ def main(argv):
         return rc
     if argv and argv[0] == "--get":
         if len(argv) < 2:
-            print(_machine().emit("fatal", M("facts.get_needs_key")), file=sys.stderr)
+            print(machine().emit("fatal", M("facts.get_needs_key")), file=sys.stderr)
             return 2
         ok, v = get_value(_load_or_die(), argv[1])
         if not ok:
-            print(_machine().emit("fatal", v), file=sys.stderr)
+            print(machine().emit("fatal", v), file=sys.stderr)
             return 2
         print(v)                       # 只打印值本身：不解释、不带前缀
         return 0
@@ -459,12 +451,12 @@ def main(argv):
         # 手动注册一条事实：`--accept <key> <value> <cmd> <source>`
         # （用户自己的量测，不必改 measure()）。值必须是**裸值**。
         if len(argv) < 5:
-            print(_machine().emit("fatal", M("facts.accept_usage")), file=sys.stderr)
+            print(machine().emit("fatal", M("facts.accept_usage")), file=sys.stderr)
             return 2
         key, value = _arg(argv, 1), _arg(argv, 2)
         cmd, source = _arg(argv, 3), _arg(argv, 4)
         if not key or not cmd.strip():
-            print(_machine().emit("fatal", M("facts.accept_usage")), file=sys.stderr)
+            print(machine().emit("fatal", M("facts.accept_usage")), file=sys.stderr)
             return 2
         led = _load_or_empty()
         new = dict(facts_of(led))
@@ -506,7 +498,18 @@ def _write_ledger(led, facts, argv, accept_all=False):
         print(x, file=sys.stderr)
     if verdict == "refuse":
         for x in problems:
-            print(_machine().emit("fatal", x), file=sys.stderr)
+            print(machine().emit("fatal", x), file=sys.stderr)
+        return 2
+    # ⚠️ **同一个盲写守卫**：`measure()` 写盘前查目标（被 gitignore 覆盖 ⇒
+    # FATAL；有载体却没设旋钮 ⇒ warn）。`--accept*` 是**第二条写盘路径** ——
+    # 漏了它就能写进 gitignored 路径而 rc=0（实测：`.gitignore` 里有 L.json
+    # 时 `--accept` 照写，`measure` 照 FATAL）。两条路径必须同一道守卫（C4）。
+    fatal_w, warn_w = guard.write_target_problems(
+        out, knob_set=bool(os.environ.get("REFLECT_FACTS", "").strip()))
+    if warn_w:
+        print("⚠ %s" % warn_w, file=sys.stderr)
+    if fatal_w:
+        print(machine().emit("fatal", fatal_w), file=sys.stderr)
         return 2
     import json                                          # noqa: PLC0415
     import time                                          # noqa: PLC0415
@@ -566,4 +569,6 @@ MODULE = module_meta("台账 CLI", "量一遍 / 渲染 / --get / 两道守卫", 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], M("gate.title.facts_cli"),
                               CASES, main))
+
+
 
