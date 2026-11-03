@@ -354,29 +354,74 @@ def run(argv=None):
                   M("i18n_cover.ok", files=len(paths)))
 
 
-def _null_output_has_no_cjk():
-    """在**显式 null 包**下渲染一批真实消息 + 探针，断言输出无 CJK。
+_PH = re.compile(r"%\(([A-Za-z_][A-Za-z0-9_]*)\)"
+                 r"(?:[#0\-+ ]*)(?:\d+)?(?:\.\d+)?[hlL]?([diouxXeEfFgGcrsa])")
 
-    这是「未装语言包 ⇒ 零中文」的**行为**判据。选择的消息覆盖
-    「直接渲染」「带参数」「多行」「机器行包装」四种形态。
+
+def _params_for(template):
+    """按模板的**转换符**造参数：`%d`/`%f` 给数字，其余给串。
+
+    ⚠️ 一律给 `"v"` 会在 `%(count)d` 上炸 `TypeError`（实测）。
+    """
+    return {m.group(1): (3 if m.group(2) in "dixXfFeEgG" else "v")
+            for m in _PH.finditer(template)}
+
+
+def _null_output_has_no_cjk():
+    """**未装语言包**时渲染全部 code，断言输出零 CJK。
+
+    null 包只输出 `code(param=…)` —— 这是「没要语言包 ⇒ 零自然语言」的
+    **行为**判据。穷举全部 key（此前只探六个手挑的，漏掉了 `inject.*` 等
+    后加的模板）。
+
+    ⚠️ 注意它**不能**证明「模板里没有中文」：null 包根本不查表。后者由
+    `_packs_match_their_language()` 管（装包渲染 + 按语言判 CJK）。
     """
     import i18n                                          # noqa: PLC0415
+    import re                                            # noqa: PLC0415
+    try:
+        table = i18n.load_pack("en")
+    except Exception:                                    # noqa: BLE001
+        return False              # 读不到真包 ⇒ 没法证明，不算通过
+    if not table:
+        return False              # 零值守卫
     probes = 0
     with i18n.bind(i18n.NULL):
-        for code, params in (
-                ("gate.platform_usage", {}),
-                ("gate.problems_header", {"name": "x", "count": 1}),
-                ("i18n.value_masquerades_contract",
-                 {"lang": "zz", "key": "k", "line": 1, "value": "v"}),
-                ("replay.mismatch", {"key": "k", "actual": "1", "expected": "2"}),
-                ("gate.env_hint", {"file": "Einfacht.env"}),
-                ("probe.unknown.code", {"a": 1})):
-            text = str(i18n.M(code, **params))
-            probes += 1
-            if cjk(text):
+        for code in sorted(table):
+            if cjk(str(i18n.M(code, **_params_for(table[code])))):
                 return False
-    # 零值守卫：一条都没探 ⇒ 不看
-    return probes == 6
+            probes += 1
+    return probes == len(table)
+
+
+def _packs_match_their_language():
+    """**装包**渲染：en / de 的每一条都不许含 CJK；zh 的 *文案* 可以含。
+
+    这是「模板本身有没有中文」的真判据 —— null 包测不到它（null 不查表）。
+
+    判据按语言：`en` / `de` 输出里出现 CJK ⇒ 那条模板没被翻译（或漏了）。
+    `zh` 允许中文（那是它的语言）。只在**已装**的包里验，装了 `de` 就验 `de`。
+
+    零值守卫：至少验到一个非 zh 的包。
+    """
+    import i18n                                          # noqa: PLC0415
+    checked = 0
+    for lang in ("en", "de"):
+        try:
+            table = i18n.load_pack(lang)
+        except Exception:                                # noqa: BLE001
+            continue
+        if not table:
+            continue
+        cat = i18n.Catalog.load(lang, {lang: table})
+        with i18n.bind(cat):
+            for code in sorted(table):
+                if cjk(str(i18n.M(code, **_params_for(table[code])))):
+                    return False
+        checked += 1
+    return checked >= 1
+
+
 
 
 def _cj(n):
@@ -482,6 +527,10 @@ def _cases():
         # 中文」—— 实测：注入脚本曾自动挑语言包，源码干净、输出全中文。
         ("★ i18n_cover.null_pack_output_has_no_cjk",
          lambda: _null_output_has_no_cjk()),
+        # **模板本身**的中文：装包渲染，en/de 一条都不许有 CJK。
+        # （null 包测不到这个 —— 它根本不查表。这是那条判据的缺口，已补。）
+        ("★ i18n_cover.packs_match_their_language",
+         lambda: _packs_match_their_language()),
         # 反向：把一条中文塞进 null 渲染路径 ⇒ 必须被抓（证明上一条有牙）
         ("★ i18n_cover.cjk_detector_can_red",
          lambda: cjk(chr(0x4E2D)) and not cjk("ascii only")),
