@@ -212,7 +212,8 @@ def run(argv):
     return rc
 
 
-def _cases():
+def _cases_fixture():
+    """夹具（原 `_cases` 的前置段原样搬入）。"""
     led_sha = {"facts": {"site_sha": {"value": "a" * 64, "cmd": "sha256sum x", "source": "s"}}}
     led_plain = {"facts": {"n": {"value": 7, "cmd": "echo 7", "source": "s"}}}
     bare = "deployed sha256 deadbeefdeadbeef00cafe00\n"
@@ -222,70 +223,108 @@ def _cases():
                                  "measured_at": fresh}}}
     led_old = {"facts": {"n": {"value": 7, "cmd": "echo 7", "source": "s",
                                "measured_at": "2020-01-01T00:00:00+0000"}}}
+    return {'led_sha': led_sha, 'led_plain': led_plain, 'bare': bare, 'fresh': fresh, 'led_fresh': led_fresh, 'led_old': led_old}
+
+
+def _cases_sha(fx):
+    """见 `_cases()`：本组 8 条。"""
+    led_sha, led_plain, bare, fresh, led_fresh, led_old = (fx["led_sha"], fx["led_plain"], fx["bare"], fx["fresh"], fx["led_fresh"], fx["led_old"])
     return [
-        # ① 正常不报
-        ("stale.ok",
-         lambda: problems(led_sha,
-                          {"A.md": "deployed sha256 %s... (truncated)\n" % ("a" * 16)}) == []),
-        ("stale.sourced_history_sha",
-         lambda: problems(led_plain, {"A.md": "old sha abcdef01 (retracted, see `abc1234`)\n"})
-         == []),
-        # ② 反向判据（issue #25）：历史标记**不再是**免死金牌
-        ("★ stale.sha_no_facts·history_mark",
-         lambda: [p.code for p in problems(
-             led_plain, {"A.md": "deployed sha256 history is 8287589ebdb53b4c\n"})]
-         == ["stale.sha_no_facts"]),
-        ("stale.cite_anchor",
-         lambda: problems(led_sha, {"A.md": "old sha256 [[site_sha]] retracted\n"}) == []),
-        ("stale.no_sha_assertion",
-         lambda: problems(led_plain, {"A.md": "a fine day\n"}) == []),
-        ("stale.declared_history_section",
-         lambda: problems(led_plain, {"A.md": "## 5 history\n" + bare}, hist_secs=("5",))
-         == []),
-        ("stale.retired_unconfigured",
-         lambda: problems(led_plain, {"A.md": "still using the old component\n"},
-                          retired=()) == []),
-        ("stale.retired_reference",
-         lambda: problems(led_plain, {"A.md": "see NOTES-osmesa.md and the osmesa-branch\n"},
-                          retired=("osmesa",)) == []),
-        # ② 该报的必须报
-        ("★ stale.sha_unsourced",
-         lambda: [p.code for p in problems(led_sha, {"A.md": bare})]
-         == ["stale.sha_unsourced"]),
-        ("★ stale.sha_no_facts",
-         lambda: [p.code for p in problems(led_plain, {"A.md": bare})]
-         == ["stale.sha_no_facts"]),
-        ("★ stale.sha_no_facts·undeclared_section",
-         lambda: [p.code for p in problems(
-             led_plain, {"A.md": "## 5 history\n" + bare}, hist_secs=(""))
-         ] == ["stale.sha_no_facts"]),
-        ("★ stale.retired_name",
-         lambda: [p.code for p in problems(
-             led_plain, {"A.md": "backend still uses osmesa\n"}, retired=("osmesa",))]
-         == ["stale.retired_name"]),
-        ("★ stale.retired_name·unnumbered_section",
-         lambda: [p.code for p in problems(
-             led_plain, {"A.md": "## FAQ\nstill using osmesa\n"}, retired=("osmesa",))]
-         == ["stale.retired_name"]),
-        # ③ 空输入必须报
-        ("★ stale.ledger_empty",
-         lambda: [p.code for p in problems({"facts": {}}, {"A.md": "x\n"})]
-         == ["stale.ledger_empty"]),
-        ("★ stale.no_docs",
-         lambda: [p.code for p in problems(led_plain, {})] == ["stale.no_docs"]),
-        # ② 测龄（issue #3 ②）
-        ("stale.age_fresh",
-         lambda: problems(led_fresh, {"A.md": "x\n"}, stale_days=30) == []),
-        ("stale.age_rule_off",
-         lambda: problems(led_old, {"A.md": "x\n"}, stale_days=None) == []),
-        ("★ stale.too_old",
-         lambda: [p.code for p in problems(
-             led_old, {"A.md": "x\n"}, stale_days=30)] == ["stale.too_old"]),
-        ("★ stale.measured_at_missing",
-         lambda: [p.code for p in problems(
-             led_plain, {"A.md": "x\n"}, stale_days=30)]
-         == ["stale.measured_at_missing"]),
+    ("stale.sourced_history_sha",
+     lambda: problems(led_plain, {"A.md": "old sha abcdef01 (retracted, see `abc1234`)\n"})
+     == []),
+    # ② 反向判据（issue #25）：历史标记**不再是**免死金牌
+    ("★ stale.sha_no_facts·history_mark",
+     lambda: [p.code for p in problems(
+         led_plain, {"A.md": "deployed sha256 history is 8287589ebdb53b4c\n"})]
+     == ["stale.sha_no_facts"]),
+    ("stale.cite_anchor",
+     lambda: problems(led_sha, {"A.md": "old sha256 [[site_sha]] retracted\n"}) == []),
+    ("stale.no_sha_assertion",
+     lambda: problems(led_plain, {"A.md": "a fine day\n"}) == []),
+    ("stale.declared_history_section",
+     lambda: problems(led_plain, {"A.md": "## 5 history\n" + bare}, hist_secs=("5",))
+     == []),
+    # ② 该报的必须报
+    ("★ stale.sha_unsourced",
+     lambda: [p.code for p in problems(led_sha, {"A.md": bare})]
+     == ["stale.sha_unsourced"]),
+    ("★ stale.sha_no_facts",
+     lambda: [p.code for p in problems(led_plain, {"A.md": bare})]
+     == ["stale.sha_no_facts"]),
+    ("★ stale.sha_no_facts·undeclared_section",
+     lambda: [p.code for p in problems(
+         led_plain, {"A.md": "## 5 history\n" + bare}, hist_secs=(""))
+     ] == ["stale.sha_no_facts"]),
     ]
+
+
+def _cases_retired(fx):
+    """见 `_cases()`：本组 4 条。"""
+    led_sha, led_plain, bare, fresh, led_fresh, led_old = (fx["led_sha"], fx["led_plain"], fx["bare"], fx["fresh"], fx["led_fresh"], fx["led_old"])
+    return [
+    ("stale.retired_unconfigured",
+     lambda: problems(led_plain, {"A.md": "still using the old component\n"},
+                      retired=()) == []),
+    ("stale.retired_reference",
+     lambda: problems(led_plain, {"A.md": "see NOTES-osmesa.md and the osmesa-branch\n"},
+                      retired=("osmesa",)) == []),
+    ("★ stale.retired_name",
+     lambda: [p.code for p in problems(
+         led_plain, {"A.md": "backend still uses osmesa\n"}, retired=("osmesa",))]
+     == ["stale.retired_name"]),
+    ("★ stale.retired_name·unnumbered_section",
+     lambda: [p.code for p in problems(
+         led_plain, {"A.md": "## FAQ\nstill using osmesa\n"}, retired=("osmesa",))]
+     == ["stale.retired_name"]),
+    ]
+
+
+def _cases_age(fx):
+    """见 `_cases()`：本组 4 条。"""
+    led_sha, led_plain, bare, fresh, led_fresh, led_old = (fx["led_sha"], fx["led_plain"], fx["bare"], fx["fresh"], fx["led_fresh"], fx["led_old"])
+    return [
+    # ② 测龄（issue #3 ②）
+    ("stale.age_fresh",
+     lambda: problems(led_fresh, {"A.md": "x\n"}, stale_days=30) == []),
+    ("stale.age_rule_off",
+     lambda: problems(led_old, {"A.md": "x\n"}, stale_days=None) == []),
+    ("★ stale.too_old",
+     lambda: [p.code for p in problems(
+         led_old, {"A.md": "x\n"}, stale_days=30)] == ["stale.too_old"]),
+    ("★ stale.measured_at_missing",
+     lambda: [p.code for p in problems(
+         led_plain, {"A.md": "x\n"}, stale_days=30)]
+     == ["stale.measured_at_missing"]),
+    ]
+
+
+def _cases_empty(fx):
+    """见 `_cases()`：本组 3 条。"""
+    led_sha, led_plain, bare, fresh, led_fresh, led_old = (fx["led_sha"], fx["led_plain"], fx["bare"], fx["fresh"], fx["led_fresh"], fx["led_old"])
+    return [
+    # ① 正常不报
+    ("stale.ok",
+     lambda: problems(led_sha,
+                      {"A.md": "deployed sha256 %s... (truncated)\n" % ("a" * 16)}) == []),
+    # ③ 空输入必须报
+    ("★ stale.ledger_empty",
+     lambda: [p.code for p in problems({"facts": {}}, {"A.md": "x\n"})]
+     == ["stale.ledger_empty"]),
+    ("★ stale.no_docs",
+     lambda: [p.code for p in problems(led_plain, {})] == ["stale.no_docs"]),
+    ]
+
+
+def _cases():
+    """拼装 4 组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    fx = _cases_fixture()
+    return (
+    _cases_sha(fx)
+    + _cases_retired(fx)
+    + _cases_age(fx)
+    + _cases_empty(fx)
+    )
 
 
 GATE = meta("陈旧断言检测", "sha 出处 / 退役名 / 测龄",

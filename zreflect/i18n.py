@@ -459,7 +459,8 @@ def _construct_sealed():
         return True
 
 
-def _cases():
+def _cases_fixture():
+    """夹具（原 `_cases` 的前置段原样搬入）。"""
     fake = {
         # 占位名必须与**真包**一致（`key` / `actual` / `expected`）：
         # 写成缩写会让这条自证为一个真包不用的命名方案背书（实测 KeyError）。
@@ -477,65 +478,95 @@ def _cases():
     def said(**params):
         return _as_null(lambda: str(M("probe.code", **params)))
 
+    return {'fake': fake, 'bad_shape': bad_shape, 'empty': empty, 'en_cat': en_cat, 'with_en': with_en, 'said': said}
+
+
+def _cases_null(fx):
+    """见 `_cases()`：本组 7 条。"""
+    fake, bad_shape, empty, en_cat, with_en, said = (fx["fake"], fx["bad_shape"], fx["empty"], fx["en_cat"], fx["with_en"], fx["said"])
     return [
-        # ① 正常不报 —— null 包形状
-        ("i18n.null_no_params",
-         lambda: _as_null(lambda: str(M("gate.title.facts"))
-                         == "gate.title.facts")),
-        ("i18n.null_with_params",
-         lambda: _as_null(lambda: str(M("replay.no_cmd", key="py_lines"))
-                         == "replay.no_cmd(key='py_lines')")),
-        ("i18n.null_params_sorted",
-         lambda: _as_null(lambda: str(M("x", bb=2, aa=1)) == "x(aa=1, bb=2)")),
-        # `repr` 必须处理引号嵌套：手拼 `'%s'` 在值内带引号时产出畸形串。
-        ("★ i18n.repr_quotes",
-         lambda: (lambda s: s.count("'") >= 2 and s.startswith("probe.code("))(
-             said(command="find . -name '*.md' | wc -l"))),
-        ("i18n.null_long_value_truncated",
-         lambda: len(said(cmd="f" * 200)) < 80),
-        ("i18n.pack_applied",
-         lambda: with_en(lambda: str(M("replay.no_cmd", key="f.py"))
-                         == "`f.py` has no replay command")),
-        ("i18n.message_is_str",
-         lambda: (lambda m: (bool([m]), "  · " + m, len([m]))[0] is True)(M("a"))),
-        # `.code` / `.params` 是身份，与语言无关。得在 null 下构造
-        # （`Message` 构造时就渲染：捏造的 code 撞真包会 KeyError）。
-        ("i18n.code_readable",
-         lambda: _as_null(lambda: M("replay.no_cmd", key=1).code
-                         == "replay.no_cmd")),
-        ("i18n.params_readable",
-         lambda: _as_null(lambda: M("replay.no_cmd", key="py_lines").params
-                         == {"key": "py_lines"})),
-        ("i18n.activate_sets_default",
-         lambda: _activate_ok("en", {"en": fake})),
-        # ② 该报的必须报
-        ("★ i18n.pack_empty",
-         lambda: _raises(lambda: _validate(empty, "xx"))),
-        ("★ i18n.pack_masquerades_contract",
-         lambda: _raises(lambda: _validate(bad_shape, "xx"))),
-        # 缺失的语言包必须**报**，不是静默回落中文。
-        ("★ i18n.missing_pack_raises",
-         lambda: _raises(lambda: Catalog.load("xx", {"zh": {}}))),
-        # 空包不是「已翻译」（零值守卫第一档）。
-        ("★ i18n.empty_pack_rejected",
-         lambda: _raises(lambda: Catalog.load("xx", {"xx": {}}))),
-        # **坏分片必须当场抛**：静默跳过的后果是那部分消息退回裸 code 而 rc 仍 0。
-        ("★ i18n.broken_shard_raises",
-         lambda: _broken_pack_raises()),
-        # `pack_dir` 三条口径的机器判据（最显眼的契约，此前零自证）。
-        ("★ i18n.pack_dir_three_rules", lambda: _pack_dir_rules_ok()),
-        # `NULL` 哨兵在 `bind` / `resolve` / `activate` 三个入口语义一致。
-        ("★ i18n.null_sentinel_consistent", lambda: _null_consistent()),
-        # **`Catalog` 的数据必须真不可变**：`__slots__` + `__setattr__` 只挡
-        # 属性赋值，挡不住原地改字典（实测 `cat.table[...]=...` 成功且渲染全错）。
-        ("★ i18n.catalog_data_immutable", lambda: _catalog_immutable()),
-        # **构造闸**：`Catalog(…)` 不能被外部直接造 —— 那会绕过 `load()` 里的
-        # `_validate`（契约串防线），让一条伪装成 `OFF:` 的译文真的渲出去（实测）。
-        ("★ i18n.catalog_construct_sealed", lambda: _construct_sealed()),
-        # ③ 空输入必须报
-        ("★ i18n.empty_code",
-         lambda: _as_null(lambda: str(M("")) == "")),
+    # ① 正常不报 —— null 包形状
+    ("i18n.null_no_params",
+     lambda: _as_null(lambda: str(M("gate.title.facts"))
+                     == "gate.title.facts")),
+    ("i18n.null_with_params",
+     lambda: _as_null(lambda: str(M("replay.no_cmd", key="py_lines"))
+                     == "replay.no_cmd(key='py_lines')")),
+    ("i18n.null_params_sorted",
+     lambda: _as_null(lambda: str(M("x", bb=2, aa=1)) == "x(aa=1, bb=2)")),
+    # `repr` 必须处理引号嵌套：手拼 `'%s'` 在值内带引号时产出畸形串。
+    ("★ i18n.repr_quotes",
+     lambda: (lambda s: s.count("'") >= 2 and s.startswith("probe.code("))(
+         said(command="find . -name '*.md' | wc -l"))),
+    ("i18n.null_long_value_truncated",
+     lambda: len(said(cmd="f" * 200)) < 80),
+    # `NULL` 哨兵在 `bind` / `resolve` / `activate` 三个入口语义一致。
+    ("★ i18n.null_sentinel_consistent", lambda: _null_consistent()),
+    # ③ 空输入必须报
+    ("★ i18n.empty_code",
+     lambda: _as_null(lambda: str(M("")) == "")),
     ]
+
+
+def _cases_pack(fx):
+    """见 `_cases()`：本组 7 条。"""
+    fake, bad_shape, empty, en_cat, with_en, said = (fx["fake"], fx["bad_shape"], fx["empty"], fx["en_cat"], fx["with_en"], fx["said"])
+    return [
+    ("i18n.pack_applied",
+     lambda: with_en(lambda: str(M("replay.no_cmd", key="f.py"))
+                     == "`f.py` has no replay command")),
+    # ② 该报的必须报
+    ("★ i18n.pack_empty",
+     lambda: _raises(lambda: _validate(empty, "xx"))),
+    ("★ i18n.pack_masquerades_contract",
+     lambda: _raises(lambda: _validate(bad_shape, "xx"))),
+    # 缺失的语言包必须**报**，不是静默回落中文。
+    ("★ i18n.missing_pack_raises",
+     lambda: _raises(lambda: Catalog.load("xx", {"zh": {}}))),
+    # 空包不是「已翻译」（零值守卫第一档）。
+    ("★ i18n.empty_pack_rejected",
+     lambda: _raises(lambda: Catalog.load("xx", {"xx": {}}))),
+    # **坏分片必须当场抛**：静默跳过的后果是那部分消息退回裸 code 而 rc 仍 0。
+    ("★ i18n.broken_shard_raises",
+     lambda: _broken_pack_raises()),
+    # `pack_dir` 三条口径的机器判据（最显眼的契约，此前零自证）。
+    ("★ i18n.pack_dir_three_rules", lambda: _pack_dir_rules_ok()),
+    ]
+
+
+def _cases_catalog(fx):
+    """见 `_cases()`：本组 6 条。"""
+    fake, bad_shape, empty, en_cat, with_en, said = (fx["fake"], fx["bad_shape"], fx["empty"], fx["en_cat"], fx["with_en"], fx["said"])
+    return [
+    ("i18n.message_is_str",
+     lambda: (lambda m: (bool([m]), "  · " + m, len([m]))[0] is True)(M("a"))),
+    # `.code` / `.params` 是身份，与语言无关。得在 null 下构造
+    # （`Message` 构造时就渲染：捏造的 code 撞真包会 KeyError）。
+    ("i18n.code_readable",
+     lambda: _as_null(lambda: M("replay.no_cmd", key=1).code
+                     == "replay.no_cmd")),
+    ("i18n.params_readable",
+     lambda: _as_null(lambda: M("replay.no_cmd", key="py_lines").params
+                     == {"key": "py_lines"})),
+    ("i18n.activate_sets_default",
+     lambda: _activate_ok("en", {"en": fake})),
+    # **`Catalog` 的数据必须真不可变**：`__slots__` + `__setattr__` 只挡
+    # 属性赋值，挡不住原地改字典（实测 `cat.table[...]=...` 成功且渲染全错）。
+    ("★ i18n.catalog_data_immutable", lambda: _catalog_immutable()),
+    # **构造闸**：`Catalog(…)` 不能被外部直接造 —— 那会绕过 `load()` 里的
+    # `_validate`（契约串防线），让一条伪装成 `OFF:` 的译文真的渲出去（实测）。
+    ("★ i18n.catalog_construct_sealed", lambda: _construct_sealed()),
+    ]
+
+
+def _cases():
+    """拼装 3 组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    fx = _cases_fixture()
+    return (
+    _cases_null(fx)
+    + _cases_pack(fx)
+    + _cases_catalog(fx)
+    )
 
 
 def _catalog_immutable():
