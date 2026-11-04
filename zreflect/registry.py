@@ -550,6 +550,15 @@ def _main_run(argv):
         print(M("registry.phase_error", file=f))
     for f in res["fail_list"]:
         print("  FAILED %s" % f)
+        # 把闸门自己的问题行原样带出来（去掉空行与前后的噪声）。
+        # ⚠️ 此前只打文件名 —— 用户要自己重跑每道红的闸门才知道为什么。
+        for ln in (res.get("fail_out", {}).get(f) or "").splitlines():
+            ln = ln.rstrip()
+            if not ln:
+                continue
+            print("      " + ln)
+            if ln.startswith("  · "):
+                break            # 一条问题行就够定位了，别刷屏
     # 配置坏（rc=2）与判据红（rc=1）都要非零退出，但消息不同（修法不同）
     return 1 if (res["failed"] or res.get("fatal") or res.get("error")) else 0
 
@@ -571,13 +580,28 @@ def _main_selftest_modules():
     return 0
 
 
+# 哪些 code 是**可修复的配置提示**（不砖名录），哪些是**名录本身坏了**。
+#
+# ⚠️ 这条区分是实测出来的：用户按文档创建 `Einfacht.env` 之后，
+# `off_reason`（「本仓没有 Einfacht.env」）就过时了 —— 判据**是对的**，但把它
+# 当 fatal 会让 `registry --gates` / `--run commit` / pre-commit **永久红**，
+# 而唯一出路是删掉文档让他创建的那个文件。那是**自陷**，不是用户错。
+#
+# 正确反应：明确说「去改闸门的 off_reason」，然后**继续**（名录是可用的）。
+_ADVISORY_CODES = frozenset({"registry.off_reason_stale"})
+
+
 def _main_gates():
     gs, missing = gates()
     probs = problems(gs, missing)
+    fatal_probs = [p for p in probs if getattr(p, "code", "") not in _ADVISORY_CODES]
     for x in probs:
-        print("  · %s" % x, file=sys.stderr)
-    if probs:
-        return fatal(M("registry.roster_problems", count=len(probs)))
+        if getattr(x, "code", "") in _ADVISORY_CODES:
+            print("  ! %s" % x, file=sys.stderr)      # 提示，不拒
+        else:
+            print("  · %s" % x, file=sys.stderr)
+    if fatal_probs:
+        return fatal(M("registry.roster_problems", count=len(fatal_probs)))
     for g in gs:
         print("%s\t%s\t%s" % (g["file"], g["name"], g["desc"]))
     return 0

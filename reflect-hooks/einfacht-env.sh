@@ -91,7 +91,12 @@ print(M(code, **params))
 fi
 
 # —— 加载逻辑 ——
-_ENV_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# ⚠️ `$0` 不可靠：被 `sh -c '. "$1"' sh <plugin>` 调用时 `$0` 是 `sh`，
+# `dirname` 就成了 `/`，插件目录找错 ⇒ **钩子目录里的 Einfacht.env 被静默忽略**
+# （实测：`env -0` 里一个 REFLECT_* 都没有）。调用方可以用
+# `EINFACHT_PLUGIN_DIR` 显式告诉它 —— 有就用它，没有才回落 `$0`（直接跑本文件
+# 或旧的 `source` 用法都走这条）。
+_ENV_DIR=${EINFACHT_PLUGIN_DIR:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)}
 _ENV_REPO=$(CDPATH= cd -- "$_ENV_DIR/.." && pwd)
 _ENV_FILE=${REFLECT_ENV_FILE:-Einfacht.env}
 if [ -f "$_ENV_DIR/$_ENV_FILE" ]; then

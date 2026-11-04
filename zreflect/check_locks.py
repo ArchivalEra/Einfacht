@@ -163,7 +163,7 @@ def _cases():
 
 GATE = meta("锁定源闸门", "锁定源清单（URL + 文件 + sha256 的内容指纹）",
             knobs=("REFLECT_LOCKS",),
-            off_reason="本仓没有 upstream-lock.json：不钉上游字节 ⇒ 明说未启用")
+            off_reason="不钉上游字节的仓不需要它：规格未配 ⇒ 明说未启用")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], M("gate.title.locks"), _cases, main))

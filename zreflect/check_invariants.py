@@ -192,7 +192,7 @@ def _cases():
 
 GATE = meta("不变量闸门", "声明式不变量：仓库文件必须/不得含某片段（grep 级）",
             knobs=("REFLECT_INVARIANTS",),
-            off_reason="本仓没有 invariants.json 规格 ⇒ 声明式不变量未启用（可插拔）")
+            off_reason="不写声明式不变量的仓不需要它：规格未配 ⇒ 明说未启用（可插拔）")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],

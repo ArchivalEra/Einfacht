@@ -251,7 +251,7 @@ def _cases():
 
 GATE = meta("pin 闸门", "派生树 pin 一致性（stamp commit / dirty / 版本串对读）",
             knobs=("REFLECT_PINS",),
-            off_reason="本仓没有派生树 pin 清单 pins.json ⇒ 明说未启用")
+            off_reason="没有派生树的仓不需要它：规格未配 ⇒ 明说未启用")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_pins", _cases, main))
