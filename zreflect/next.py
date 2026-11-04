@@ -122,11 +122,44 @@ def collect(repo):
         if changed or untracked:
             pending.append(M("next.tree_dirty"))
 
-    # ⚠️ 悬案**不在这里**：`inject-state.py` 已有专门的悬案段（带 Status 标注），
-    # 两处都列会让注入里同一条悬案出现两次，还说不到点子上。这里只报「上一轮
-    # 机器看得见的进度」—— 悬案的**内容**归悬案段，**数量**归台账段。
+    # **未结案的悬案 = 下一步**。此前这里刻意留空（理由是「`inject-state.py`
+    # 已有悬案段，两处都列会重复」）—— 但那个段只报「有几条未结案」，
+    # 不报「它们是什么」，而压缩后 agent 最需要的正是**名字**。
+    # 现在这里给名字，那段给状态，各司其职。
+    for q in _open_question_names(repo):
+        pending.append(M("next.open_question", name=q))
 
     return last, pending
+
+
+def _open_question_names(repo):
+    """`questions/` 里未结案的悬案文件名（按名字排序，最多 5 个）。
+
+    读不到目录 ⇒ 返回空表（不是报错）：那是「这个仓不用悬案」的正常形态，
+    `inject-state.py` 会明说「读不到」。
+    """
+    import os                                            # noqa: PLC0415
+    d = os.path.join(repo, os.environ.get("REFLECT_QUESTIONS", "").strip()
+                     or "questions")
+    if not os.path.isdir(d):
+        return []
+    out = []
+    for n in sorted(os.listdir(d)):
+        if not n.endswith(".md"):
+            continue
+        try:
+            text = open(os.path.join(d, n), encoding="utf-8",
+                        errors="replace").read()
+        except OSError:
+            continue
+        status = ""
+        for ln in text.splitlines():
+            if ln.strip().lower().startswith("**status:**"):
+                status = ln.split(":", 1)[1].strip().lower()
+                break
+        if status != "resolved":
+            out.append(n)
+    return out[:5]
 
 
 NEXT_BEGIN = "<!-- AUTO:NEXT -->"
