@@ -51,10 +51,11 @@ ZERO_SHA = "0" * 40
 PHASES = ("commit", "push")
 
 
-def _sh(cmd, stdin=None):
+def _sh(cmd, stdin=None, env=None):
     """跑一条命令，返回 `(rc, 合并输出)`。"""
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, input=stdin)
+        p = subprocess.run(cmd, capture_output=True, text=True, input=stdin,
+                           env=env)
     except (OSError, subprocess.SubprocessError) as e:
         return 127, "gate: %r" % (e,)
     return p.returncode, (p.stdout or "") + (p.stderr or "")
@@ -75,8 +76,13 @@ def _load_env_plugin(tool_dir):
     plugin = os.path.join(tool_dir, "einfacht-env.sh")
     if not os.path.isfile(plugin):
         return
+    # ⚠️ 必须显式告诉插件**它自己在哪**：`sh -c '...' sh <plugin>` 里 `$0` 是
+    # `sh`，插件用 `dirname $0` 推目录会推到 `/`，于是**钩子目录里的
+    # Einfacht.env 被静默忽略**（实测：`env -0` 里一个 REFLECT_* 都没有）。
+    env = dict(os.environ)
+    env["EINFACHT_PLUGIN_DIR"] = tool_dir
     rc, out = _sh(["sh", "-c",
-                   '. "$1" >/dev/null 2>&1; env -0', "sh", plugin])
+                   '. "$1" >/dev/null 2>&1; env -0', "sh", plugin], env=env)
     if rc != 0:
         return
     for chunk in out.split("\0"):

@@ -198,7 +198,7 @@ def _cases():
 
 GATE = meta("A/B 闸门", "A/B 同旗标不变式（非 allow 轴差异 = 混淆变量，A/B 作废）",
             knobs=("REFLECT_AB",),
-            off_reason="本仓不做 A/B 对照实验：没有 ab.json 规格 ⇒ 明说未启用")
+            off_reason="不做 A/B 对照实验的仓不需要它：规格未配 ⇒ 明说未启用")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_ab", _cases, main))

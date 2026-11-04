@@ -645,7 +645,11 @@ def run_phase(phase, gates, runner=None, repo_root=None):
     """
     run = runner or (lambda f: default_runner(f, repo_root))
     res = {"ran": 0, "off": 0, "failed": 0, "fatal": 0, "error": 0,
-           "off_list": [], "fail_list": [], "fatal_list": [], "error_list": []}
+           "off_list": [], "fail_list": [], "fatal_list": [], "error_list": [],
+           # ⚠️ **每个失败闸门的原始输出**：聚合方只打文件名时，用户得自己
+           # 重跑一遍才知道为什么红（实测：hook 只报 `FAILED check_facts.py`，
+           # 而直接跑它才有 `facts.bare_number_unaccounted(line=9, …)`）。
+           "fail_out": {}}
     for item in gates:
         f = item["file"] if isinstance(item, dict) else item
         if isinstance(item, dict) and item.get("runs_at") not in (None, phase):
@@ -665,6 +669,7 @@ def run_phase(phase, gates, runner=None, repo_root=None):
         elif rc != 0:
             res["failed"] += 1
             res["fail_list"].append(f)
+            res["fail_out"][f] = out or ""
         elif any(kind == "off" for _i, kind, _ln in machine().scan(out)):
             res["off"] += 1
             res["off_list"].append(f)
