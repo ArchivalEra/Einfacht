@@ -150,15 +150,24 @@ def py_sources(base):
     out = []
     if not os.path.isdir(base):
         return out
-    for n in sorted(os.listdir(base)):
-        if not n.endswith(".py"):
-            continue
-        try:
-            with open(os.path.join(base, n), encoding="utf-8",
-                      errors="replace") as fh:
-                out.append((n, fh.read()))
-        except OSError:
-            continue
+    # ⚠️ **递归**：此前只 `listdir` 一层，于是 `REFLECT_I18N_ROOT=src` 这种
+    # 常见布局报「扫描面是空的」—— 而目录根本不空（实测：子代理的验收仓
+    # `src/mycli/cli.py` 里明摆着一句中文，判据却什么都没看到）。
+    # 名字用**相对 base 的路径**：否则 `a/util.py` 与 `b/util.py` 会互相覆盖，
+    # 报错时也说不清是哪个。
+    for dirpath, dirnames, filenames in os.walk(base):
+        dirnames[:] = sorted(d for d in dirnames
+                             if d not in ("__pycache__", ".git"))
+        for n in sorted(filenames):
+            if not n.endswith(".py"):
+                continue
+            p = os.path.join(dirpath, n)
+            rel = os.path.relpath(p, base)
+            try:
+                with open(p, encoding="utf-8", errors="replace") as fh:
+                    out.append((rel, fh.read()))
+            except OSError:
+                continue
     return out
 
 
