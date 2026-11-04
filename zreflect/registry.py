@@ -46,17 +46,6 @@ GATES_BEGIN = "<!-- AUTO:GATES -->"
 GATES_END = "<!-- /AUTO:GATES -->"
 
 
-def _zdir():
-    """工具自己的 `zreflect/` —— **调 `gate.zdir()`，不自己算**。
-
-    闸门名录所在的目录 = **本文件所在处**，与 GATE_REPO 无关。
-
-    名录是**工具**的属性（`zreflect/` 里的 check_*.py 就是工具自带的那批），
-    不是**被检查仓库**的属性：GATE_REPO 指向「被检查的仓库」（可能是换名
-    夹具、别的仓库），那里根本没有 zreflect/ 目录 —— 用 repo("zreflect")
-    会让夹具里名录为空、render 拒绝（实测踩到：换名自证的夹具里
-    check_facts 因「名录空」而红）。"""
-    return gate.zdir()
 
 # 换名自证的夹具把哪些默认名改掉了（gates-selftest.sh 跨仓库节的改名面）。
 # 名册纪律同 knobs：只登记真的被夹具改名的默认名 —— 这是红名单对账的判据数据。
@@ -115,7 +104,7 @@ def modules(zdir=None):
     平台模块必须声明自己（哪怕是 selftest=False，也要正面说「我不用自证」），
     否则「该有自证却没写」无人问（文本猜 `_cases` 猜不出来「本该有」）。
     """
-    d = zdir if zdir is not None else _zdir()
+    d = zdir if zdir is not None else gate.zdir()
     declared, undeclared = [], []
     try:
         names = sorted(os.listdir(d))
@@ -142,7 +131,7 @@ def selftest_modules(zdir=None):
     `missing` = 声明了 selftest=True 却没有 --selftest 入口的（写而不跑 = 装饰）。
     """
     declared, _und = modules(zdir)
-    d = zdir if zdir is not None else _zdir()
+    d = zdir if zdir is not None else gate.zdir()
     mods, missing = [], []
     for m in declared:
         if not m.get("selftest"):
@@ -174,7 +163,7 @@ def gates(zdir=None):
       · 「孤儿」（声明了却不叫 check_）概念消失 —— 声明了就是闸门，会被
         runnable() 收进执行清单，不存在「进叙述不被执行」的中间态。
     """
-    d = zdir if zdir is not None else _zdir()
+    d = zdir if zdir is not None else gate.zdir()
     out, missing = [], []
     try:
         names = sorted(os.listdir(d))
@@ -427,7 +416,7 @@ def dead_interface_problems(zdir=None):
     """
     import ast                                           # noqa: PLC0415
     import os                                            # noqa: PLC0415
-    d = zdir if zdir is not None else _zdir()
+    d = zdir if zdir is not None else gate.zdir()
     # ① 收集平台模块的公开顶层函数
     cand = {}
     own_text = {}
@@ -527,7 +516,7 @@ def trailing_newline_problems(zdir=None):
     判据报出来，人补一行即可。
     """
     import os                                            # noqa: PLC0415
-    base = zdir or _zdir()
+    base = zdir or gate.zdir()
     out = []
     try:
         names = sorted(os.listdir(base))
@@ -753,7 +742,7 @@ def dependency_coverage_problems(zdir=None, sources=None):
     提及不算引用（用 `Name`/`Attribute` 节点，不扫文本）。
     """
     import ast                                           # noqa: PLC0415
-    d = zdir if zdir is not None else _zdir()
+    d = zdir if zdir is not None else gate.zdir()
     # 平台模块（非 check_）的顶层公开函数
     platform = {}
     gate_cases = ""
@@ -1488,7 +1477,7 @@ def _cases_fixture(d):
     def real_files():
         # ⚠️ `_zdir()`（**工具仓**的 zreflect），不是 `d`（临时夹具目录）——
         # 这条断言比的是「真名录 vs 真磁盘」，与夹具无关。
-        return {"zreflect/" + n for n in os.listdir(_zdir())
+        return {"zreflect/" + n for n in os.listdir(gate.zdir())
                 if n.startswith("check_") and n.endswith(".py")}
     return {"ok": ok, "plain": plain, "real": real,
             "real_missing": real_missing, "gs": gs,
@@ -1632,15 +1621,60 @@ def _cases_phase(fx):
     ("registry.phases_default_builtin_only",
      lambda: _with_phases("")[0] == ("commit", "start-of-work")),
     # 人性化提示（env_hint）：四条判据
-    ("registry.env_hint_silent_without_carrier",
-     lambda: __import__("gate").env_hint(consumed=("REFLECT_FACTS",)) is None
-     or __import__("gate").env_carrier() is not None),
-    ("registry.env_hint_off_silent",
-     lambda: (lambda: (os.environ.update(REFLECT_ENV_HINT="off"),
-                       __import__("gate")._maybe_hint(),
-                       os.environ.pop("REFLECT_ENV_HINT", None),
-                       True))()),
     ]
+
+def _env_hint_case(which):
+    """`gate.env_hint()` 的三档行为（**按载体有无**，两侧都测）。
+
+    此前那两条断言是 `A is None or B is not None` —— 恒真（实测）。现在是
+    真的三档：无载体 ⇒ None；有载体+无旋钮 ⇒ **非 None**；有载体+`off` ⇒ None。
+    """
+    import tempfile, shutil                                # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    saved = gate.GATE_REPO
+    saved_off = os.environ.pop("REFLECT_ENV_HINT", None)
+    try:
+        gate.GATE_REPO = d
+        if which != "no_carrier":
+            open(os.path.join(d, "Einfacht.env"), "w",
+                 encoding="utf-8").write("export REFLECT_FACTS=FACTS.json\n")
+        if which == "carrier_off":
+            # `off` 的静默发生在**打印层**（`_maybe_hint`），不在 `env_hint`
+            # —— `env_hint()` 仍会算出那句话，只是没人打印它。测打印层。
+            os.environ["REFLECT_ENV_HINT"] = "off"
+            import io                                     # noqa: PLC0415
+            import contextlib                             # noqa: PLC0415
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                gate._maybe_hint()
+            return buf.getvalue() == ""       # 必须**一个字符都不打**
+        hint = gate.env_hint(consumed=("REFLECT_FACTS",))
+        if which == "carrier_bare":
+            return hint is not None          # 必须**提示**（有载体却没设旋钮）
+        return hint is None                  # 无载体 ⇒ 必须静默
+    finally:
+        gate.GATE_REPO = saved
+        if saved_off is not None:
+            os.environ["REFLECT_ENV_HINT"] = saved_off
+        else:
+            os.environ.pop("REFLECT_ENV_HINT", None)
+        shutil.rmtree(d, True)
+
+
+def _cases_hint(fx):
+    """见 `_cases()`：环境提示（env_hint）的静默条件。"""
+    return [
+        # ⚠️ 此前这两条是**恒真**：`env_hint(...) is None or env_carrier() is not
+        # None` —— 只要仓里有 `Einfacht.env` 第二条永远成立（把 `env_hint` 弄成
+        # 永远返回一行，断言仍 True，实测）。现在按**载体有无**三个档位都测。
+        ("★ registry.env_hint_silent_without_carrier",
+         lambda: _env_hint_case("no_carrier")),
+        ("★ registry.env_hint_fires_with_carrier",
+         lambda: _env_hint_case("carrier_bare")),
+        ("★ registry.env_hint_off_silent",
+         lambda: _env_hint_case("carrier_off")),
+    ]
+
 
 
 def _cases_off_reason(fx):
@@ -1818,6 +1852,7 @@ def _cases():
     return (        _cases_discovery(fx)
         + _cases_render(fx)
         + _cases_phase(fx)
+        + _cases_hint(fx)
         + _cases_off_reason(fx)
         + _cases_path_rule(fx)
         + _cases_hosted(fx)
