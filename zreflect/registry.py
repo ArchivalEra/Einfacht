@@ -1705,75 +1705,79 @@ def _cases_path_rule(fx):
     ]
 
 
-def _cases_hosted(fx):
-    """见 `_cases()`：本组 22 条。"""
-    (ok, plain, real, real_missing, gs, missing,
-     real_files) = (fx["ok"], fx["plain"], fx["real"],
-                    fx["real_missing"], fx["gs"],
-                    fx["missing"], fx["real_files"])
-    d = fx["d"]
+def _cases_gate_hosted(fx):
+    """`gate.py` 的判据**寄宿在这里** —— 它 `selftest=False`（提供 `selftest`
+    本身，自举会打架），所以它的逻辑自证只能住在别处。本仓唯一合法寄宿。"""
     return [
-    # **`never_falsifiable` 的自证**（第 22 轮）：它是 `gate.selftest()` 的
-    # 核心守卫（`gate.py:36` 起），用来抓「恒真断言」—— 此前**全仓零自证**。
-    # 「检测器的检测器」没被测过：它失效时，所有断言都会静默失去牙。
-    ("★ registry.never_falsifiable_catches_or_true",
-     lambda: _nf_catches("or_true") is not None),
-    ("★ registry.never_falsifiable_catches_and_false",
-     lambda: _nf_catches("and_false") is not None),
-    ("★ registry.never_falsifiable_catches_self_compare",
-     lambda: _nf_catches("self_compare") is not None),
-    # **阳性对照**：真断言必须**不报**（否则「总是报」也能骗过自证）
-    ("registry.never_falsifiable_allows_real",
-     lambda: _nf_catches("real") is None),
-    # 边界③：「读不到源码」⇒ 不猜（返回 None，不是「恒真」也不是「干净」）
-    ("★ registry.never_falsifiable_no_source_no_guess",
-     lambda: _nf_no_source() is None),
-    # **`gate.py` 的 `selftest=False` 必须说清真实含义**（第 23 轮）：
-    # 它不表示「没有自证义务」，只表示「没有 `--selftest` 入口（自举会打架）」。
-    # 此前描述只写「提供 selftest，自己不消费」—— 读起来像免责声明。
-    ("★ registry.gate_module_meta_states_where_selftest_lives",
-     lambda: _gate_desc_states_selftest()),
-    # **`living.py` / `collect.py` 的自证**（第 24 轮）：两个 `selftest=False`
-    # 模块此前**零断言**，而 `living_lines` 被 `check_stale` / `check_retractions`
-    # 消费 —— 它判错了，那两道闸门的判据全部失效。
-    # **`selftest=False` 的模块描述必须说清自证住在哪**（第 25 轮，
-    # 与第 23 轮 `gate.py` 同类）：`collect.py` / `living.py` / `gate.py`
-    # 都声明了 `selftest=False`，但它们的逻辑**有实质断言**在
-    # `registry._cases()`。描述若只写「无自证」= 免责声明。
-    # 「严查多余接口」的机器判据：零消费者的公开函数 ⇒ 必须报。
-    ("★ registry.dead_interface_detected",
-     lambda: _dead_interface_case()),
-    # 全 Python 化的守卫：未登记的 .sh ⇒ 必须报（造一个假的证明它有牙）
-    ("★ registry.unexpected_shell_detected",
-     lambda: _unexpected_shell_case()),
-    # `i18n.han()`：零语言制度的判据（`check_i18n` 与 `harness` 都消费它）。
-    # 它是「有没有中文」的**唯一产地** —— 判错了两道判据一起失效。
-    ("★ registry.han_predicate",
-     lambda: _han_predicate_case()),
-    # 末尾换行（踩了四次）：一个没有末尾换行的 .py 让 `py_lines` 的两条
-    # 量法差 1，复跑闸门永远红 —— 报出来让人补，而不是每次手工发现。
-    ("★ registry.trailing_newline_detected",
-     lambda: _trailing_newline_case()),
-    ("★ registry.selftest_false_modules_state_where_selftest_lives",
-     lambda: _selftest_false_states_it()),
-    # **依赖链覆盖**（C4 对账⑨）：被闸门消费的平台函数必须在某处有断言。
-    # 第 24 轮的 `living.living_lines` 就是这么漏的（消费两道闸门，自身零断言）。
-    ("★ registry.dependency_coverage",
-     lambda: _dependency_coverage_ok()),
-    # 依赖链判据刚点名的两条 `gate` 函数（消费方多，自身零断言）
-    ("★ registry.guard_nonempty_returns_2",
-     # 空 ⇒ rc 2（FATAL）；非空 ⇒ None
-     lambda: gate.guard_nonempty("x", []) == 2
-     and gate.guard_nonempty("x", [1]) is None),
-    ("★ registry.load_spec_returns_error_not_raise",
-     # 坏路径 ⇒ (None, 错误句)；不抛异常（调用方要拼自己的措辞）
-     lambda: _load_spec_ok()),
-    # `gate.selftest` 被两道闸门直接调用 —— 它**执行**所有断言，但自身的
-    # 零值守卫（空 cases 必须拒收）此前零断言。测它不算自举：测的是
-    # 「0/0 洞会不会被拦住」，不是「断言跑得对不对」。
-    ("★ registry.selftest_refuses_empty_cases",
-     lambda: _selftest_refuses_empty()),
+        # **`never_falsifiable` 的自证**（第 22 轮）：它是 `gate.selftest()` 的
+        # 核心守卫（`gate.py:36` 起），用来抓「恒真断言」—— 此前**全仓零自证**。
+        # 「检测器的检测器」没被测过：它失效时，所有断言都会静默失去牙。
+        ("★ registry.never_falsifiable_catches_or_true",
+         lambda: _nf_catches("or_true") is not None),
+        ("★ registry.never_falsifiable_catches_and_false",
+         lambda: _nf_catches("and_false") is not None),
+        ("★ registry.never_falsifiable_catches_self_compare",
+         lambda: _nf_catches("self_compare") is not None),
+        # **阳性对照**：真断言必须**不报**（否则「总是报」也能骗过自证）
+        ("registry.never_falsifiable_allows_real",
+         lambda: _nf_catches("real") is None),
+        # 边界③：「读不到源码」⇒ 不猜（返回 None，不是「恒真」也不是「干净」）
+        ("★ registry.never_falsifiable_no_source_no_guess",
+         lambda: _nf_no_source() is None),
+        # **`gate.py` 的 `selftest=False` 必须说清真实含义**（第 23 轮）：
+        # 它不表示「没有自证义务」，只表示「没有 `--selftest` 入口（自举会打架）」。
+        # 此前描述只写「提供 selftest，自己不消费」—— 读起来像免责声明。
+        ("★ registry.gate_module_meta_states_where_selftest_lives",
+         lambda: _gate_desc_states_selftest()),
+        # 依赖链判据刚点名的两条 `gate` 函数（消费方多，自身零断言）
+        ("★ registry.guard_nonempty_returns_2",
+         # 空 ⇒ rc 2（FATAL）；非空 ⇒ None
+         lambda: gate.guard_nonempty("x", []) == 2
+         and gate.guard_nonempty("x", [1]) is None),
+        ("★ registry.load_spec_returns_error_not_raise",
+         # 坏路径 ⇒ (None, 错误句)；不抛异常（调用方要拼自己的措辞）
+         lambda: _load_spec_ok()),
     ]
+
+
+def _cases_self(fx):
+    """registry 自己那套判据（死接口 / shell 面积 / 中文判据 / 末尾换行 /
+    依赖覆盖 / 自证加固）。"""
+    return [
+        # **`living.py` / `collect.py` 的自证**（第 24 轮）：两个 `selftest=False`
+        # 模块此前**零断言**，而 `living_lines` 被 `check_stale` / `check_retractions`
+        # 消费 —— 它判错了，那两道闸门的判据全部失效。
+        # **`selftest=False` 的模块描述必须说清自证住在哪**（第 25 轮，
+        # 与第 23 轮 `gate.py` 同类）：`collect.py` / `living.py` / `gate.py`
+        # 都声明了 `selftest=False`，但它们的逻辑**有实质断言**在
+        # `registry._cases()`。描述若只写「无自证」= 免责声明。
+        # 「严查多余接口」的机器判据：零消费者的公开函数 ⇒ 必须报。
+        ("★ registry.dead_interface_detected",
+         lambda: _dead_interface_case()),
+        # 全 Python 化的守卫：未登记的 .sh ⇒ 必须报（造一个假的证明它有牙）
+        ("★ registry.unexpected_shell_detected",
+         lambda: _unexpected_shell_case()),
+        # `i18n.han()`：零语言制度的判据（`check_i18n` 与 `harness` 都消费它）。
+        # 它是「有没有中文」的**唯一产地** —— 判错了两道判据一起失效。
+        ("★ registry.han_predicate",
+         lambda: _han_predicate_case()),
+        # 末尾换行（踩了四次）：一个没有末尾换行的 .py 让 `py_lines` 的两条
+        # 量法差 1，复跑闸门永远红 —— 报出来让人补，而不是每次手工发现。
+        ("★ registry.trailing_newline_detected",
+         lambda: _trailing_newline_case()),
+        ("★ registry.selftest_false_modules_state_where_selftest_lives",
+         lambda: _selftest_false_states_it()),
+        # **依赖链覆盖**（C4 对账⑨）：被闸门消费的平台函数必须在某处有断言。
+        # 第 24 轮的 `living.living_lines` 就是这么漏的（消费两道闸门，自身零断言）。
+        ("★ registry.dependency_coverage",
+         lambda: _dependency_coverage_ok()),
+        # `gate.selftest` 被两道闸门直接调用 —— 它**执行**所有断言，但自身的
+        # 零值守卫（空 cases 必须拒收）此前零断言。测它不算自举：测的是
+        # 「0/0 洞会不会被拦住」，不是「断言跑得对不对」。
+        ("★ registry.selftest_refuses_empty_cases",
+         lambda: _selftest_refuses_empty()),
+    ]
+
 
 
 def _cases():
@@ -1791,7 +1795,8 @@ def _cases():
         + _cases_hint(fx)
         + _cases_off_reason(fx)
         + _cases_path_rule(fx)
-        + _cases_hosted(fx)
+        + _cases_gate_hosted(fx)
+        + _cases_self(fx)
     )
 
 
