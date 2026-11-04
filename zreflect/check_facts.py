@@ -207,19 +207,71 @@ def problems(ledger, doc_text, bare_min=None):
     return out
 
 
+def _docs_to_scan(argv):
+    """要扫的文档清单。
+
+    `argv[0]` 给了 ⇒ 只扫那一份（显式优先）。
+    否则 ⇒ **`REFLECT_DOCS` 的全部**，不是只有 `REFLECT_DOC`。
+
+    ⚠️ 此前只扫 `REFLECT_DOC`（默认 `STATE.md` 一份），于是往 README 里写
+    裸数字**永远不被抓** —— 而 `REFLECT_DOCS` 这个旋钮早就存在、默认就是
+    六份（STATE / AGENTS / PRINCIPLES / README×3）。一个仓的「活状态文档」
+    是六份，判据只查一份，那是假绿（子代理验收实测：README 里写 4242，
+    `facts.ok(count=17)` 照样绿）。
+    """
+    if argv:
+        return [argv[0]]
+    raw = os.environ.get("REFLECT_DOCS", "").strip()
+    if raw:
+        return [x.strip() for x in raw.split(",") if x.strip()]
+    import knobs                                         # noqa: PLC0415
+    return [x.strip() for x in knobs.REGISTRY["REFLECT_DOCS"][1].split(",")
+            if x.strip()]
+
+
 def run(argv):
-    doc = argv[0] if argv else os.environ.get("REFLECT_DOC", "STATE.md")
-    p = doc if os.path.isabs(doc) else repo(doc)
-    if not os.path.exists(p):
-        return fatal(M("facts.doc_missing", path=p))
+    docs = _docs_to_scan(list(argv))
     facts_name = os.environ.get("REFLECT_FACTS", "FACTS.json")
     led_path = repo(facts_name)
     if not os.path.exists(led_path):
         return fatal(M("facts.ledger_missing", name=facts_name))
     led = load(led_path)
-    probs = problems(led, open(p, encoding="utf-8").read())
+    probs = []
+    scanned = 0
+    for doc in docs:
+        p = doc if os.path.isabs(doc) else repo(doc)
+        if not os.path.exists(p):
+            # 名单里点名的文档不在 ⇒ 报（`REFLECT_DOCS` 是声明，不是建议）。
+            # 但 `argv[0]` 显式给的走原来的硬 FATAL（那是调用方指错了）。
+            if len(docs) == 1 and argv:
+                return fatal(M("facts.doc_missing", path=p))
+            probs.append(M("facts.doc_missing", path=p))
+            continue
+        scanned += 1
+        text = open(p, encoding="utf-8").read()
+        if BLOCK_BEGIN in text and BLOCK_END in text:
+            # 有机器块的文档：全判据（块一致性 + 引用 + 裸数字）。
+            probs += problems(led, text)
+        else:
+            # 没有机器块的文档（README / AGENTS / PRINCIPLES 等）：
+            # **只查裸数字与坏引用**，不要求它有块 —— 块只属于 `REFLECT_DOC`
+            # 声明的那一份（`--render-doc` 的落点）。
+            # ⚠️ 此前这些文档**完全不扫**，于是往 README 写裸数字永远不被抓
+            # （子代理验收实测：README 里写 4242，`facts.ok` 照样绿）。
+            # ⚠️ 只查**黑名单**（台账里的值被手抄却没引用），不查「任何
+            # ≥阈值的裸数字」—— README / AGENTS 天然满是技术数字（HTTP 404 /
+            # 端口 3000 / 版本号），用活状态文档那套白名单阈值会报 25 条噪音
+            # （实测）。「从未进过台账的数字也要有出处」这条**只对
+            # `REFLECT_DOC` 那份活状态文档**成立：那里写的数字是「现在如此」，
+            # 而 README 写的是「怎么用」。
+            # ⚠️ **不查 `[[key]]` 坏引用**：README 这类文档会**教用户怎么写**
+            # 引用（`` [[键名]] `` 本身出现在说明文字里），那不是坏引用。
+            # 坏引用判据只对 `REFLECT_DOC` 那份活状态文档成立 —— 那里出现
+            # `[[不存在的键]]` 才是真的指错了。
+            probs += _copied_fact_problems(facts_of(led), _number_lines(text),
+                                           _bare_min())
     return finish(M("facts.title"), probs,
-                  M("facts.ok", count=len(facts_of(led))))
+                  M("facts.ok", count=len(facts_of(led)), docs=scanned))
 
 
 LED = {"facts": {"count": {"value": 4752, "cmd": "c"}}}
