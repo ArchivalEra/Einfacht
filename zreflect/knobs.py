@@ -749,12 +749,8 @@ def _semantics_are_codes_under(cm):
         cm.__exit__(None, None, None)
 
 
-def _cases():
-    import atexit                                        # noqa: PLC0415
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
-    d = tempfile.mkdtemp()
-    atexit.register(shutil.rmtree, d, True)
+def _cases_fixture(d):
+    """造夹具（假源码目录 + 幻影记号）。`d` 来自 `_cases()`。"""
     open(os.path.join(d, "good.py"), "w").write(
         'X = os.environ.get("REFLECT_FACTS")\n')
     # 幻影记号用拼接构造：本文件在扫描面内（zreflect/*.py），字面量写出来
@@ -764,168 +760,211 @@ def _cases():
     phantom = "REFLECT_" + "GHOSTX"
     open(os.path.join(d, "phantom.py"), "w").write(
         '# a comment mentions the nonexistent knob ' + phantom + '\n')
+    return {"d": d, "phantom": phantom}
+
+
+def _cases_scan(fx):
+    """见 `_cases()`：本组 6 条。"""
+    d, phantom = fx["d"], fx["phantom"]
     return [
-        # ① 正常不报
-        ("knobs.registry_entry_shape",
-         lambda: all(k in KINDS and isinstance(dflt, str) and w.strip()
-                     for k, dflt, w in REGISTRY.values()) and len(REGISTRY) >= 20),
-        ("knobs.scan_clean",
-         lambda: scan_surface_problems() == []),
-        ("knobs.readme_nominations_registered",
-         lambda: readme_problems(files={
-             "README.md": "uses REFLECT_FACTS and REFLECT_DOC.",
-             "README.zh.md": "x", "README.de.md": "x"}) == []),
-        ("knobs.real_tree_scan_clean", lambda: scan_surface_problems() == []),
-        ("knobs.real_readmes_clean", lambda: readme_problems() == []),
-        ("knobs.semantic_renders_as_code_by_default",
-         # 自带 **null 作用域**：这条测的是「没装包时是 code」，与入口激活了
-         # 什么包无关。此前直接读 `str(w)`，`REFLECT_LANG=zh` 下渲染成句子
-         # 于是全红（实测）—— 断言没声明作用域 = 跑在什么环境就考什么。
-         # 委托给 helper（搭 null 作用域必须进出配对，内联会变成不可读的一行）。
-         # 恒真检测看不见委托体 ⇒ 由 gate 判「未审计」；下面补一条同源反证，
-         # 证明 helper 本体确实有牙。
-         lambda: _semantics_are_codes_under(null_pack())),
-        ("★ knobs.semantics_are_codes_can_red", lambda: _semantics_can_red()),
-        # 语义延迟渲染的**正向证据**：真 zh 包里每条语义都有条目，且在 zh 包
-        # 下渲染出的是那句话（不是 code）。读磁盘真包 = 证明迁移没丢语义
-        # （注入假表只能证明「我写的模板渲染出我写的字」—— 循环论证）。
-        # 复跑：REFLECT_LANG=zh python3 zreflect/knobs.py --selftest
-        ("knobs.semantics_present_in_real_packs",
-         # 条件判据：**装了包就必须完整**。零包（合法态）⇒ 无对象可验，
-         # 条件真空成立；装了坏包 ⇒ 这条照样红（已用 planted 包验证过）。
-         lambda: not installed_langs() or _semantic_packs_intact()),
-        # zh / en 键集与占位符名一致（C4 对账③）。真包绿 = 迁移没落一边；
-        # 反向断言见 ② 档（假包必须报）。
-        ("knobs.real_packs_in_sync",
-         # 同上：零包合法 ⇒ 无「彼此」可对；有包就必须一致。
-         lambda: not installed_langs() or pack_sync_problems() == []),
-        # ② 该报的必须报
-        ("★ knobs.phantom_token",
-         lambda: any(p.code == "knobs.phantom_token"
-                     and p.params.get("token") == phantom
-                     for p in scan_surface_problems(py_dir=d))),
-        ("★ knobs.readme_phantom",
-         lambda: any(x.code == "knobs.readme_phantom" for x in readme_problems(files={
-             "README.md": "see " + "REFLECT_" + "GHOSTY" + ".",
-             "README.zh.md": "x", "README.de.md": "x"}))),
-        # ⚠️ 这两条此前**零用例**：`declared_vs_read_problems` 与
-        # `registry_vs_readme_problems` 从落地起从未被证明会红（AGENTS 规则 4）。
-        # `declared_vs_read_problems` 连注入缝都没有（直读 gate.GATE_REPO），
-        # 所以先补缝（sources=）、再补这两个反证。
-        ("★ knobs.declared_not_read",
-         # 声明了某个旋钮，但源码里根本不出现它 ⇒ 必须报，
-         # 且**点名那个旋钮**（否则报个空壳也算通过）。
-         # ⚠️ 断言**不许**提取成 helper：`never_falsifiable` 只扫 lambda 的 AST，
-         # 委托给一个函数就让它瞎掉 —— 此前那样做过，helper 改成 `return True`
-         # 后 26 PASS / 0 FAIL 全绿（实测）。宁可写长一行，也不关掉检测器。
-         lambda: [p.code for p in declared_vs_read_problems(
-             [{"file": "check_x.py",
-               "knobs": ("REFLECT_FACTS",)}],
-             sources={"check_x.py": "X = 1\n"})
-         ] == ["knobs.declared_not_read"]
-         and [p.params for p in declared_vs_read_problems(
-             [{"file": "check_x.py",
-               "knobs": ("REFLECT_FACTS",)}],
-             sources={"check_x.py": "X = 1\n"})
-         ] == [{"file": "check_x.py", "knobs": "REFLECT_FACTS"}]),
-        ("knobs.declared_and_read_is_clean",
-         # 声明了、也确实读了 ⇒ 不许报（阳性对照，否则「总是报」也能骗过自证）
-         lambda: declared_vs_read_problems(
-             [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
-             sources={"check_x.py":
-                      'X = os.environ.get("REFLECT_FACTS")\n'}) == []),
-        ("★ knobs.readme_missing_rows",
-         # 登记表里有、README 配置表里缺 ⇒ 必须报（方向与 readme_phantom 相反）。
-         # ⚠️ 断言**钉死 code**，不是只判 `!= []`：此前那样任何错误 code 都能
-         # 让这条通过（实测：换成一个 `readme_phantom` 冒充，用例照样绿）。
-         lambda: [p.code for p in registry_vs_readme_problems(tables={
-             name: "| `REFLECT_FACTS` | x |\n" for name in
-             ("README.md", "README.zh.md", "README.de.md")})
-         ] == ["knobs.readme_missing_rows"] * 3),
-        # 以下五条考的是**规则本身**（差集 / 占位符 / 空包），注入 discovery
-        # 是**有意**的：它们不该依赖发现通道（那由 `pack_sync_sees_every_installed_lang`
-        # 单独考）。留着 `discovery=` 显式传，是把「我在测规则」写明白 ——
-        # 此前用 `langs=` 传同一个东西，看起来像在测发现，其实绕开了它。
-        # 对账器本身必须能红（否则它只是一条恒绿的装饰）
-        ("★ knobs.pack_missing_keys",
-         lambda: [p.code for p in pack_sync_problems(
-             discovery=lambda: ("zh", "en"), loader=lambda l: {
-             "zh": {"a": "x"}, "en": {"a": "x", "b": "y"}}[l])
-         ] == ["knobs.pack_missing_keys"]),
-        ("★ knobs.pack_placeholder_mismatch",
-         lambda: [p.code for p in pack_sync_problems(
-             discovery=lambda: ("zh", "en"), loader=lambda l: {
-             "zh": {"a": "x %(k)s"}, "en": {"a": "x %(j)s"}}[l])
-         ] == ["knobs.pack_placeholder_mismatch"]),
-        # 多键方向也必须能报（此前只测了缺键 —— 「多出来一个键」同样会让
-        # 另一侧的用户看到裸 code，是同一个洞的另一面）。
-        # 参考侧是 `sorted(...)[0]`（这里 = "en"），所以「zh 多一个键」才走
-        # extra_keys；反过来会被报成 en 缺键（同一个洞，两种措辞）。
-        ("★ knobs.pack_extra_keys",
-         lambda: [p.code for p in pack_sync_problems(
-             discovery=lambda: ("zh", "en"), loader=lambda l: {
-             "zh": {"a": "x", "b": "y"}, "en": {"a": "x"}}[l])
-         ] == ["knobs.pack_extra_keys"]),
-        # 发现式（不写名单）：磁盘上多装一个半残的包也必须被对账器看见。
-        # 此前 `langs=("zh","en")` 写死 ⇒ 加一个缺键的 `de/` 时它**完全不看**
-        # ——「装了但没对账」正是本仓要消灭的那类静默。
-        # 发现式（不写名单）：必须**通过 discovery 通道**验，否则把
-        # `installed_langs()` 换回手写 `("zh","en")` 时自证照样绿（实测）
-        # —— 断言没覆盖它声称保护的东西（rule 4）。
-        ("★ knobs.pack_sync_sees_every_installed_lang",
-         # 走 **默认 discovery**（不传 `discovery=`）—— 传了就等于替被测
-         # 对象把答案递过去（实测：那样即使把 installed_langs 换回手写
-         # 名单，这条仍 PASS）。
-         lambda: _discovery_sees_planted_lang()),
-        # ⚠️ 上面那条是**委托**（搭临时夹具，没法内联）⇒ 恒真检测看不见它内部。
-        # 按 gate 的新判据它会被判「未审计」；所以这里补一条**同源反证**：
-        # 把 discovery 通道关掉，种植式检查必须红。两条一起才叫证明。
-        ("★ knobs.discovery_planted_can_red", lambda: _planted_red_when_blind()),
-        # ④ **包完整性**（C4 对账④）：源码用到的 code 必须在每个已装包里。
-        # 这条抓的是「两边一起缺」——此前 `pack_sync_problems` 只比差集，
-        # 双向共缺会全绿，用户看到裸 code（实测：两包同删 locks.ok ⇒ 全绿）。
-        ("knobs.coverage_real_repo_clean",
-         lambda: pack_coverage_problems() == []),
-        # **`discovery=` 必须真的被调用**（此前签名里接受、实现里从不调用：
-        # 传假 discovery 进去结果毫无变化）。这条钉的就是「可注入」这个承诺：
-        # 注入的 discovery 若没被用，下面的断言会拿到默认（真实）语言列表 ⇒ 空。
-        ("★ knobs.coverage_honours_discovery",
-         lambda: (lambda seen: ([p.code for p in pack_coverage_problems(
-             codes={"a.b"}, discovery=lambda: seen.append(1) or ["zz"],
-             loader=lambda l: {})] == ["knobs.pack_missing_code"] and
-             len(seen) == 1))([])),
-        ("★ knobs.pack_missing_code",
-         lambda: [p.code for p in pack_coverage_problems(
-             codes={"a.b", "c.d"}, discovery=lambda: ("zh", "en"),
-             loader=lambda l: ({"a.b": "x", "c.d": "y"} if l == "en"
-                               else {"a.b": "x"}))
-         ] == ["knobs.pack_missing_code"]),
-        # **不可读目录 ≠ 没装包**（AGENTS 纪律 7：读不到就明说，绝不编 0）。
-        # 此前 `installed_langs()` 在 OSError 时 return []，于是权限坏掉
-        # 与「零包」塌缩成同一个假值 ⇒ 对账全绿（实测 chmod 000 ⇒ []）。
-        ("★ knobs.pack_unreadable_on_oserror",
-         lambda: _unreadable_dir_is_loud()),
-        # ③ **空输入**档（AGENTS 规则 4 的第三类）：两个对账器此前只有
-        # 「不报」与「该报」两档，空输入返回 `[]` —— 与「干净」不可区分。
-        # 这里把空输入**明说为不适用**（不是假装通过）：没有可比的两侧时
-        # 返回空是对的，但必须有一条用例把它钉住，否则「实现坏了」也会返回空。
-        ("knobs.declared_vs_read_empty_in_scope",
-         # 没有任何声明 ⇒ 无可比对；返回空是对的（且与「声明了却读不到」区分开）
-         lambda: declared_vs_read_problems([{"file": "x.py", "knobs": ()}],
-                                          sources={}) == []),
-        ("knobs.registry_vs_readme_empty_tables",
-         # 一张表都没有 ⇒ 无可比对；返回空是对的
-         lambda: registry_vs_readme_problems(tables={}) == []),
-        # **死默认值**：定义了 `DEFAULT_*` 却从不使用 —— 「声明了但不生效」
-        ("★ knobs.dead_default", lambda: _dead_default_ok()),
-        # ③ 空输入必须报
-        ("★ knobs.pack_sync_empty",
-         lambda: [p.code for p in pack_sync_problems(
-             discovery=lambda: ("zh", "en"), loader=lambda l: {})]
-         == ["knobs.pack_sync_empty"]),
-        ("★ knobs.registry_empty", lambda: bool(REGISTRY)),
-        ("knobs.phases_registered", lambda: "REFLECT_PHASES" in REGISTRY),
+    # ① 正常不报
+    ("knobs.registry_entry_shape",
+     lambda: all(k in KINDS and isinstance(dflt, str) and w.strip()
+                 for k, dflt, w in REGISTRY.values()) and len(REGISTRY) >= 20),
+    ("knobs.scan_clean",
+     lambda: scan_surface_problems() == []),
+    ("knobs.real_tree_scan_clean", lambda: scan_surface_problems() == []),
+    # ② 该报的必须报
+    ("★ knobs.phantom_token",
+     lambda: any(p.code == "knobs.phantom_token"
+                 and p.params.get("token") == phantom
+                 for p in scan_surface_problems(py_dir=d))),
+    ("★ knobs.registry_empty", lambda: bool(REGISTRY)),
+    ("knobs.phases_registered", lambda: "REFLECT_PHASES" in REGISTRY),
     ]
+
+
+def _cases_readme(fx):
+    """见 `_cases()`：本组 8 条。"""
+    d, phantom = fx["d"], fx["phantom"]
+    return [
+    ("knobs.readme_nominations_registered",
+     lambda: readme_problems(files={
+         "README.md": "uses REFLECT_FACTS and REFLECT_DOC.",
+         "README.zh.md": "x", "README.de.md": "x"}) == []),
+    ("knobs.real_readmes_clean", lambda: readme_problems() == []),
+    ("★ knobs.readme_phantom",
+     lambda: any(x.code == "knobs.readme_phantom" for x in readme_problems(files={
+         "README.md": "see " + "REFLECT_" + "GHOSTY" + ".",
+         "README.zh.md": "x", "README.de.md": "x"}))),
+    # ⚠️ 这两条此前**零用例**：`declared_vs_read_problems` 与
+    # `registry_vs_readme_problems` 从落地起从未被证明会红（AGENTS 规则 4）。
+    # `declared_vs_read_problems` 连注入缝都没有（直读 gate.GATE_REPO），
+    # 所以先补缝（sources=）、再补这两个反证。
+    ("★ knobs.declared_not_read",
+     # 声明了某个旋钮，但源码里根本不出现它 ⇒ 必须报，
+     # 且**点名那个旋钮**（否则报个空壳也算通过）。
+     # ⚠️ 断言**不许**提取成 helper：`never_falsifiable` 只扫 lambda 的 AST，
+     # 委托给一个函数就让它瞎掉 —— 此前那样做过，helper 改成 `return True`
+     # 后 26 PASS / 0 FAIL 全绿（实测）。宁可写长一行，也不关掉检测器。
+     lambda: [p.code for p in declared_vs_read_problems(
+         [{"file": "check_x.py",
+           "knobs": ("REFLECT_FACTS",)}],
+         sources={"check_x.py": "X = 1\n"})
+     ] == ["knobs.declared_not_read"]
+     and [p.params for p in declared_vs_read_problems(
+         [{"file": "check_x.py",
+           "knobs": ("REFLECT_FACTS",)}],
+         sources={"check_x.py": "X = 1\n"})
+     ] == [{"file": "check_x.py", "knobs": "REFLECT_FACTS"}]),
+    ("knobs.declared_and_read_is_clean",
+     # 声明了、也确实读了 ⇒ 不许报（阳性对照，否则「总是报」也能骗过自证）
+     lambda: declared_vs_read_problems(
+         [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
+         sources={"check_x.py":
+                  'X = os.environ.get("REFLECT_FACTS")\n'}) == []),
+    ("★ knobs.readme_missing_rows",
+     # 登记表里有、README 配置表里缺 ⇒ 必须报（方向与 readme_phantom 相反）。
+     # ⚠️ 断言**钉死 code**，不是只判 `!= []`：此前那样任何错误 code 都能
+     # 让这条通过（实测：换成一个 `readme_phantom` 冒充，用例照样绿）。
+     lambda: [p.code for p in registry_vs_readme_problems(tables={
+         name: "| `REFLECT_FACTS` | x |\n" for name in
+         ("README.md", "README.zh.md", "README.de.md")})
+     ] == ["knobs.readme_missing_rows"] * 3),
+    # ③ **空输入**档（AGENTS 规则 4 的第三类）：两个对账器此前只有
+    # 「不报」与「该报」两档，空输入返回 `[]` —— 与「干净」不可区分。
+    # 这里把空输入**明说为不适用**（不是假装通过）：没有可比的两侧时
+    # 返回空是对的，但必须有一条用例把它钉住，否则「实现坏了」也会返回空。
+    ("knobs.declared_vs_read_empty_in_scope",
+     # 没有任何声明 ⇒ 无可比对；返回空是对的（且与「声明了却读不到」区分开）
+     lambda: declared_vs_read_problems([{"file": "x.py", "knobs": ()}],
+                                      sources={}) == []),
+    ("knobs.registry_vs_readme_empty_tables",
+     # 一张表都没有 ⇒ 无可比对；返回空是对的
+     lambda: registry_vs_readme_problems(tables={}) == []),
+    ]
+
+
+def _cases_pack(fx):
+    """见 `_cases()`：本组 12 条。"""
+    d, phantom = fx["d"], fx["phantom"]
+    return [
+    ("knobs.semantic_renders_as_code_by_default",
+     # 自带 **null 作用域**：这条测的是「没装包时是 code」，与入口激活了
+     # 什么包无关。此前直接读 `str(w)`，`REFLECT_LANG=zh` 下渲染成句子
+     # 于是全红（实测）—— 断言没声明作用域 = 跑在什么环境就考什么。
+     # 委托给 helper（搭 null 作用域必须进出配对，内联会变成不可读的一行）。
+     # 恒真检测看不见委托体 ⇒ 由 gate 判「未审计」；下面补一条同源反证，
+     # 证明 helper 本体确实有牙。
+     lambda: _semantics_are_codes_under(null_pack())),
+    ("★ knobs.semantics_are_codes_can_red", lambda: _semantics_can_red()),
+    # 语义延迟渲染的**正向证据**：真 zh 包里每条语义都有条目，且在 zh 包
+    # 下渲染出的是那句话（不是 code）。读磁盘真包 = 证明迁移没丢语义
+    # （注入假表只能证明「我写的模板渲染出我写的字」—— 循环论证）。
+    # 复跑：REFLECT_LANG=zh python3 zreflect/knobs.py --selftest
+    ("knobs.semantics_present_in_real_packs",
+     # 条件判据：**装了包就必须完整**。零包（合法态）⇒ 无对象可验，
+     # 条件真空成立；装了坏包 ⇒ 这条照样红（已用 planted 包验证过）。
+     lambda: not installed_langs() or _semantic_packs_intact()),
+    # 以下五条考的是**规则本身**（差集 / 占位符 / 空包），注入 discovery
+    # 是**有意**的：它们不该依赖发现通道（那由 `pack_sync_sees_every_installed_lang`
+    # 单独考）。留着 `discovery=` 显式传，是把「我在测规则」写明白 ——
+    # 此前用 `langs=` 传同一个东西，看起来像在测发现，其实绕开了它。
+    # 对账器本身必须能红（否则它只是一条恒绿的装饰）
+    ("★ knobs.pack_missing_keys",
+     lambda: [p.code for p in pack_sync_problems(
+         discovery=lambda: ("zh", "en"), loader=lambda l: {
+         "zh": {"a": "x"}, "en": {"a": "x", "b": "y"}}[l])
+     ] == ["knobs.pack_missing_keys"]),
+    ("★ knobs.pack_placeholder_mismatch",
+     lambda: [p.code for p in pack_sync_problems(
+         discovery=lambda: ("zh", "en"), loader=lambda l: {
+         "zh": {"a": "x %(k)s"}, "en": {"a": "x %(j)s"}}[l])
+     ] == ["knobs.pack_placeholder_mismatch"]),
+    # 多键方向也必须能报（此前只测了缺键 —— 「多出来一个键」同样会让
+    # 另一侧的用户看到裸 code，是同一个洞的另一面）。
+    # 参考侧是 `sorted(...)[0]`（这里 = "en"），所以「zh 多一个键」才走
+    # extra_keys；反过来会被报成 en 缺键（同一个洞，两种措辞）。
+    ("★ knobs.pack_extra_keys",
+     lambda: [p.code for p in pack_sync_problems(
+         discovery=lambda: ("zh", "en"), loader=lambda l: {
+         "zh": {"a": "x", "b": "y"}, "en": {"a": "x"}}[l])
+     ] == ["knobs.pack_extra_keys"]),
+    # 发现式（不写名单）：磁盘上多装一个半残的包也必须被对账器看见。
+    # 此前 `langs=("zh","en")` 写死 ⇒ 加一个缺键的 `de/` 时它**完全不看**
+    # ——「装了但没对账」正是本仓要消灭的那类静默。
+    # 发现式（不写名单）：必须**通过 discovery 通道**验，否则把
+    # `installed_langs()` 换回手写 `("zh","en")` 时自证照样绿（实测）
+    # —— 断言没覆盖它声称保护的东西（rule 4）。
+    ("★ knobs.pack_sync_sees_every_installed_lang",
+     # 走 **默认 discovery**（不传 `discovery=`）—— 传了就等于替被测
+     # 对象把答案递过去（实测：那样即使把 installed_langs 换回手写
+     # 名单，这条仍 PASS）。
+     lambda: _discovery_sees_planted_lang()),
+    # ④ **包完整性**（C4 对账④）：源码用到的 code 必须在每个已装包里。
+    # 这条抓的是「两边一起缺」——此前 `pack_sync_problems` 只比差集，
+    # 双向共缺会全绿，用户看到裸 code（实测：两包同删 locks.ok ⇒ 全绿）。
+    ("knobs.coverage_real_repo_clean",
+     lambda: pack_coverage_problems() == []),
+    # **`discovery=` 必须真的被调用**（此前签名里接受、实现里从不调用：
+    # 传假 discovery 进去结果毫无变化）。这条钉的就是「可注入」这个承诺：
+    # 注入的 discovery 若没被用，下面的断言会拿到默认（真实）语言列表 ⇒ 空。
+    ("★ knobs.coverage_honours_discovery",
+     lambda: (lambda seen: ([p.code for p in pack_coverage_problems(
+         codes={"a.b"}, discovery=lambda: seen.append(1) or ["zz"],
+         loader=lambda l: {})] == ["knobs.pack_missing_code"] and
+         len(seen) == 1))([])),
+    ("★ knobs.pack_missing_code",
+     lambda: [p.code for p in pack_coverage_problems(
+         codes={"a.b", "c.d"}, discovery=lambda: ("zh", "en"),
+         loader=lambda l: ({"a.b": "x", "c.d": "y"} if l == "en"
+                           else {"a.b": "x"}))
+     ] == ["knobs.pack_missing_code"]),
+    # **不可读目录 ≠ 没装包**（AGENTS 纪律 7：读不到就明说，绝不编 0）。
+    # 此前 `installed_langs()` 在 OSError 时 return []，于是权限坏掉
+    # 与「零包」塌缩成同一个假值 ⇒ 对账全绿（实测 chmod 000 ⇒ []）。
+    ("★ knobs.pack_unreadable_on_oserror",
+     lambda: _unreadable_dir_is_loud()),
+    # ③ 空输入必须报
+    ("★ knobs.pack_sync_empty",
+     lambda: [p.code for p in pack_sync_problems(
+         discovery=lambda: ("zh", "en"), loader=lambda l: {})]
+     == ["knobs.pack_sync_empty"]),
+    ]
+
+
+def _cases_registry(fx):
+    """见 `_cases()`：本组 3 条。"""
+    d, phantom = fx["d"], fx["phantom"]
+    return [
+    # zh / en 键集与占位符名一致（C4 对账③）。真包绿 = 迁移没落一边；
+    # 反向断言见 ② 档（假包必须报）。
+    ("knobs.real_packs_in_sync",
+     # 同上：零包合法 ⇒ 无「彼此」可对；有包就必须一致。
+     lambda: not installed_langs() or pack_sync_problems() == []),
+    # ⚠️ 上面那条是**委托**（搭临时夹具，没法内联）⇒ 恒真检测看不见它内部。
+    # 按 gate 的新判据它会被判「未审计」；所以这里补一条**同源反证**：
+    # 把 discovery 通道关掉，种植式检查必须红。两条一起才叫证明。
+    ("★ knobs.discovery_planted_can_red", lambda: _planted_red_when_blind()),
+    # **死默认值**：定义了 `DEFAULT_*` 却从不使用 —— 「声明了但不生效」
+    ("★ knobs.dead_default", lambda: _dead_default_ok()),
+    ]
+
+
+def _cases():
+    """拼装四组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    import atexit                                        # noqa: PLC0415
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    atexit.register(shutil.rmtree, d, True)
+    fx = _cases_fixture(d)
+    return (
+        _cases_scan(fx)
+        + _cases_readme(fx)
+        + _cases_pack(fx)
+        + _cases_registry(fx)
+    )
 
 
 MODULE = module_meta("旋钮登记", "REFLECT_* 的唯一名册 + 名册自洽性判据", selftest=True)

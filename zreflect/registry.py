@@ -1464,12 +1464,8 @@ def _load_spec_ok():
         and got[0] is None and got[1] is not None
 
 
-def _cases():
-    import atexit                                        # noqa: PLC0415
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
-    d = tempfile.mkdtemp()
-    atexit.register(shutil.rmtree, d, True)
+def _cases_fixture(d):
+    """造一份假名录。`d` 来自 `_cases()`（它负责 mkdtemp 与清理）。"""
     # 夹具的声明数据用**ASCII 名**：它们是被 ast 提取的输入（进 AUTO:GATES
     # 机器块），不是本体输出 —— 中文夹具会被零语言闸门收编。
     open(os.path.join(d, "check_ok.py"), "w").write(
@@ -1490,255 +1486,342 @@ def _cases():
     real, real_missing = gates()
 
     def real_files():
+        # ⚠️ `_zdir()`（**工具仓**的 zreflect），不是 `d`（临时夹具目录）——
+        # 这条断言比的是「真名录 vs 真磁盘」，与夹具无关。
         return {"zreflect/" + n for n in os.listdir(_zdir())
                 if n.startswith("check_") and n.endswith(".py")}
+    return {"ok": ok, "plain": plain, "real": real,
+            "real_missing": real_missing, "gs": gs,
+            "missing": missing, "real_files": real_files}
+
+
+def _cases_discovery(fx):
+    """见 `_cases()`：本组 16 条。"""
+    (ok, plain, real, real_missing, gs, missing,
+     real_files) = (fx["ok"], fx["plain"], fx["real"],
+                    fx["real_missing"], fx["gs"],
+                    fx["missing"], fx["real_files"])
+    d = fx["d"]
     return [
-        # ① 正常不报
-        ("registry.ast_declaration_fields",
-         lambda: ok["name"] == "gate_a" and ok["desc"] == "blocks_a"
-         and ok["knobs"] == ("REFLECT_FACTS",)
-         and ok["name_dependent"] is True and ok["runs_at"] == "commit"),
-        ("registry.undeclared_noncheck_is_module",
-         lambda: all(not m.endswith("platform.py") for m in missing)
-         and all(not g["file"].endswith("platform.py") for g in gs)),
-        ("registry.declaration_is_registration",
-         lambda: any(g["file"].endswith("named_other.py") for g in gs)
-         and not any(m.endswith("named_other.py") for m in missing)),
-        ("registry.real_roster_matches_disk",
-         lambda: not real_missing and real_files() <= {g["file"] for g in real}),
-        ("registry.runnable_filters_by_phase",
-         lambda: (lambda cm, sw: all(g["runs_at"] == "commit" for g in cm)
-                  and [g["file"] for g in sw]
-                  == ["zreflect/doc_gate.py"])(runnable("commit", d),
-                                               runnable("start-of-work", d))),
-        ("registry.doctor_is_start_of_work",
-         lambda: any(g["file"].endswith("doctor.py") for g in real)
-         and not any(g["file"].endswith("doctor.py")
-                     for g in runnable("commit"))),
-        ("registry.red_need_flagged",
-         lambda: (lambda rn: len(rn) >= 1 and all(
-             any(g["file"].endswith(b) and g["name_dependent"] for g in real)
-             for b in rn))(red_need(real))),
-        ("registry.real_modules_declared",
-         lambda: modules()[1] == [] and len(modules()[0]) >= 8),
-        ("registry.fixture_renames_single_source",
-         lambda: set(FIXTURE_RENAMES) == set(RENAMED_DEFAULTS)
-         and len(FIXTURE_RENAMES) >= 7),
-        ("registry.plugin_discovery",
-         lambda: "reflect-hooks/einfacht-env.sh" in plugins()
-         and "zreflect/doctor.py" not in plugins()),
-        ("★ registry.auto_block_pinned_across_langs",
-         lambda: _pinned_under("en") == _pinned_under("zh")
-         and _pinned_under("de") == _pinned_under("")),
-        ("registry.render_gates_pure",
-         lambda: render_gates(gs) == render_gates(gs)
-         and "gate_a" in render_gates(gs)
-         and GATES_BEGIN in render_gates(gs) and GATES_END in render_gates(gs)),
-        # **`off_reason` 必须渲染进 AUTO 块**（让读者一眼看到哪些闸门可未启用、
-        # 为什么）—— 且它是**声明**不是运行时状态（后者会让块每次变、不收敛）。
-        ("★ registry.render_gates_shows_off_reason",
-         lambda: _render_shows_off_reason()),
-        # 没声明的闸门那一格必须是 `—`（不写空、不写 "None"）
-        ("registry.render_gates_off_reason_dash",
-         lambda: _render_off_reason_dash()),
-        # ② 该报的必须报
-        ("★ registry.missing_declaration",
-         lambda: missing == ["zreflect/check_bare.py"]),
-        ("★ registry.unknown_phase",
-         lambda: [p.code for p in problems(
-             [dict(plain, runs_at="whenever")], [],
-             mods=["zreflect/x.py"], mods_missing=[], knob_problems=[],
-             undeclared=[])] == ["registry.unknown_phase"]),
-        ("★ registry.name_dependent_wrong",
-         lambda: [p.code for p in problems(
-             [dict(plain, name_dependent=True)], [],
-             mods=["zreflect/x.py"], mods_missing=[], knob_problems=[],
-             undeclared=[])] == ["registry.name_dependent_wrong"]),
-        # 这两条的空名录与「空清单不是通过」同时在场（gs=[] 必然触发零值守卫），
-        # 所以用 `any(code == …)` 而不是整表相等 —— 断言仍精确指向那一条。
-        ("★ registry.selftest_no_entry",
-         lambda: any(p.code == "registry.selftest_no_entry" for p in problems(
-             [], [], mods=["zreflect/x.py"],
-             mods_missing=["zreflect/y.py"],
-             knob_problems=[]))),
-        # CLI 逐行点名也必须能产出（否则它是「写而不跑」的装饰 —— 本仓纪律）。
-        ("★ registry.selftest_no_entry_cli",
-         lambda: [m.code for m in cli_selftest_missing_lines(
-             ["zreflect/y.py"])] == ["registry.selftest_no_entry_cli"]
-         and cli_selftest_missing_lines([]) == []),
-        ("★ registry.undeclared_module",
-         lambda: any(p.code == "registry.undeclared_module" for p in problems(
-             [], [], mods=["zreflect/x.py"], mods_missing=[],
-             knob_problems=[],
-             undeclared=["zreflect/orphan_mod.py"]))),
-        # **`run_phase` 是 hooks/CI 的唯一执行入口**，此前零自证。
-        # 三档聚合必须真的分开：rc=2（配置坏）≠ rc=1（判据红）≠ off。
-        # 混成一档的话，「有三道闸门报了真问题」与「有一道配置坏了」不可区分，
-        # 而修法完全不同（修问题 vs 改配置）。
-        ("★ registry.phase_tiers_separate",
-         lambda: _phase_tiers_ok()),
-        # **stderr 必须被捕获**：本仓约定「问题行统一 stderr」，所以 rc=2 的
-        # 闸门 stdout 可能是空的（原因全在 stderr）。此前 `_default` 只回传
-        # `p.stdout` ⇒ 聚合方拿到 (2, "")，FATAL 被当成「跑过了」。
-        # 这条钉的是**默认执行器**的行为（注入 runner 测不到它）。
-        ("★ registry.run_phase_captures_stderr",
-         lambda: _captures_stderr()),
-        # **off 必须有理由**（第 12 轮）：会调 `off()` 却没声明 `off_reason`、
-        # 理由太短、或声明了理由却不调 off —— 三个方向都要报。
-        ("★ registry.off_without_reason", lambda: _off_reason_ok(
-            "no-reason", {"check_x.py": "_off()"}, ok=False)),
-        ("★ registry.off_reason_too_short", lambda: _off_reason_ok(
-            "too-short", {"check_x.py": "_off()"}, ok=False, reason="x")),
-        ("★ registry.off_reason_without_off", lambda: _off_reason_ok(
-            "declared-but-never-off", {"check_x.py": "pass\n"}, ok=False,
-            reason="a real justification long enough")),
-        ("registry.off_reason_ok", lambda: _off_reason_ok(
-            "complete", {"check_x.py": "_off()"}, ok=True,
-            reason="a real justification long enough")),
-        # **聚合方的输出整体走 stdout**，与「单个闸门问题行统一 stderr」不冲突。
-        # 这条钉的是「两端语义分开写明白了」—— 判据是两处措辞都在。
-        ("registry.aggregator_streams_documented",
-         lambda: _streams_documented()),
-        # **理由真实性**（第 17 轮）：`off_reason` 声称「本仓没有 X.json」，
-        # 而 X.json 实际存在 ⇒ 理由已失效（闸门早该启用而没启用）。
-        # 第 12 轮只要求「必须有理由」，这是它的对称缺口：
-        # 不要求「理由得是真的」，理由就会变成永久免死金牌。
-        ("★ registry.off_reason_stale", lambda: _off_reason_stale_ok()),
-        # **理由里的文件名要在两个合法落点都查**：`Einfacht.env` 可以住在仓根
-        # **或** `reflect-hooks/`（`einfacht-env.sh` 先看钩子目录、再看仓根）。
-        # 只查仓根会让「载体真放进 reflect-hooks/」的情形漏判（实测 []）。
-        ("★ registry.off_reason_stale_in_hooks_dir",
-         lambda: _stale_in_hooks_dir()),
-        # **口径对账**（C4）：`_REASON_BASES` 必须与 `einfacht-env.sh` 的
-        # 载体查找一致（钩子目录 + 仓根）。判据是行为级的：两个位置各放一份
-        # 载体，两边都必须看得见。只查仓根 ⇒ RED。
-        ("★ registry.reason_bases_match_env_plugin",
-         lambda: reason_bases_agree()),
-        # **口径分裂**（C4 对账⑧）：工具的 zreflect/ 只能有一个产地。
-        # 别处再写一份 `dirname(abspath(__file__))` ⇒ 报（改一处就会分裂）。
-        ("★ registry.path_rule_single_source",
-         lambda: _path_rule_single_source()),
-        # **`gate.zdir()` / `tool_repo()` 的自证**（第 21 轮）：它们是全仓地基，
-        # 此前只有「别的模块委托它」的判据，没有「它自己算得对」的判据。
-        ("★ registry.zdir_matches_file",
-         # 值必须是**本文件所在目录**（`registry.py` 也在 zreflect/ 里）。
-         # ⚠️ 这里**不许**自己写 `dirname(abspath(__file__))` —— 那正好是
-         # 本闸门要禁的形状，写了就会被 `path_rule_single_source` 抓
-         # （实测：这条断言自己触发了那个判据）。改用 `os.path.dirname` 的
-         # 显式字面量对比：`gate.zdir()` 必须以 `zreflect` 结尾且可导入本文件。
-         lambda: os.path.basename(gate.zdir()) == "zreflect"
-         and os.path.exists(os.path.join(gate.zdir(), "registry.py"))),
-        ("★ registry.tool_repo_is_zdir_parent",
-         # `tool_repo()` 必须是 `zdir()` 的**上一级**（不是别的什么）
-         lambda: os.path.abspath(gate.tool_repo())
-         == os.path.dirname(os.path.abspath(gate.zdir()))),
-        ("★ registry.zdir_is_a_dir",
-         # 是个真实存在的目录（不是算出来的空字符串 / 错路径）
-         lambda: os.path.isdir(gate.zdir())
-         and os.path.basename(gate.zdir()) == "zreflect"),
-        # **`never_falsifiable` 的自证**（第 22 轮）：它是 `gate.selftest()` 的
-        # 核心守卫（`gate.py:36` 起），用来抓「恒真断言」—— 此前**全仓零自证**。
-        # 「检测器的检测器」没被测过：它失效时，所有断言都会静默失去牙。
-        ("★ registry.never_falsifiable_catches_or_true",
-         lambda: _nf_catches("or_true") is not None),
-        ("★ registry.never_falsifiable_catches_and_false",
-         lambda: _nf_catches("and_false") is not None),
-        ("★ registry.never_falsifiable_catches_self_compare",
-         lambda: _nf_catches("self_compare") is not None),
-        # **阳性对照**：真断言必须**不报**（否则「总是报」也能骗过自证）
-        ("registry.never_falsifiable_allows_real",
-         lambda: _nf_catches("real") is None),
-        # 边界③：「读不到源码」⇒ 不猜（返回 None，不是「恒真」也不是「干净」）
-        ("★ registry.never_falsifiable_no_source_no_guess",
-         lambda: _nf_no_source() is None),
-        # **`gate.py` 的 `selftest=False` 必须说清真实含义**（第 23 轮）：
-        # 它不表示「没有自证义务」，只表示「没有 `--selftest` 入口（自举会打架）」。
-        # 此前描述只写「提供 selftest，自己不消费」—— 读起来像免责声明。
-        ("★ registry.gate_module_meta_states_where_selftest_lives",
-         lambda: _gate_desc_states_selftest()),
-        # **`living.py` / `collect.py` 的自证**（第 24 轮）：两个 `selftest=False`
-        # 模块此前**零断言**，而 `living_lines` 被 `check_stale` / `check_retractions`
-        # 消费 —— 它判错了，那两道闸门的判据全部失效。
-        ("★ registry.living_numbered_section_is_historical",
-         # 编号章节在 `historical_secs` 里 ⇒ **不是活状态**
-         lambda: _living_case("numbered_historical")),
-        ("registry.living_unnumbered_is_living",
-         # 无编号章节**一律活状态**（默认从严）
-         lambda: _living_case("unnumbered")),
-        ("registry.living_appendix_not_scanned",
-         # `## 附` 开头的文末机器块 ⇒ 不扫
-         lambda: _living_case("appendix")),
-        ("★ registry.living_lines_tracks_sections",
-         # 切段正不正确：历史段里的行必须标 False，其余 True
-         lambda: _living_case("lines_track")),
-        ("★ registry.collect_parse_prev_values",
-         # 命名分组回收上一次的值
-         lambda: _collect_case("parse")),
-        ("★ registry.collect_missing_group_shouts",
-         # 未命名分组 = 配置错 ⇒ 必须响（不许静默拿错值）
-         lambda: _collect_case("missing_group")),
-        ("registry.collect_unavailable_shape",
-         # 「读不到」的诚实形状：ok=False + why（不许编 0）
-         lambda: _collect_case("unavailable")),
-        # **`selftest=False` 的模块描述必须说清自证住在哪**（第 25 轮，
-        # 与第 23 轮 `gate.py` 同类）：`collect.py` / `living.py` / `gate.py`
-        # 都声明了 `selftest=False`，但它们的逻辑**有实质断言**在
-        # `registry._cases()`。描述若只写「无自证」= 免责声明。
-        # 「严查多余接口」的机器判据：零消费者的公开函数 ⇒ 必须报。
-        ("★ registry.dead_interface_detected",
-         lambda: _dead_interface_case()),
-        # 全 Python 化的守卫：未登记的 .sh ⇒ 必须报（造一个假的证明它有牙）
-        ("★ registry.unexpected_shell_detected",
-         lambda: _unexpected_shell_case()),
-        # `i18n.han()`：零语言制度的判据（`check_i18n` 与 `harness` 都消费它）。
-        # 它是「有没有中文」的**唯一产地** —— 判错了两道判据一起失效。
-        ("★ registry.han_predicate",
-         lambda: _han_predicate_case()),
-        # 末尾换行（踩了四次）：一个没有末尾换行的 .py 让 `py_lines` 的两条
-        # 量法差 1，复跑闸门永远红 —— 报出来让人补，而不是每次手工发现。
-        ("★ registry.trailing_newline_detected",
-         lambda: _trailing_newline_case()),
-        ("★ registry.selftest_false_modules_state_where_selftest_lives",
-         lambda: _selftest_false_states_it()),
-        # **依赖链覆盖**（C4 对账⑨）：被闸门消费的平台函数必须在某处有断言。
-        # 第 24 轮的 `living.living_lines` 就是这么漏的（消费两道闸门，自身零断言）。
-        ("★ registry.dependency_coverage",
-         lambda: _dependency_coverage_ok()),
-        # 依赖链判据刚点名的两条 `gate` 函数（消费方多，自身零断言）
-        ("★ registry.guard_nonempty_returns_2",
-         # 空 ⇒ rc 2（FATAL）；非空 ⇒ None
-         lambda: gate.guard_nonempty("x", []) == 2
-         and gate.guard_nonempty("x", [1]) is None),
-        ("★ registry.load_spec_returns_error_not_raise",
-         # 坏路径 ⇒ (None, 错误句)；不抛异常（调用方要拼自己的措辞）
-         lambda: _load_spec_ok()),
-        # `gate.selftest` 被两道闸门直接调用 —— 它**执行**所有断言，但自身的
-        # 零值守卫（空 cases 必须拒收）此前零断言。测它不算自举：测的是
-        # 「0/0 洞会不会被拦住」，不是「断言跑得对不对」。
-        ("★ registry.selftest_refuses_empty_cases",
-         lambda: _selftest_refuses_empty()),
-        # ③ 空输入必须报
-        ("★ registry.empty_roster",
-         lambda: problems([], [], mods=[], mods_missing=[],
-                          knob_problems=[], undeclared=[]) != []),
-        # issue #21：相位旋钮 —— 下游自定义相位（如 S26 的 lab）不再 fork PHASES
-        ("registry.phases_extra_appended",
-         lambda: _with_phases("lab")[0] == ("commit", "start-of-work", "lab")),
-        ("★ registry.builtin_phase_repeated",
-         lambda: [p.code for p in _with_phases("commit,lab")[1]
-                  ] == ["registry.builtin_phase_repeated"]),
-        ("registry.phases_default_builtin_only",
-         lambda: _with_phases("")[0] == ("commit", "start-of-work")),
-        # 人性化提示（env_hint）：四条判据
-        ("registry.env_hint_silent_without_carrier",
-         lambda: __import__("gate").env_hint(consumed=("REFLECT_FACTS",)) is None
-         or __import__("gate").env_carrier() is not None),
-        ("registry.env_hint_off_silent",
-         lambda: (lambda: (os.environ.update(REFLECT_ENV_HINT="off"),
-                           __import__("gate")._maybe_hint(),
-                           os.environ.pop("REFLECT_ENV_HINT", None),
-                           True))()),
+    # ① 正常不报
+    ("registry.ast_declaration_fields",
+     lambda: ok["name"] == "gate_a" and ok["desc"] == "blocks_a"
+     and ok["knobs"] == ("REFLECT_FACTS",)
+     and ok["name_dependent"] is True and ok["runs_at"] == "commit"),
+    ("registry.undeclared_noncheck_is_module",
+     lambda: all(not m.endswith("platform.py") for m in missing)
+     and all(not g["file"].endswith("platform.py") for g in gs)),
+    ("registry.declaration_is_registration",
+     lambda: any(g["file"].endswith("named_other.py") for g in gs)
+     and not any(m.endswith("named_other.py") for m in missing)),
+    ("registry.real_roster_matches_disk",
+     lambda: not real_missing and real_files() <= {g["file"] for g in real}),
+    ("registry.doctor_is_start_of_work",
+     lambda: any(g["file"].endswith("doctor.py") for g in real)
+     and not any(g["file"].endswith("doctor.py")
+                 for g in runnable("commit"))),
+    ("registry.red_need_flagged",
+     lambda: (lambda rn: len(rn) >= 1 and all(
+         any(g["file"].endswith(b) and g["name_dependent"] for g in real)
+         for b in rn))(red_need(real))),
+    ("registry.real_modules_declared",
+     lambda: modules()[1] == [] and len(modules()[0]) >= 8),
+    ("registry.fixture_renames_single_source",
+     lambda: set(FIXTURE_RENAMES) == set(RENAMED_DEFAULTS)
+     and len(FIXTURE_RENAMES) >= 7),
+    ("registry.plugin_discovery",
+     lambda: "reflect-hooks/einfacht-env.sh" in plugins()
+     and "zreflect/doctor.py" not in plugins()),
+    # ② 该报的必须报
+    ("★ registry.missing_declaration",
+     lambda: missing == ["zreflect/check_bare.py"]),
+    ("★ registry.name_dependent_wrong",
+     lambda: [p.code for p in problems(
+         [dict(plain, name_dependent=True)], [],
+         mods=["zreflect/x.py"], mods_missing=[], knob_problems=[],
+         undeclared=[])] == ["registry.name_dependent_wrong"]),
+    # 这两条的空名录与「空清单不是通过」同时在场（gs=[] 必然触发零值守卫），
+    # 所以用 `any(code == …)` 而不是整表相等 —— 断言仍精确指向那一条。
+    ("★ registry.selftest_no_entry",
+     lambda: any(p.code == "registry.selftest_no_entry" for p in problems(
+         [], [], mods=["zreflect/x.py"],
+         mods_missing=["zreflect/y.py"],
+         knob_problems=[]))),
+    # CLI 逐行点名也必须能产出（否则它是「写而不跑」的装饰 —— 本仓纪律）。
+    ("★ registry.selftest_no_entry_cli",
+     lambda: [m.code for m in cli_selftest_missing_lines(
+         ["zreflect/y.py"])] == ["registry.selftest_no_entry_cli"]
+     and cli_selftest_missing_lines([]) == []),
+    ("★ registry.undeclared_module",
+     lambda: any(p.code == "registry.undeclared_module" for p in problems(
+         [], [], mods=["zreflect/x.py"], mods_missing=[],
+         knob_problems=[],
+         undeclared=["zreflect/orphan_mod.py"]))),
+    # **聚合方的输出整体走 stdout**，与「单个闸门问题行统一 stderr」不冲突。
+    # 这条钉的是「两端语义分开写明白了」—— 判据是两处措辞都在。
+    ("registry.aggregator_streams_documented",
+     lambda: _streams_documented()),
+    # ③ 空输入必须报
+    ("★ registry.empty_roster",
+     lambda: problems([], [], mods=[], mods_missing=[],
+                      knob_problems=[], undeclared=[]) != []),
     ]
+
+
+def _cases_render(fx):
+    """见 `_cases()`：本组 4 条。"""
+    (ok, plain, real, real_missing, gs, missing,
+     real_files) = (fx["ok"], fx["plain"], fx["real"],
+                    fx["real_missing"], fx["gs"],
+                    fx["missing"], fx["real_files"])
+    d = fx["d"]
+    return [
+    ("★ registry.auto_block_pinned_across_langs",
+     lambda: _pinned_under("en") == _pinned_under("zh")
+     and _pinned_under("de") == _pinned_under("")),
+    ("registry.render_gates_pure",
+     lambda: render_gates(gs) == render_gates(gs)
+     and "gate_a" in render_gates(gs)
+     and GATES_BEGIN in render_gates(gs) and GATES_END in render_gates(gs)),
+    # **`off_reason` 必须渲染进 AUTO 块**（让读者一眼看到哪些闸门可未启用、
+    # 为什么）—— 且它是**声明**不是运行时状态（后者会让块每次变、不收敛）。
+    ("★ registry.render_gates_shows_off_reason",
+     lambda: _render_shows_off_reason()),
+    # 没声明的闸门那一格必须是 `—`（不写空、不写 "None"）
+    ("registry.render_gates_off_reason_dash",
+     lambda: _render_off_reason_dash()),
+    ]
+
+
+def _cases_phase(fx):
+    """见 `_cases()`：本组 9 条。"""
+    (ok, plain, real, real_missing, gs, missing,
+     real_files) = (fx["ok"], fx["plain"], fx["real"],
+                    fx["real_missing"], fx["gs"],
+                    fx["missing"], fx["real_files"])
+    d = fx["d"]
+    return [
+    ("registry.runnable_filters_by_phase",
+     lambda: (lambda cm, sw: all(g["runs_at"] == "commit" for g in cm)
+              and [g["file"] for g in sw]
+              == ["zreflect/doc_gate.py"])(runnable("commit", d),
+                                           runnable("start-of-work", d))),
+    ("★ registry.unknown_phase",
+     lambda: [p.code for p in problems(
+         [dict(plain, runs_at="whenever")], [],
+         mods=["zreflect/x.py"], mods_missing=[], knob_problems=[],
+         undeclared=[])] == ["registry.unknown_phase"]),
+    # **`run_phase` 是 hooks/CI 的唯一执行入口**，此前零自证。
+    # 三档聚合必须真的分开：rc=2（配置坏）≠ rc=1（判据红）≠ off。
+    # 混成一档的话，「有三道闸门报了真问题」与「有一道配置坏了」不可区分，
+    # 而修法完全不同（修问题 vs 改配置）。
+    ("★ registry.phase_tiers_separate",
+     lambda: _phase_tiers_ok()),
+    # **stderr 必须被捕获**：本仓约定「问题行统一 stderr」，所以 rc=2 的
+    # 闸门 stdout 可能是空的（原因全在 stderr）。此前 `_default` 只回传
+    # `p.stdout` ⇒ 聚合方拿到 (2, "")，FATAL 被当成「跑过了」。
+    # 这条钉的是**默认执行器**的行为（注入 runner 测不到它）。
+    ("★ registry.run_phase_captures_stderr",
+     lambda: _captures_stderr()),
+    # issue #21：相位旋钮 —— 下游自定义相位（如 S26 的 lab）不再 fork PHASES
+    ("registry.phases_extra_appended",
+     lambda: _with_phases("lab")[0] == ("commit", "start-of-work", "lab")),
+    ("★ registry.builtin_phase_repeated",
+     lambda: [p.code for p in _with_phases("commit,lab")[1]
+              ] == ["registry.builtin_phase_repeated"]),
+    ("registry.phases_default_builtin_only",
+     lambda: _with_phases("")[0] == ("commit", "start-of-work")),
+    # 人性化提示（env_hint）：四条判据
+    ("registry.env_hint_silent_without_carrier",
+     lambda: __import__("gate").env_hint(consumed=("REFLECT_FACTS",)) is None
+     or __import__("gate").env_carrier() is not None),
+    ("registry.env_hint_off_silent",
+     lambda: (lambda: (os.environ.update(REFLECT_ENV_HINT="off"),
+                       __import__("gate")._maybe_hint(),
+                       os.environ.pop("REFLECT_ENV_HINT", None),
+                       True))()),
+    ]
+
+
+def _cases_off_reason(fx):
+    """见 `_cases()`：本组 7 条。"""
+    (ok, plain, real, real_missing, gs, missing,
+     real_files) = (fx["ok"], fx["plain"], fx["real"],
+                    fx["real_missing"], fx["gs"],
+                    fx["missing"], fx["real_files"])
+    d = fx["d"]
+    return [
+    # **off 必须有理由**（第 12 轮）：会调 `off()` 却没声明 `off_reason`、
+    # 理由太短、或声明了理由却不调 off —— 三个方向都要报。
+    ("★ registry.off_without_reason", lambda: _off_reason_ok(
+        "no-reason", {"check_x.py": "_off()"}, ok=False)),
+    ("★ registry.off_reason_too_short", lambda: _off_reason_ok(
+        "too-short", {"check_x.py": "_off()"}, ok=False, reason="x")),
+    ("★ registry.off_reason_without_off", lambda: _off_reason_ok(
+        "declared-but-never-off", {"check_x.py": "pass\n"}, ok=False,
+        reason="a real justification long enough")),
+    ("registry.off_reason_ok", lambda: _off_reason_ok(
+        "complete", {"check_x.py": "_off()"}, ok=True,
+        reason="a real justification long enough")),
+    # **理由真实性**（第 17 轮）：`off_reason` 声称「本仓没有 X.json」，
+    # 而 X.json 实际存在 ⇒ 理由已失效（闸门早该启用而没启用）。
+    # 第 12 轮只要求「必须有理由」，这是它的对称缺口：
+    # 不要求「理由得是真的」，理由就会变成永久免死金牌。
+    ("★ registry.off_reason_stale", lambda: _off_reason_stale_ok()),
+    # **理由里的文件名要在两个合法落点都查**：`Einfacht.env` 可以住在仓根
+    # **或** `reflect-hooks/`（`einfacht-env.sh` 先看钩子目录、再看仓根）。
+    # 只查仓根会让「载体真放进 reflect-hooks/」的情形漏判（实测 []）。
+    ("★ registry.off_reason_stale_in_hooks_dir",
+     lambda: _stale_in_hooks_dir()),
+    # **口径对账**（C4）：`_REASON_BASES` 必须与 `einfacht-env.sh` 的
+    # 载体查找一致（钩子目录 + 仓根）。判据是行为级的：两个位置各放一份
+    # 载体，两边都必须看得见。只查仓根 ⇒ RED。
+    ("★ registry.reason_bases_match_env_plugin",
+     lambda: reason_bases_agree()),
+    ]
+
+
+def _cases_path_rule(fx):
+    """见 `_cases()`：本组 4 条。"""
+    (ok, plain, real, real_missing, gs, missing,
+     real_files) = (fx["ok"], fx["plain"], fx["real"],
+                    fx["real_missing"], fx["gs"],
+                    fx["missing"], fx["real_files"])
+    d = fx["d"]
+    return [
+    # **口径分裂**（C4 对账⑧）：工具的 zreflect/ 只能有一个产地。
+    # 别处再写一份 `dirname(abspath(__file__))` ⇒ 报（改一处就会分裂）。
+    ("★ registry.path_rule_single_source",
+     lambda: _path_rule_single_source()),
+    # **`gate.zdir()` / `tool_repo()` 的自证**（第 21 轮）：它们是全仓地基，
+    # 此前只有「别的模块委托它」的判据，没有「它自己算得对」的判据。
+    ("★ registry.zdir_matches_file",
+     # 值必须是**本文件所在目录**（`registry.py` 也在 zreflect/ 里）。
+     # ⚠️ 这里**不许**自己写 `dirname(abspath(__file__))` —— 那正好是
+     # 本闸门要禁的形状，写了就会被 `path_rule_single_source` 抓
+     # （实测：这条断言自己触发了那个判据）。改用 `os.path.dirname` 的
+     # 显式字面量对比：`gate.zdir()` 必须以 `zreflect` 结尾且可导入本文件。
+     lambda: os.path.basename(gate.zdir()) == "zreflect"
+     and os.path.exists(os.path.join(gate.zdir(), "registry.py"))),
+    ("★ registry.tool_repo_is_zdir_parent",
+     # `tool_repo()` 必须是 `zdir()` 的**上一级**（不是别的什么）
+     lambda: os.path.abspath(gate.tool_repo())
+     == os.path.dirname(os.path.abspath(gate.zdir()))),
+    ("★ registry.zdir_is_a_dir",
+     # 是个真实存在的目录（不是算出来的空字符串 / 错路径）
+     lambda: os.path.isdir(gate.zdir())
+     and os.path.basename(gate.zdir()) == "zreflect"),
+    ]
+
+
+def _cases_hosted(fx):
+    """见 `_cases()`：本组 22 条。"""
+    (ok, plain, real, real_missing, gs, missing,
+     real_files) = (fx["ok"], fx["plain"], fx["real"],
+                    fx["real_missing"], fx["gs"],
+                    fx["missing"], fx["real_files"])
+    d = fx["d"]
+    return [
+    # **`never_falsifiable` 的自证**（第 22 轮）：它是 `gate.selftest()` 的
+    # 核心守卫（`gate.py:36` 起），用来抓「恒真断言」—— 此前**全仓零自证**。
+    # 「检测器的检测器」没被测过：它失效时，所有断言都会静默失去牙。
+    ("★ registry.never_falsifiable_catches_or_true",
+     lambda: _nf_catches("or_true") is not None),
+    ("★ registry.never_falsifiable_catches_and_false",
+     lambda: _nf_catches("and_false") is not None),
+    ("★ registry.never_falsifiable_catches_self_compare",
+     lambda: _nf_catches("self_compare") is not None),
+    # **阳性对照**：真断言必须**不报**（否则「总是报」也能骗过自证）
+    ("registry.never_falsifiable_allows_real",
+     lambda: _nf_catches("real") is None),
+    # 边界③：「读不到源码」⇒ 不猜（返回 None，不是「恒真」也不是「干净」）
+    ("★ registry.never_falsifiable_no_source_no_guess",
+     lambda: _nf_no_source() is None),
+    # **`gate.py` 的 `selftest=False` 必须说清真实含义**（第 23 轮）：
+    # 它不表示「没有自证义务」，只表示「没有 `--selftest` 入口（自举会打架）」。
+    # 此前描述只写「提供 selftest，自己不消费」—— 读起来像免责声明。
+    ("★ registry.gate_module_meta_states_where_selftest_lives",
+     lambda: _gate_desc_states_selftest()),
+    # **`living.py` / `collect.py` 的自证**（第 24 轮）：两个 `selftest=False`
+    # 模块此前**零断言**，而 `living_lines` 被 `check_stale` / `check_retractions`
+    # 消费 —— 它判错了，那两道闸门的判据全部失效。
+    ("★ registry.living_numbered_section_is_historical",
+     # 编号章节在 `historical_secs` 里 ⇒ **不是活状态**
+     lambda: _living_case("numbered_historical")),
+    ("registry.living_unnumbered_is_living",
+     # 无编号章节**一律活状态**（默认从严）
+     lambda: _living_case("unnumbered")),
+    ("registry.living_appendix_not_scanned",
+     # `## 附` 开头的文末机器块 ⇒ 不扫
+     lambda: _living_case("appendix")),
+    ("★ registry.living_lines_tracks_sections",
+     # 切段正不正确：历史段里的行必须标 False，其余 True
+     lambda: _living_case("lines_track")),
+    ("★ registry.collect_parse_prev_values",
+     # 命名分组回收上一次的值
+     lambda: _collect_case("parse")),
+    ("★ registry.collect_missing_group_shouts",
+     # 未命名分组 = 配置错 ⇒ 必须响（不许静默拿错值）
+     lambda: _collect_case("missing_group")),
+    ("registry.collect_unavailable_shape",
+     # 「读不到」的诚实形状：ok=False + why（不许编 0）
+     lambda: _collect_case("unavailable")),
+    # **`selftest=False` 的模块描述必须说清自证住在哪**（第 25 轮，
+    # 与第 23 轮 `gate.py` 同类）：`collect.py` / `living.py` / `gate.py`
+    # 都声明了 `selftest=False`，但它们的逻辑**有实质断言**在
+    # `registry._cases()`。描述若只写「无自证」= 免责声明。
+    # 「严查多余接口」的机器判据：零消费者的公开函数 ⇒ 必须报。
+    ("★ registry.dead_interface_detected",
+     lambda: _dead_interface_case()),
+    # 全 Python 化的守卫：未登记的 .sh ⇒ 必须报（造一个假的证明它有牙）
+    ("★ registry.unexpected_shell_detected",
+     lambda: _unexpected_shell_case()),
+    # `i18n.han()`：零语言制度的判据（`check_i18n` 与 `harness` 都消费它）。
+    # 它是「有没有中文」的**唯一产地** —— 判错了两道判据一起失效。
+    ("★ registry.han_predicate",
+     lambda: _han_predicate_case()),
+    # 末尾换行（踩了四次）：一个没有末尾换行的 .py 让 `py_lines` 的两条
+    # 量法差 1，复跑闸门永远红 —— 报出来让人补，而不是每次手工发现。
+    ("★ registry.trailing_newline_detected",
+     lambda: _trailing_newline_case()),
+    ("★ registry.selftest_false_modules_state_where_selftest_lives",
+     lambda: _selftest_false_states_it()),
+    # **依赖链覆盖**（C4 对账⑨）：被闸门消费的平台函数必须在某处有断言。
+    # 第 24 轮的 `living.living_lines` 就是这么漏的（消费两道闸门，自身零断言）。
+    ("★ registry.dependency_coverage",
+     lambda: _dependency_coverage_ok()),
+    # 依赖链判据刚点名的两条 `gate` 函数（消费方多，自身零断言）
+    ("★ registry.guard_nonempty_returns_2",
+     # 空 ⇒ rc 2（FATAL）；非空 ⇒ None
+     lambda: gate.guard_nonempty("x", []) == 2
+     and gate.guard_nonempty("x", [1]) is None),
+    ("★ registry.load_spec_returns_error_not_raise",
+     # 坏路径 ⇒ (None, 错误句)；不抛异常（调用方要拼自己的措辞）
+     lambda: _load_spec_ok()),
+    # `gate.selftest` 被两道闸门直接调用 —— 它**执行**所有断言，但自身的
+    # 零值守卫（空 cases 必须拒收）此前零断言。测它不算自举：测的是
+    # 「0/0 洞会不会被拦住」，不是「断言跑得对不对」。
+    ("★ registry.selftest_refuses_empty_cases",
+     lambda: _selftest_refuses_empty()),
+    ]
+
+
+def _cases():
+    """拼装六组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    import atexit                                        # noqa: PLC0415
+    import shutil                                        # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    atexit.register(shutil.rmtree, d, True)
+    fx = _cases_fixture(d)
+    fx["d"] = d
+    return (        _cases_discovery(fx)
+        + _cases_render(fx)
+        + _cases_phase(fx)
+        + _cases_off_reason(fx)
+        + _cases_path_rule(fx)
+        + _cases_hosted(fx)
+    )
 
 
 MODULE = module_meta("发现式名录", "闸门/模块/插件的声明派生：执行面 + 叙述 + 红名单", selftest=True)
