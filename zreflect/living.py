@@ -70,5 +70,55 @@ def living_lines(text, historical_secs=()):
 MODULE = module_meta(
     "活状态抽取",
     "哪些行是「现在如此」（历史出口 / 默认从严；"
-    "判定自证住在 registry._cases）",
-    selftest=False)
+    "判定三向：编号段/无编号/附录/切段）",
+    selftest=True)
+
+
+# ── 自证（此前寄宿在 registry._cases）────────────────────────────────────────
+#
+# 为什么搬回来：判据住在**被测模块**里 —— 这是「模块自己有自证」的定义。
+# 寄宿在 registry 让 `selftest=False` 的声明变成「我没有自证入口」，
+# 而事实是「有，只是住在别处」。搬回来之后 `selftest=True` 是诚实的。
+
+def _living_case(which):
+    """`living.py` 的三个判定方向（用 ASCII 输入，不写中文字面量）。"""
+    if which == "numbered_historical":
+        return section_is_living("## 5 old", historical_secs=("5",)) is False
+    if which == "unnumbered":
+        return section_is_living("## 6 new", historical_secs=("5",)) is True
+    if which == "appendix":
+        # 页码点 0x9644 造「附」——本文件在零语言闸门扫描面内，不写字面量
+        head = "## " + chr(0x9644)
+        return section_is_living(head) is False \
+            and section_is_living(head + "more") is False
+    if which == "lines_track":
+        rows = living_lines("head\n## 5 old\nx\n## 6 new\ny\n",
+                            historical_secs=("5",))
+        return [r[2] for r in rows] == [True, False, False, True, True, True]
+    return False
+
+
+def _cases():
+    return [
+        ("★ living.numbered_section_is_historical",
+         lambda: _living_case("numbered_historical")),
+        ("living.unnumbered_is_living", lambda: _living_case("unnumbered")),
+        ("living.appendix_not_scanned", lambda: _living_case("appendix")),
+        ("★ living.lines_tracks_sections", lambda: _living_case("lines_track")),
+    ]
+
+
+def _selftest():
+    import sys                                           # noqa: PLC0415
+    from gate import main_selftest_or                    # noqa: PLC0415
+    from i18n import M                                   # noqa: PLC0415
+    return main_selftest_or(sys.argv[1:], M("gate.title.living"),
+                            _cases, lambda a: 0)
+
+
+if __name__ == "__main__":
+    import os                                            # noqa: PLC0415
+    import sys                                           # noqa: PLC0415
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import living as _mod                                # noqa: PLC0415
+    sys.exit(_mod._selftest())

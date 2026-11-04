@@ -99,5 +99,53 @@ def parse_prev_values(doc_text, row_pattern, group_names):
 MODULE = module_meta(
     "采集器契约",
     "measure() 的四条原则 + 帮手（无 --selftest 入口；"
-    "parse_prev_values / unavailable 的自证住在 registry._cases）",
-    selftest=False)
+    "自证在本模块 `_cases`）",
+    selftest=True)
+
+
+# ── 自证（此前寄宿在 registry._cases）────────────────────────────────────────
+#
+# 判据属于**被测模块**：`parse_prev_values` / `unavailable` 住在这里，
+# 它们的自证也该住在这里。搬回来之后 `selftest=True` 是诚实的声明。
+
+def _cases():
+    def parse_ok():
+        got = parse_prev_values("| a | 1 |\n| b | 2 |\n",
+                                r"\| (?P<key>\w+) \| (?P<val>\d+) \|",
+                                ("val",))
+        return got == {"a": {"val": "1"}, "b": {"val": "2"}}
+
+    def missing_group_shouts():
+        try:
+            parse_prev_values("| a | 1 |\n",
+                              r"\| (?P<key>\w+) \| (?P<val>\d+) \|",
+                              ("nope",))
+            return False                # 没响 = 这条红
+        except SystemExit:
+            return True
+
+    def unavailable_shape():
+        got = unavailable("x", "y")
+        return got.get("ok") is False and "why" in got
+
+    return [
+        ("★ collect.parse_prev_values", parse_ok),
+        ("★ collect.missing_group_shouts", missing_group_shouts),
+        ("collect.unavailable_shape", unavailable_shape),
+    ]
+
+
+def _selftest():
+    import sys                                           # noqa: PLC0415
+    from gate import main_selftest_or                    # noqa: PLC0415
+    from i18n import M                                   # noqa: PLC0415
+    return main_selftest_or(sys.argv[1:], M("gate.title.collect"),
+                            _cases, lambda a: 0)
+
+
+if __name__ == "__main__":
+    import os                                            # noqa: PLC0415
+    import sys                                           # noqa: PLC0415
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import collect as _mod                               # noqa: PLC0415
+    sys.exit(_mod._selftest())
