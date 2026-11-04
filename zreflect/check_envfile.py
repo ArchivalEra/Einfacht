@@ -259,7 +259,8 @@ def run(argv=None):
                     count=len(exports)))
 
 
-def _cases():
+def _cases_fixture():
+    """夹具（原 `_cases` 的前置段原样搬入）。"""
     good_files = ("STATE.md", "README.md", "README.zh.md",
                   "README.de.md", "FACTS.json", "AGENTS.md",
                   "RETRACT.json", "invariants.json")
@@ -275,81 +276,111 @@ def _cases():
     # typo 样例用拼接构造：本文件在扫描面里，会被 known_knobs() 扫到 ——
     # 字面量写死会把 typo 收进扫描面，守卫就废了。
     typo = "REFLECT_" + "DOCSS"
+    return {'good_files': good_files, 'fe': fe, 'de': de, 'registry': registry, 'good_env': good_env, 'typo': typo}
+
+
+def _cases_knobs(fx):
+    """见 `_cases()`：本组 7 条。"""
+    good_files, fe, de, registry, good_env, typo = (fx["good_files"], fx["fe"], fx["de"], fx["registry"], fx["good_env"], fx["typo"])
     return [
-        # ① 正常不报
-        ("envfile.ok",
-         lambda: problems(good_env, registry, fe, de, syntax_ok=True,
-                          scanned=registry.keys()) == []),
-        ("envfile.non_reflect_export",
-         lambda: problems({"PATH": "/usr/bin"}, registry, fe, de,
-                          syntax_ok=True, scanned=registry.keys()) == []),
-        ("envfile.scan_clean",
-         lambda: problems(good_env, registry, fe, de, syntax_ok=True,
-                          scanned=set(registry) | {"REFLECT_FACTS"}) == []),
-        ("envfile.readme_nominations_registered",
-         lambda: knobs.readme_problems(files={
-             "README.md": "REFLECT_DOC REFLECT_READMES",
-             "README.zh.md": "x", "README.de.md": "x"}) == []),
-        # ② 该报的必须报
-        ("★ envfile.unknown_knob",
-         lambda: any(getattr(p,"code","") == "envfile.unknown_knob" for p in problems(
-             good_env, registry, fe, de, syntax_ok=True,
-             scanned=set(registry) | {typo}))),
-        ("★ envfile.unregistered_knob",
-         lambda: any(getattr(p,"code","") == "envfile.unregistered_knob" for p in problems(
-             {typo: "STATE.md"}, registry, fe, de, syntax_ok=True,
-             scanned=registry.keys()))),
-        ("★ envfile.file_missing",
-         lambda: any(getattr(p,"code","") == "envfile.file_missing" for p in problems(
-             {"REFLECT_DOC": "MYSTATE.md"}, registry, fe, de,
-             syntax_ok=True, scanned=registry.keys()))),
-        ("★ envfile.file_missing.list_target",
-         lambda: any(getattr(p,"code","") == "envfile.file_missing" and p.params.get("target") == "README.missing.md" for p in problems(
-             {"REFLECT_READMES": "README.md,README.missing.md"},
-             registry, fe, de, syntax_ok=True, scanned=registry.keys()))),
-        ("★ envfile.dir_missing",
-         lambda: any(getattr(p,"code","") == "envfile.dir_missing" for p in problems(
-             {"REFLECT_QUESTIONS": "STATE.md"}, registry, fe, de,
-             syntax_ok=True, scanned=registry.keys()))),
-        ("★ envfile.empty_value",
-         lambda: any(getattr(p,"code","") == "envfile.empty_value" for p in problems(
-             {"REFLECT_DOC": ""}, registry, fe, de, syntax_ok=True,
-             scanned=registry.keys()))),
-        ("★ envfile.syntax_broken",
-         lambda: any(getattr(p,"code","") == "envfile.syntax_broken" for p in problems(
-             good_env, registry, fe, de, syntax_ok=False,
-             scanned=registry.keys()))),
-        ("★ envfile.syntax_tool_broken",
-         lambda: any(getattr(p,"code","") == "envfile.syntax_tool_broken" for p in problems(
-             good_env, registry, fe, de, syntax_ok=None,
-             scanned=registry.keys()))),
-        # ⚠️ 曾写过一条 `repo("zreflect") == knobs._zdir()` 的「对账」——**那是错的**：
-        # 它断言的只是一个配置事实（GATE_REPO 没被覆盖），与 `known_knobs` 实际
-        # 扫哪里**无关**。实测：把 known_knobs 的默认目录改成 `knobs._zdir()`
-        # （真正的漂移），那条断言照样绿。判据必须考**代码路径**，不是考巧合。
-        # 换成下面这条：默认目录必须指向被检查仓（夹具下真的会红）。
-        ("★ envfile.known_knobs_scans_checked_repo",
-         lambda: _known_knobs_scans_repo()),
-        # ③ 空输入必须报
-        ("★ envfile.no_effective_export",
-         lambda: problems({}, registry, fe, de, syntax_ok=True,
-                          scanned=registry.keys()) != []),
-        # 边界（判据归 knobs.py；此处保留一条串联证明搬运没丢语义）：
-        # 假记号不许从别的前缀里切出来（翻案示例文本曾被切成假旋钮名）。
-        # ⚠️ 样例用拼接构造：本文件在扫描面内，字面量写出来会被对账收编。
-        ("★ envfile.prefix_word_not_sliced",
-         lambda: knobs.readme_problems(files={
-             "README.md": "> ZCODE_" + typo,
-             "README.zh.md": "x", "README.de.md": "x"}) == []),
-        # 引号剥离（_QUOTES_RE 的显式优先级只为写明白，行为逐字不变）：
-        # 复跑：python3 zreflect/check_envfile.py --selftest
-        ("envfile.strip_quotes",
-         lambda: parse_exports("D=\"hello\"")["D"] == "hello"
-         and parse_exports("D='hello'")["D"] == "hello"),
-        ("★ envfile.inner_quotes_kept",
-         lambda: parse_exports("D=a\"b")["D"] == "a\"b"
-         and parse_exports("D='a\"b'")["D"] == "a\"b"),
+    # ① 正常不报
+    ("envfile.ok",
+     lambda: problems(good_env, registry, fe, de, syntax_ok=True,
+                      scanned=registry.keys()) == []),
+    ("envfile.scan_clean",
+     lambda: problems(good_env, registry, fe, de, syntax_ok=True,
+                      scanned=set(registry) | {"REFLECT_FACTS"}) == []),
+    ("envfile.readme_nominations_registered",
+     lambda: knobs.readme_problems(files={
+         "README.md": "REFLECT_DOC REFLECT_READMES",
+         "README.zh.md": "x", "README.de.md": "x"}) == []),
+    # ② 该报的必须报
+    ("★ envfile.unknown_knob",
+     lambda: any(getattr(p,"code","") == "envfile.unknown_knob" for p in problems(
+         good_env, registry, fe, de, syntax_ok=True,
+         scanned=set(registry) | {typo}))),
+    ("★ envfile.unregistered_knob",
+     lambda: any(getattr(p,"code","") == "envfile.unregistered_knob" for p in problems(
+         {typo: "STATE.md"}, registry, fe, de, syntax_ok=True,
+         scanned=registry.keys()))),
+    ("★ envfile.file_missing.list_target",
+     lambda: any(getattr(p,"code","") == "envfile.file_missing" and p.params.get("target") == "README.missing.md" for p in problems(
+         {"REFLECT_READMES": "README.md,README.missing.md"},
+         registry, fe, de, syntax_ok=True, scanned=registry.keys()))),
+    # ⚠️ 曾写过一条 `repo("zreflect") == knobs._zdir()` 的「对账」——**那是错的**：
+    # 它断言的只是一个配置事实（GATE_REPO 没被覆盖），与 `known_knobs` 实际
+    # 扫哪里**无关**。实测：把 known_knobs 的默认目录改成 `knobs._zdir()`
+    # （真正的漂移），那条断言照样绿。判据必须考**代码路径**，不是考巧合。
+    # 换成下面这条：默认目录必须指向被检查仓（夹具下真的会红）。
+    ("★ envfile.known_knobs_scans_checked_repo",
+     lambda: _known_knobs_scans_repo()),
     ]
+
+
+def _cases_carrier(fx):
+    """见 `_cases()`：本组 8 条。"""
+    good_files, fe, de, registry, good_env, typo = (fx["good_files"], fx["fe"], fx["de"], fx["registry"], fx["good_env"], fx["typo"])
+    return [
+    ("envfile.non_reflect_export",
+     lambda: problems({"PATH": "/usr/bin"}, registry, fe, de,
+                      syntax_ok=True, scanned=registry.keys()) == []),
+    ("★ envfile.file_missing",
+     lambda: any(getattr(p,"code","") == "envfile.file_missing" for p in problems(
+         {"REFLECT_DOC": "MYSTATE.md"}, registry, fe, de,
+         syntax_ok=True, scanned=registry.keys()))),
+    ("★ envfile.dir_missing",
+     lambda: any(getattr(p,"code","") == "envfile.dir_missing" for p in problems(
+         {"REFLECT_QUESTIONS": "STATE.md"}, registry, fe, de,
+         syntax_ok=True, scanned=registry.keys()))),
+    ("★ envfile.empty_value",
+     lambda: any(getattr(p,"code","") == "envfile.empty_value" for p in problems(
+         {"REFLECT_DOC": ""}, registry, fe, de, syntax_ok=True,
+         scanned=registry.keys()))),
+    # ③ 空输入必须报
+    ("★ envfile.no_effective_export",
+     lambda: problems({}, registry, fe, de, syntax_ok=True,
+                      scanned=registry.keys()) != []),
+    # 边界（判据归 knobs.py；此处保留一条串联证明搬运没丢语义）：
+    # 假记号不许从别的前缀里切出来（翻案示例文本曾被切成假旋钮名）。
+    # ⚠️ 样例用拼接构造：本文件在扫描面内，字面量写出来会被对账收编。
+    ("★ envfile.prefix_word_not_sliced",
+     lambda: knobs.readme_problems(files={
+         "README.md": "> ZCODE_" + typo,
+         "README.zh.md": "x", "README.de.md": "x"}) == []),
+    # 引号剥离（_QUOTES_RE 的显式优先级只为写明白，行为逐字不变）：
+    # 复跑：python3 zreflect/check_envfile.py --selftest
+    ("envfile.strip_quotes",
+     lambda: parse_exports("D=\"hello\"")["D"] == "hello"
+     and parse_exports("D='hello'")["D"] == "hello"),
+    ("★ envfile.inner_quotes_kept",
+     lambda: parse_exports("D=a\"b")["D"] == "a\"b"
+     and parse_exports("D='a\"b'")["D"] == "a\"b"),
+    ]
+
+
+def _cases_syntax(fx):
+    """见 `_cases()`：本组 2 条。"""
+    good_files, fe, de, registry, good_env, typo = (fx["good_files"], fx["fe"], fx["de"], fx["registry"], fx["good_env"], fx["typo"])
+    return [
+    ("★ envfile.syntax_broken",
+     lambda: any(getattr(p,"code","") == "envfile.syntax_broken" for p in problems(
+         good_env, registry, fe, de, syntax_ok=False,
+         scanned=registry.keys()))),
+    ("★ envfile.syntax_tool_broken",
+     lambda: any(getattr(p,"code","") == "envfile.syntax_tool_broken" for p in problems(
+         good_env, registry, fe, de, syntax_ok=None,
+         scanned=registry.keys()))),
+    ]
+
+
+def _cases():
+    """拼装 3 组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    fx = _cases_fixture()
+    return (
+    _cases_knobs(fx)
+    + _cases_carrier(fx)
+    + _cases_syntax(fx)
+    )
 
 
 GATE = meta("env 文件闸门", "守钩子的 REFLECT_* 载体（旋钮 typo / 指向缺失 / 空值）",
