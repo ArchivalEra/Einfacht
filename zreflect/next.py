@@ -58,10 +58,18 @@ def _git(repo, *args):
 
 
 def unpublished_commits(repo):
-    """未推送的提交标题（`HEAD..origin/<branch>`）。取不到 ⇒ None。"""
+    """未推送的提交标题。取不到 ⇒ None（**不是空表**）。
+
+    ⚠️ 命令必须带 `HEAD`：`git log --oneline --not --remotes`（**没有起点**）
+    会**静默返回 0 行** —— 看着像「全都推送了」，实际是「没给起点，git 走了
+    另一条默认路径」。实测：同一个仓，带 `HEAD` 得 26 行，不带得 0 行。
+    这是本仓最恨的那种失败：**不报错、答案是错的**。
+    """
     branch = (_git(repo, "rev-parse", "--abbrev-ref", "HEAD") or "").strip()
     if not branch or branch == "HEAD":
         return None
+    # 顺序也重要：`HEAD` 在前，`--not --remotes` 在后（`git log` 的起点
+    # 必须在 rev 列表里，不能只靠 `--not`）。
     out = _git(repo, "log", "--oneline", "HEAD", "--not", "--remotes")
     if out is None:
         return None
@@ -220,6 +228,11 @@ def _cases():
         ("★ next.render_is_deterministic", lambda: _render_deterministic()),
         # 空待办必须**明说**「若你认为应该有 —— 那是记录的缺口」
         ("★ next.empty_pending_is_explicit", lambda: _empty_pending_explicit()),
+        # `git log` 的起点不能省：没有 `HEAD` 时它静默返回 0 行
+        # （实测：同一个仓 26 vs 0）。这条钉住「命令形状」而不是结果 ——
+        # 结果依赖真仓状态，形状不依赖。
+        ("★ next.log_command_has_start_point",
+         lambda: _log_command_shape_ok()),
         # ③ 空输入必须报：一个不存在的仓根
         ("★ next.nonexistent_root_is_loud",
          lambda: _nonexistent_root_loud()),
@@ -285,6 +298,24 @@ def _nonexistent_root_loud():
     with i18n.bind(i18n.NULL):
         block = render_with(None, None)
     return "doc.next_last_turn_none" in block
+
+
+def _log_command_shape_ok():
+    """`unpublished_commits` 用的 git 命令**必须带起点**。
+
+    从源码里读那条命令的参数（不执行 git）—— 判据是形状的，所以夹具无关、
+    真仓状态无关。
+    """
+    import inspect                                       # noqa: PLC0415
+    src = inspect.getsource(unpublished_commits)
+    # 找 `_git(repo, "log", ...)` 那一行
+    for line in src.splitlines():
+        if '"log"' in line:
+            # 起点必须在 --not 之前出现
+            if '"HEAD"' not in line:
+                return False
+            return line.index('"HEAD"') < line.index("--not")
+    return False
 
 
 def _selftest():
