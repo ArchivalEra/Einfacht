@@ -210,13 +210,14 @@ def run_configurable(repo):
         shutil.rmtree(tmp, True)
 
 
-def _configurable_impl(repo, tmp, registry):
-    # 夹具的改名集**唯一产地**：registry.FIXTURE_RENAMES（C4 对账③）。
-    # `FIXTURE_RENAMES` 是「原名 → 夹具名」的唯一产地（C4 对账③）。
+def _configurable_fixture(repo, tmp, registry):
+    """造一个**合格的外仓**：三段文档齐、改名后的载体都在。
+
+    返回 `(env, gates)` —— `env` 是带改名旋钮的环境，`gates` 是待跑清单。
+    """
     fr = getattr(registry, "FIXTURE_RENAMES", {})
     fx_facts = fr.get("FACTS.json", "LEDGER.json")
     fx_doc = fr.get("STATE.md", "NOTES.md")
-    lines = []
 
     open(os.path.join(tmp, "a.py"), "w").write("x = 1\n")
     # 机器块标记要**先手工放一次**（找不到块 ≠ 块是对的）。
@@ -245,36 +246,30 @@ def _configurable_impl(repo, tmp, registry):
     _rc, out = _run([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
                      "--all-runnable"], cwd=repo)
     gates = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
-    renv = dict(env)
-    renv.update({"REFLECT_DOCS": "%s,AGENTS.md" % fx_doc,
-                 "REFLECT_RETRACTIONS": "RETRACT.json",
-                 "REFLECT_QUESTIONS": "cases",
-                 "REFLECT_READMES": "R1.md,R2.md,R3.md"})
-    ok = 0
-    for rel in gates:
-        rc, _o = _run([sys.executable, os.path.join(repo, rel)], cwd=repo, env=renv)
-        if rc == 0:
-            ok += 1
-        else:
-            lines.append(str(M("harness.rename_failed", file=rel)))
-    if not gates:
-        lines.append(str(M("harness.no_gates_in_fixture")))
-        return False, lines
+    env.update({"REFLECT_DOCS": "%s,AGENTS.md" % fx_doc,
+                "REFLECT_RETRACTIONS": "RETRACT.json",
+                "REFLECT_QUESTIONS": "cases",
+                "REFLECT_READMES": "R1.md,R2.md,R3.md"})
+    return env, gates
 
-    # 反向：默认名字下，声明了 `name_dependent` 的闸门**必须红**。
-    _rc, rout = _run([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
-                      "--red-need"], cwd=repo)
-    # ⚠️ `--red-need` 的输出是**一行、空格分隔**的多个名字（不是一个一行）。
-    # 按行切会把整串当成一个名字，于是「它没红」永远命中（实测）。
-    red_need = (rout or "").split()
-    if not red_need:
-        lines.append(str(M("harness.empty_red_list")))
-        return False, lines
-    # ⚠️ 反向测试的环境必须是**干净**的：只给 GATE_REPO，不给任何改名旋钮。
-    # 用上面那个 `env`（带 `REFLECT_FACTS=LEDGER.json` / `REFLECT_DOC=NOTES.md`）
-    # 等于还在用夹具的名字 —— 「默认名下必须红」就永远不成立（实测）。
-    clean = {k: v for k, v in os.environ.items()
-             if not k.startswith("REFLECT_")}
+
+def _renamed_all_green(repo, gates, env):
+    """换名之后，**每一道**闸门都必须绿。返回 `(ok, 失败清单)`。"""
+    bad = []
+    for rel in gates:
+        rc, _o = _run([sys.executable, os.path.join(repo, rel)], cwd=repo, env=env)
+        if rc != 0:
+            bad.append(rel)
+    return len(gates) - len(bad), bad
+
+
+def _default_names_go_red(repo, gates, tmp):
+    """默认名字下，`--red-need` 点名的闸门**必须红**。返回 `(ok, 未红的)`。
+
+    ⚠️ 环境必须**干净**：只给 `GATE_REPO`，不给任何改名旋钮 —— 用夹具那套
+    `env` 等于还在用改名，这条判据永远不成立（实测）。
+    """
+    clean = {k: v for k, v in os.environ.items() if not k.startswith("REFLECT_")}
     clean["GATE_REPO"] = tmp
     red = set()
     for rel in gates:
@@ -282,10 +277,37 @@ def _configurable_impl(repo, tmp, registry):
                       env=clean)
         if rc != 0:
             red.add(os.path.basename(rel))
-    for b in red_need:
-        if b not in red:
-            lines.append(str(M("harness.not_red_under_defaults", gate=b)))
-            return False, lines
+    _rc, rout = _run([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
+                      "--red-need"], cwd=repo)
+    # ⚠️ `--red-need` 的输出是**一行、空格分隔**的多个名字（不是一个一行）。
+    # 按行切会把整串当成一个名字，于是「它没红」永远命中（实测）。
+    red_need = (rout or "").split()
+    return red_need, [b for b in red_need if b not in red]
+
+
+def _configurable_impl(repo, tmp, registry):
+    """跨仓可配置性：夹具仓换掉全部名字仍全绿；默认名下指定的闸门必须红。
+
+    三段（各是 helper）：`_configurable_fixture` / `_renamed_all_green` /
+    `_default_names_go_red`。本函数只编排 —— 85 行 → 20 行。
+    """
+    env, gates = _configurable_fixture(repo, tmp, registry)
+    lines = []
+    if not gates:
+        lines.append(str(M("harness.no_gates_in_fixture")))
+        return False, lines
+
+    ok, bad = _renamed_all_green(repo, gates, env)
+    for rel in bad:
+        lines.append(str(M("harness.rename_failed", file=rel)))
+
+    red_need, not_red = _default_names_go_red(repo, gates, tmp)
+    if not red_need:
+        lines.append(str(M("harness.empty_red_list")))
+        return False, lines
+    for b in not_red:
+        lines.append(str(M("harness.not_red_under_defaults", gate=b)))
+        return False, lines
 
     if ok != len(gates):
         lines.append(str(M("harness.configurable_failed",
