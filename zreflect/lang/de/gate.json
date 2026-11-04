@@ -20,6 +20,7 @@
  "gate.selftest_summary": "%(name)s Selbsttest: %(passed)d PASS / %(failed)d fail",
  "gate.spec_unreadable": "%(path)s ist nicht lesbar / kein gültiges JSON: %(error)s",
  "gate.title.collect": "Sammler-Vertrag",
+ "gate.title.criteria": "Verzeichnis-Kriterien",
  "gate.title.doc": "Prinzipienregister",
  "gate.title.doctor": "Arbeitsbeginn-doctor (Prozess- / Port-Lebendigkeit)",
  "gate.title.envfile": "env-Datei-Tor (entfernbar: bewacht den REFLECT_* Träger der Hooks)",
