@@ -25,6 +25,7 @@
  "facts.markers_missing_check": "%(path)s 缺 %(begin)s / %(end)s 标记",
  "facts.markers_missing_render": "%(path)s 缺 %(begin)s / %(end)s 标记（第一次落地时要手工放一次）",
  "facts.measure_module_unusable": "REFLECT_MEASURE_MODULE=%(module)s 不可用（%(error)s）⇒ 回落占位 measure_example()",
+ "facts.measure_own_code_hint": "这个仓有 %(dirs)s —— 那是**你的**代码，而上面量的是套件自己。要量自己的项目：在 Einfacht.env 里设 REFLECT_MEASURE_MODULE=<你的模块>（模块里写一个 measure() 返回 fact() 字典）",
  "facts.measure_placeholder_used": "measure_example() used; set REFLECT_MEASURE_MODULE for real repo（换仓只改 Einfacht.env 一行；回落占位时台账会空）",
  "facts.measure_written": "已写出 %(path)s（%(count)d 条事实）",
  "facts.missing_key_cite": "正文第 %(line)d 行引用了**不存在**的键：`%(key)s`",
