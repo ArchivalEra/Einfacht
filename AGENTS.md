@@ -78,11 +78,32 @@ python3 zreflect/facts.py --render-doc STATE.md
 
 把 `zreflect/` + `reflect-hooks/` 拷过去，然后在那个仓里：
 
-1. 建 `PRINCIPLES.md` / `STATE.md` 两份（**不要放 `docs/`** —— 那在套件外面，
-   闸门扫不到）；
-2. 落一份 `AGENTS.md` 路由（就是本文件，改路径即可）；
-3. `python3 reflect-hooks/install.py --chain` 接钩子；
-4. `python3 zreflect/facts.py` 量一遍，`--render-doc STATE.md` 渲染机器块。
+```bash
+python3 zreflect/facts.py --init     # 生成合格骨架（不覆盖已有文件）
+python3 zreflect/facts.py            # 量一遍
+python3 zreflect/facts.py --render-doc STATE.md   # 渲染机器块
+python3 reflect-hooks/install.py --chain          # 接钩子
+```
+
+`--init` 会建 `STATE.md` / `PRINCIPLES.md` / `AGENTS.md` / `README.md` /
+`retractions.json` / `questions/`（含一条示例悬案）/ `Einfacht.env`，并且：
+
+- **`STATE.md` 里预先放好 `<!-- AUTO:FACTS -->` / `<!-- AUTO:GATES -->` 标记**
+  —— 没有它们 `--render-doc` 会 `FATAL: facts.markers_missing_render`，
+  而标记字符串此前只住在 `render.py` 源码里；
+- **`Einfacht.env` 按实际生成的文档写** `REFLECT_DOCS` / `REFLECT_READMES`
+  —— 默认值假设你已经有六份文档（STATE / AGENTS / PRINCIPLES / README×3），
+  新仓只有一份 README，不写这一份每个闸门都会报「找不到 README.zh.md」。
+
+跑完上面四条，`registry --run commit` 应当 **failed=0 / fatal=0**。
+若不然，先看 `--init` 的输出里有没有 `already exists, left alone`（旧文件没被覆盖）。
+
+⚠️ **`docs/` 不行** —— 那在套件外面，闸门扫不到。
+
+⚠️ 量测对象默认是**套件自己**（`zreflect/measure_example.py` 的占位实现）。
+量你自己的项目：在 `Einfacht.env` 里设 `REFLECT_MEASURE_MODULE=<你的模块>`，
+或直接改 `zreflect/facts.py` 的 `measure_example()`。不设就量套件 —— 那时
+`STATE.md` 里的数字是**关于 Einfacht 的**，不是关于你的项目的。
 
 旋钮全在 `zreflect/knobs.py` 登记，名字型旋钮（`REFLECT_DOCS` / `REFLECT_READMES`
 / `REFLECT_QUESTIONS` …）在那个仓的 `Einfacht.env` 里改，不改代码。

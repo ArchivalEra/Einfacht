@@ -760,6 +760,17 @@ def _streams_documented():
 
 
 
+def _plugin_discovery_ok():
+    """插件发现：目录在 ⇒ 必须发现 env 插件；目录不在 ⇒ 空名单也算对。"""
+    import os                                            # noqa: PLC0415
+    d = repo("reflect-hooks")
+    found = plugins()
+    if not os.path.isdir(d):
+        return found == []          # 没装插件目录 ⇒ 空名单是对的
+    return ("reflect-hooks/einfacht-env.sh" in found
+            and "zreflect/doctor.py" not in found)
+
+
 def _nf_catches(which):
     """用**真文件里的 lambda** 测 `never_falsifiable`（它按行号定位 AST，`-c`
     里的 lambda 没有源码文件 ⇒ 会瞎）。
@@ -896,9 +907,9 @@ def _cases_discovery(fx):
     ("registry.fixture_renames_single_source",
      lambda: set(FIXTURE_RENAMES) == set(RENAMED_DEFAULTS)
      and len(FIXTURE_RENAMES) >= 7),
-    ("registry.plugin_discovery",
-     lambda: "reflect-hooks/einfacht-env.sh" in plugins()
-     and "zreflect/doctor.py" not in plugins()),
+    # 插件目录**可以不存在**（只拷 `zreflect/` 的部署）：那时没有插件可发现，
+    # 这不是失败。存在就必须发现它 —— 断言按「目录在不在」分两档。
+    ("registry.plugin_discovery", lambda: _plugin_discovery_ok()),
     # ② 该报的必须报
     ("★ registry.missing_declaration",
      lambda: missing == ["zreflect/check_bare.py"]),
