@@ -371,105 +371,53 @@ def path_rule_problems(sources=None):
     return out
 
 
-def dependency_coverage_problems(zdir=None, sources=None):
-    """C4 对账⑨：**被闸门消费的平台函数，必须在某处有断言**。
-
-    为什么：第 24 轮发现 `living.living_lines()` 被 `check_stale` /
-    `check_retractions` 消费，而它**自身零断言** —— 判错了，那两道闸门的判据
-    全部失效，而它们各自的自证照样绿。一个被消费但没被测的模块，是依赖链上的
-    哑火环节。
-
-    判据（全发现式，不写名单）：
-      · 消费关系：`check_*.py` / `doctor.py` 里**真的引用**了某个平台模块的
-        顶层函数（`mod.fn(` 或 `from mod import fn`）
-      · 断言面：该函数的模块自己的 `_cases()`，或 `registry._cases()`
-    两者都没有 ⇒ 报。
-
-    诚实边界：AST 只看「引用」，看不出「引用得对不对」；注释/docstring 里的
-    提及不算引用（用 `Name`/`Attribute` 节点，不扫文本）。
-    """
-    import ast                                           # noqa: PLC0415
-    d = zdir if zdir is not None else gate.zdir()
-    # 平台模块（非 check_）的顶层公开函数
+def _platform_functions(names, read):
+    """平台模块（非 `check_*`）的顶层公开函数：`{模块: {函数名}}`。"""
     platform = {}
-    gate_cases = ""
-    files = {}
-    # ⚠️ `sources` 注入 ⇒ 遍历**注入的 key**，不是真目录的 `listdir` ——
-    # 此前遍历真目录再 `sources.get(n)`，夹具里那些文件不在真仓就全被跳过
-    # （实测：fake 永远返回 []，判据的隔离模式等于没跑）。
-    if sources is not None:
-        names = sorted(sources)
-    else:
-        try:
-            names = sorted(os.listdir(d))
-        except OSError:
-            return []
     for n in names:
-        if not n.endswith(".py"):
+        if n.startswith("check_") or not n.endswith(".py"):
             continue
-        if sources is not None:
-            text = sources.get(n)
-            if text is None:
-                continue
-        else:
-            try:
-                text = open(os.path.join(d, n), encoding="utf-8").read()
-            except OSError:
-                continue
-        files[n] = text
+        text = read(n)
+        if text is None:
+            continue
         try:
             tree = ast.parse(text)
         except SyntaxError:
             continue
-        if n.startswith("check_") or n == "doctor.py":
-            continue
-        fn = {f.name for f in tree.body if isinstance(f, ast.FunctionDef)
-              and not f.name.startswith("_")}
-        if fn:
-            platform[n[:-3]] = fn
-        if n == "registry.py":
-            gate_cases = text
-    # 断言面：**AST 节点**，不是文本。收集每个 `_cases()` 体里被**读取**
-    # （Load）的名字集合 —— 这样「函数名出现在夹具字符串里」不算断言。
-    # ⚠️ 此前用子串匹配，`helper` 出现在我自己的 fake 源码字符串里就被当成
-    # 「已断言」⇒ 判据永远不报（实测：fake 返回 []）。
-    # 这是第 19–24 轮反复出现的同一个病：**文本匹配代替结构匹配**。
+        fns = {node.name for node in tree.body
+               if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and not node.name.startswith("_")}
+        if fns:
+            platform[n[:-3]] = fns
+    return platform
+
+
+def _asserted_names(case_bodies):
+    """各个 `_cases()` 体里被**读取**（Load）的名字集合。
+
+    ⚠️ AST 节点而不是文本匹配：`helper` 出现在夹具字符串里不算断言
+    （第 19–24 轮反复出现的同一个病：文本匹配代替结构匹配）。
+    """
     asserted = set()
-    # ⚠️ `sources` 注入 ⇒ **完全隔离**：只用注入的源码做断言面。
-    # 此前还会合并真 `registry._cases`，于是夹具里随便一个常见函数名都会被
-    # 真仓的断言「假装」覆盖（实测：fake 永远返回 []）。
-    case_bodies = [t for t in files.values() if "def _cases(" in t]
     for text in case_bodies:
         try:
             tree = ast.parse(text)
         except SyntaxError:
             continue
-        # `_cases()` **以及它调用的同文件 helper** —— 断言的实质常常住在
-        # helper 里（`_living_case("…")` / `_timeout_falls_back()`），只扫
-        # `_cases` 本身会把它们当成「没断言」（实测：真仓报 living_lines /
-        # default_timeout，而那两条刚补过）。
-        tops = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
-        roots = [n for n in tops.values() if n.name == "_cases"]
-        if not roots:
-            continue
-        pending = list(roots)
-        seen = set()
-        while pending:
-            node = pending.pop()
-            if node.name in seen:
-                continue
-            seen.add(node.name)
-            called = {c.func.id for c in ast.walk(node)
-                      if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
-            for cname in called:
-                if cname in tops:
-                    pending.append(tops[cname])
-            for n in ast.walk(node):
-                if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load):
-                    asserted.add(n.id)
-                elif isinstance(n, ast.Attribute) and isinstance(n.ctx, ast.Load):
-                    asserted.add(n.attr)
-    # 消费关系：只扫 check_* / doctor 的 Import 与属性访问
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                asserted.add(node.id)
+            elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+                asserted.add(node.attr)
+    return asserted
+
+
+def _consumers(files, platform):
+    """谁消费了哪个平台函数：`({(模块, 函数)}, {(模块, 函数): {文件名}})`。
+
+    只扫 `check_*` / `doctor.py` —— 它们是真的调用方；平台模块互相调用不算
+    「闸门消费」。
+    """
     consumed = set()
     consumers = {}
     for n, text in files.items():
@@ -497,14 +445,56 @@ def dependency_coverage_problems(zdir=None, sources=None):
                 if mod in platform and node.attr in platform[mod]:
                     consumed.add((mod, node.attr))
                     consumers.setdefault((mod, node.attr), set()).add(n)
-    # ⚠️ **框架 API 不要求断言**：`gate.meta` / `main_selftest_or` / `i18n.M`
-    # 被 16 个闸门**全部**消费 —— 它们是入口脚手架，不是某个闸门消费的
-    # 「领域函数」。要求它们的断言等于要求「框架给框架写测试」，那是自举。
-    # 判据只对**少数闸门消费**的领域函数生效（阈值：消费方 < 半数闸门）。
-    # 阈值用**绝对值**（≥3 个闸门共用 ⇒ 框架 API），不用「半数闸门」：
-    # 后者在单闸门夹具里退化成 1，会把夹具里唯一那个消费关系也当框架跳过
-    # （实测：fake 期望 1 条却返回 0）。
-    FRAMEWORK_MIN_GATES = 3
+    return consumed, consumers
+
+
+# ⚠️ **框架 API 不要求断言**：`gate.meta` / `main_selftest_or` / `i18n.M` 被
+# 16 个闸门**全部**消费 —— 它们是入口脚手架，不是某个闸门消费的「领域函数」。
+# 要求它们的断言等于要求「框架给框架写测试」，那是自举。
+# 阈值用**绝对值**（≥3 个闸门共用 ⇒ 框架 API），不用「半数闸门」：后者在
+# 单闸门夹具里退化成 1，会把夹具里唯一那个消费关系也当框架跳过（实测）。
+FRAMEWORK_MIN_GATES = 3
+
+
+def dependency_coverage_problems(zdir=None, sources=None):
+    """C4 对账⑨：**被闸门消费的平台函数，必须在某处有断言**。
+
+    一个被消费但没被测的模块，是依赖链上的哑火环节：它判错了，消费它的闸门
+    丢掉判据，而那个闸门自己的自证照样绿（第 24 轮 `living.living_lines()`）。
+
+    三段各是一个 helper（`_platform_functions` / `_asserted_names` /
+    `_consumers`），本函数只做**判定** —— 142 行 → 25 行。
+    """
+    d = zdir if zdir is not None else gate.zdir()
+
+    def read(n):
+        if sources is not None:
+            return sources.get(n)
+        try:
+            return open(os.path.join(d, n), encoding="utf-8",
+                        errors="replace").read()
+        except OSError:
+            return None
+
+    if sources is not None:
+        names = sorted(sources)
+        files = {n: sources[n] for n in names}
+    else:
+        try:
+            names = sorted(n for n in os.listdir(d) if n.endswith(".py"))
+        except OSError:
+            return []
+        files = {}
+        for n in names:
+            text = read(n)
+            if text is not None:
+                files[n] = text
+
+    platform = _platform_functions(names, read)
+    case_bodies = [text for n, text in files.items() if "def _cases(" in text]
+    asserted = _asserted_names(case_bodies)
+    consumed, consumers = _consumers(files, platform)
+
     out = []
     for mod, fn in sorted(consumed):
         if fn in asserted:
