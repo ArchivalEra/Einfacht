@@ -170,7 +170,7 @@ def scan_surface_problems(py_dir=None):
     「载体存在」前置之后，本仓没有 Einfacht.env ⇒ 幻影守卫从未执行
     （实测踩到）。`py_dir` 可注入（自证用假源码树）。
     """
-    d = py_dir if py_dir is not None else _zdir()
+    d = py_dir if py_dir is not None else gate.zdir()
     toks = set()
     for _name, text in _py_sources(d):
         toks.update(_TOKEN_RE.findall(text))
@@ -214,13 +214,6 @@ def readme_problems(files=None):
     return out
 
 
-def _zdir():
-    """工具自己的 `zreflect/` —— **调 `gate.zdir()`，不自己算**。
-
-    此前这里与 `registry._zdir()` / `i18n._TOOL_DIR` 各算一遍同一件事；
-    今天同值（靠巧合），改任一处就会分裂。location 规则只留一个产地。
-    """
-    return gate.zdir()
 
 
 def declared_vs_read_problems(gates, sources=None):
@@ -456,7 +449,7 @@ def dead_default_problems(py_dir=None):
     ⇒ 报。只扫 `check_*.py` + 平台模块（即 `zreflect/*.py`）。
     """
     import ast                                           # noqa: PLC0415
-    d = py_dir if py_dir is not None else _zdir()
+    d = py_dir if py_dir is not None else gate.zdir()
     out = []
     try:
         names = sorted(os.listdir(d))
@@ -536,7 +529,7 @@ def used_codes(py_dir=None):
     `_SELFTEST_CODE_PREFIXES` 里的前缀是自证专用 code（同样不发给用户）。
     """
     import ast                                           # noqa: PLC0415
-    d = py_dir if py_dir is not None else _zdir()
+    d = py_dir if py_dir is not None else gate.zdir()
     out = set()
     for n, src in _py_sources(d):
         try:
