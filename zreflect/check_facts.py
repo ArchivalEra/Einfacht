@@ -227,7 +227,8 @@ LED = {"facts": {"count": {"value": 4752, "cmd": "c"}}}
 
 
 
-def _cases():
+def _cases_fixture():
+    """夹具：假文档正文 + 假台账 + 语言包探针（原 `_cases` 的前置段原样搬入）。"""
     # 夹具的文档正文用**英文**（它们是被扫描的输入，不是本体的输出 —— 「速度是
     # 4752 次」这类中文样本会让零语言闸门把夹具当消息）。判据本身与语言无关：
     # 裸数字 / 引用 / 形状白名单都只看 token 形态。
@@ -256,76 +257,114 @@ def _cases():
         import re                                        # noqa: PLC0415
         return set(re.findall(r"%\((\w+)\)", real_pack.get(code, "")))
 
+    return {'good': good, 'numberless': numberless, 'fifty': fifty, 'codes': codes, 'pack_lang': pack_lang, 'real_pack': real_pack, 'pack_placeholders': pack_placeholders}
+
+
+def _cases_core(fx):
+    """见 `_cases()`：本组 9 条。"""
+    good, numberless, fifty, codes, pack_lang, real_pack, pack_placeholders = (fx["good"], fx["numberless"], fx["fifty"], fx["codes"], fx["pack_lang"], fx["real_pack"], fx["pack_placeholders"])
     return [
-        # ① 正常不报
-        ("facts.block_ok",
-         lambda: problems(LED, good) == []),
-        ("facts.live_cite_ok",
-         lambda: problems(LED, "see [[count]]\n" + render_block(LED)) == []),
-        ("facts.small_int_exempt",
-         lambda: problems(numberless, "there are 3\n"
-                          + render_block(numberless)) == []),
-        # ② 该报的必须报
-        ("★ facts.block_mismatch",
-         lambda: codes(LED, "x\n" + render_block({"facts": {}}))
-         == ["facts.block_mismatch"]),
-        ("★ facts.copied_value",
-         lambda: codes(LED, "speed is 4752 times\n" + render_block(LED))
-         == ["facts.copied_value"]),
-        ("★ facts.missing_key_cite",
-         lambda: codes(LED, "see [[nope]]\n" + render_block(LED))
-         == ["facts.missing_key_cite"]),
-        # ② 反向判据（issue #24）：从没进过台账的数字也要有出处
-        ("★ facts.bare_number_unaccounted",
-         lambda: codes(LED, "measured 99887766 but not in ledger.\n"
-                        + render_block(LED))
-         == ["facts.bare_number_unaccounted"]
-         and any("99887766" in str(p) for p in problems(
-             LED, "measured 99887766 but not in ledger.\n" + render_block(LED))),
-         ),
-        ("facts.cite_counts_as_provenance",
-         lambda: problems(LED, "see [[count]] = 99887766\n"
-                          + render_block(LED)) == []),
-        ("facts.pack_entry_wired",
-         # 真实包里「无出处」这条必须存在、且**接收该 code 实际发的那两个参数**
-         # （删掉这条 code / 改坏占位名 ⇒ 这条红）。断言只用 ASCII 锚点（code 名 +
-         # 占位名）—— 中文锚点会把自己变成「本体里的自然语言」，正是零语言闸门
-         # 要消灭的形状；语义是否仍说「怎么修」由包 diff 审查承担。
-         # **条件判据**：装了包就必须完整（删条目 / 改坏占位名 ⇒ 这条红）；
-         # 零包（合法态：用户没装任何语言）⇒ 无对象可验，理据真空成立。
-         # 真仓永远有包，所以这条在真环境里必然真考。
-         lambda: not pack_lang or
-         pack_placeholders("facts.bare_number_unaccounted")
-         == {"line", "number"}),
-        ("facts.shape_whitelist",
-         lambda: problems(LED, "v11.3.0 and sha256 and 2026-10-31\n"
-                          + render_block(LED)) == []),
-        ("★ facts.bare_sha_needs_context",
-         lambda: codes(LED, "just wrote 99887766\n" + render_block(LED))
-         == ["facts.bare_number_unaccounted"]),
-        # ③ 空输入必须报
-        ("★ facts.empty_ledger",
-         lambda: codes({"facts": {}}, good) == ["facts.empty_ledger"]),
-        ("★ facts.no_block_markers",
-         lambda: codes(LED, "a document with no block at all")
-         == ["facts.no_block_markers"]),
-        # ④ 裸数字判据扩展（issue #3 ④）
-        ("facts.fenced_exempt",
-         lambda: problems(LED, "```\nspeed is 4752 times\n```\n"
-                          + render_block(LED)) == []),
-        ("facts.inline_code_exempt",
-         lambda: problems(LED, "see `4752` times\n" + render_block(LED)) == []),
-        ("facts.below_threshold_exempt",
-         lambda: problems(fifty, "there are 50\n" + render_block(fifty)) == []),
-        ("★ facts.threshold_knob",
-         lambda: codes(fifty, "there are 50\n" + render_block(fifty), bare_min=10)
-         == ["facts.copied_value"]
-         and "50" in str(problems(fifty, "there are 50\n" + render_block(fifty),
-                                  bare_min=10)[0])),
-        ("★ facts.bare_number_outside_fence",
-         lambda: codes(LED, "```\n4752\n```\nspeed is 4752 times\n"
-                        + render_block(LED)) == ["facts.copied_value"]),
+    # ① 正常不报
+    ("facts.block_ok",
+     lambda: problems(LED, good) == []),
+    ("facts.live_cite_ok",
+     lambda: problems(LED, "see [[count]]\n" + render_block(LED)) == []),
+    # ② 该报的必须报
+    ("★ facts.block_mismatch",
+     lambda: codes(LED, "x\n" + render_block({"facts": {}}))
+     == ["facts.block_mismatch"]),
+    ("★ facts.copied_value",
+     lambda: codes(LED, "speed is 4752 times\n" + render_block(LED))
+     == ["facts.copied_value"]),
+    ("★ facts.missing_key_cite",
+     lambda: codes(LED, "see [[nope]]\n" + render_block(LED))
+     == ["facts.missing_key_cite"]),
+    # ② 反向判据（issue #24）：从没进过台账的数字也要有出处
+    ("★ facts.bare_number_unaccounted",
+     lambda: codes(LED, "measured 99887766 but not in ledger.\n"
+                    + render_block(LED))
+     == ["facts.bare_number_unaccounted"]
+     and any("99887766" in str(p) for p in problems(
+         LED, "measured 99887766 but not in ledger.\n" + render_block(LED))),
+     ),
+    ("facts.cite_counts_as_provenance",
+     lambda: problems(LED, "see [[count]] = 99887766\n"
+                      + render_block(LED)) == []),
+    # ③ 空输入必须报
+    ("★ facts.empty_ledger",
+     lambda: codes({"facts": {}}, good) == ["facts.empty_ledger"]),
+    ("★ facts.no_block_markers",
+     lambda: codes(LED, "a document with no block at all")
+     == ["facts.no_block_markers"]),
     ]
+
+
+def _cases_naked(fx):
+    """见 `_cases()`：本组 7 条。"""
+    good, numberless, fifty, codes, pack_lang, real_pack, pack_placeholders = (fx["good"], fx["numberless"], fx["fifty"], fx["codes"], fx["pack_lang"], fx["real_pack"], fx["pack_placeholders"])
+    return [
+    ("facts.small_int_exempt",
+     lambda: problems(numberless, "there are 3\n"
+                      + render_block(numberless)) == []),
+    ("facts.shape_whitelist",
+     lambda: problems(LED, "v11.3.0 and sha256 and 2026-10-31\n"
+                      + render_block(LED)) == []),
+    ("★ facts.bare_sha_needs_context",
+     lambda: codes(LED, "just wrote 99887766\n" + render_block(LED))
+     == ["facts.bare_number_unaccounted"]),
+    # ④ 裸数字判据扩展（issue #3 ④）
+    ("facts.fenced_exempt",
+     lambda: problems(LED, "```\nspeed is 4752 times\n```\n"
+                      + render_block(LED)) == []),
+    ("facts.inline_code_exempt",
+     lambda: problems(LED, "see `4752` times\n" + render_block(LED)) == []),
+    ("facts.below_threshold_exempt",
+     lambda: problems(fifty, "there are 50\n" + render_block(fifty)) == []),
+    ("★ facts.threshold_knob",
+     lambda: codes(fifty, "there are 50\n" + render_block(fifty), bare_min=10)
+     == ["facts.copied_value"]
+     and "50" in str(problems(fifty, "there are 50\n" + render_block(fifty),
+                              bare_min=10)[0])),
+    ]
+
+
+def _cases_pack(fx):
+    """见 `_cases()`：本组 1 条。"""
+    good, numberless, fifty, codes, pack_lang, real_pack, pack_placeholders = (fx["good"], fx["numberless"], fx["fifty"], fx["codes"], fx["pack_lang"], fx["real_pack"], fx["pack_placeholders"])
+    return [
+    ("facts.pack_entry_wired",
+     # 真实包里「无出处」这条必须存在、且**接收该 code 实际发的那两个参数**
+     # （删掉这条 code / 改坏占位名 ⇒ 这条红）。断言只用 ASCII 锚点（code 名 +
+     # 占位名）—— 中文锚点会把自己变成「本体里的自然语言」，正是零语言闸门
+     # 要消灭的形状；语义是否仍说「怎么修」由包 diff 审查承担。
+     # **条件判据**：装了包就必须完整（删条目 / 改坏占位名 ⇒ 这条红）；
+     # 零包（合法态：用户没装任何语言）⇒ 无对象可验，理据真空成立。
+     # 真仓永远有包，所以这条在真环境里必然真考。
+     lambda: not pack_lang or
+     pack_placeholders("facts.bare_number_unaccounted")
+     == {"line", "number"}),
+    ]
+
+
+def _cases_misc(fx):
+    """见 `_cases()`：本组 1 条。"""
+    good, numberless, fifty, codes, pack_lang, real_pack, pack_placeholders = (fx["good"], fx["numberless"], fx["fifty"], fx["codes"], fx["pack_lang"], fx["real_pack"], fx["pack_placeholders"])
+    return [
+    ("★ facts.bare_number_outside_fence",
+     lambda: codes(LED, "```\n4752\n```\nspeed is 4752 times\n"
+                    + render_block(LED)) == ["facts.copied_value"]),
+    ]
+
+
+def _cases():
+    """拼装四组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    fx = _cases_fixture()
+    return (
+    _cases_core(fx)
+    + _cases_naked(fx)
+    + _cases_pack(fx)
+    + _cases_misc(fx)
+    )
 
 
 GATE = meta("事实闸门", "块一致性 / 裸数字 / 坏引用",
