@@ -301,7 +301,8 @@ def run(argv=None):
     return 0
 
 
-def _cases():
+def _cases_fixture():
+    """探针夹具 + 规格正文。返回 dict，喂给五个分组函数。"""
     ok_probe = lambda c, t: (True, "")           # noqa: E731
 
     def down_probe(c, t):
@@ -331,88 +332,145 @@ def _cases():
         down_labels(good, probe=p, timeout=5.5)
         return seen == [5.5, 5.5, 5.5]
 
+    return {"ok_probe": ok_probe, "down_probe": down_probe,
+            "good": good, "timeout_threaded": timeout_threaded}
+
+
+def _cases_spec(fx):
+    """见 `_cases()`：本组 6 条。"""
+    ok_probe, down_probe = fx["ok_probe"], fx["down_probe"]
+    good = fx["good"]
+    timeout_threaded = fx["timeout_threaded"]
     return [
-        # ① 正常不报
-        ("doctor.valid_spec_all_alive",
-         lambda: spec_problems(good) == []
-         and down_labels(good, probe=ok_probe) == []),
-        ("doctor.http_verdict_ok",
-         lambda: _http_verdict(
-             200, {"cross-origin-opener-policy": "same-origin"},
-             good[0]) == (True, "")),
-        ("doctor.docker_verdict_ok",
-         lambda: _docker_verdict("true\n") == (True, "")),
-        ("doctor.port_free_verdict_ok",
-         lambda: _port_free_verdict(False) == (True, "")),
-        # ② 该报的必须报
-        ("★ doctor.http_status_mismatch",
-         lambda: _http_verdict(500, {}, good[0])[0] is False
-         and _http_verdict(500, {}, good[0])[1].code
-         == "doctor.http_status_mismatch"),
-        ("★ doctor.http_header_missing",
-         lambda: _http_verdict(200, {}, good[0])[0] is False
-         and _http_verdict(200, {}, good[0])[1].code
-         == "doctor.http_header_mismatch"),
-        ("★ doctor.http_header_value_mismatch",
-         lambda: _http_verdict(
-             200, {"cross-origin-opener-policy": "credentials"},
-             good[0])[0] is False),
-        ("★ doctor.container_not_running",
-         lambda: _docker_verdict("false")[0] is False
-         and _docker_verdict("false")[1].code
-         == "doctor.container_not_running"),
-        ("★ doctor.port_in_use",
-         lambda: _port_free_verdict(True)[0] is False
-         and _port_free_verdict(True)[1].code == "doctor.port_in_use"),
-        ("★ doctor.down_label_names_the_target",
-         # 只钉**用例名宣称**的那件事（label 指向目标）；`detail` 是夹具
-         # probe 的透传，钉进整字典会让这条断言随夹具改字而红。
-         lambda: [p.code for p in down_labels([good[1]], probe=down_probe)
-                  ] == ["doctor.down_label"]
-         and down_labels([good[1]], probe=down_probe)[0].params["label"]
-         == "docker:o113"),
-        ("★ doctor.empty_spec",
-         lambda: [p.code for p in spec_problems([])] == ["doctor.empty_spec"]),
-        ("★ doctor.missing_kind",
-         lambda: [p.code for p in spec_problems([{"why": "w"}])
-                  ] == ["doctor.missing_kind"]),
-        ("★ doctor.unknown_kind",
-         lambda: [p.code for p in spec_problems(
-             [{"kind": "smtp", "why": "w"}])] == ["doctor.unknown_kind"]),
-        ("★ doctor.missing_why",
-         lambda: [p.code for p in spec_problems(
-             [{"kind": "http", "url": "http://x/"}])] == ["doctor.missing_why"]),
-        ("★ doctor.http_missing_url",
-         lambda: [p.code for p in spec_problems(
-             [{"kind": "http", "why": "w"}])] == ["doctor.http_missing_url"]),
-        ("★ doctor.docker_bad_state",
-         lambda: [p.code for p in spec_problems(
-             [{"kind": "docker", "container": "c",
-               "state": "paused", "why": "w"}])] == ["doctor.docker_bad_state"]),
-        ("★ doctor.port_not_in_range",
-         lambda: [p.code for p in spec_problems(
-             [{"kind": "port-free", "port": 70000,
-               "why": "w"}])] == ["doctor.port_not_in_range"]),
-        ("★ doctor.http_status_not_int",
-         lambda: [p.code for p in spec_problems(
-             [{"kind": "http", "url": "http://x/",
-               "expect_status": "200", "why": "w"}])
-             ] == ["doctor.http_status_not_int"]),
-        ("★ doctor.http_headers_not_object",
-         lambda: [p.code for p in spec_problems(
-             [{"kind": "http", "url": "http://x/",
-               "expect_headers": ["a"], "why": "w"}])
-             ] == ["doctor.http_headers_not_object"]),
-        ("★ doctor.docker_missing_container",
-         lambda: [p.code for p in spec_problems(
-             [{"kind": "docker", "state": "running", "why": "w"}])
-             ] == ["doctor.docker_missing_container"]),
-        ("★ doctor.timeout_passed_to_every_probe",
-         lambda: timeout_threaded()),
-        # ③ 空输入必须报
-        ("★ doctor.empty_spec_none",
-         lambda: [p.code for p in spec_problems(None)] == ["doctor.empty_spec"]),
+    # ① 正常不报
+    ("doctor.valid_spec_all_alive",
+     lambda: spec_problems(good) == []
+     and down_labels(good, probe=ok_probe) == []),
+    ("★ doctor.empty_spec",
+     lambda: [p.code for p in spec_problems([])] == ["doctor.empty_spec"]),
+    ("★ doctor.missing_kind",
+     lambda: [p.code for p in spec_problems([{"why": "w"}])
+              ] == ["doctor.missing_kind"]),
+    ("★ doctor.unknown_kind",
+     lambda: [p.code for p in spec_problems(
+         [{"kind": "smtp", "why": "w"}])] == ["doctor.unknown_kind"]),
+    ("★ doctor.missing_why",
+     lambda: [p.code for p in spec_problems(
+         [{"kind": "http", "url": "http://x/"}])] == ["doctor.missing_why"]),
+    # ③ 空输入必须报
+    ("★ doctor.empty_spec_none",
+     lambda: [p.code for p in spec_problems(None)] == ["doctor.empty_spec"]),
     ]
+
+
+def _cases_http(fx):
+    """见 `_cases()`：本组 7 条。"""
+    ok_probe, down_probe = fx["ok_probe"], fx["down_probe"]
+    good = fx["good"]
+    timeout_threaded = fx["timeout_threaded"]
+    return [
+    ("doctor.http_verdict_ok",
+     lambda: _http_verdict(
+         200, {"cross-origin-opener-policy": "same-origin"},
+         good[0]) == (True, "")),
+    # ② 该报的必须报
+    ("★ doctor.http_status_mismatch",
+     lambda: _http_verdict(500, {}, good[0])[0] is False
+     and _http_verdict(500, {}, good[0])[1].code
+     == "doctor.http_status_mismatch"),
+    ("★ doctor.http_header_missing",
+     lambda: _http_verdict(200, {}, good[0])[0] is False
+     and _http_verdict(200, {}, good[0])[1].code
+     == "doctor.http_header_mismatch"),
+    ("★ doctor.http_header_value_mismatch",
+     lambda: _http_verdict(
+         200, {"cross-origin-opener-policy": "credentials"},
+         good[0])[0] is False),
+    ("★ doctor.http_missing_url",
+     lambda: [p.code for p in spec_problems(
+         [{"kind": "http", "why": "w"}])] == ["doctor.http_missing_url"]),
+    ("★ doctor.http_status_not_int",
+     lambda: [p.code for p in spec_problems(
+         [{"kind": "http", "url": "http://x/",
+           "expect_status": "200", "why": "w"}])
+         ] == ["doctor.http_status_not_int"]),
+    ("★ doctor.http_headers_not_object",
+     lambda: [p.code for p in spec_problems(
+         [{"kind": "http", "url": "http://x/",
+           "expect_headers": ["a"], "why": "w"}])
+         ] == ["doctor.http_headers_not_object"]),
+    ]
+
+
+def _cases_docker(fx):
+    """见 `_cases()`：本组 4 条。"""
+    ok_probe, down_probe = fx["ok_probe"], fx["down_probe"]
+    good = fx["good"]
+    timeout_threaded = fx["timeout_threaded"]
+    return [
+    ("doctor.docker_verdict_ok",
+     lambda: _docker_verdict("true\n") == (True, "")),
+    ("★ doctor.container_not_running",
+     lambda: _docker_verdict("false")[0] is False
+     and _docker_verdict("false")[1].code
+     == "doctor.container_not_running"),
+    ("★ doctor.docker_bad_state",
+     lambda: [p.code for p in spec_problems(
+         [{"kind": "docker", "container": "c",
+           "state": "paused", "why": "w"}])] == ["doctor.docker_bad_state"]),
+    ("★ doctor.docker_missing_container",
+     lambda: [p.code for p in spec_problems(
+         [{"kind": "docker", "state": "running", "why": "w"}])
+         ] == ["doctor.docker_missing_container"]),
+    ]
+
+
+def _cases_port(fx):
+    """见 `_cases()`：本组 3 条。"""
+    ok_probe, down_probe = fx["ok_probe"], fx["down_probe"]
+    good = fx["good"]
+    timeout_threaded = fx["timeout_threaded"]
+    return [
+    ("doctor.port_free_verdict_ok",
+     lambda: _port_free_verdict(False) == (True, "")),
+    ("★ doctor.port_in_use",
+     lambda: _port_free_verdict(True)[0] is False
+     and _port_free_verdict(True)[1].code == "doctor.port_in_use"),
+    ("★ doctor.port_not_in_range",
+     lambda: [p.code for p in spec_problems(
+         [{"kind": "port-free", "port": 70000,
+           "why": "w"}])] == ["doctor.port_not_in_range"]),
+    ]
+
+
+def _cases_misc(fx):
+    """见 `_cases()`：本组 2 条。"""
+    ok_probe, down_probe = fx["ok_probe"], fx["down_probe"]
+    good = fx["good"]
+    timeout_threaded = fx["timeout_threaded"]
+    return [
+    ("★ doctor.down_label_names_the_target",
+     # 只钉**用例名宣称**的那件事（label 指向目标）；`detail` 是夹具
+     # probe 的透传，钉进整字典会让这条断言随夹具改字而红。
+     lambda: [p.code for p in down_labels([good[1]], probe=down_probe)
+              ] == ["doctor.down_label"]
+     and down_labels([good[1]], probe=down_probe)[0].params["label"]
+     == "docker:o113"),
+    ("★ doctor.timeout_passed_to_every_probe",
+     lambda: timeout_threaded()),
+    ]
+
+
+def _cases():
+    """拼装五组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    fx = _cases_fixture()
+    return (
+    _cases_spec(fx)
+    + _cases_http(fx)
+    + _cases_docker(fx)
+    + _cases_port(fx)
+    + _cases_misc(fx)
+    )
 
 
 GATE = meta("开工预检 doctor",
