@@ -96,8 +96,8 @@ RULES = (
          # 漏掉另外 15 道也照样绿（review 实测：查 1 道与查 16 道都得 0）。
          # 那是恒真空转，正是本仓最恨的形状。
          "python3 -c \"import sys;sys.path.insert(0,'zreflect');"
-         "import registry;gs=registry.gates()[0];"
-         "p=registry.off_reason_problems(gs);"
+         "import registry, criteria;gs=registry.gates()[0];"
+         "p=criteria.off_reason_problems(gs);"
          "print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));"
          "sys.exit(0 if gs and not p else 1)\""),
 

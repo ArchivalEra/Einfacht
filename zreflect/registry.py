@@ -36,6 +36,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import criteria                                      # noqa: E402
 import gate                                            # noqa: E402
 from gate import module_meta, fatal, repo, main_selftest_or  # noqa: E402
 from i18n import M                                        # noqa: E402
@@ -382,490 +383,40 @@ def problems(gs, missing, mods=None, mods_missing=None,
     out += _selftest_roster_problems(mods, mods_missing)
     out += _undeclared_module_problems(undeclared)
     out += _knob_problems(knob_problems, gs)
-    out += off_reason_problems(gs)
-    out += trailing_newline_problems()
-    out += shell_surface_problems()
+    out += criteria.off_reason_problems(gs)
+    out += criteria.trailing_newline_problems()
+    out += criteria.shell_surface_problems()
     # ⚠️ 注入模式（`mods=` 给了）下**不扫死接口**：那条判据看的是真目录，
     # 注入模式验的是「名录判据本身」，两者混在一张清单里会让断言被真仓状态
     # 连坐（实测：`unknown_phase` 的断言多出一条 `dead_interface`）。
     if mods is None:
-        out += dead_interface_problems()
+        out += criteria.dead_interface_problems()
     return out
 
 
-def dead_interface_problems(zdir=None):
-    """**零消费者的公开函数** —— 「严查多余接口」的机器判据。
-
-    为什么值得一条判据：手工枚举全仓公开函数、逐个 grep 调用点，能找出死接口
-    但很慢，且下次新增的没人查。本仓已有 `dependency_coverage_problems`
-    管「被消费但零断言」（哑火环节）；这条管**反方向**：定义了却没人用
-    （僵尸接口）。
-
-    判据（全发现式）：
-      · 平台模块（`zreflect/*.py`，非 `check_*`）里**不以 `_` 开头**的顶层函数；
-      · 该名字在**其它任何 .py** 里出现（`mod.fn` / `from mod import fn` / 直接调用）；
-      · 也允许它被**自己的 `_cases()`** 用到（那是内部缝 / 自证专用助手）；
-      · 三者都没有 ⇒ 报。
-
-    诚实边界：
-      · 只看 `.py`。shell 脚本调 Python 函数不算（全 Python 化之后没有了）。
-      · 不区分「本该公开」与「本该私有」—— 零消费就是零消费，改名或删掉都对。
-      · 豁免：`run` / `main` / `problems` 这类**契约名**（每个闸门都必须有，
-        由 `main_selftest_or` 或 `__main__` 调用 —— 它们在**同文件**里被用，
-        所以本来就不会被报）。
-    """
-    import ast                                           # noqa: PLC0415
-    import os                                            # noqa: PLC0415
-    d = zdir if zdir is not None else gate.zdir()
-    # ① 收集平台模块的公开顶层函数
-    cand = {}
-    own_text = {}
-    for n in sorted(os.listdir(d)):
-        if not n.endswith(".py") or n.startswith("check_"):
-            continue
-        try:
-            text = open(os.path.join(d, n), encoding="utf-8").read()
-            tree = ast.parse(text)
-        except (OSError, SyntaxError):
-            continue
-        own_text[n] = text
-        for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) \
-                    and not node.name.startswith("_"):
-                cand.setdefault(node.name, n)
-    # ② 全仓（含 .zcode / reflect-hooks）的引用文本
-    # ⚠️ 记**文件名**而不是文本：按字符串身份（`is`）跳过自身永远失效
-    # （Python 不保证两个相等字符串是同一对象）—— 实测：植入一个零消费函数
-    # 判据仍然报 clean。按名字排除才可靠。
-    corpus = []          # [(文件名, 文本)]
-    root = os.path.dirname(d)
-    for sub in ("zreflect", ".zcode", "reflect-hooks"):
-        base = os.path.join(root, sub)
-        if not os.path.isdir(base):
-            continue
-        for n in sorted(os.listdir(base)):
-            if n.endswith(".py"):
-                try:
-                    corpus.append((n, open(os.path.join(base, n),
-                                           encoding="utf-8").read()))
-                except OSError:
-                    continue
-    out = []
-    for fn, mod in sorted(cand.items()):
-        # 同文件里被调用几次？（定义本身算一次 match）
-        own = len(re.findall(r"\b%s\b" % re.escape(fn), own_text.get(mod, "")))
-        # 其它文件的引用
-        others = 0
-        for name, text in corpus:
-            if name == mod:
-                continue
-            if re.search(r"\b%s\b" % re.escape(fn), text):
-                others += 1
-        # 同文件里只用了一次（= 只有定义） ⇒ 死
-        if others == 0 and own <= 1:
-            out.append(M("registry.dead_interface", function=fn, module=mod))
-    return out
 
 
-# 允许存在的 shell 文件（**有界白名单**）。全 Python 化的目标下，shell 是例外，
-# 每一个例外都要有理由；新长出来的（或没登记的）⇒ 报。
-ALLOWED_SHELL = (
-    # 兼容薄壳：老仓的 `sh gates-selftest.sh` 仍有效（一行 exec、零文案）
-    "gates-selftest.sh",
-    # 钩子 env 插件：**必须**是 shell（被 `source` 以 export 变量），文案已走 M()
-    "reflect-hooks/einfacht-env.sh",
-    # 旧装法的两个钩子名（git 要求这两个名字，内容是一行 exec）
-    "reflect-hooks/pre-commit",
-    "reflect-hooks/pre-push",
-)
 
 
-def shell_surface_problems(repo_root=None):
-    """`.sh` 只许出现在 `ALLOWED_SHELL` 里 —— 全 Python 化的**守卫**。
-
-    为什么值得判据：本轮之前有 4 个 shell（662 行、67 处 `echo` 中文），它们
-    整份绕过了零语言制度（`check_i18n` 是 AST 扫描器，只认 `.py`）。把它们搬进
-    Python 之后，若不设守卫，下次又会有人「顺手写个 .sh」—— 然后同样的事故
-    重演。白名单是**有界的**：每个例外都必须写在这里，且必须有理由。
-    """
-    import os                                            # noqa: PLC0415
-    root = repo_root or gate.GATE_REPO
-    out = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        if "/.git" in dirpath or "/node_modules" in dirpath:
-            continue
-        for n in filenames:
-            if not n.endswith(".sh"):
-                continue
-            rel = os.path.relpath(os.path.join(dirpath, n), root)
-            if rel not in ALLOWED_SHELL:
-                out.append(M("registry.unexpected_shell", file=rel))
-    return out
 
 
-def trailing_newline_problems(zdir=None):
-    """`.py` 文件必须以换行结尾。
-
-    为什么值得一条判据：`py_lines` 这个事实有**两条**量法 —— `facts.measure()`
-    用 `open()` 逐行数（保留最后那个无换行的行），台账里的 `cmd` 用
-    `cat | wc -l`（只数换行符）。一个没有末尾换行的文件让两者差 1，
-    于是 `check_facts_replay` **永远红**，而红的原因与代码毫无关系。
-    实测踩了**四次**（每次都是新建文件时写入器没补末尾换行）。
-
-    修的是根：文件该有末尾换行（POSIX 文本定义，也是 diff 工具的前提）。
-    判据报出来，人补一行即可。
-    """
-    import os                                            # noqa: PLC0415
-    base = zdir or gate.zdir()
-    out = []
-    try:
-        names = sorted(os.listdir(base))
-    except OSError:
-        return out
-    for n in names:
-        if not n.endswith(".py"):
-            continue
-        p = os.path.join(base, n)
-        try:
-            with open(p, "rb") as fh:
-                fh.seek(0, os.SEEK_END)
-                if fh.tell() == 0:
-                    continue                 # 空文件不在这条判据的射程内
-                fh.seek(-1, os.SEEK_END)
-                last = fh.read(1)
-        except OSError:
-            continue
-        if last != b"\n":
-            out.append(M("registry.no_trailing_newline", file=n))
-    return out
 
 
-MUST_REASON_MIN = 8      # off 理由的最短字数（同 `PINNED:` 的纪律）
 
 
-def off_reason_problems(gs, sources=None):
-    """C4 对账⑥：**会 `off()` 的闸门必须声明它为何可以未启用**。
-
-    为什么这条需要判据：本仓真的有过「8/13 道 off 而『全绿』不可见」的历史
-    （C2 的教训）。`off` 是合法状态，但**没有理由的 off** 与「本仓根本不用这套
-    机制」不可区分 —— 于是「闸门永远不跑」可以伪装成「设计如此」。
-
-    判据（三向，AST）：
-      · 源码里**会调 `off(`** 但声明行没有 `off_reason`（或太短）⇒ 报
-      · 声明行有 `off_reason` 但源码**从不调 `off(`** ⇒ 报（谎言：理由白写）
-    发现式：扫 `gs`（registry 已抽好的声明）+ 各文件源码，不写任何名录。
-    """
-    import ast                                           # noqa: PLC0415
-    out = []
-    for g in gs:
-        rel = g["file"]
-        reason = g.get("off_reason")
-        # 源码读不到**不该跳过整条判据**：理由真实性（下面 `_reason_files`）
-        # 不依赖源码，只依赖「仓里有没有那个文件」。此前 `continue` 会让
-        # 读不到源码的闸门绕过全部三向检查（自证随手的 fixture 就撞上）。
-        text = None
-        if sources is not None:
-            text = sources.get(rel)
-        else:
-            try:
-                text = open(os.path.join(gate.GATE_REPO, rel),
-                            encoding="utf-8", errors="replace").read()
-            except OSError:
-                text = None
-        # 更精确：AST 找 `off(...)` 调用（排除定义处与注释）
-        calls_off = False
-        if text is not None:
-            try:
-                tree = ast.parse(text)
-                calls_off = any(isinstance(n, ast.Call)
-                                and getattr(n.func, "id", "") == "off"
-                                for n in ast.walk(tree))
-            except SyntaxError:
-                calls_off = False
-        # ⚠️ **读不到源码 ≠ 不调 off**：夹具仓里没有该文件时 `text` 为 None，
-        # 若把 `calls_off=False` 当真就会报一堆假的「理由白写」（实测：
-        # `GATE_REPO=$tmp registry --gates` 报 8 条）。源码读不到时**只做
-        # 理由真实性检查**，跳过「有没有调 off」这一向。
-        if text is not None:
-            if calls_off and not reason:
-                out.append(M("registry.off_without_reason", file=rel))
-            elif calls_off and reason and len(str(reason).strip()) < MUST_REASON_MIN:
-                out.append(M("registry.off_reason_too_short",
-                             file=rel, reason=str(reason)))
-            elif not calls_off and reason:
-                out.append(M("registry.off_reason_without_off", file=rel))
-        # **理由真实性**：理由里点名「本仓没有 X.json」——那 X.json 若实际存在，
-        # 理由就已经失效（闸门早该启用而没启用）。第 17 轮补的对称判据：
-        # 第 12 轮只要求「必须有理由」，没要求「理由得是真的」。
-        for tok, exists in _reason_files(reason):
-            if exists:
-                out.append(M("registry.off_reason_stale", file=rel,
-                             name=tok))
-    return out
 
 
 _FILE_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.[A-Za-z0-9]+")
 
 
-# 名字型旋钮的合法落点：仓根 + `reflect-hooks/`（后者优先）。
-# 与 `reflect-hooks/einfacht-env.sh` 同一口径（它先找钩子目录、再找仓根）。
-_REASON_BASES = ("", "reflect-hooks")
 
 
-def reason_bases_agree(hook=False):
-    """C4 对账⑦：`_REASON_BASES` 必须与 `einfacht-env.sh` 的载体查找口径一致。
-
-    `einfacht-env.sh` 先找**钩子目录**、再找**仓根**（两个位置）。本文件的
-    `_REASON_BASES`（理由真实性判据的合法落点）必须与它同口径 —— 否则
-    「载体真住在 reflect-hooks/ 却判据只看仓根」会让失效的理由漏判（第 18 轮
-    实测过）。
-
-    判据是**行为级**的，不是文本匹配：在临时仓里两个位置各放一份载体，
-    要求 `_reason_files` 都能看见。这样不依赖 `einfacht-env.sh` 的具体写法
-    （它改成 `.env` 后缀或换变量名都不会误伤）。
-
-    `hook` 可注入（自证用假实现）。默认跑真代码。
-    """
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
-    probe = hook or _reason_files
-    d = tempfile.mkdtemp()
-    try:
-        name = "ProbeCarrier" + ".env"                   # 拼接构造
-        reason = "no " + name + " here"
-        ok_both = True
-        for base in ("", "reflect-hooks"):
-            target = os.path.join(d, base) if base else d
-            if base:
-                os.makedirs(target, exist_ok=True)
-            path = os.path.join(target, name)
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write("export X=1\n")
-            try:
-                got = probe(reason, repo_root=d)
-            finally:
-                os.remove(path)
-            if not got or not got[0][1]:
-                ok_both = False
-        return ok_both
-    finally:
-        shutil.rmtree(d, True)
 
 
-def _reason_files(reason, repo_root=None):
-    """`off_reason` 里提到的文件名 → [(名字, 该文件是否存在于**任一合法落点**)]。
-
-    只认「带扩展名的 token」（`ab.json` / `Einfacht.env` / `world.json`），
-    不认句子里的普通词 —— 否则「本仓不做 A/B 对照」会被切成假文件名。
-
-    ⚠️ **两处都要查**：`Einfacht.env` 可以住在仓根**或** `reflect-hooks/`
-    （`einfacht-env.sh` 就是先看钩子目录、再看仓根的）。此前只查仓根 ⇒
-    载体真放进 `reflect-hooks/` 时判据漏判（实测：`off_reason_problems` 返回
-    `[]`，而那正是「理由已失效」的情形）。
-    """
-    if not reason:
-        return []
-    root = repo_root if repo_root is not None else gate.GATE_REPO
-    out = []
-    for tok in _FILE_TOKEN.findall(str(reason)):
-        found = any(os.path.exists(os.path.join(root, base, tok))
-                    for base in _REASON_BASES)
-        out.append((tok, found))
-    return out
 
 
-def path_rule_problems(sources=None):
-    """C4 对账⑧：**「工具的 zreflect/」只能有一个产地**。
-
-    此前 `knobs._zdir()` / `registry._zdir()` / `i18n` 的 `_TOOL_DIR` 各自
-    `dirname(abspath(__file__))` 算一遍 —— 今天同值（靠巧合），改任一处就会
-    分裂。location 规则与所有「必须一致」同款：**得有一个产地 + 一个对账器**。
-
-    判据（AST，发现式）：扫描面里出现 `dirname(os.path.abspath(__file__))`
-    这种**自算工具目录**的地方，除 `gate.py`（唯一产地在它）外都报。
-    `i18n` 的懒代理 `return gate.zdir()` 不算自算（它没有那个表达式）。
-    """
-    import ast                                           # noqa: PLC0415
-    out = []
-    base = gate.zdir()
-    # `sources` 给了 ⇒ **只扫那些**（自证注入假文件系统）；否则扫真目录。
-    if sources is not None:
-        items = sorted(sources.items())
-    else:
-        items = []
-        for n in sorted(os.listdir(base)):
-            if not n.endswith(".py"):
-                continue
-            try:
-                items.append((n, open(os.path.join(base, n),
-                                      encoding="utf-8").read()))
-            except OSError:
-                continue
-    for n, text in items:
-        if n == "gate.py":
-            continue                    # gate.py 是唯一产地，它自己有
-        # ⚠️ **只抓「作为返回值的自算」**，不抓 `sys.path.insert(0, …)` ——
-        # 后者是**导入引导**（每个闸门顶部都有，22 处），它不表达「工具目录
-        # 是什么」，只是让脚本能找到兄弟模块。抓它会把判据变成 22 条噪音。
-        # 判据形状：函数体里 `return dirname(abspath(__file__))`。
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            continue
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.FunctionDef):
-                continue
-            for sub in ast.walk(node):
-                if isinstance(sub, ast.Return) and sub.value is not None \
-                        and "dirname(os.path.abspath(__file__)" in ast.unparse(sub.value):
-                    out.append(M("registry.path_rule_split", file=n,
-                                 function=node.name))
-                    break
-    return out
 
 
-def dependency_coverage_problems(zdir=None, sources=None):
-    """C4 对账⑨：**被闸门消费的平台函数，必须在某处有断言**。
-
-    为什么：第 24 轮发现 `living.living_lines()` 被 `check_stale` /
-    `check_retractions` 消费，而它**自身零断言** —— 判错了，那两道闸门的判据
-    全部失效，而它们各自的自证照样绿。一个被消费但没被测的模块，是依赖链上的
-    哑火环节。
-
-    判据（全发现式，不写名单）：
-      · 消费关系：`check_*.py` / `doctor.py` 里**真的引用**了某个平台模块的
-        顶层函数（`mod.fn(` 或 `from mod import fn`）
-      · 断言面：该函数的模块自己的 `_cases()`，或 `registry._cases()`
-    两者都没有 ⇒ 报。
-
-    诚实边界：AST 只看「引用」，看不出「引用得对不对」；注释/docstring 里的
-    提及不算引用（用 `Name`/`Attribute` 节点，不扫文本）。
-    """
-    import ast                                           # noqa: PLC0415
-    d = zdir if zdir is not None else gate.zdir()
-    # 平台模块（非 check_）的顶层公开函数
-    platform = {}
-    gate_cases = ""
-    files = {}
-    # ⚠️ `sources` 注入 ⇒ 遍历**注入的 key**，不是真目录的 `listdir` ——
-    # 此前遍历真目录再 `sources.get(n)`，夹具里那些文件不在真仓就全被跳过
-    # （实测：fake 永远返回 []，判据的隔离模式等于没跑）。
-    if sources is not None:
-        names = sorted(sources)
-    else:
-        try:
-            names = sorted(os.listdir(d))
-        except OSError:
-            return []
-    for n in names:
-        if not n.endswith(".py"):
-            continue
-        if sources is not None:
-            text = sources.get(n)
-            if text is None:
-                continue
-        else:
-            try:
-                text = open(os.path.join(d, n), encoding="utf-8").read()
-            except OSError:
-                continue
-        files[n] = text
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            continue
-        if n.startswith("check_") or n == "doctor.py":
-            continue
-        fn = {f.name for f in tree.body if isinstance(f, ast.FunctionDef)
-              and not f.name.startswith("_")}
-        if fn:
-            platform[n[:-3]] = fn
-        if n == "registry.py":
-            gate_cases = text
-    # 断言面：**AST 节点**，不是文本。收集每个 `_cases()` 体里被**读取**
-    # （Load）的名字集合 —— 这样「函数名出现在夹具字符串里」不算断言。
-    # ⚠️ 此前用子串匹配，`helper` 出现在我自己的 fake 源码字符串里就被当成
-    # 「已断言」⇒ 判据永远不报（实测：fake 返回 []）。
-    # 这是第 19–24 轮反复出现的同一个病：**文本匹配代替结构匹配**。
-    asserted = set()
-    # ⚠️ `sources` 注入 ⇒ **完全隔离**：只用注入的源码做断言面。
-    # 此前还会合并真 `registry._cases`，于是夹具里随便一个常见函数名都会被
-    # 真仓的断言「假装」覆盖（实测：fake 永远返回 []）。
-    case_bodies = [t for t in files.values() if "def _cases(" in t]
-    for text in case_bodies:
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            continue
-        # `_cases()` **以及它调用的同文件 helper** —— 断言的实质常常住在
-        # helper 里（`_living_case("…")` / `_timeout_falls_back()`），只扫
-        # `_cases` 本身会把它们当成「没断言」（实测：真仓报 living_lines /
-        # default_timeout，而那两条刚补过）。
-        tops = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
-        roots = [n for n in tops.values() if n.name == "_cases"]
-        if not roots:
-            continue
-        pending = list(roots)
-        seen = set()
-        while pending:
-            node = pending.pop()
-            if node.name in seen:
-                continue
-            seen.add(node.name)
-            called = {c.func.id for c in ast.walk(node)
-                      if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
-            for cname in called:
-                if cname in tops:
-                    pending.append(tops[cname])
-            for n in ast.walk(node):
-                if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load):
-                    asserted.add(n.id)
-                elif isinstance(n, ast.Attribute) and isinstance(n.ctx, ast.Load):
-                    asserted.add(n.attr)
-    # 消费关系：只扫 check_* / doctor 的 Import 与属性访问
-    consumed = set()
-    consumers = {}
-    for n, text in files.items():
-        if not (n.startswith("check_") or n == "doctor.py"):
-            continue
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            continue
-        aliases = {}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module in platform:
-                for a in node.names:
-                    if a.name in platform[node.module]:
-                        consumed.add((node.module, a.name))
-                        consumers.setdefault((node.module, a.name), set()).add(n)
-            elif isinstance(node, ast.Import):
-                for a in node.names:
-                    if a.name in platform:
-                        aliases[a.asname or a.name] = a.name
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) \
-                    and isinstance(node.value, ast.Name):
-                mod = aliases.get(node.value.id, node.value.id)
-                if mod in platform and node.attr in platform[mod]:
-                    consumed.add((mod, node.attr))
-                    consumers.setdefault((mod, node.attr), set()).add(n)
-    # ⚠️ **框架 API 不要求断言**：`gate.meta` / `main_selftest_or` / `i18n.M`
-    # 被 16 个闸门**全部**消费 —— 它们是入口脚手架，不是某个闸门消费的
-    # 「领域函数」。要求它们的断言等于要求「框架给框架写测试」，那是自举。
-    # 判据只对**少数闸门消费**的领域函数生效（阈值：消费方 < 半数闸门）。
-    # 阈值用**绝对值**（≥3 个闸门共用 ⇒ 框架 API），不用「半数闸门」：
-    # 后者在单闸门夹具里退化成 1，会把夹具里唯一那个消费关系也当框架跳过
-    # （实测：fake 期望 1 条却返回 0）。
-    FRAMEWORK_MIN_GATES = 3
-    out = []
-    for mod, fn in sorted(consumed):
-        if fn in asserted:
-            continue
-        if len(consumers[(mod, fn)]) >= FRAMEWORK_MIN_GATES:
-            continue                    # 框架 API
-        out.append(M("registry.dependency_untested", module=mod, function=fn))
-    return out
 
 
 def _pinned_under(lang):
@@ -1145,7 +696,7 @@ def _off_reason_ok(_label, sources, ok, reason=None):
     import ast                                           # noqa: PLC0415
     body = sources["check_x.py"].replace("_off(", "off(")
     gs = [{"file": "check_x.py", "off_reason": reason}]
-    got = off_reason_problems(gs, sources={"check_x.py": body})
+    got = criteria.off_reason_problems(gs, sources={"check_x.py": body})
     return (got == []) if ok else (got != [])
 
 
@@ -1207,10 +758,10 @@ def _off_reason_stale_ok():
         old = gate.GATE_REPO
         gate.GATE_REPO = d
         try:
-            got = [p.code for p in off_reason_problems(gs, sources=src)]
+            got = [p.code for p in criteria.off_reason_problems(gs, sources=src)]
             # 文件不在的对照组：把 ab.json 删掉 ⇒ 不该有 stale
             os.remove(os.path.join(d, "ab.json"))
-            got2 = [p.code for p in off_reason_problems(gs, sources=src)]
+            got2 = [p.code for p in criteria.off_reason_problems(gs, sources=src)]
         finally:
             gate.GATE_REPO = old
         return got == ["registry.off_reason_stale"] and got2 == []
@@ -1235,7 +786,7 @@ def _stale_in_hooks_dir():
         old = gate.GATE_REPO
         gate.GATE_REPO = d
         try:
-            return [p.code for p in off_reason_problems(gs, sources=src)] \
+            return [p.code for p in criteria.off_reason_problems(gs, sources=src)] \
                 == ["registry.off_reason_stale"]
         finally:
             gate.GATE_REPO = old
@@ -1245,12 +796,12 @@ def _stale_in_hooks_dir():
 
 def _path_rule_single_source():
     """真仓只有 gate.py 自算工具目录；再造一份假的 ⇒ 必须报。"""
-    ok_real = path_rule_problems() == []
+    ok_real = criteria.path_rule_problems() == []
     # 判据只抓**函数体里的 return**（不是模块级赋值 —— 那是导入引导 / 常量）
     fake = {"splitter.py":
             "def f():\n"
             "    return os.path.dirname(os.path.abspath(__file__))\n"}
-    got = [p.code for p in path_rule_problems(sources=fake)]
+    got = [p.code for p in criteria.path_rule_problems(sources=fake)]
     return ok_real and got == ["registry.path_rule_split"]
 
 
@@ -1313,12 +864,12 @@ def _dead_interface_case():
         os.makedirs(d, exist_ok=True)
         open(os.path.join(d, "probe.py"), "w", encoding="utf-8").write(
             "def zzz_orphan():\n    return 1\n")
-        if not dead_interface_problems(zdir=d):
+        if not criteria.dead_interface_problems(zdir=d):
             return False
         # 加一个外部消费者 ⇒ 不该再报
         open(os.path.join(d, "check_probe.py"), "w", encoding="utf-8").write(
             "import probe\ndef run():\n    return probe.zzz_orphan()\n")
-        return dead_interface_problems(zdir=d) == []
+        return criteria.dead_interface_problems(zdir=d) == []
     finally:
         shutil.rmtree(root, True)
 
@@ -1329,11 +880,11 @@ def _unexpected_shell_case():
     d = tempfile.mkdtemp()
     try:
         open(os.path.join(d, "probe.sh"), "w").write("# probe\n")
-        if not shell_surface_problems(repo_root=d):
+        if not criteria.shell_surface_problems(repo_root=d):
             return False
         # 登记过的名字（路径相对根）不该报
         open(os.path.join(d, "gates-selftest.sh"), "w").write("# ok\n")
-        got = [str(p) for p in shell_surface_problems(repo_root=d)]
+        got = [str(p) for p in criteria.shell_surface_problems(repo_root=d)]
         return len(got) == 1 and "probe.sh" in got[0]
     finally:
         shutil.rmtree(d, True)
@@ -1355,10 +906,10 @@ def _trailing_newline_case():
     d = tempfile.mkdtemp()
     try:
         open(os.path.join(d, "bad.py"), "w").write("x = 1")
-        if not trailing_newline_problems(zdir=d):
+        if not criteria.trailing_newline_problems(zdir=d):
             return False
         open(os.path.join(d, "bad.py"), "w").write("x = 1\n")
-        return trailing_newline_problems(zdir=d) == []
+        return criteria.trailing_newline_problems(zdir=d) == []
     finally:
         shutil.rmtree(d, True)
 
@@ -1382,7 +933,7 @@ def _selftest_false_states_it():
 
 def _dependency_coverage_ok():
     """真仓：被消费的平台函数都有断言；再造一个「被消费但无断言」的 ⇒ 必须报。"""
-    ok_real = dependency_coverage_problems() == []
+    ok_real = criteria.dependency_coverage_problems() == []
     # 名字必须**全仓唯一**：`helper` 那种常见词会被真 registry._cases 里的
     # 同名变量命中 ⇒ 断言面「假装」覆盖了它（实测：fake 返回 []）。
     fake = {
@@ -1390,7 +941,7 @@ def _dependency_coverage_ok():
             "import probe\ndef run():\n    return probe.zzz_uniquely_named()\n",
         "probe.py": "def zzz_uniquely_named():\n    return 1\n",
     }
-    got = [p.code for p in dependency_coverage_problems(sources=fake)]
+    got = [p.code for p in criteria.dependency_coverage_problems(sources=fake)]
     return ok_real and got == ["registry.dependency_untested"]
 
 
@@ -1668,7 +1219,7 @@ def _cases_off_reason(fx):
     # 载体查找一致（钩子目录 + 仓根）。判据是行为级的：两个位置各放一份
     # 载体，两边都必须看得见。只查仓根 ⇒ RED。
     ("★ registry.reason_bases_match_env_plugin",
-     lambda: reason_bases_agree()),
+     lambda: criteria.reason_bases_agree()),
     ]
 
 
