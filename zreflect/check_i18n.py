@@ -128,115 +128,111 @@ def _is_output_call(node):
     return isinstance(f, ast.Name) and f.id in ("print", "off", "fatal", "finish")
 
 
+def _doc_nodes(tree):
+    """docstring 节点（豁免面①：docstring 不是写给用户的话）。"""
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
+            d = ast.get_docstring(node, clean=False)
+            if d:
+                for n in ast.walk(node):
+                    if isinstance(n, ast.Constant) and n.value == d:
+                        out.add(id(n))
+                        break
+    return out
+
+
+def _msg_consts(tree):
+    """`M(...)` 里的常量 id —— 那些是**合法位置**（消息走 M 就是对的）。"""
+    out = set()
+    for node in ast.walk(tree):
+        if _is_msg_call(node):
+            for n in ast.walk(node):
+                if isinstance(n, ast.Constant):
+                    out.add(id(n))
+    return out
+
+
+# 豁免形状①的调用名单：这些函数的实参是**声明数据 / 匹配器数据**，不是
+# 给用户看的句子。⚠️ 自证标题**不在**其中（用户裁决：选英文出中文不允许）。
+_EXEMPT_CALLS = ("meta", "module_meta", "Rule", "compile",
+                 "startswith", "endswith", "match", "search", "fullmatch", "find")
+
+
+def _exempt_ids(tree, name, src):
+    """**声明的**豁免面（不是猜的）。每一条都要说清为什么，否则豁免会变成
+    下一张会漂的手写名单。"""
+    out = set()
+    # ① 调用实参：`meta(…)` / `module_meta(…)` / `Rule(…)` / `re.compile(…)` 等
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            f = node.func
+            fn = getattr(f, "id", "") or getattr(f, "attr", "")
+            if fn in _EXEMPT_CALLS:
+                for n in ast.walk(node):
+                    if isinstance(n, ast.Constant):
+                        out.add(id(n))
+    # ② `PINNED:` 声明面（AUTO 机器块：固定语言、逐字节对账）。
+    #    按**声明**收编，不按名字 —— 手写名单一定会漂（deepening 第 8 轮）。
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if _declares_pinned(ast.get_docstring(node, clean=False)):
+                for n in ast.walk(node):
+                    if isinstance(n, ast.Constant):
+                        out.add(id(n))
+        elif isinstance(node, ast.Assign):
+            if _pinned_by_comment(src, node):
+                for n in ast.walk(node):
+                    if isinstance(n, ast.Constant):
+                        out.add(id(n))
+    # ③ 语言包装载器自身的错误（`i18n.py`）：`MissingPack` 的文案**不能用
+    #    M()**（循环依赖：M 依赖语言包，包坏了才抛它）。文件级豁免。
+    if name == "i18n.py":
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant):
+                out.add(id(node))
+    return out
+
+
+def _bare_text_problems(name, tree, src):
+    """一条源码里的**裸自然语言**（四类豁免之外、且不是 id 化标签）。"""
+    out = []
+    doc_nodes = _doc_nodes(tree)
+    msg_consts = _msg_consts(tree)
+    exempt = _exempt_ids(tree, name, src)
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            continue
+        v = node.value
+        if not cjk(v):
+            continue
+        if id(node) in doc_nodes or id(node) in msg_consts or id(node) in exempt:
+            continue
+        # 用户决策 1C：标签**以点分 id 开头**即可，后面可跟简短中文括注。
+        if re.match(r"^\s*(★\s*)?[a-z_][a-z0-9_]*(\.[a-z0-9_.]+)+", v):
+            continue
+        out.append(M("i18n_cover.bare_text",
+                     file=name, lineno=node.lineno, text=v[:40]))
+    return out
+
 def problems(paths):
     """纯函数：返回问题清单（空 = 零语言）。`paths` = [(名字, 源码文本)]。
 
     `paths` 可注入 ⇒ 自证用假源码，零文件 I/O。
+
+    四段（各是 helper）：`_doc_nodes` / `_msg_consts` / `_exempt_ids` /
+    `_bare_text_problems`。本函数只编排 —— 111 行 → 15 行。
     """
-    out = []
     if not paths:
         return [M("i18n_cover.empty_scan")]
+    out = []
     for name, src in paths:
         try:
             tree = ast.parse(src)
         except SyntaxError as e:
             out.append(M("i18n_cover.parse_error", file=name, error=e))
             continue
-        # 收集 docstring 节点（豁免）
-        doc_nodes = set()
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
-                d = ast.get_docstring(node, clean=False)
-                if d:
-                    for n in ast.walk(node):
-                        if isinstance(n, ast.Constant) and n.value == d:
-                            doc_nodes.add(id(n))
-                            break
-        # 收集「在 M(...) 里」的常量 id（合法位置）
-        msg_consts = set()
-        for node in ast.walk(tree):
-            if _is_msg_call(node):
-                for n in ast.walk(node):
-                    if isinstance(n, ast.Constant):
-                        msg_consts.add(id(n))
-        # 豁免面（**声明的、不是猜的**）：这些位置的 CJK 不是用户可见消息。
-        # 每一条都要说清为什么，否则「豁免」会变成下一张会漂的手写名单。
-        exempt_ids = set()
-        # ① `GATE = meta(名字, 描述…` / `MODULE = module_meta(…)` —— **声明数据**
-        #    （进 AUTO:GATES 机器块，用户决策：不进语言包）。
-        # ② `re.compile(...)` 的实参 —— **匹配器数据**（正则里的中文是判据，
-        #    不是要说给人听的话；check_stale 的 HIST_MARK 就是这类）。
-        # ⚠️ **自证标题曾在豁免里，已撤销**（用户裁决：「选英文出中文肯定不允许」，
-        #    自证标题确实打在屏幕上）。现在 13 个闸门的标题都走
-        #    `M("gate.title.<name>")` ⇒ 进语言包。豁免留在这里会给「写回中文
-        #    标题」放行 —— 那条豁免正是让英文模式漏中文的原因。
-        # 豁免形状①：「调用实参」——`meta(...)` / `re.compile(...)` 等
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                f = node.func
-                fn = getattr(f, "id", "") or getattr(f, "attr", "")
-                # `Rule(...)` 是**纪律声明数据**：它的 text/why 渲染进
-                # `PRINCIPLES.md` 的 AUTO:RULES 块（PINNED：固定语言、逐字节对账）。
-                # 与 `meta()` 的 desc 同一类 —— 声明面，不进语言包。
-                if fn in ("meta", "module_meta", "Rule",
-                          "compile", "startswith", "endswith", "match", "search",
-                          "fullmatch", "find"):
-                    for n in ast.walk(node):
-                        if isinstance(n, ast.Constant):
-                            exempt_ids.add(id(n))
-        # 豁免形状②：「PINNED 声明面」——AUTO 机器块渲染函数与常量。
-        # 文本**必须固定一种语言**（用户决策 #2：不算违规）—— 它写进 STATE.md
-        # 并被 --check 逐字节对账，跟随语言就「同一提交在不同环境结果不同」。
-        #
-        # ⚠️ **按声明收编，不按名字**（deepening 第 8 轮）：此前这里是两份硬编码
-        # 名单（函数名元组 + 常量名元组），本仓 AGENTS 明写「手写名录一定会漂」——
-        # 实测：新写一个返回中文的 PINNED 渲染器（`render_world_block`）⇒ 立刻被
-        # 误报为违规，除非有人记得回去改名单。
-        # 现在：**生产 PINNED 文本的地方自己声明** `PINNED:`（docstring 或
-        # 紧邻注释均可），本闸门扫标记。名字不再承重（与 C1 同一原则）。
-        # 豁免形状⑤：「语言包装载器自身的错误」—— `i18n.py` 里 `MissingPack`
-        # 的文案**不能用 M()**（循环依赖：M 依赖语言包，语言包坏了才抛它）。
-        # 这是设计上的合法例外，不是漏迁。文件级豁免，因为该文件通篇是
-        # 「语言包怎么装载」的机制，它的错误文案必然在语言包之外。
-        if name == "i18n.py":
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Constant):
-                    exempt_ids.add(id(node))
-        # ⚠️ 曾试图豁免整个 `_cases()` 函数体 —— **错了**：夹具里的源码样例
-        # （`GOOD`/`BARE`/`LABEL` 的多行字符串）正是本闸门自证要扫的对象，
-        # 豁免它们会让三条反向断言失效（实测踩到 2 PASS / 3 FAIL）。
-        # 夹具**源码文本**豁免，夹具**标签**不豁免 —— 后者按 1C 必须 id 化。
-        # 声明式收编：「PINNED:」出现在**该节点自己的 docstring** 里 ⇒ 整段豁免。
-        # 函数（渲染器）与模块级常量（机器块样板）都认同一套标记。
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if _declares_pinned(ast.get_docstring(node, clean=False)):
-                    for n in ast.walk(node):
-                        if isinstance(n, ast.Constant):
-                            exempt_ids.add(id(n))
-            elif isinstance(node, ast.Assign):
-                # 常量：`PINNED:` 可以写在紧邻的前置注释里（模块级常量的
-                # 「docstring」不存在）—— 用源码行区间回查。
-                if _pinned_by_comment(src, node):
-                    for n in ast.walk(node):
-                        if isinstance(n, ast.Constant):
-                            exempt_ids.add(id(n))
-
-        for node in ast.walk(tree):
-            if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
-                continue
-            v = node.value
-            if not cjk(v):
-                continue
-            if id(node) in doc_nodes or id(node) in msg_consts or id(node) in exempt_ids:
-                continue
-            # 用户决策 1C 的真实含义：标签**以点分 id 开头**即可，后面可以跟
-            # 简短的中文括注帮扫读。所以「已 id 化」的标签不算违规。
-            if re.match(r"^\s*(★\s*)?[a-z_][a-z0-9_]*(\.[a-z0-9_.]+)+",
-                        v):
-                continue
-            out.append(M("i18n_cover.bare_text",
-                         file=name, lineno=node.lineno, text=v[:40]))
+        out += _bare_text_problems(name, tree, src)
         out += _fixture_literal_problems(name, tree)
     return out
 
