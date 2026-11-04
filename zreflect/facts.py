@@ -435,6 +435,108 @@ def main(argv):
             return 2
         print(v)                       # 只打印值本身：不解释、不带前缀
         return 0
+    if argv and argv[0] == "--init":
+        # **新仓 bootstrap**：一次生成合格骨架，而不是让人照文档猜标记名。
+        #
+        # ⚠️ 这条是验收驱动的（子代理在全新仓里照 `AGENTS.md` 逐字做，卡在
+        # `FATAL: facts.doc_missing_render` —— 文档说「建 STATE.md」，
+        # 但没说它必须含 `<!-- AUTO:FACTS -->` / `<!-- AUTO:GATES -->`，
+        # 而那两个字符串只住在 `render.py` 源码里）。
+        #
+        # 它**不覆盖**已存在的文件（只补缺的），并且明确打印每一步做了什么。
+        import doc                                       # noqa: PLC0415
+        import registry as _reg                          # noqa: PLC0415
+        root = gate.GATE_REPO
+        state = doc.state_name()
+        created, kept = [], []
+        files = {
+            state: (
+                "# " + state + "\n\n"
+                "> live state: only what is true **now**. Cite numbers by\n"
+                "> key (double-bracket form), never hand-copy them.\n\n"
+                "## Now\n\n"
+                "<!-- write what is true NOW; cite numbers by key -->\n\n"
+                + BLOCK_BEGIN + "\n" + BLOCK_END + "\n\n"
+                + _reg.GATES_BEGIN + "\n" + _reg.GATES_END + "\n"),
+            doc.PRINCIPLES: (
+                "# PRINCIPLES\n\n"
+                "> design rules that do not change. Each one is a **runnable\n"
+                "> command**, replayed by `check_facts_replay` on every commit.\n\n"
+                + doc.RULES_BEGIN + "\n" + doc.RULES_END + "\n"),
+            "retractions.json": '{"schema": 1, "retractions": []}\n',
+            "README.md": (
+                "# " + os.path.basename(root) + "\n\n"
+                "> the project's human-facing docs. `check_readme_sync` treats the\n"
+                "> README trio as three copies of one assertion — if you add\n"
+                "> `README.zh.md` / `README.de.md`, keep all three in step.\n"),
+            "AGENTS.md": (
+                "# AGENTS.md\n\n"
+                "Routing only. Rules live in `zreflect/doc.py` (`RULES`);\n"
+                "state lives in `" + state + "`; history is not tracked.\n\n"
+                "```bash\n"
+                "python3 zreflect/registry.py --run commit\n"
+                "python3 zreflect/harness.py\n"
+                "```\n"),
+        }
+        for name, body in files.items():
+            p = os.path.join(root, name)
+            if os.path.exists(p):
+                kept.append(name)
+                continue
+            with open(p, "w", encoding="utf-8") as fh:
+                fh.write(body)
+            created.append(name)
+        for n in created:
+            print(str(M("facts.init_created", name=n)))
+        for n in kept:
+            print(str(M("facts.init_kept", name=n)))
+        if created:
+            # 原则也要进台账 —— 否则 `PRINCIPLES.md` 的 `[[RULES:…]]` 引用
+            # 在新仓里全是坏引用（实测：`facts.missing_key_cite(line=3)`）。
+            if doc.accepts_principles():
+                import json as _json                        # noqa: PLC0415
+                out = _out()
+                led = _load_or_empty()
+                facts = dict(facts_of(led))
+                facts.update(doc.facts_of_rules())
+                with open(out, "w", encoding="utf-8") as fh:
+                    _json.dump({"schema": 1, "_why": M("facts.ledger_why"),
+                                "facts": facts}, fh, indent=1,
+                               ensure_ascii=False)
+                    fh.write("\n")
+            # **按实际生成的文档**写一份 `Einfacht.env`：默认旋钮假设你已经
+            # 有六份文档（STATE/AGENTS/PRINCIPLES/README×3），而新仓只有
+            # 刚生成的那几份。不写这一份 ⇒ 每个闸门都报「找不到 README.zh.md」。
+            # `questions/` 目录：`check_questions` 要求它存在（悬案闸门）。
+            qdir = os.path.join(root, os.environ.get("REFLECT_QUESTIONS", "")
+                                .strip() or "questions")
+            if not os.path.isdir(qdir):
+                os.makedirs(qdir, exist_ok=True)
+                print(str(M("facts.init_created", name="questions/")))
+            # 空目录会被 `check_questions` 的零值守卫拒（`questions.guard_empty`）
+            # —— 放一个**示例悬案**：它同时是「怎么写悬案」的样板。
+            if os.path.isdir(qdir) and not [n for n in os.listdir(qdir)
+                                            if n.endswith(".md")]:
+                with open(os.path.join(qdir, "01-example.md"), "w",
+                          encoding="utf-8") as fh:
+                    fh.write(
+                        "# Example open question\n\n"
+                        "**Status:** ready-for-agent\n\n"
+                        "**Settling:** `python3 -c \"raise SystemExit(1)\"` "
+                        "— rc=0 settles A; rc=1 settles B\n\n"
+                        "Replace this with a real open question, or delete it\n"
+                        "once you have some.\n")
+            env_path = os.path.join(root, "Einfacht.env")
+            if not os.path.exists(env_path):
+                docs = ",".join(n for n in (state, doc.PRINCIPLES, "AGENTS.md")
+                                if os.path.exists(os.path.join(root, n)))
+                with open(env_path, "w", encoding="utf-8") as fh:
+                    fh.write("export REFLECT_DOC=%s\n" % state)
+                    fh.write("export REFLECT_DOCS=%s\n" % docs)
+                    fh.write("export REFLECT_READMES=README.md\n")
+                print(str(M("facts.init_created", name="Einfacht.env")))
+            print(str(M("facts.init_next")))
+        return 0
     if argv and argv[0] == "--accept-principles":
         # 「原则进台账」的显式出口。**此前只写在 docstring 里，没有实现**
         # （review 抓到的幻影）—— 而它是用户需求的一部分：「其他的当然也可以
