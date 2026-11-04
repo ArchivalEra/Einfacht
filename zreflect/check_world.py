@@ -240,7 +240,8 @@ def run(argv=None):
                     count=len(spec.get("stamps") or {})))
 
 
-def _cases():
+def _cases_fixture():
+    """夹具（原 `_cases` 的前置段原样搬入）。"""
     def line(site, art):
         return {"site": site, "artifacts": art,
                 "container": "o113",
@@ -268,73 +269,103 @@ def _cases():
         return (spec_problems(spec, branch, "") == []
                 and stamp_problems(spec, runner) == [])
 
+    return {'line': line, 'good': good, 'fake': fake, 'match': match, 'all_green': all_green}
+
+
+def _cases_resolve(fx):
+    """见 `_cases()`：本组 7 条。"""
+    line, good, fake, match, all_green = (fx["line"], fx["good"], fx["fake"], fx["match"], fx["all_green"])
     return [
-        # ① 正常不报
-        ("world.ok",
-         lambda: all_green(good, "wasm64-NEXT", match)),
-        ("world.resolve_line_by_branch",
-         lambda: resolve_line(good, "wasm64-NEXT", "")
-         == ("wasm64-NEXT", good["lines"]["wasm64-NEXT"])),
-        ("world.resolve_line_override_wins",
-         lambda: resolve_line(good, "wasm64-NEXT",
-                               "IllegalPerformance")[0]
-         == "IllegalPerformance"),
-        ("world.resolve_line_falls_back_to_active",
-         lambda: resolve_line(good, "feature/x", "")[0]
-         == "wasm64-NEXT"),
-        # ② 该报的必须报
-        ("★ world.lines_empty",
-         lambda: [p.code for p in spec_problems(
-             {"lines": {}, "active": "x", "stamps": {}}, "", "")]
-         == ["world.lines_empty"]),
-        ("★ world.active_missing",
-         lambda: [p.code for p in spec_problems(
-             {"lines": good["lines"], "stamps": {}}, "", "")]
-         == ["world.active_missing"]),
-        ("★ world.active_unknown",
-         lambda: [p.code for p in spec_problems(
-             {"lines": good["lines"], "active": "ghost",
-              "stamps": {}}, "", "")] == ["world.active_unknown"]),
-        ("★ world.line_missing_field",
-         lambda: [p.code for p in spec_problems(
-             {"lines": {"L": {"site": "s",
-                              "artifacts": "a",
-                              "fork_pin_ref": "r"}},
-              "active": "L", "stamps": {}}, "", "")]
-         == ["world.line_missing_field"]),
-        ("★ world.override_unknown",
-         lambda: [p.code for p in spec_problems(good, "", "ghost")]
-         == ["world.override_unknown"]),
-        ("★ world.branch_mismatch",
-         lambda: [p.code for p in spec_problems(
-             good, "IllegalPerformance", "")] == ["world.branch_mismatch"]),
-        ("world.branch_mismatch_override_present",
-         lambda: spec_problems(good, "IllegalPerformance",
-                                "IllegalPerformance") == []),
-        ("★ world.stamp_mismatch",
-         lambda: [p.code for p in stamp_problems(
-             good, fake({"docker stamp": "img-2",
-                         "site sha": "site-sha"}))] == ["world.stamp_mismatch"]),
-        ("★ world.stamp_command_failed",
-         lambda: [p.code for p in stamp_problems(
-             good, fake({}, rc=1))] == ["world.stamp_command_failed"] * 2),
-        ("★ world.stamp_timeout",
-         lambda: [p.code for p in stamp_problems(
-             good, fake({}, rc=None))] == ["world.stamp_timeout"] * 2),
-        ("★ world.stamp_missing_cmd",
-         lambda: [p.code for p in stamp_problems(
-             {"stamps": {"s": {"value": "v"}}})] == ["world.stamp_missing_cmd"]),
-        ("★ world.stamps_empty",
-         lambda: [p.code for p in stamp_problems({"stamps": {}})]
-         == ["world.stamps_empty"]),
-        # ③ 空输入必须报
-        ("★ world.spec_not_object",
-         lambda: [p.code for p in spec_problems(None, "", "")]
-         == ["world.spec_not_object"]),
-        ("★ world.lines_empty_declared",
-         lambda: [p.code for p in spec_problems({}, "", "")]
-         == ["world.lines_empty"]),
+    # ① 正常不报
+    ("world.ok",
+     lambda: all_green(good, "wasm64-NEXT", match)),
+    ("world.resolve_line_by_branch",
+     lambda: resolve_line(good, "wasm64-NEXT", "")
+     == ("wasm64-NEXT", good["lines"]["wasm64-NEXT"])),
+    ("world.resolve_line_override_wins",
+     lambda: resolve_line(good, "wasm64-NEXT",
+                           "IllegalPerformance")[0]
+     == "IllegalPerformance"),
+    ("world.resolve_line_falls_back_to_active",
+     lambda: resolve_line(good, "feature/x", "")[0]
+     == "wasm64-NEXT"),
+    ("★ world.override_unknown",
+     lambda: [p.code for p in spec_problems(good, "", "ghost")]
+     == ["world.override_unknown"]),
+    ("★ world.branch_mismatch",
+     lambda: [p.code for p in spec_problems(
+         good, "IllegalPerformance", "")] == ["world.branch_mismatch"]),
+    ("world.branch_mismatch_override_present",
+     lambda: spec_problems(good, "IllegalPerformance",
+                            "IllegalPerformance") == []),
     ]
+
+
+def _cases_stamps(fx):
+    """见 `_cases()`：本组 5 条。"""
+    line, good, fake, match, all_green = (fx["line"], fx["good"], fx["fake"], fx["match"], fx["all_green"])
+    return [
+    ("★ world.stamp_mismatch",
+     lambda: [p.code for p in stamp_problems(
+         good, fake({"docker stamp": "img-2",
+                     "site sha": "site-sha"}))] == ["world.stamp_mismatch"]),
+    ("★ world.stamp_command_failed",
+     lambda: [p.code for p in stamp_problems(
+         good, fake({}, rc=1))] == ["world.stamp_command_failed"] * 2),
+    ("★ world.stamp_timeout",
+     lambda: [p.code for p in stamp_problems(
+         good, fake({}, rc=None))] == ["world.stamp_timeout"] * 2),
+    ("★ world.stamp_missing_cmd",
+     lambda: [p.code for p in stamp_problems(
+         {"stamps": {"s": {"value": "v"}}})] == ["world.stamp_missing_cmd"]),
+    ("★ world.stamps_empty",
+     lambda: [p.code for p in stamp_problems({"stamps": {}})]
+     == ["world.stamps_empty"]),
+    ]
+
+
+def _cases_shape(fx):
+    """见 `_cases()`：本组 6 条。"""
+    line, good, fake, match, all_green = (fx["line"], fx["good"], fx["fake"], fx["match"], fx["all_green"])
+    return [
+    # ② 该报的必须报
+    ("★ world.lines_empty",
+     lambda: [p.code for p in spec_problems(
+         {"lines": {}, "active": "x", "stamps": {}}, "", "")]
+     == ["world.lines_empty"]),
+    ("★ world.active_missing",
+     lambda: [p.code for p in spec_problems(
+         {"lines": good["lines"], "stamps": {}}, "", "")]
+     == ["world.active_missing"]),
+    ("★ world.active_unknown",
+     lambda: [p.code for p in spec_problems(
+         {"lines": good["lines"], "active": "ghost",
+          "stamps": {}}, "", "")] == ["world.active_unknown"]),
+    ("★ world.line_missing_field",
+     lambda: [p.code for p in spec_problems(
+         {"lines": {"L": {"site": "s",
+                          "artifacts": "a",
+                          "fork_pin_ref": "r"}},
+          "active": "L", "stamps": {}}, "", "")]
+     == ["world.line_missing_field"]),
+    # ③ 空输入必须报
+    ("★ world.spec_not_object",
+     lambda: [p.code for p in spec_problems(None, "", "")]
+     == ["world.spec_not_object"]),
+    ("★ world.lines_empty_declared",
+     lambda: [p.code for p in spec_problems({}, "", "")]
+     == ["world.lines_empty"]),
+    ]
+
+
+def _cases():
+    """拼装 3 组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    fx = _cases_fixture()
+    return (
+    _cases_resolve(fx)
+    + _cases_stamps(fx)
+    + _cases_shape(fx)
+    )
 
 
 GATE = meta("world 闸门", "声明式验证对象：多线仓库共享验证环境的世界对账",
