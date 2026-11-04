@@ -3,6 +3,7 @@
  "next.commits_more": "…und %(count)d weitere",
  "next.commits_none": "nicht gepushte Commits: 0 (alle veröffentlicht)",
  "next.commits_unreadable": "nicht gepushte Commits: nicht lesbar (git nicht verfügbar oder kein Repo)",
+ "next.open_question": "offene Frage `%(name)s` ist ungeklärt — zuerst lesen; geschlossene nicht erneut aufwerfen",
  "next.tree_dirty": "Arbeitsbaum ist schmutzig — erst entscheiden: committen oder verwerfen",
  "next.tree_state": "Arbeitsbaum: %(changed)d geändert, %(untracked)d nicht verfolgt",
  "next.tree_unreadable": "Arbeitsbaum: nicht lesbar"
