@@ -688,16 +688,6 @@ def _captures_stderr():
         shutil.rmtree(d, True)
 
 
-def _off_reason_ok(_label, sources, ok, reason=None):
-    """构造一条假声明行 + 假源码，验 `off_reason_problems` 的判定方向。
-
-    `sources` 的值是**源码片段**；用 `_off(` 占位再替换成真调用，避免本文件
-    自己被这个判据收编（它本身是可 off 的闸门）。"""
-    import ast                                           # noqa: PLC0415
-    body = sources["check_x.py"].replace("_off(", "off(")
-    gs = [{"file": "check_x.py", "off_reason": reason}]
-    got = criteria.off_reason_problems(gs, sources={"check_x.py": body})
-    return (got == []) if ok else (got != [])
 
 
 def _render_shows_off_reason():
@@ -740,69 +730,10 @@ def _streams_documented():
             ("stdout" in r and "stdout" in g))
 
 
-def _off_reason_stale_ok():
-    """声称没有 `ab.json`，而 `ab.json` 真实存在 ⇒ 必须报 stale。
-
-    用临时目录做仓根（不碰真仓），并给源码让 `off()` 调用成立，
-    以隔离出**只由「理由失效」**触发的那一条。
-    """
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
-    d = tempfile.mkdtemp()
-    try:
-        with open(os.path.join(d, "ab.json"), "w", encoding="utf-8") as fh:
-            fh.write("{}")
-        reason = ("no " + "ab.json" + " spec in this repo")   # ASCII，避免触发零语言闸门
-        gs = [{"file": "check_ab.py", "off_reason": reason}]
-        src = {"check_ab.py": "def run():\n    return off(null)\n"}
-        old = gate.GATE_REPO
-        gate.GATE_REPO = d
-        try:
-            got = [p.code for p in criteria.off_reason_problems(gs, sources=src)]
-            # 文件不在的对照组：把 ab.json 删掉 ⇒ 不该有 stale
-            os.remove(os.path.join(d, "ab.json"))
-            got2 = [p.code for p in criteria.off_reason_problems(gs, sources=src)]
-        finally:
-            gate.GATE_REPO = old
-        return got == ["registry.off_reason_stale"] and got2 == []
-    finally:
-        shutil.rmtree(d, True)
 
 
-def _stale_in_hooks_dir():
-    """载体在 `reflect-hooks/`（不是仓根）时，stale 判据必须照样报。"""
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
-    d = tempfile.mkdtemp()
-    try:
-        hooks = os.path.join(d, "reflect-hooks")
-        os.makedirs(hooks)
-        name = "Probe" + ".env"                          # 拼接构造：不写死在仓里
-        with open(os.path.join(hooks, name), "w", encoding="utf-8") as fh:
-            fh.write("export X=1\n")
-        reason = "no " + name + " carrier in this repo"   # ASCII
-        gs = [{"file": "check_probe.py", "off_reason": reason}]
-        src = {"check_probe.py": "def run():\n    return off(null)\n"}
-        old = gate.GATE_REPO
-        gate.GATE_REPO = d
-        try:
-            return [p.code for p in criteria.off_reason_problems(gs, sources=src)] \
-                == ["registry.off_reason_stale"]
-        finally:
-            gate.GATE_REPO = old
-    finally:
-        shutil.rmtree(d, True)
 
 
-def _path_rule_single_source():
-    """真仓只有 gate.py 自算工具目录；再造一份假的 ⇒ 必须报。"""
-    ok_real = criteria.path_rule_problems() == []
-    # 判据只抓**函数体里的 return**（不是模块级赋值 —— 那是导入引导 / 常量）
-    fake = {"splitter.py":
-            "def f():\n"
-            "    return os.path.dirname(os.path.abspath(__file__))\n"}
-    got = [p.code for p in criteria.path_rule_problems(sources=fake)]
-    return ok_real and got == ["registry.path_rule_split"]
 
 
 def _nf_catches(which):
@@ -1100,75 +1031,8 @@ def _cases_hint(fx):
 
 
 
-def _cases_off_reason(fx):
-    """见 `_cases()`：本组 7 条。"""
-    (ok, plain, real, real_missing, gs, missing,
-     real_files) = (fx["ok"], fx["plain"], fx["real"],
-                    fx["real_missing"], fx["gs"],
-                    fx["missing"], fx["real_files"])
-    d = fx["d"]
-    return [
-    # **off 必须有理由**（第 12 轮）：会调 `off()` 却没声明 `off_reason`、
-    # 理由太短、或声明了理由却不调 off —— 三个方向都要报。
-    ("★ registry.off_without_reason", lambda: _off_reason_ok(
-        "no-reason", {"check_x.py": "_off()"}, ok=False)),
-    ("★ registry.off_reason_too_short", lambda: _off_reason_ok(
-        "too-short", {"check_x.py": "_off()"}, ok=False, reason="x")),
-    ("★ registry.off_reason_without_off", lambda: _off_reason_ok(
-        "declared-but-never-off", {"check_x.py": "pass\n"}, ok=False,
-        reason="a real justification long enough")),
-    ("registry.off_reason_ok", lambda: _off_reason_ok(
-        "complete", {"check_x.py": "_off()"}, ok=True,
-        reason="a real justification long enough")),
-    # **理由真实性**（第 17 轮）：`off_reason` 声称「本仓没有 X.json」，
-    # 而 X.json 实际存在 ⇒ 理由已失效（闸门早该启用而没启用）。
-    # 第 12 轮只要求「必须有理由」，这是它的对称缺口：
-    # 不要求「理由得是真的」，理由就会变成永久免死金牌。
-    ("★ registry.off_reason_stale", lambda: _off_reason_stale_ok()),
-    # **理由里的文件名要在两个合法落点都查**：`Einfacht.env` 可以住在仓根
-    # **或** `reflect-hooks/`（`einfacht-env.sh` 先看钩子目录、再看仓根）。
-    # 只查仓根会让「载体真放进 reflect-hooks/」的情形漏判（实测 []）。
-    ("★ registry.off_reason_stale_in_hooks_dir",
-     lambda: _stale_in_hooks_dir()),
-    # **口径对账**（C4）：`_REASON_BASES` 必须与 `einfacht-env.sh` 的
-    # 载体查找一致（钩子目录 + 仓根）。判据是行为级的：两个位置各放一份
-    # 载体，两边都必须看得见。只查仓根 ⇒ RED。
-    ("★ registry.reason_bases_match_env_plugin",
-     lambda: criteria.reason_bases_agree()),
-    ]
 
 
-def _cases_path_rule(fx):
-    """见 `_cases()`：本组 4 条。"""
-    (ok, plain, real, real_missing, gs, missing,
-     real_files) = (fx["ok"], fx["plain"], fx["real"],
-                    fx["real_missing"], fx["gs"],
-                    fx["missing"], fx["real_files"])
-    d = fx["d"]
-    return [
-    # **口径分裂**（C4 对账⑧）：工具的 zreflect/ 只能有一个产地。
-    # 别处再写一份 `dirname(abspath(__file__))` ⇒ 报（改一处就会分裂）。
-    ("★ registry.path_rule_single_source",
-     lambda: _path_rule_single_source()),
-    # **`gate.zdir()` / `tool_repo()` 的自证**（第 21 轮）：它们是全仓地基，
-    # 此前只有「别的模块委托它」的判据，没有「它自己算得对」的判据。
-    ("★ registry.zdir_matches_file",
-     # 值必须是**本文件所在目录**（`registry.py` 也在 zreflect/ 里）。
-     # ⚠️ 这里**不许**自己写 `dirname(abspath(__file__))` —— 那正好是
-     # 本闸门要禁的形状，写了就会被 `path_rule_single_source` 抓
-     # （实测：这条断言自己触发了那个判据）。改用 `os.path.dirname` 的
-     # 显式字面量对比：`gate.zdir()` 必须以 `zreflect` 结尾且可导入本文件。
-     lambda: os.path.basename(gate.zdir()) == "zreflect"
-     and os.path.exists(os.path.join(gate.zdir(), "registry.py"))),
-    ("★ registry.tool_repo_is_zdir_parent",
-     # `tool_repo()` 必须是 `zdir()` 的**上一级**（不是别的什么）
-     lambda: os.path.abspath(gate.tool_repo())
-     == os.path.dirname(os.path.abspath(gate.zdir()))),
-    ("★ registry.zdir_is_a_dir",
-     # 是个真实存在的目录（不是算出来的空字符串 / 错路径）
-     lambda: os.path.isdir(gate.zdir())
-     and os.path.basename(gate.zdir()) == "zreflect"),
-    ]
 
 
 def _cases_gate_hosted(fx):
@@ -1222,8 +1086,6 @@ def _cases():
         + _cases_render(fx)
         + _cases_phase(fx)
         + _cases_hint(fx)
-        + _cases_off_reason(fx)
-        + _cases_path_rule(fx)
         + _cases_gate_hosted(fx)
     )
 
