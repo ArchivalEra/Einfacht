@@ -153,86 +153,117 @@ def decide(old_facts, new_facts, accepted=False, allow_drop=False):
     return "write", problems, notes
 
 
-def _cases():
+def _cases_fixture():
+    """夹具（原 `_cases` 的前置段原样搬入）。"""
     old = {"a": {"value": 1}, "b": {"value": 2}}
     same = {"a": {"value": 1}, "b": {"value": 2}}
     new_val = {"a": {"value": 1}, "b": {"value": 9}}
     dropped = {"a": {"value": 1}}          # b 掉了
+    return {'old': old, 'same': same, 'new_val': new_val, 'dropped': dropped}
+
+
+def _cases_decide(fx):
+    """见 `_cases()`：本组 10 条。"""
+    old, same, new_val, dropped = (fx["old"], fx["same"], fx["new_val"], fx["dropped"])
     return [
-        # ① 正常不报
-        ("guard.decide_clean",
-         lambda: decide(old, same) == ("write", [], {"err": [], "out": []})),
-        ("guard.decide_added_key_not_a_change",
-         lambda: decide(old, dict(same, c={"value": 3}))[0] == "write"),
-        ("guard.decide_cmd_only_not_a_change",
-         lambda: decide({"a": {"value": 1, "cmd": "old"}},
-                        {"a": {"value": 1, "cmd": "new"}})[0] == "write"),
-        # ② 该报的必须报
-        ("★ guard.refuse_dropped",
-         lambda: (lambda v, p, n: v == "refuse"
-                  and p[0].code == "guard.refuse_dropped"
-                  and "b" in p[0].params["keys"])(*decide(old, dropped))),
-        ("★ guard.note_allow_drop",
-         lambda: (lambda v, p, n: v == "write"
-                  and n["err"][0].code == "guard.note_allow_drop"
-                  and n["err"][0].params["keys"] == "b"
-                  )(*decide(old, dropped, allow_drop=True))),
-        ("★ guard.changed_row",
-         lambda: (lambda v, p, n: v == "refuse"
-                  and any(x.code == "guard.changed_row"
-                          and x.params["before"] == "2"
-                          and x.params["after"] == "9" for x in p)
-                  )(*decide(old, new_val))),
-        ("★ guard.note_accept_changes",
-         lambda: (lambda v, p, n: v == "write"
-                  and any(x.code == "guard.note_accept_changes" for x in n["out"])
-                  )(*decide(old, new_val, accepted={"b"}))),
-        ("★ guard.accept_changes_per_key",
-         lambda: decide(old, new_val, accepted={"zzz"})[0] == "refuse"),
-        ("★ guard.accepted_boundary",
-         lambda: any(x.code == "guard.accepted_boundary" for x in decide(
-             old, {"a": {"value": 8}, "b": {"value": 9}},
-             accepted={"a"})[1])),
-        ("★ guard.accept_changes_bare_flag",
-         lambda: decide(old, new_val, accepted=None)[0] == "write"),
-        # 接线解析（issue #3 ① 的解析语义搬进守卫的自证面）
-        ("guard.accepted_keys_bare",
-         lambda: accepted_keys(["--accept-changes"]) is None),
-        ("guard.accepted_keys_list",
-         lambda: accepted_keys(["--accept-changes=a,b"]) == {"a", "b"}),
-        ("guard.accepted_keys_absent",
-         lambda: accepted_keys([]) is False),
-        ("guard.accepted_keys_empty_set",
-         lambda: accepted_keys(["--accept-changes="]) == set()),
-        # ② 盲写守卫（issue #20 ②）
-        ("guard.write_target_clean",
-         lambda: write_target_problems("/x/FACTS.json", knob_set=True,
-                                       ignored=False, carrier_exists=False)
-         == (None, None)),
-        ("★ guard.write_target_gitignored",
-         lambda: write_target_problems("/x/FACTS.json", knob_set=True,
-                                       ignored=True)[0] is not None),
-        ("★ guard.write_target_env_carrier",
-         lambda: getattr(write_target_problems(
-             "/x/FACTS.json", knob_set=False, ignored=False,
-             carrier_exists=True)[1], "code", None)
-         == "guard.write_target_env_carrier"),
-        ("guard.write_target_no_git",
-         lambda: getattr(write_target_problems(
-             "/x/F.json", knob_set=True, ignored=None)[1],
-             "code", None) == "guard.write_target_no_git"),
-        ("guard.write_target_env_carrier_after",
-         # 两条 warn 并列时前一条不许丢（拼接归语言包）
-         lambda: getattr(write_target_problems(
-             "/x/F.json", knob_set=False, ignored=None,
-             carrier_exists=True)[1], "code", None)
-         == "guard.write_target_env_carrier_after"),
-        # ③ 空输入必须报
-        ("★ guard.empty_ledger",
-         lambda: decide(old, {})[0] == "refuse"),
-        ("★ guard.accepted_keys_empty_set_refuses",
-         lambda: decide(old, new_val, accepted=set())[0] == "refuse"),
+    # ① 正常不报
+    ("guard.decide_clean",
+     lambda: decide(old, same) == ("write", [], {"err": [], "out": []})),
+    ("guard.decide_added_key_not_a_change",
+     lambda: decide(old, dict(same, c={"value": 3}))[0] == "write"),
+    ("guard.decide_cmd_only_not_a_change",
+     lambda: decide({"a": {"value": 1, "cmd": "old"}},
+                    {"a": {"value": 1, "cmd": "new"}})[0] == "write"),
+    # ② 该报的必须报
+    ("★ guard.refuse_dropped",
+     lambda: (lambda v, p, n: v == "refuse"
+              and p[0].code == "guard.refuse_dropped"
+              and "b" in p[0].params["keys"])(*decide(old, dropped))),
+    ("★ guard.note_allow_drop",
+     lambda: (lambda v, p, n: v == "write"
+              and n["err"][0].code == "guard.note_allow_drop"
+              and n["err"][0].params["keys"] == "b"
+              )(*decide(old, dropped, allow_drop=True))),
+    ("★ guard.changed_row",
+     lambda: (lambda v, p, n: v == "refuse"
+              and any(x.code == "guard.changed_row"
+                      and x.params["before"] == "2"
+                      and x.params["after"] == "9" for x in p)
+              )(*decide(old, new_val))),
+    ("★ guard.note_accept_changes",
+     lambda: (lambda v, p, n: v == "write"
+              and any(x.code == "guard.note_accept_changes" for x in n["out"])
+              )(*decide(old, new_val, accepted={"b"}))),
+    ("★ guard.accept_changes_per_key",
+     lambda: decide(old, new_val, accepted={"zzz"})[0] == "refuse"),
+    ("★ guard.accepted_boundary",
+     lambda: any(x.code == "guard.accepted_boundary" for x in decide(
+         old, {"a": {"value": 8}, "b": {"value": 9}},
+         accepted={"a"})[1])),
+    ("★ guard.accept_changes_bare_flag",
+     lambda: decide(old, new_val, accepted=None)[0] == "write"),
     ]
+
+
+def _cases_keys(fx):
+    """见 `_cases()`：本组 6 条。"""
+    old, same, new_val, dropped = (fx["old"], fx["same"], fx["new_val"], fx["dropped"])
+    return [
+    # 接线解析（issue #3 ① 的解析语义搬进守卫的自证面）
+    ("guard.accepted_keys_bare",
+     lambda: accepted_keys(["--accept-changes"]) is None),
+    ("guard.accepted_keys_list",
+     lambda: accepted_keys(["--accept-changes=a,b"]) == {"a", "b"}),
+    ("guard.accepted_keys_absent",
+     lambda: accepted_keys([]) is False),
+    ("guard.accepted_keys_empty_set",
+     lambda: accepted_keys(["--accept-changes="]) == set()),
+    # ③ 空输入必须报
+    ("★ guard.empty_ledger",
+     lambda: decide(old, {})[0] == "refuse"),
+    ("★ guard.accepted_keys_empty_set_refuses",
+     lambda: decide(old, new_val, accepted=set())[0] == "refuse"),
+    ]
+
+
+def _cases_write(fx):
+    """见 `_cases()`：本组 5 条。"""
+    old, same, new_val, dropped = (fx["old"], fx["same"], fx["new_val"], fx["dropped"])
+    return [
+    # ② 盲写守卫（issue #20 ②）
+    ("guard.write_target_clean",
+     lambda: write_target_problems("/x/FACTS.json", knob_set=True,
+                                   ignored=False, carrier_exists=False)
+     == (None, None)),
+    ("★ guard.write_target_gitignored",
+     lambda: write_target_problems("/x/FACTS.json", knob_set=True,
+                                   ignored=True)[0] is not None),
+    ("★ guard.write_target_env_carrier",
+     lambda: getattr(write_target_problems(
+         "/x/FACTS.json", knob_set=False, ignored=False,
+         carrier_exists=True)[1], "code", None)
+     == "guard.write_target_env_carrier"),
+    ("guard.write_target_no_git",
+     lambda: getattr(write_target_problems(
+         "/x/F.json", knob_set=True, ignored=None)[1],
+         "code", None) == "guard.write_target_no_git"),
+    ("guard.write_target_env_carrier_after",
+     # 两条 warn 并列时前一条不许丢（拼接归语言包）
+     lambda: getattr(write_target_problems(
+         "/x/F.json", knob_set=False, ignored=None,
+         carrier_exists=True)[1], "code", None)
+     == "guard.write_target_env_carrier_after"),
+    ]
+
+
+def _cases():
+    """拼装 3 组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    fx = _cases_fixture()
+    return (
+    _cases_decide(fx)
+    + _cases_keys(fx)
+    + _cases_write(fx)
+    )
 
 
 MODULE = module_meta("台账写盘守卫", "掉条 / 改口 / 逐条接受（决策与执行分离）", selftest=True)
