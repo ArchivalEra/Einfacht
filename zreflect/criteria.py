@@ -515,10 +515,174 @@ def dependency_coverage_problems(zdir=None, sources=None):
     return out
 
 
+
+# ── 自证：判据属于自己的被测对象 ──────────────────────────────────────────────
+
+def _dead_interface_case():
+    """造一个零消费的公开函数 ⇒ 必须报；给它加个外部引用 ⇒ 不报。"""
+    import tempfile, shutil, os                        # noqa: PLC0415
+    root = tempfile.mkdtemp()
+    try:
+        d = os.path.join(root, "zreflect")
+        os.makedirs(d, exist_ok=True)
+        open(os.path.join(d, "probe.py"), "w", encoding="utf-8").write(
+            "def zzz_orphan():\n    return 1\n")
+        if not dead_interface_problems(zdir=d):
+            return False
+        # 加一个外部消费者 ⇒ 不该再报
+        open(os.path.join(d, "check_probe.py"), "w", encoding="utf-8").write(
+            "import probe\ndef run():\n    return probe.zzz_orphan()\n")
+        return dead_interface_problems(zdir=d) == []
+    finally:
+        shutil.rmtree(root, True)
+
+
+
+def _unexpected_shell_case():
+    """造一个未登记的 .sh ⇒ 必须报；登记过的 ⇒ 不报。"""
+    import tempfile, shutil, os                        # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        open(os.path.join(d, "probe.sh"), "w").write("# probe\n")
+        if not shell_surface_problems(repo_root=d):
+            return False
+        # 登记过的名字（路径相对根）不该报
+        open(os.path.join(d, "gates-selftest.sh"), "w").write("# ok\n")
+        got = [str(p) for p in shell_surface_problems(repo_root=d)]
+        return len(got) == 1 and "probe.sh" in got[0]
+    finally:
+        shutil.rmtree(d, True)
+
+
+
+def _han_predicate_case():
+    """`i18n.han()` 认中文、不认 ASCII、不认码点构造之外的近亲。"""
+    from i18n import han                                 # noqa: PLC0415
+    # 夹具里的中文用码点构造（本仓纪律：字面量会进扫描面）
+    return (han(chr(0x4E2D)) and han("a" + chr(0x6587) + "b")
+            and not han("plain ascii")
+            and not han("")
+            and not han(chr(0x3042)))     # 平假名不在 CJK 统一表意区间内
+
+
+
+def _trailing_newline_case():
+    """造一个缺末尾换行的文件 ⇒ 必须报；补上 ⇒ 不报。"""
+    import tempfile, shutil, os                        # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        open(os.path.join(d, "bad.py"), "w").write("x = 1")
+        if not trailing_newline_problems(zdir=d):
+            return False
+        open(os.path.join(d, "bad.py"), "w").write("x = 1\n")
+        return trailing_newline_problems(zdir=d) == []
+    finally:
+        shutil.rmtree(d, True)
+
+
+
+def _selftest_false_states_it():
+    """每个 `selftest=False` 的模块，描述里都必须点明「自证住在 registry._cases」。
+
+    三个都查（`collect.py` / `living.py` / `gate.py`）—— 发现式：从 `modules()`
+    取所有 `selftest=False` 的，不写名单。
+    """
+    from registry import modules                        # noqa: PLC0415
+    mods, _und = modules()
+    checked = 0
+    for m in mods:
+        if m.get("selftest"):
+            continue
+        checked += 1
+        if "registry._cases" not in m["desc"]:
+            return False
+    return checked >= 1          # 零值守卫：一个都没查到 ⇒ 不看
+
+
+
+def _dependency_coverage_ok():
+    """真仓：被消费的平台函数都有断言；再造一个「被消费但无断言」的 ⇒ 必须报。"""
+    ok_real = dependency_coverage_problems() == []
+    # 名字必须**全仓唯一**：`helper` 那种常见词会被真 registry._cases 里的
+    # 同名变量命中 ⇒ 断言面「假装」覆盖了它（实测：fake 返回 []）。
+    fake = {
+        "check_probe.py":
+            "import probe\ndef run():\n    return probe.zzz_uniquely_named()\n",
+        "probe.py": "def zzz_uniquely_named():\n    return 1\n",
+    }
+    got = [p.code for p in dependency_coverage_problems(sources=fake)]
+    return ok_real and got == ["registry.dependency_untested"]
+
+
+
+def _selftest_refuses_empty():
+    """`gate.selftest(name, [])` 必须 SystemExit（0/0 洞不许绿着退场）。"""
+    try:
+        gate.selftest("probe", [])
+        return False                    # 没拒 ⇒ 这条红
+    except SystemExit:
+        return True
+
+
+
+def _cases(fx=None):
+    """`criteria.py` 自己的判据（死接口 / shell 面积 / 中文谓词 / 末尾换行 /
+    依赖覆盖 / 自证加固）。**住在本模块** —— 判据属于被测对象。"""
+    return [
+        # **`living.py` / `collect.py` 的自证**（第 24 轮）：两个 `selftest=False`
+        # 模块此前**零断言**，而 `living_lines` 被 `check_stale` / `check_retractions`
+        # 消费 —— 它判错了，那两道闸门的判据全部失效。
+        # **`selftest=False` 的模块描述必须说清自证住在哪**（第 25 轮，
+        # 与第 23 轮 `gate.py` 同类）：`collect.py` / `living.py` / `gate.py`
+        # 都声明了 `selftest=False`，但它们的逻辑**有实质断言**在
+        # `registry._cases()`。描述若只写「无自证」= 免责声明。
+        # 「严查多余接口」的机器判据：零消费者的公开函数 ⇒ 必须报。
+        ("★ registry.dead_interface_detected",
+         lambda: _dead_interface_case()),
+        # 全 Python 化的守卫：未登记的 .sh ⇒ 必须报（造一个假的证明它有牙）
+        ("★ registry.unexpected_shell_detected",
+         lambda: _unexpected_shell_case()),
+        # `i18n.han()`：零语言制度的判据（`check_i18n` 与 `harness` 都消费它）。
+        # 它是「有没有中文」的**唯一产地** —— 判错了两道判据一起失效。
+        ("★ registry.han_predicate",
+         lambda: _han_predicate_case()),
+        # 末尾换行（踩了四次）：一个没有末尾换行的 .py 让 `py_lines` 的两条
+        # 量法差 1，复跑闸门永远红 —— 报出来让人补，而不是每次手工发现。
+        ("★ registry.trailing_newline_detected",
+         lambda: _trailing_newline_case()),
+        ("★ registry.selftest_false_modules_state_where_selftest_lives",
+         lambda: _selftest_false_states_it()),
+        # **依赖链覆盖**（C4 对账⑨）：被闸门消费的平台函数必须在某处有断言。
+        # 第 24 轮的 `living.living_lines` 就是这么漏的（消费两道闸门，自身零断言）。
+        ("★ registry.dependency_coverage",
+         lambda: _dependency_coverage_ok()),
+        # `gate.selftest` 被两道闸门直接调用 —— 它**执行**所有断言，但自身的
+        # 零值守卫（空 cases 必须拒收）此前零断言。测它不算自举：测的是
+        # 「0/0 洞会不会被拦住」，不是「断言跑得对不对」。
+        ("★ registry.selftest_refuses_empty_cases",
+         lambda: _selftest_refuses_empty()),
+    ]
+
+
+def _selftest():
+    import sys                                           # noqa: PLC0415
+    from gate import main_selftest_or                    # noqa: PLC0415
+    return main_selftest_or(sys.argv[1:], M("gate.title.criteria"),
+                            _cases, lambda a: 0)
+
+
 from gate import module_meta                                 # noqa: E402
 
 MODULE = module_meta(
     "名录判据",
     "「哪些东西必须一致」的机器对账：死接口 / shell 面积 / 末尾换行 / "
-    "off 理由 / 路径规则 / 依赖覆盖（自证住在 registry._cases_*）",
-    selftest=False)
+    "off 理由 / 路径规则 / 依赖覆盖（自证在本模块 `_cases`）",
+    selftest=True)
+
+
+if __name__ == "__main__":
+    import os                                            # noqa: PLC0415
+    import sys                                           # noqa: PLC0415
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import criteria as _mod                              # noqa: PLC0415
+    sys.exit(_mod._selftest())

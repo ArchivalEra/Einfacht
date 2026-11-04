@@ -20,6 +20,7 @@
  "gate.selftest_summary": "%(name)s 自证：%(passed)d PASS / %(failed)d fail",
  "gate.spec_unreadable": "%(path)s 读不了 / 不是合法 JSON：%(error)s",
  "gate.title.collect": "采集器契约",
+ "gate.title.criteria": "名录判据",
  "gate.title.doc": "原则登记表",
  "gate.title.doctor": "开工预检 doctor（进程/端口活性）",
  "gate.title.envfile": "env 文件闸门（可插拔：守钩子的 REFLECT_* 载体）",

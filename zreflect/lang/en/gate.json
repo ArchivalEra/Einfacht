@@ -20,6 +20,7 @@
  "gate.selftest_summary": "%(name)s selftest: %(passed)d PASS / %(failed)d fail",
  "gate.spec_unreadable": "%(path)s cannot be read / is not valid JSON: %(error)s",
  "gate.title.collect": "collector contract",
+ "gate.title.criteria": "roster criteria",
  "gate.title.doc": "principle registry",
  "gate.title.doctor": "start-of-work doctor (process / port liveness)",
  "gate.title.envfile": "env-file gate (removable: guards the hooks' REFLECT_* carrier)",
