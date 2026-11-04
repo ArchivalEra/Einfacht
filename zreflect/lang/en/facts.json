@@ -25,6 +25,7 @@
  "facts.markers_missing_check": "%(path)s is missing the %(begin)s / %(end)s markers",
  "facts.markers_missing_render": "%(path)s is missing the %(begin)s / %(end)s markers (place them by hand once on first rollout)",
  "facts.measure_module_unusable": "REFLECT_MEASURE_MODULE=%(module)s is unusable (%(error)s) ⇒ falling back to the placeholder measure_example()",
+ "facts.measure_own_code_hint": "this repo has %(dirs)s — that is **your** code, while the numbers above measure the toolkit itself. To measure your own project: set REFLECT_MEASURE_MODULE=<your module> in Einfacht.env (the module defines a measure() returning a dict of fact())",
  "facts.measure_placeholder_used": "measure_example() used; set REFLECT_MEASURE_MODULE for real repo (changing repos edits one line in Einfacht.env; falling back to the placeholder leaves the ledger empty)",
  "facts.measure_written": "wrote %(path)s (%(count)d facts)",
  "facts.missing_key_cite": "line %(line)d cites a key that does **not exist**: `%(key)s`",

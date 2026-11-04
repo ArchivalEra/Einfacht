@@ -25,6 +25,7 @@
  "facts.markers_missing_check": "%(path)s fehlen die %(begin)s / %(end)s Marken",
  "facts.markers_missing_render": "%(path)s fehlen die %(begin)s / %(end)s Marken (beim ersten Rollout einmal von Hand platzieren)",
  "facts.measure_module_unusable": "REFLECT_MEASURE_MODULE=%(module)s ist unbrauchbar (%(error)s) ⇒ Rückfall auf den Platzhalter measure_example()",
+ "facts.measure_own_code_hint": "dieses Repo hat %(dirs)s — das ist **dein** Code, während die Zahlen oben das Werkzeug selbst messen. Um dein Projekt zu messen: setze REFLECT_MEASURE_MODULE=<dein Modul> in Einfacht.env (das Modul definiert measure() und liefert ein dict aus fact())",
  "facts.measure_placeholder_used": "measure_example() verwendet; setze REFLECT_MEASURE_MODULE für ein echtes Repo (Repo wechseln ändert eine Zeile in Einfacht.env; der Rückfall auf den Platzhalter lässt das Register leer)",
  "facts.measure_written": "%(path)s geschrieben (%(count)d Fakten)",
  "facts.missing_key_cite": "Zeile %(line)d zitiert einen Schlüssel, der **nicht existiert**: `%(key)s`",

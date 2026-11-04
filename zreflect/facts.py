@@ -285,9 +285,34 @@ def _measure():
         except Exception as e:                            # noqa: BLE001
             print("⚠ %s" % M("facts.measure_module_unusable",
                              module=mod_name, error=repr(e)), file=sys.stderr)
-    elif os.path.abspath(gate.GATE_REPO) == os.path.abspath(REPO_REAL):
+    else:
+        # ⚠️ 警告**不分仓**：此前只在「GATE_REPO 就是套件自己的仓」时打，
+        # 于是**所有下游仓**（正是最需要这条提示的地方）静默拿到一份
+        # 「关于 Einfacht 的数字」（子代理验收实测：新仓 `py_lines 13269`
+        # 而它的代码只有 67 行，`STATE.md` 里写的全是套件自己的规模）。
         print("⚠ %s" % M("facts.measure_placeholder_used"), file=sys.stderr)
+        # 再给一条**具体**的：这个仓有它自己的代码吗？有就说怎么量它。
+        own = _own_code_hint()
+        if own:
+            print("  %s" % own, file=sys.stderr)
     return measure_example()
+
+
+# 一个仓「有自己的代码」的常见形状（只看目录名，不猜内容）。
+_OWN_CODE_DIRS = ("src", "lib", "app", "pkg", "packages")
+
+
+def _own_code_hint():
+    """这个仓看起来有自己的代码吗？有 ⇒ 返回一句**具体**的提示。
+
+    只在 `REFLECT_MEASURE_MODULE` 没配时调用 —— 那是「你还没告诉我要量什么」
+    的时刻，也是唯一该提示的时刻。
+    """
+    root = gate.GATE_REPO
+    found = [d for d in _OWN_CODE_DIRS if os.path.isdir(os.path.join(root, d))]
+    if not found:
+        return None
+    return str(M("facts.measure_own_code_hint", dirs=", ".join(found)))
 
 
 def measure(argv):
