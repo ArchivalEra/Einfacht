@@ -68,23 +68,23 @@ Python 代码 [[py_lines]] 行。
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `md_files` | **9** | 2026-11-04T10:46:03+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
-| `md_lines` | **2656** | 2026-11-04T10:46:03+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
-| `principle.assertion_lifecycle` | **ok** | 2026-11-04T10:46:03+0800 | `python3 zreflect/check_retractions.py` |
-| `principle.declared_not_globbed` | **ok** | 2026-11-04T10:46:03+0800 | `python3 zreflect/registry.py --gates` |
-| `principle.falsifiable` | **ok** | 2026-11-04T10:46:03+0800 | `python3 zreflect/registry.py --selftest` |
-| `principle.machine_rows` | **ok** | 2026-11-04T10:46:03+0800 | `python3 zreflect/machine.py --selftest` |
-| `principle.no_retired_names` | **ok** | 2026-11-04T10:46:03+0800 | `python3 zreflect/check_stale.py` |
-| `principle.number_once` | **ok** | 2026-11-04T10:46:03+0800 | `python3 zreflect/check_facts.py` |
-| `principle.off_is_visible` | **ok** | 2026-11-04T10:46:03+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry, criteria;gs=registry.gates()[0];p=criteria.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)"` |
-| `principle.only_measured` | **ok** | 2026-11-04T10:46:03+0800 | `python3 -c "import json,sys;d=json.load(open('FACTS.json'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
-| `principle.open_questions_settle` | **ok** | 2026-11-04T10:46:03+0800 | `python3 zreflect/check_questions.py` |
-| `principle.selfcert_harness` | **ok** | 2026-11-04T10:46:03+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)"` |
-| `principle.snapshot_hygiene` | **ok** | 2026-11-04T10:46:03+0800 | `python3 zreflect/check_snapshots.py` |
-| `principle.three_readmes` | **ok** | 2026-11-04T10:46:03+0800 | `python3 zreflect/check_readme_sync.py` |
-| `principle.zero_language` | **ok** | 2026-11-04T10:46:03+0800 | `python3 zreflect/check_i18n.py` |
-| `py_files` | **37** | 2026-11-04T10:46:03+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
-| `py_lines` | **13033** | 2026-11-04T10:46:03+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
+| `md_files` | **9** | 2026-11-04T10:51:59+0800 | `find . -name '*.md' -not -path './.git/*' | wc -l` |
+| `md_lines` | **2656** | 2026-11-04T10:51:59+0800 | `find . -name '*.md' -not -path './.git/*' -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l` |
+| `principle.assertion_lifecycle` | **ok** | 2026-11-04T10:51:59+0800 | `python3 zreflect/check_retractions.py` |
+| `principle.declared_not_globbed` | **ok** | 2026-11-04T10:51:59+0800 | `python3 zreflect/registry.py --gates` |
+| `principle.falsifiable` | **ok** | 2026-11-04T10:51:59+0800 | `python3 zreflect/registry.py --selftest` |
+| `principle.machine_rows` | **ok** | 2026-11-04T10:51:59+0800 | `python3 zreflect/machine.py --selftest` |
+| `principle.no_retired_names` | **ok** | 2026-11-04T10:51:59+0800 | `python3 zreflect/check_stale.py` |
+| `principle.number_once` | **ok** | 2026-11-04T10:51:59+0800 | `python3 zreflect/check_facts.py` |
+| `principle.off_is_visible` | **ok** | 2026-11-04T10:51:59+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry, criteria;gs=registry.gates()[0];p=criteria.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)"` |
+| `principle.only_measured` | **ok** | 2026-11-04T10:51:59+0800 | `python3 -c "import json,sys;d=json.load(open('FACTS.json'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
+| `principle.open_questions_settle` | **ok** | 2026-11-04T10:51:59+0800 | `python3 zreflect/check_questions.py` |
+| `principle.selfcert_harness` | **ok** | 2026-11-04T10:51:59+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)"` |
+| `principle.snapshot_hygiene` | **ok** | 2026-11-04T10:51:59+0800 | `python3 zreflect/check_snapshots.py` |
+| `principle.three_readmes` | **ok** | 2026-11-04T10:51:59+0800 | `python3 zreflect/check_readme_sync.py` |
+| `principle.zero_language` | **ok** | 2026-11-04T10:51:59+0800 | `python3 zreflect/check_i18n.py` |
+| `py_files` | **37** | 2026-11-04T10:51:59+0800 | `find . -name '*.py' -not -path './.git/*' | wc -l` |
+| `py_lines` | **13131** | 2026-11-04T10:51:59+0800 | `find . -name '*.py' -not -path './.git/*' -exec cat {} + | wc -l` |
 
 17 条事实。
 <!-- /AUTO:FACTS -->

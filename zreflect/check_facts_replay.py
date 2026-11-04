@@ -241,7 +241,8 @@ LED = {"facts": {"n": {"value": 12, "cmd": "c"}}}
 
 
 
-def _cases():
+def _cases_fixture():
+    """构造夹台账 + 渲染闭包。返回 dict，喂给三个分组函数。"""
     multi = {"facts": {"a": {"value": 1, "cmd": "ca"},
                        "b": {"value": 2, "cmd": "cb", "replay": False}}}
     wit = {"facts": {"expensive": {"value": "bench-42", "cmd": "run-bench",
@@ -284,86 +285,125 @@ def _cases():
         return [p.params for p in replay_all(ledger, runner=runner)["problems"]
                 if p.code == code]
 
+    return {"multi": multi, "wit": wit, "cal": cal, "said": said,
+            "hint_has": _hint_has, "params": params, "codes": codes,
+            "pack_lang": pack_lang}
+
+
+def _cases_replay(fx):
+    """见 `_cases()`：本组 11 条。"""
+    said, _hint_has, params = fx["said"], fx["hint_has"], fx["params"]
+    codes, pack_lang = fx["codes"], fx["pack_lang"]
+    multi, wit, cal = fx["multi"], fx["wit"], fx["cal"]
     return [
-        # ① 正常不报
-        ("replay.ok_trailing_newline",
-         lambda: replay_all(LED, runner=lambda c: (0, "12\n"))["problems"] == []),
-        ("replay.ok_string_value",
-         lambda: replay_all({"facts": {"s": {"value": "v1", "cmd": "c"}}},
-                            runner=lambda c: (0, " v1\n"))["problems"] == []),
-        ("replay.ok_skip_declared",
-         lambda: replay_all(multi, runner=lambda c: (0, "1"))["problems"] == []),
-        # ② 该报的必须报
-        ("★ replay.mismatch_repair_hint",
-         # 真实包里「不符」这条必须仍带修法锚点：`--accept-changes`（ASCII，
-         # 是修法的可判定部分）+ `facts.py`（重测命令）。纯中文语义锚点会把自己
-         # 变成「本体里的自然语言」—— 那正是零语言闸门要消灭的形状。
-         # 零包 ⇒ 没有可渲染的句子，这条语义锚点**不适用**（明说不假装通过）。
-         lambda: codes(LED, lambda c: (0, "13")) == ["replay.mismatch"]
-         and params(LED, lambda c: (0, "13"), "replay.mismatch")[0]["key"] == "n"
-         # 条件判据：**装了包就必须带锚点**；零包（合法态）无句子可验。
-         and (not pack_lang or _hint_has(LED, lambda c: (0, "13"),
-                                         "accept-changes", "facts.py"))),
-        ("★ replay.mismatch_full_line",
-         lambda: codes(LED, lambda c: (0, "count=12 total")) == ["replay.mismatch"]),
-        ("★ replay.command_failed",
-         lambda: codes(LED, lambda c: (1, ""))
-         == ["replay.command_failed", "replay.none_ran"]
-         and params(LED, lambda c: (1, ""), "replay.command_failed")[0]["return_code"] == 1),
-        ("★ replay.timeout_cold_start_hint",
-         # 冷启动提示的语义锚点：`REFLECT_REPLAY_TIMEOUT` 旋钮名（ASCII）必须
-         # 仍在模板里 —— 删掉冷启动提示句（它原先就带着这个旋钮名）⇒ 这条红。
-         lambda: codes(LED, lambda c: (None, "")) == ["replay.timeout", "replay.none_ran"]
-         and (not pack_lang or _hint_has(LED, lambda c: (None, ""),
-                                         "REFLECT_REPLAY_TIMEOUT"))),
-        ("★ replay.no_cmd",
-         lambda: codes({"facts": {"n": {"value": 1, "source": "s"}}},
-                       lambda c: (0, "1")) == ["replay.no_cmd"]),
-        # ③ 空输入必须报
-        ("★ replay.empty_ledger",
-         lambda: codes({"facts": {}}, lambda c: (0, "")) == ["replay.empty_ledger"]),
-        ("★ replay.none_ran",
-         lambda: codes({"facts": {"a": {"value": 1, "cmd": "x"},
-                                  "b": {"value": 2, "cmd": "y"}}},
-                       lambda c: (1, "")) == ["replay.command_failed",
-                                              "replay.command_failed",
-                                              "replay.none_ran"]
-         and params({"facts": {"a": {"value": 1, "cmd": "x"},
-                               "b": {"value": 2, "cmd": "y"}}},
-                    lambda c: (1, ""), "replay.none_ran")[0]["attempts"] == 2),
-        ("★ replay.all_skipped",
-         lambda: codes({"facts": {"a": {"value": 1, "cmd": "x", "replay": False}}},
-                       lambda c: (0, "1")) == ["replay.all_skipped"]),
-        # ③ 见证档（issue #5）
-        ("replay.witness_ok",
-         lambda: replay_all(wit, runner=lambda c: (0, "tool-ok"))["problems"] == []),
-        ("replay.witness_counted",
-         lambda: replay_all(wit, runner=lambda c: (0, "tool-ok"))["witnessed"] == 1),
-        ("★ replay.witness_mismatch",
-         lambda: codes(wit, lambda c: (0, "tool-CHANGED"))
-         == ["replay.witness_mismatch"]),
-        ("★ replay.witness_command_failed",
-         lambda: codes(wit, lambda c: (1, "")) == ["replay.witness_command_failed"]),
-        ("★ replay.witness_timeout",
-         lambda: codes(wit, lambda c: (None, "")) == ["replay.witness_timeout"]),
-        ("replay.witness_satisfies_guard",
-         lambda: "replay.all_skipped" not in
-         codes(wit, lambda c: (0, "tool-ok"))),
-        # ④ 仪器校准档（issue #6 ①）
-        ("replay.calibrate_ok",
-         lambda: replay_all(cal, runner=lambda c: (0, "known-positive"))["problems"] == []),
-        ("replay.calibrate_counted",
-         lambda: replay_all(cal, runner=lambda c: (0, "known-positive"))["calibrated"] == 1),
-        ("★ replay.calibrate_mismatch",
-         lambda: codes(cal, lambda c: (0, "wrong")) == ["replay.calibrate_mismatch"]),
-        ("★ replay.calibrate_command_failed",
-         lambda: codes(cal, lambda c: (1, "")) == ["replay.calibrate_command_failed"]),
-        ("★ replay.calibrate_timeout",
-         lambda: codes(cal, lambda c: (None, "")) == ["replay.calibrate_timeout"]),
-        ("replay.calibrate_satisfies_guard",
-         lambda: "replay.all_skipped" not in
-         codes(cal, lambda c: (0, "known-positive"))),
+    # ① 正常不报
+    ("replay.ok_trailing_newline",
+     lambda: replay_all(LED, runner=lambda c: (0, "12\n"))["problems"] == []),
+    ("replay.ok_string_value",
+     lambda: replay_all({"facts": {"s": {"value": "v1", "cmd": "c"}}},
+                        runner=lambda c: (0, " v1\n"))["problems"] == []),
+    ("replay.ok_skip_declared",
+     lambda: replay_all(multi, runner=lambda c: (0, "1"))["problems"] == []),
+    # ② 该报的必须报
+    ("★ replay.mismatch_repair_hint",
+     # 真实包里「不符」这条必须仍带修法锚点：`--accept-changes`（ASCII，
+     # 是修法的可判定部分）+ `facts.py`（重测命令）。纯中文语义锚点会把自己
+     # 变成「本体里的自然语言」—— 那正是零语言闸门要消灭的形状。
+     # 零包 ⇒ 没有可渲染的句子，这条语义锚点**不适用**（明说不假装通过）。
+     lambda: codes(LED, lambda c: (0, "13")) == ["replay.mismatch"]
+     and params(LED, lambda c: (0, "13"), "replay.mismatch")[0]["key"] == "n"
+     # 条件判据：**装了包就必须带锚点**；零包（合法态）无句子可验。
+     and (not pack_lang or _hint_has(LED, lambda c: (0, "13"),
+                                     "accept-changes", "facts.py"))),
+    ("★ replay.mismatch_full_line",
+     lambda: codes(LED, lambda c: (0, "count=12 total")) == ["replay.mismatch"]),
+    ("★ replay.command_failed",
+     lambda: codes(LED, lambda c: (1, ""))
+     == ["replay.command_failed", "replay.none_ran"]
+     and params(LED, lambda c: (1, ""), "replay.command_failed")[0]["return_code"] == 1),
+    ("★ replay.timeout_cold_start_hint",
+     # 冷启动提示的语义锚点：`REFLECT_REPLAY_TIMEOUT` 旋钮名（ASCII）必须
+     # 仍在模板里 —— 删掉冷启动提示句（它原先就带着这个旋钮名）⇒ 这条红。
+     lambda: codes(LED, lambda c: (None, "")) == ["replay.timeout", "replay.none_ran"]
+     and (not pack_lang or _hint_has(LED, lambda c: (None, ""),
+                                     "REFLECT_REPLAY_TIMEOUT"))),
+    ("★ replay.no_cmd",
+     lambda: codes({"facts": {"n": {"value": 1, "source": "s"}}},
+                   lambda c: (0, "1")) == ["replay.no_cmd"]),
+    # ③ 空输入必须报
+    ("★ replay.empty_ledger",
+     lambda: codes({"facts": {}}, lambda c: (0, "")) == ["replay.empty_ledger"]),
+    ("★ replay.none_ran",
+     lambda: codes({"facts": {"a": {"value": 1, "cmd": "x"},
+                              "b": {"value": 2, "cmd": "y"}}},
+                   lambda c: (1, "")) == ["replay.command_failed",
+                                          "replay.command_failed",
+                                          "replay.none_ran"]
+     and params({"facts": {"a": {"value": 1, "cmd": "x"},
+                           "b": {"value": 2, "cmd": "y"}}},
+                lambda c: (1, ""), "replay.none_ran")[0]["attempts"] == 2),
+    ("★ replay.all_skipped",
+     lambda: codes({"facts": {"a": {"value": 1, "cmd": "x", "replay": False}}},
+                   lambda c: (0, "1")) == ["replay.all_skipped"]),
     ]
+
+
+def _cases_witness(fx):
+    """见 `_cases()`：本组 6 条。"""
+    said, _hint_has, params = fx["said"], fx["hint_has"], fx["params"]
+    codes, pack_lang = fx["codes"], fx["pack_lang"]
+    multi, wit, cal = fx["multi"], fx["wit"], fx["cal"]
+    return [
+    # ③ 见证档（issue #5）
+    ("replay.witness_ok",
+     lambda: replay_all(wit, runner=lambda c: (0, "tool-ok"))["problems"] == []),
+    ("replay.witness_counted",
+     lambda: replay_all(wit, runner=lambda c: (0, "tool-ok"))["witnessed"] == 1),
+    ("★ replay.witness_mismatch",
+     lambda: codes(wit, lambda c: (0, "tool-CHANGED"))
+     == ["replay.witness_mismatch"]),
+    ("★ replay.witness_command_failed",
+     lambda: codes(wit, lambda c: (1, "")) == ["replay.witness_command_failed"]),
+    ("★ replay.witness_timeout",
+     lambda: codes(wit, lambda c: (None, "")) == ["replay.witness_timeout"]),
+    ("replay.witness_satisfies_guard",
+     lambda: "replay.all_skipped" not in
+     codes(wit, lambda c: (0, "tool-ok"))),
+    ]
+
+
+def _cases_calibrate(fx):
+    """见 `_cases()`：本组 6 条。"""
+    said, _hint_has, params = fx["said"], fx["hint_has"], fx["params"]
+    codes, pack_lang = fx["codes"], fx["pack_lang"]
+    multi, wit, cal = fx["multi"], fx["wit"], fx["cal"]
+    return [
+    # ④ 仪器校准档（issue #6 ①）
+    ("replay.calibrate_ok",
+     lambda: replay_all(cal, runner=lambda c: (0, "known-positive"))["problems"] == []),
+    ("replay.calibrate_counted",
+     lambda: replay_all(cal, runner=lambda c: (0, "known-positive"))["calibrated"] == 1),
+    ("★ replay.calibrate_mismatch",
+     lambda: codes(cal, lambda c: (0, "wrong")) == ["replay.calibrate_mismatch"]),
+    ("★ replay.calibrate_command_failed",
+     lambda: codes(cal, lambda c: (1, "")) == ["replay.calibrate_command_failed"]),
+    ("★ replay.calibrate_timeout",
+     lambda: codes(cal, lambda c: (None, "")) == ["replay.calibrate_timeout"]),
+    ("replay.calibrate_satisfies_guard",
+     lambda: "replay.all_skipped" not in
+     codes(cal, lambda c: (0, "known-positive"))),
+    ]
+
+
+def _cases():
+    """拼装三组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    fx = _cases_fixture()
+    return (
+        _cases_replay(fx)
+        + _cases_witness(fx)
+        + _cases_calibrate(fx)
+    )
+
 
 
 GATE = meta("复跑闸门", "台账 cmd 逐字复跑（裸值契约：stdout 必须等于值）",
