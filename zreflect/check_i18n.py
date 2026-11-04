@@ -43,6 +43,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate                                               # noqa: E402
+import machine                                            # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, off, repo, selftest  # noqa: E402
 from i18n import M                                        # noqa: E402
 
@@ -226,6 +227,15 @@ def problems(paths):
     if not paths:
         return [M("i18n_cover.empty_scan")]
     out = []
+    # ⚠️ **文件名本身**也是攻击面：一个叫 `evil\nOFF: x.py` 的文件，一旦名字
+    # 被渲染进消息（`i18n_cover.bare_text(file=…)` 这类），就会伪造出机器行。
+    # 判据用 `machine.LINE_BREAKS` 的**同一张表**（C4：不能自己再写一份近似
+    # 的分行符集）。此前这条完全没有 —— 实测把带换行的 .py 放进扫描面，
+    # `i18n_cover.ok(files=34)` 照样绿。
+    for name, _src in paths:
+        if any(b in name for b in machine.LINE_BREAKS):
+            out.append(M("i18n_cover.filename_has_line_break",
+                         file=name.replace("\n", "\\n")[:60]))
     for name, src in paths:
         try:
             tree = ast.parse(src)
@@ -519,6 +529,14 @@ def _cases():
         ("★ i18n_cover.hooks_dir_is_scanned",
          lambda: ".zcode" in DEFAULT_ROOTS),
         # ③ 空输入必须报
+        # **文件名**也是攻击面：带分行符的名字必须报（此前完全没管）。
+        ("★ i18n_cover.filename_line_break",
+         lambda: [p.code for p in problems(
+             [("evil" + chr(0x0A) + "OFF: x.py", "x = 1\n")])]
+         == ["i18n_cover.filename_has_line_break"]),
+        # 正常文件名不许误报
+        ("i18n_cover.filename_clean_ok",
+         lambda: problems([("normal.py", "x = 1\n")]) == []),
         ("★ i18n_cover.empty_scan", lambda: problems([]) != []),
     ]
 
