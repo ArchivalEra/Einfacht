@@ -564,11 +564,20 @@ deliberately brutal: **every push must update all three together.**
 
 ```bash
 cp -r zreflect reflect-hooks /path/to/your-repo/
+# 0. In a fresh repo, bootstrap first — otherwise the doc it expects does not exist.
+#    --init creates state/PRINCIPLES/AGENTS/README/retractions/questions plus an
+#    Einfacht.env trimmed to the docs it actually made. It never overwrites.
+python3 zreflect/facts.py --init
+#    Then SOURCE that env before any hand-run. Without it the gates fall back to
+#    default names, look for docs you never created, and report red — the hint
+#    saying so is `ℹ gate.env_hint` on stderr:
+#       set -a; . ./Einfacht.env; set +a
 # 1. Write your measure(): fill FACTS.json with measured facts (see measure_example in facts.py)
 #    ⚠️ the collector's four principles live in zreflect/collect.py — persistent disk only,
 #    no inputs that change by themselves, say "unavailable" out loud, cache the expensive ones.
 python3 zreflect/facts.py                       # measure once
-python3 zreflect/facts.py --render-doc STATE.md # write the machine blocks (facts + gate registry) into the doc
+python3 zreflect/facts.py --render-doc          # write the machine blocks into the state doc
+python3 zreflect/facts.py --render-doc PRINCIPLES.md   # …and the rules block into PRINCIPLES.md
 python3 zreflect/facts.py --get py_lines         # bare value of one fact (for scripts / other languages)
 # 2. Wire the gates into commit/push (recompute block + run all gates;
 #    push additionally refuses pushes that don't update the README trio together).

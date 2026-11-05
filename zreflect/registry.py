@@ -518,6 +518,30 @@ def _arg_after(argv, flag):
             and not argv[i + 1].startswith("-") else "commit")
 
 
+def _emit_gate_output(text):
+    """把一道红闸门的输出转述给用户：**问题行 + 全部诊断行**，其余丢掉。
+
+    ⚠️ 截断规则是「第一条问题行之后停」，但 `ℹ ` 诊断行**一条都不许丢** ——
+    它们是唯一能救用户的那句话。实测：一次 bootstrap 后 registry 报 3 红，
+    而 `check_facts.py` 紧跟问题行的诊断是
+    `ℹ gate.env_hint(file='Einfacht.env')`（「先 source 它再手工跑」）。
+    旧规则把它整条丢掉，于是用户看到「缺 README.zh.md」就去造那份 ——
+    症状对、病因错，而且造了只会让红变多。
+    """
+    lines = [ln.rstrip() for ln in (text or "").splitlines() if ln.strip()]
+    shown_problem = False
+    for ln in lines:
+        if ln.startswith("  \u00b7 "):
+            if shown_problem:
+                continue                  # 第二条起的问题行省略（别刷屏）
+            shown_problem = True
+        elif ln.lstrip().startswith("\u2139 "):
+            pass                           # 诊断行：始终保留
+        elif shown_problem:
+            continue                       # 问题行之后的非诊断行：不重复打印
+        print("      " + ln)
+
+
 def _main_run(argv):
     """执行面：跑一个相位的全部闸门并聚合 ran / off / failed（C1+C2）。
 
@@ -550,15 +574,7 @@ def _main_run(argv):
         print(M("registry.phase_error", file=f))
     for f in res["fail_list"]:
         print("  FAILED %s" % f)
-        # 把闸门自己的问题行原样带出来（去掉空行与前后的噪声）。
-        # ⚠️ 此前只打文件名 —— 用户要自己重跑每道红的闸门才知道为什么。
-        for ln in (res.get("fail_out", {}).get(f) or "").splitlines():
-            ln = ln.rstrip()
-            if not ln:
-                continue
-            print("      " + ln)
-            if ln.startswith("  · "):
-                break            # 一条问题行就够定位了，别刷屏
+        _emit_gate_output((res.get("fail_out", {}).get(f) or ""))
     # 配置坏（rc=2）与判据红（rc=1）都要非零退出，但消息不同（修法不同）
     return 1 if (res["failed"] or res.get("fatal") or res.get("error")) else 0
 

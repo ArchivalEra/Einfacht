@@ -332,7 +332,17 @@ def _configurable_impl(repo, tmp, registry):
 # 固定参数**，不碰 git 状态）—— 所以它没有离开判据面，只是换了正确的测法。
 ZERO_LANG_PROBES = (
     ("zreflect/gate.py", []),
-    ("zreflect/facts.py", ["--check"]),
+    # ⚠️ 探针清掉全部 `REFLECT_*`（判的就是「没要语言包」那条路径），所以
+    # 只能选**既不吃配置、也不产 PINNED 文本**的入口。两处实测教训：
+    #
+    #   · `facts.py --check` —— 依赖 `REFLECT_DOCS`/`REFLECT_DOC` 决定查哪几份
+    #     文档。清空后它用默认名单，与本仓实际配置不符 ⇒ 恒红，
+    #     而那是一条与语言毫无关系的红灯。
+    #   · `facts.py --render` —— 输出的 `PREAMBLE` 是**固定中文**（`PINNED:`：
+    #     机器块要逐字节对账，跟随语言会让 `--check` 永不收敛）⇒ 恒报 CJK 泄漏。
+    #
+    # `registry --red-need` 是纯文件名清单：零配置依赖、零自然语言。
+    ("zreflect/registry.py", ["--red-need"]),
     ("zreflect/knobs.py", ["--list"]),
 )
 

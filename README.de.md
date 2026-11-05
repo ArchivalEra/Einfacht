@@ -615,11 +615,21 @@ drei gemeinsam aktualisieren.**
 
 ```bash
 cp -r zreflect reflect-hooks /path/to/your-repo/
+# 0. In einem frischen Repo zuerst bootstrappen — sonst existiert das erwartete Doc nicht.
+#    --init legt state / PRINCIPLES / AGENTS / README / retractions / questions an und
+#    schreibt eine auf die tatsächlich erzeugten Docs zugeschnittene Einfacht.env.
+#    Es überschreibt nie.
+python3 zreflect/facts.py --init
+#    Dann vor jedem Handlauf **sourcen**. Ohne das fallen die Gates auf Standardnamen
+#    zurück, suchen Docs, die du nie angelegt hast, und melden rot — der Hinweis
+#    darauf ist `ℹ gate.env_hint` auf stderr:
+#       set -a; . ./Einfacht.env; set +a
 # 1. Dein measure() schreiben: FACTS.json mit gemessenen Fakten füllen (siehe measure_example in facts.py)
 #    ⚠️ die vier Collector-Prinzipien stehen in zreflect/collect.py — nur persistentes Disk,
 #    keine selbständernden Eingänge, „unavailable" laut sagen, das Teure cachen.
 python3 zreflect/facts.py                        # einmal messen
-python3 zreflect/facts.py --render-doc STATE.md  # den Maschinenblock ins Doc schreiben
+python3 zreflect/facts.py --render-doc            # den Maschinenblock ins Zustandsdoc schreiben
+python3 zreflect/facts.py --render-doc PRINCIPLES.md   # …und den Regelblock in PRINCIPLES.md
 python3 zreflect/facts.py --get py_lines          # Bare-Wert eines Fakts (für Skripte / andere Sprachen)
 # 2. In Commit/Push einhängen (Block neu rechnen + alle Gates;
 #    Push weist außerdem Pushes ab, die das README-Trio nicht gemeinsam aktualisieren).

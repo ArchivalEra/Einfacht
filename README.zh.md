@@ -458,11 +458,20 @@ issue #3 ③）—— runner / CI 不论检查器叫什么都能 grep 同一个�
 
 ```bash
 cp -r zreflect reflect-hooks /path/to/your-repo/
+# 0. 全新仓必须先 bootstrap —— 否则它期望的那份文档根本不存在。
+#    --init 建 state / PRINCIPLES / AGENTS / README / retractions / questions，
+#    并按实际生成的文档写一份 Einfacht.env。它从不覆盖已有文件。
+python3 zreflect/facts.py --init
+#    然后在任何手工运行之前 **source 它**。不 source，闸门就回落默认名、
+#    去找你从没建过的文档、报红 —— 说明这一点的那行提示是 stderr 上的
+#    `ℹ gate.env_hint`：
+#       set -a; . ./Einfacht.env; set +a
 # 1. 写你的 measure()：把"测出来的事实"填进 FACTS.json（参考 facts.py 的 measure_example）
 #    ⚠️ 采集器四条原则见 zreflect/collect.py —— 只读持久盘、不引入会自己变的输入、
 #    读不到就明说、贵的测量做缓存。
 python3 zreflect/facts.py                      # 量一遍
-python3 zreflect/facts.py --render-doc STATE.md # 把机器块（事实 + 闸门名录）写进文档
+python3 zreflect/facts.py --render-doc          # 把机器块写进状态文档
+python3 zreflect/facts.py --render-doc PRINCIPLES.md   # ……规则块写进 PRINCIPLES.md
 python3 zreflect/facts.py --get 键名             # 只打印一条事实的裸值（脚本 / 其它语言用）
 # 2. 挂进提交 / 推送（重算机器块 + 全部闸门；推送还要求三语 README 同批更新）。
 #    Einfacht **不抢钩子座位**：只暴露一个入口（reflect-hooks/gate.py），

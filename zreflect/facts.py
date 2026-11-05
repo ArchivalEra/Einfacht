@@ -89,8 +89,16 @@ def measure_example():
     # awk 的 FNR==1{b=0} 是必需的：find -exec {} + 会把多个文件喂给
     # 同一个 awk 进程，漏了按文件重置，第一个带块的文件之后全被跳过，
     # 而输出仍然「像个行数」。起始标记与 render.py 的输出逐字一致。
+    # ⚠️ 排除**全部**机器块，不只 FACTS：`AUTO:GATES` 与 `AUTO:RULES` 也是
+    # 渲染产出的，漏掉它们 ⇒ 渲染一次行数就 +47（实测：bootstrap 后
+    # 38 → 59），`check_facts_replay` 永久红，而修法看起来是「再量一遍」——
+    # 再量只会把 59 写进台账，下次渲染又变。
+    # 状态机版：见到任一 `<!-- AUTO:* -->` 进块、见到对应收尾出块。
     md_lines_cmd = ("find . -name '*.md' -not -path './.git/*'"
-                    " -exec awk 'FNR==1{b=0} /<!-- AUTO:FACTS -->/{b=1} !b' {} + | wc -l")
+                    " -exec awk 'FNR==1{b=0}"
+                    " /<!-- AUTO:[A-Z]+ -->/{b=1; next}"
+                    " /<!-- \\/AUTO:[A-Z]+ -->/{b=0; next}"
+                    " !b' {} + | wc -l")
     # cwd=GATE_REPO：计数（os.walk(GATE_REPO)）与复跑（闸门在仓库根
     # 逐字执行 cmd）都锚定 GATE_REPO —— 不传 cwd 时，在夹具里量到的是
     # 调用方仓库的行数，换名自证会红（跨仓库可配置性自证抓到的回归）。
@@ -444,7 +452,27 @@ def main(argv):
     """
     if not argv:
         return measure(argv)
-    return _command_table().get(argv[0], measure)(argv)
+    table = _command_table()
+    cmd = table.get(argv[0])
+    if cmd is not None:
+        return cmd(argv)
+    if argv[0] in ("--help", "-h", "help"):
+        print(_usage(), file=sys.stderr)
+        return 0
+    # ⚠️ `--allow-drop` / `--accept-changes[=keys]` 是 **measure() 的修饰符**，
+    # 不是命令 —— 它们是「以无子命令起的 measure，但放行某类写盘」。
+    # 上面那条「未知命令不许回落 measure」的守卫曾把它们误判成未知命令，
+    # 于是**唯一能推进台账的出口失效**（实测：`--accept-changes` 打 usage
+    # 并退 2，而打出来的 usage 里还写着它）。
+    if argv[0].startswith(("--allow-drop", "--accept-changes")):
+        return measure(argv)
+    # ⚠️ **未知命令不许回落 `measure()`**：那会「量一遍并写台账」——
+    # `--help` / `--bogus` 变成一次真实写盘（实测：`facts.py --help`
+    # 在未完仓里 rc=0 且改写了 FACTS.json）。没人会去想「查帮助会写文件」。
+    print(_usage(), file=sys.stderr)
+    print(machine().emit("fatal", M("facts.unknown_command",
+                                   command=argv[0])), file=sys.stderr)
+    return 2
 
 
 # 命令名 → handler。**表在函数外**：分派逻辑本身只有一行，加命令 = 加一个函数
@@ -454,6 +482,17 @@ def main(argv):
 # `_command_table()` 只是让「读表」这件事有个名字，且把「为什么是表不是 if 链」
 # 的说明放在读它的地方。
 _COMMANDS = {}
+
+
+def _usage():
+    """用法行（`--help` / 未知命令）。**走语言包** —— 与本体其它文本同一条制度。
+
+    ⚠️ 这里曾被我写成固定英文，理由是「这是唯一发现 CLI 的出口，不该依赖包」。
+    那是错的：它绕过了「本体零语言」这条硬不变式，而 `check_i18n` 只抓 CJK、
+    抓不到英文 —— 等于钻了本仓自己声明的盲区。发现命令的正面是**README**
+    （三语），不是 `--help`。没装包的仓看到 `facts.usage` 是诚实的。
+    """
+    return M("facts.usage")
 
 
 def _command_table():
@@ -748,6 +787,18 @@ CASES = [
      lambda: get_value({"facts": {"n": 7}}, "n") == (True, 7)),
     ("★ facts.get_unknown_key",
      lambda: get_value({"facts": {"n": 1}}, "zzz")[0] is False),
+    # **未知命令不许回落 measure**（实测：`facts.py --help` 曾「量一遍并写台账」）。
+    # `measure` 是一条**真实写盘**的路径 —— 把它当兜底，等于任何拼错的命令都改台账。
+    ("★ facts.unknown_command_is_2", lambda: _unknown_cmd_rc() == 2),
+    # 空输入档：`--help` 是引导面，必须 rc=0 且**不落 measure**（不写台账）。
+    ("★ facts.help_is_not_a_measure",
+     lambda: _help_rc() == 0 and not _is_unknown_cmd("--help")),
+    # 反向：`--allow-drop` / `--accept-changes` 是 **measure 的修饰符**，不是命令。
+    # 上面那条守卫曾把它们判成未知命令 ⇒ 唯一能推进台账的出口失效（实测）。
+    ("★ facts.measure_modifiers_route_to_measure",
+     lambda: not _is_unknown_cmd("--accept-changes=k1")),
+    # **bootstrap 端到端收敛**：`--init` → measure → 两次 render → registry 全绿。
+    ("★ facts.fresh_repo_bootstraps_green", lambda: _fresh_bootstraps()),
 ]
 
 
@@ -763,6 +814,86 @@ _COMMANDS.update({
     "--accept": cmd_accept,
     "show": cmd_show,
 })
+
+
+def _unknown_cmd_rc():
+    """未知命令的 rc（`--definitely-not-a-command`）。"""
+    import contextlib                                   # noqa: PLC0415
+    import io                                           # noqa: PLC0415
+    with contextlib.redirect_stdout(io.StringIO()), \
+            contextlib.redirect_stderr(io.StringIO()):
+        return main(["--definitely-not-a-command"])
+
+
+def _help_rc():
+    import contextlib                                   # noqa: PLC0415
+    import io                                           # noqa: PLC0415
+    with contextlib.redirect_stdout(io.StringIO()), \
+            contextlib.redirect_stderr(io.StringIO()):
+        return main(["--help"])
+
+
+def _is_unknown_cmd(first):
+    """走**真分派**，看这个首参会不会落到「未知命令」那一支。
+
+    刻意不复制一遍「表里有 / 是修饰符」的判断：那样写出来的断言只证明
+    那份复制品自己是自洽的，**不证明 `main` 真的按它分派**（实测：
+    拆掉 `main` 里的守卫，复制版断言照样 PASS —— 一条没有牙的用例）。
+
+    判据看的是**输出里有没有 `unknown_command` 这一条**，不是 rc：
+    measure 本身可能因为写盘守卫返回 2（那是另一件事），按 rc 判会把
+    「被误判成未知命令」与「写盘被拒」混为一谈。
+    """
+    import contextlib                                   # noqa: PLC0415
+    import io                                           # noqa: PLC0415
+    cap = io.StringIO()
+    with contextlib.redirect_stdout(io.StringIO()), \
+            contextlib.redirect_stderr(cap):
+        main([first])
+    return "unknown_command" in cap.getvalue()
+
+
+def _fresh_bootstraps():
+    """全新仓：`--init` → measure → 两次 render → `registry --run commit` 全绿。
+
+    **端到端**：spawn 子进程。正因为这样它抓得到那三处「单独看都合理、
+    合起来让 bootstrap 走不通」的缺陷 —— env 让 harness 自打红、
+    md_lines 把 GATES+RULES 块也数进去、`--accept-changes` 被当成未知命令。
+    """
+    import shutil                                        # noqa: PLC0415
+    import subprocess                                    # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        subprocess.run(["git", "init", "-q", d], check=True,
+                       capture_output=True)
+        for sub in ("zreflect", "reflect-hooks"):
+            shutil.copytree(os.path.join(gate.tool_repo(), sub),
+                            os.path.join(d, sub))
+        shutil.copy(os.path.join(gate.tool_repo(), "ruff.toml"), d)
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("REFLECT_")}
+
+        def run(argv, with_env=False):
+            prefix = "set -a; . ./Einfacht.env; set +a; " if with_env else ""
+            return subprocess.run(prefix + " ".join(argv), shell=True, cwd=d,
+                                  env=env, capture_output=True, text=True,
+                                  timeout=180)
+
+        run([sys.executable, "zreflect/facts.py", "--init"])
+        for argv, with_env in (
+                ([sys.executable, "zreflect/facts.py", "--accept-changes"], True),
+                ([sys.executable, "zreflect/facts.py", "--render-doc"], True),
+                ([sys.executable, "zreflect/facts.py", "--render-doc",
+                  "PRINCIPLES.md"], True),
+                ([sys.executable, "zreflect/registry.py", "--run", "commit"], True)):
+            if run(argv, with_env).returncode != 0:
+                return False
+        return True
+    except Exception:                                    # noqa: BLE001
+        return False
+    finally:
+        shutil.rmtree(d, True)
 
 
 MODULE = module_meta("台账 CLI", "量一遍 / 渲染 / --get / 两道守卫", selftest=True)
