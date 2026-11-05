@@ -44,7 +44,6 @@
 from __future__ import annotations
 
 import os
-import re
 from types import MappingProxyType
 
 # `machine` 只依赖标准库 ⇒ 无环。装载期判据与渲染期净化都从它来。
@@ -483,7 +482,7 @@ def _cases_fixture():
 
 def _cases_null(fx):
     """见 `_cases()`：本组 7 条。"""
-    fake, bad_shape, empty, en_cat, with_en, said = (fx["fake"], fx["bad_shape"], fx["empty"], fx["en_cat"], fx["with_en"], fx["said"])
+    said = fx["said"]
     return [
     # ① 正常不报 —— null 包形状
     ("i18n.null_no_params",
@@ -510,7 +509,7 @@ def _cases_null(fx):
 
 def _cases_pack(fx):
     """见 `_cases()`：本组 7 条。"""
-    fake, bad_shape, empty, en_cat, with_en, said = (fx["fake"], fx["bad_shape"], fx["empty"], fx["en_cat"], fx["with_en"], fx["said"])
+    bad_shape, empty, with_en = fx["bad_shape"], fx["empty"], fx["with_en"]
     return [
     ("i18n.pack_applied",
      lambda: with_en(lambda: str(M("replay.no_cmd", key="f.py"))
@@ -536,7 +535,7 @@ def _cases_pack(fx):
 
 def _cases_catalog(fx):
     """见 `_cases()`：本组 6 条。"""
-    fake, bad_shape, empty, en_cat, with_en, said = (fx["fake"], fx["bad_shape"], fx["empty"], fx["en_cat"], fx["with_en"], fx["said"])
+    fake = fx["fake"]
     return [
     ("i18n.message_is_str",
      lambda: (lambda m: (bool([m]), "  · " + m, len([m]))[0] is True)(M("a"))),

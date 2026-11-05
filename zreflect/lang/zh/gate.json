@@ -32,6 +32,7 @@
  "gate.title.invariants": "不变量闸门（声明式：仓库文件必须/不得含某片段）",
  "gate.title.knobs": "knobs（旋钮登记：REFLECT_* 的唯一名册）",
  "gate.title.ledger": "ledger（两道守卫）",
+ "gate.title.lint": "静态机器检查",
  "gate.title.living": "活状态抽取",
  "gate.title.locks": "check_locks（锁定源清单）",
  "gate.title.next": "接着上一轮",

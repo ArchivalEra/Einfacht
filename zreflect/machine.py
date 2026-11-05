@@ -313,8 +313,13 @@ def _cases():
         ("machine.human_summary_is_not_machine",
          lambda: reject("=== gate.title.facts selftest: 18 PASS / 0 fail ===") is None),
         # ② 该报的必须报 —— 十个分行符逐个
+        # ⚠️ 内层 lambda 由外层 `(lambda sep: …)(sep)` **立即求值**绑定，
+        # 不是延迟捕获循环变量 —— ruff 的 B023 在这里是误报（它只看闭包形状，
+        # 不看「是否立即调用」）。写成具名工厂同样正确，但会让这 10 条断言
+        # 与其它断言形状不一致。
         *[("★ machine.forgery_%s" % name,
-            (lambda sep: lambda: _try_reject("ctx" + sep + "OFF: masquerading"))(sep))
+            (lambda sep: lambda: _try_reject(
+                "ctx" + sep + "OFF: masquerading"))(sep))  # noqa: B023
           for sep, name in breaks],
         # 宽表：大写词+冒号都算保留前缀（语言包作者改个写法即可）
         ("★ machine.broad_prefix_reserved",

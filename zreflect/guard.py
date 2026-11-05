@@ -207,7 +207,7 @@ def _cases_decide(fx):
 
 def _cases_keys(fx):
     """见 `_cases()`：本组 6 条。"""
-    old, same, new_val, dropped = (fx["old"], fx["same"], fx["new_val"], fx["dropped"])
+    old, new_val = fx["old"], fx["new_val"]
     return [
     # 接线解析（issue #3 ① 的解析语义搬进守卫的自证面）
     ("guard.accepted_keys_bare",
@@ -228,7 +228,6 @@ def _cases_keys(fx):
 
 def _cases_write(fx):
     """见 `_cases()`：本组 5 条。"""
-    old, same, new_val, dropped = (fx["old"], fx["same"], fx["new_val"], fx["dropped"])
     return [
     # ② 盲写守卫（issue #20 ②）
     ("guard.write_target_clean",

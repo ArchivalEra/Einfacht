@@ -32,6 +32,7 @@
  "gate.title.invariants": "Invarianten-Tor (deklarativ: Repo-Dateien müssen / dürfen kein Snippet enthalten)",
  "gate.title.knobs": "knobs (Knopf-Register: die einzige Namensliste der REFLECT_*)",
  "gate.title.ledger": "ledger (zwei Wächter)",
+ "gate.title.lint": "statische Maschinenprüfung",
  "gate.title.living": "Lebendzustand-Extraktion",
  "gate.title.locks": "check_locks (Liste gesperrter Quellen)",
  "gate.title.next": "Übernahme vom letzten Durchgang",

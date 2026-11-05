@@ -36,6 +36,18 @@ jobs:
           # 执行面唯一产地（C1）：跑 runs_at="commit" 的闸门，聚合 ran/off/failed
           # （off 不是通过 —— 输出里单列）。别再 glob check_*.py。
           python3 zreflect/registry.py --run commit
+      # ⚠️ 这一步是 R-004 的判据。`gitroll-dispositions.json` 的 `_summary`
+      # 曾声称「All checks passed」而实测 159 errors —— 因为**没有任何闸门
+      # 跑过它**。静态机器检查不接进执行面，就会安静地烂一年。
+      # 本地同一判据：`python3 zreflect/lint.py`（缺 ruff 时明说未启用，退 0）。
+      - name: 静态机器检查（ruff，判据在 ruff.toml）
+        run: |
+          python3 -m pip install --quiet 'ruff==0.17.3'
+          # 判据只有一处产地（`ruff.toml`）—— 别在这行写选择集，
+          # 那会变成第二个会漂的产地（R-004 的成因就是命令写在文档里
+          # 而没人执行它）。
+          python3 -m ruff check .
+
       - name: 全量自证（闸门 + 插件 + 平台模块 + 跨仓可配置性 + 端到端零语言）
         run: |
           # 唯一入口：zreflect/harness.py（原文是 gates-selftest.sh 那 287 行 shell，

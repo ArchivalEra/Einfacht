@@ -424,7 +424,7 @@ def installed_langs():
         # `return []`，于是「权限坏掉 / 目录读不了」与「一个包都没装」塌缩成
         # 同一个假值 ⇒ 对账器全绿、roster 全绿 —— 那是「部署了 ≠ 在跑」家族
         # 里最坏的一种（实测：chmod 000 的包目录，pack_sync_problems() == []）。
-        raise PacksUnreadable(str(e))
+        raise PacksUnreadable(str(e)) from e
     return sorted(out)
 
 
@@ -528,7 +528,7 @@ def used_codes(py_dir=None):
     import ast                                           # noqa: PLC0415
     d = py_dir if py_dir is not None else gate.zdir()
     out = set()
-    for n, src in _py_sources(d):
+    for _n, src in _py_sources(d):
         try:
             tree = ast.parse(src)
         except SyntaxError:
@@ -776,7 +776,6 @@ def _cases_scan(fx):
 
 def _cases_readme(fx):
     """见 `_cases()`：本组 8 条。"""
-    d, phantom = fx["d"], fx["phantom"]
     return [
     ("knobs.readme_nominations_registered",
      lambda: readme_problems(files={
@@ -837,7 +836,6 @@ def _cases_readme(fx):
 
 def _cases_semantics(fx):
     """见 `_cases()`：本组 3 条。"""
-    d, phantom = fx["d"], fx["phantom"]
     return [
 ("knobs.semantic_renders_as_code_by_default",
  # 自带 **null 作用域**：这条测的是「没装包时是 code」，与入口激活了
@@ -861,7 +859,6 @@ def _cases_semantics(fx):
 
 def _cases_sync(fx):
     """见 `_cases()`：本组 9 条。"""
-    d, phantom = fx["d"], fx["phantom"]
     return [
 # 以下五条考的是**规则本身**（差集 / 占位符 / 空包），注入 discovery
 # 是**有意**的：它们不该依赖发现通道（那由 `pack_sync_sees_every_installed_lang`
@@ -940,7 +937,6 @@ def _cases_pack(fx):
 
 def _cases_registry(fx):
     """见 `_cases()`：本组 3 条。"""
-    d, phantom = fx["d"], fx["phantom"]
     return [
     # zh / en 键集与占位符名一致（C4 对账③）。真包绿 = 迁移没落一边；
     # 反向断言见 ② 档（假包必须报）。

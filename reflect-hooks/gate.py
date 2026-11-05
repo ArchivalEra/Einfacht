@@ -44,7 +44,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOOL_REPO = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(TOOL_REPO, "zreflect"))
 
-from gate import activate_or_fatal, fatal, finish, meta          # noqa: E402
+from gate import activate_or_fatal, meta          # noqa: E402
 from i18n import M                                               # noqa: E402
 
 ZERO_SHA = "0" * 40

@@ -44,7 +44,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate                                               # noqa: E402
 import machine                                            # noqa: E402
-from gate import fatal, finish, main_selftest_or, meta, off, repo, selftest  # noqa: E402
+from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M                                        # noqa: E402
 
 # 未配旋钮时扫**这些**目录 —— 套件自己的全部 Python。
@@ -64,7 +64,7 @@ KNOB = "REFLECT_I18N_ROOT"
 # CJK 统一表意文字的码点区间（U+4E00–U+9FFF）。**用码点常量而不是字面字符**：
 # 写成 `"一"`/`"鿿"` 会让本闸门扫到自己的源码（那两个就是区间端点）——
 # 实测踩到（报了两条「一」「鿿」的假违规）。
-from i18n import CJK_LO, CJK_HI, han                       # noqa: E402
+from i18n import CJK_LO, han                       # noqa: E402
 
 
 PINNED_MARK = "PINNED:"
@@ -166,38 +166,49 @@ _EXEMPT_CALLS = ("meta", "module_meta", "Rule", "compile",
                  "startswith", "endswith", "match", "search", "fullmatch", "find")
 
 
-def _exempt_ids(tree, name, src):
-    """**声明的**豁免面（不是猜的）。每一条都要说清为什么，否则豁免会变成
-    下一张会漂的手写名单。"""
+def _branch_constants(node):
+    """`node` 子树里全部字符串常量节点的 id（豁免面用）。"""
+    return {id(n) for n in ast.walk(node) if isinstance(n, ast.Constant)}
+
+
+def _exempt_call_args(tree):
+    """① 调用实参：`meta(…)` / `module_meta(…)` / `Rule(…)` / `re.compile(…)` 等。"""
     out = set()
-    # ① 调用实参：`meta(…)` / `module_meta(…)` / `Rule(…)` / `re.compile(…)` 等
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
             f = node.func
             fn = getattr(f, "id", "") or getattr(f, "attr", "")
             if fn in _EXEMPT_CALLS:
-                for n in ast.walk(node):
-                    if isinstance(n, ast.Constant):
-                        out.add(id(n))
-    # ② `PINNED:` 声明面（AUTO 机器块：固定语言、逐字节对账）。
-    #    按**声明**收编，不按名字 —— 手写名单一定会漂（deepening 第 8 轮）。
+                out |= _branch_constants(node)
+    return out
+
+
+def _pinned_constants(tree, src):
+    """② `PINNED:` 声明面（AUTO 机器块：固定语言、逐字节对账）。
+
+    按**声明**收编，不按名字 —— 手写名单一定会漂（deepening 第 8 轮）。
+    """
+    out = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if _declares_pinned(ast.get_docstring(node, clean=False)):
-                for n in ast.walk(node):
-                    if isinstance(n, ast.Constant):
-                        out.add(id(n))
+                out |= _branch_constants(node)
         elif isinstance(node, ast.Assign):
             if _pinned_by_comment(src, node):
-                for n in ast.walk(node):
-                    if isinstance(n, ast.Constant):
-                        out.add(id(n))
-    # ③ 语言包装载器自身的错误（`i18n.py`）：`MissingPack` 的文案**不能用
-    #    M()**（循环依赖：M 依赖语言包，包坏了才抛它）。文件级豁免。
+                out |= _branch_constants(node)
+    return out
+
+
+def _exempt_ids(tree, name, src):
+    """**声明的**豁免面（不是猜的）。每一条都要说清为什么，否则豁免会变成
+    下一张会漂的手写名单。三段各是一个具名函数（见各自文档）。
+
+    ③ 语言包装载器自身的错误（`i18n.py`）：`MissingPack` 的文案**不能用
+    M()**（循环依赖：M 依赖语言包，包坏了才抛它）。文件级豁免。
+    """
+    out = _exempt_call_args(tree) | _pinned_constants(tree, src)
     if name == "i18n.py":
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Constant):
-                out.add(id(node))
+        out |= {id(n) for n in ast.walk(tree) if isinstance(n, ast.Constant)}
     return out
 
 
@@ -412,7 +423,6 @@ def _null_output_has_no_cjk():
     `_packs_match_their_language()` 管（装包渲染 + 按语言判 CJK）。
     """
     import i18n                                          # noqa: PLC0415
-    import re                                            # noqa: PLC0415
     try:
         table = i18n.load_pack("en")
     except Exception:                                    # noqa: BLE001
@@ -517,7 +527,6 @@ def f(x):
 def _cases():
     return [("{SAMPLE}", lambda: True)]  # CJK label sample (must be flagged)
 '''
-    EMPTY = ""
     return [
         # ① 正常不报
         ("i18n_cover.good_fixture", lambda: problems([("good.py", GOOD)]) == []),

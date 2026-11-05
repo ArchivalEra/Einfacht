@@ -35,7 +35,6 @@ import os
 import re
 
 import gate                                                  # noqa: E402
-from gate import zdir                                        # noqa: E402
 
 # 一个「看起来像文件名」的记号（`off_reason` 里提到 `foo.json` 这类）。
 # 从 `registry.py` 搬来时一起带过来 —— 它是 `off_reason_problems` 的判据数据。
@@ -107,12 +106,25 @@ def dead_interface_problems(zdir=None):
         由 `main_selftest_or` 或 `__main__` 调用 —— 它们在**同文件**里被用，
         所以本来就不会被报）。
     """
+    cand, own_text = _public_functions(zdir)
+    corpus = _repo_corpus(zdir)
+    out = []
+    for fn, mod in sorted(cand.items()):
+        if not _consumed(fn, mod, own_text, corpus):
+            out.append(M("registry.dead_interface", function=fn, module=mod))
+    return out
+
+
+def _public_functions(zdir):
+    """① 平台模块（`zreflect/*.py`，非 `check_*`）里**不以 `_` 开头**的顶层函数。
+
+    返回 `(cand, own_text)`：`cand` = {函数名: 定义它的模块文件名}，
+    `own_text` = {模块文件名: 全文}（同文件引用计数要用）。
+    """
     import ast                                           # noqa: PLC0415
     import os                                            # noqa: PLC0415
     d = zdir if zdir is not None else gate.zdir()
-    # ① 收集平台模块的公开顶层函数
-    cand = {}
-    own_text = {}
+    cand, own_text = {}, {}
     for n in sorted(os.listdir(d)):
         if not n.endswith(".py") or n.startswith("check_"):
             continue
@@ -126,12 +138,20 @@ def dead_interface_problems(zdir=None):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) \
                     and not node.name.startswith("_"):
                 cand.setdefault(node.name, n)
-    # ② 全仓（zreflect / reflect-hooks）的引用文本
-    # ⚠️ 记**文件名**而不是文本：按字符串身份（`is`）跳过自身永远失效
-    # （Python 不保证两个相等字符串是同一对象）—— 实测：植入一个零消费函数
-    # 判据仍然报 clean。按名字排除才可靠。
-    corpus = []          # [(文件名, 文本)]
+    return cand, own_text
+
+
+def _repo_corpus(zdir):
+    """② 全仓（zreflect / reflect-hooks）的引用文本，`[(文件名, 文本)]`。
+
+    ⚠️ 记**文件名**而不是文本：按字符串身份（`is`）跳过自身永远失效
+    （Python 不保证两个相等字符串是同一对象）—— 实测：植入一个零消费函数
+    判据仍然报 clean。按名字排除才可靠。
+    """
+    import os                                            # noqa: PLC0415
+    d = zdir if zdir is not None else gate.zdir()
     root = os.path.dirname(d)
+    corpus = []
     for sub in ("zreflect", "reflect-hooks"):
         base = os.path.join(root, sub)
         if not os.path.isdir(base):
@@ -143,21 +163,17 @@ def dead_interface_problems(zdir=None):
                                            encoding="utf-8").read()))
                 except OSError:
                     continue
-    out = []
-    for fn, mod in sorted(cand.items()):
-        # 同文件里被调用几次？（定义本身算一次 match）
-        own = len(re.findall(r"\b%s\b" % re.escape(fn), own_text.get(mod, "")))
-        # 其它文件的引用
-        others = 0
-        for name, text in corpus:
-            if name == mod:
-                continue
-            if re.search(r"\b%s\b" % re.escape(fn), text):
-                others += 1
-        # 同文件里只用了一次（= 只有定义） ⇒ 死
-        if others == 0 and own <= 1:
-            out.append(M("registry.dead_interface", function=fn, module=mod))
-    return out
+    return corpus
+
+
+def _consumed(fn, mod, own_text, corpus):
+    """这个公开函数有没有消费者：别的文件引用过，**或**同文件里不止一次出现
+    （定义算一次 ⇒ 被自己 `_cases()` 用也算）。"""
+    own = len(re.findall(r"\b%s\b" % re.escape(fn), own_text.get(mod, "")))
+    if own > 1:
+        return True
+    return any(name != mod and re.search(r"\b%s\b" % re.escape(fn), text)
+               for name, text in corpus)
 
 
 def shell_surface_problems(repo_root=None):
@@ -171,7 +187,7 @@ def shell_surface_problems(repo_root=None):
     import os                                            # noqa: PLC0415
     root = repo_root or gate.GATE_REPO
     out = []
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, _dirnames, filenames in os.walk(root):
         if "/.git" in dirpath or "/node_modules" in dirpath:
             continue
         for n in filenames:
@@ -621,7 +637,6 @@ def _off_reason_ok(_label, sources, ok, reason=None):
 
     `sources` 的值是**源码片段**；用 `_off(` 占位再替换成真调用，避免本文件
     自己被这个判据收编（它本身是可 off 的闸门）。"""
-    import ast                                           # noqa: PLC0415
     body = sources["check_x.py"].replace("_off(", "off(")
     gs = [{"file": "check_x.py", "off_reason": reason}]
     got = off_reason_problems(gs, sources={"check_x.py": body})
@@ -697,13 +712,8 @@ def _path_rule_single_source():
 
 
 
-def _cases_off_reason(fx):
-    """见 `_cases()`：本组 7 条。"""
-    (ok, plain, real, real_missing, gs, missing,
-     real_files) = (fx["ok"], fx["plain"], fx["real"],
-                    fx["real_missing"], fx["gs"],
-                    fx["missing"], fx["real_files"])
-    d = fx["d"]
+def _cases_off_reason():
+    """见 `_cases()`：本组 7 条。**不碰夹具** —— 理由判据只读声明面。"""
     return [
     # **off 必须有理由**（第 12 轮）：会调 `off()` 却没声明 `off_reason`、
     # 理由太短、或声明了理由却不调 off —— 三个方向都要报。
@@ -736,13 +746,8 @@ def _cases_off_reason(fx):
 
 
 
-def _cases_path_rule(fx):
-    """见 `_cases()`：本组 4 条。"""
-    (ok, plain, real, real_missing, gs, missing,
-     real_files) = (fx["ok"], fx["plain"], fx["real"],
-                    fx["real_missing"], fx["gs"],
-                    fx["missing"], fx["real_files"])
-    d = fx["d"]
+def _cases_path_rule():
+    """见 `_cases()`：本组 4 条。**不碰夹具** —— 路径判据只读 gate 的产地。"""
     return [
     # **口径分裂**（C4 对账⑧）：工具的 zreflect/ 只能有一个产地。
     # 别处再写一份 `dirname(abspath(__file__))` ⇒ 报（改一处就会分裂）。
@@ -784,8 +789,8 @@ def _cases(fx=None):
         fx = _cases_fixture(d)
         fx["d"] = d
     return (
-        _cases_off_reason(fx)
-        + _cases_path_rule(fx)
+        _cases_off_reason()
+        + _cases_path_rule()
         + _cases_self_checks()
     )
 

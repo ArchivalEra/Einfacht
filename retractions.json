@@ -25,6 +25,20 @@
       "why": "套件去校验宿主的 config schema 是把耦合方向搞反了：换一个编辑器就得改闸门，而宿主自己的信任闸门（project hooks pending_trust）套件根本看不见。接线是否生效只有宿主的日志能回答。",
       "evidence": "python3 zreflect/registry.py --gates（名录里不应再有 check_wire）",
       "fixed_in": "zreflect/next.py 暴露宿主无关的 section()/stdout；宿主接线归使用方"
+    },
+    {
+      "id": "R-004",
+      "text": "All checks passed（`gitroll-dispositions.json` 的 `_summary` 对那三条 ruff 选择器的结论）",
+      "why": "`gitroll-dispositions.json` 的 `_summary` 声称这条命令「All checks passed」，实测 159 errors：134 个 F841（自证夹具里解包 7 个变量只用 2 个 —— 上一轮「复杂度拆分」留下的机械残渣）、13 个 F401、4 个 C901（最高 27）。**声称「已清」的那条命令本身没有闸门跑它**，所以它安静地烂了。",
+      "evidence": "python3 -m ruff check --select=C901,F,E9,B --config lint.mccabe.max-complexity=15 .",
+      "fixed_in": "全部清零（F841 134→0、F401 13→0、C901 4→0）；B023 一处经实测确认为误报并写明理由；`facts.main` 拆分派表 + 8 个 handler"
+    },
+    {
+      "id": "R-005",
+      "text": "`_doc()` 是模块级函数，`main` 里可以安全调用它",
+      "why": "这句断言曾经成立过，后来 `main` 里加了一句 `import doc as _doc`（`--accept-principles` 分支）⇒ `_doc` 变成整个函数的局部变量 ⇒ `python3 zreflect/facts.py --render-doc`（AGENTS.md 的首要命令之一）直接崩 `UnboundLocalError`。`ruff --select=F823` 早就报过，但那时没有任何闸门跑 ruff。",
+      "evidence": "python3 zreflect/facts.py --render-doc（改名后正常；原状 rc=0 但 traceback）",
+      "fixed_in": "别名改 `doc_mod`；`facts.main` 拆成每个命令一个 handler，命令间不再共享作用域 ⇒ 这类名字污染在结构上消失"
     }
   ]
 }

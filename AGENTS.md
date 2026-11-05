@@ -15,9 +15,10 @@ zreflect/gate.py         rc 契约 / off 态 / 三档自证 / 相位执行器
 zreflect/machine.py      机器行协议：哪一行是机器行（唯一产地）
 zreflect/i18n.py         本体零语言 + 语言包（zh/en/de）
 zreflect/doc.py          文档体系：纪律登记表（规矩的唯一产地）
-zreflect/next.py         「接着上一轮」采集器（记忆系统无感化）
+zreflect/next.py         「接着上一轮」采集器（宿主无关：只产 stdout 行）
 zreflect/check_*.py      闸门（清单见 registry --gates）
 zreflect/lang/<lang>/    语言包；一个都不装也能跑（输出 code+参数）
+ruff.toml                静态机器检查的判据（check_lint 读它，CI 读同一份）
 reflect-hooks/           钩子入口（只暴露一个口，不抢钩子座位）
 harness.py               发现式自证 harness
 ```
@@ -50,7 +51,7 @@ python3 zreflect/check_facts_replay.py       # 全部原则的判定命令逐条
 python3 zreflect/registry.py --run commit   # 全部 commit 相位闸门（ran/off/failed 分列）
 python3 zreflect/harness.py                 # 每个闸门先证明自己会红
 python3 zreflect/facts.py                   # 重量测
-python3 zreflect/facts.py --render-doc STATE.md
+python3 zreflect/facts.py --render-doc      # 渲染机器块（不带文件名 = 状态文档）
 ```
 
 `registry.py --run` 是**执行面的唯一入口** —— 不要 glob `check_*.py`。什么该跑由各闸门

@@ -314,7 +314,7 @@ def _cases_fixture():
 
 def _cases_core(fx):
     """见 `_cases()`：本组 9 条。"""
-    good, numberless, fifty, codes, pack_lang, real_pack, pack_placeholders = (fx["good"], fx["numberless"], fx["fifty"], fx["codes"], fx["pack_lang"], fx["real_pack"], fx["pack_placeholders"])
+    good, codes = fx["good"], fx["codes"]
     return [
     # ① 正常不报
     ("facts.block_ok",
@@ -353,7 +353,7 @@ def _cases_core(fx):
 
 def _cases_naked(fx):
     """见 `_cases()`：本组 7 条。"""
-    good, numberless, fifty, codes, pack_lang, real_pack, pack_placeholders = (fx["good"], fx["numberless"], fx["fifty"], fx["codes"], fx["pack_lang"], fx["real_pack"], fx["pack_placeholders"])
+    numberless, fifty, codes = fx["numberless"], fx["fifty"], fx["codes"]
     return [
     ("facts.small_int_exempt",
      lambda: problems(numberless, "there are 3\n"
@@ -382,7 +382,7 @@ def _cases_naked(fx):
 
 def _cases_pack(fx):
     """见 `_cases()`：本组 1 条。"""
-    good, numberless, fifty, codes, pack_lang, real_pack, pack_placeholders = (fx["good"], fx["numberless"], fx["fifty"], fx["codes"], fx["pack_lang"], fx["real_pack"], fx["pack_placeholders"])
+    pack_lang, pack_placeholders = fx["pack_lang"], fx["pack_placeholders"]
     return [
     ("facts.pack_entry_wired",
      # 真实包里「无出处」这条必须存在、且**接收该 code 实际发的那两个参数**
@@ -400,7 +400,7 @@ def _cases_pack(fx):
 
 def _cases_misc(fx):
     """见 `_cases()`：本组 1 条。"""
-    good, numberless, fifty, codes, pack_lang, real_pack, pack_placeholders = (fx["good"], fx["numberless"], fx["fifty"], fx["codes"], fx["pack_lang"], fx["real_pack"], fx["pack_placeholders"])
+    codes = fx["codes"]
     return [
     ("★ facts.bare_number_outside_fence",
      lambda: codes(LED, "```\n4752\n```\nspeed is 4752 times\n"

@@ -274,7 +274,7 @@ def _cases_fixture():
 
 def _cases_resolve(fx):
     """见 `_cases()`：本组 7 条。"""
-    line, good, fake, match, all_green = (fx["line"], fx["good"], fx["fake"], fx["match"], fx["all_green"])
+    good, match, all_green = fx["good"], fx["match"], fx["all_green"]
     return [
     # ① 正常不报
     ("world.ok",
@@ -303,7 +303,7 @@ def _cases_resolve(fx):
 
 def _cases_stamps(fx):
     """见 `_cases()`：本组 5 条。"""
-    line, good, fake, match, all_green = (fx["line"], fx["good"], fx["fake"], fx["match"], fx["all_green"])
+    good, fake = fx["good"], fx["fake"]
     return [
     ("★ world.stamp_mismatch",
      lambda: [p.code for p in stamp_problems(
@@ -326,7 +326,7 @@ def _cases_stamps(fx):
 
 def _cases_shape(fx):
     """见 `_cases()`：本组 6 条。"""
-    line, good, fake, match, all_green = (fx["line"], fx["good"], fx["fake"], fx["match"], fx["all_green"])
+    good = fx["good"]
     return [
     # ② 该报的必须报
     ("★ world.lines_empty",
