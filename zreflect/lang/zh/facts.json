@@ -44,5 +44,7 @@
  "facts.show.source": "    出处  %(value)s",
  "facts.show_unknown_key": "没有这条事实：%(key)s（现有：%(existing)s）",
  "facts.title": "事实闸门",
- "facts.unknown_key": "台账里没有键 `%(key)s`（现有：%(existing)s）"
+ "facts.unknown_command": "不认识命令 `%(command)s` —— 用 `--help` 看可用命令（它不会量、也不会写台账）",
+ "facts.unknown_key": "台账里没有键 `%(key)s`（现有：%(existing)s）",
+ "facts.usage": "用法：facts.py [--render|--render-doc [文件]|--check [文件]|--get 键|--init|--accept-principles|--accept 键 值 命令 出处|show [键]]（无参数 = 量一遍并写台账）"
 }

@@ -44,5 +44,7 @@
  "facts.show.source": "    source  %(value)s",
  "facts.show_unknown_key": "no such fact: %(key)s (existing: %(existing)s)",
  "facts.title": "Facts gate",
- "facts.unknown_key": "no key `%(key)s` in the ledger (existing: %(existing)s)"
+ "facts.unknown_command": "unknown command `%(command)s` — run `--help` for the available ones (it measures nothing and writes nothing)",
+ "facts.unknown_key": "no key `%(key)s` in the ledger (existing: %(existing)s)",
+ "facts.usage": "usage: facts.py [--render|--render-doc [file]|--check [file]|--get KEY|--init|--accept-principles|--accept KEY VALUE CMD SOURCE|show [KEY]] (no argument = measure and write the ledger)"
 }

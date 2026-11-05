@@ -249,17 +249,26 @@ def declared_vs_read_problems(gates, sources=None):
     return out
 
 
-def registry_vs_readme_problems(tables=None):
+def registry_vs_readme_problems(tables=None, names=None):
     """C4 对账②：登记表里的旋钮 ⊆ 三语 README 配置表。
 
     `knobs.REGISTRY` 与三语 README 的配置表是两份「旋钮清单」，此前只查
     单向（README ⊆ REGISTRY，见 readme_problems）。这条查反向：登记了的
     旋钮必须在三语 README 里都有配置行 —— 否则新旋钮登记了却没人知道
-    怎么配（文档缺口，静默）。`tables` 可注入（自证用假 README）。
+    怎么配（文档缺口，静默）。
+
+    `tables` 可注入（自证用假 README）；`names` 可注入（自证用**固定名单**）。
+
+    ⚠️ `names` 这个缝是必需的，不是方便：不传时名单来自 `readme_names()` ——
+    它读 `REFLECT_READMES`。于是**自证的结果取决于跑它的那台机器设了什么
+    环境**：`--init` 为单 README 的仓写 `REFLECT_READMES=README.md`，source
+    之后这条自证就从 3 红变 1 红、`harness` 当场红。实测：一个刚 bootstrap
+    完的仓，`registry --run commit` 与 `harness` **无法同时绿** —— 那是死结。
+    判据不该读环境来决定自己考几轮。
     """
     row = re.compile(r"\|\s*`(REFLECT_[A-Z0-9_]+)`\s*\|")
     out = []
-    for name in readme_names():
+    for name in (readme_names() if names is None else names):
         if tables is not None:
             if name not in tables:
                 continue
@@ -816,9 +825,11 @@ def _cases_readme(fx):
      # 登记表里有、README 配置表里缺 ⇒ 必须报（方向与 readme_phantom 相反）。
      # ⚠️ 断言**钉死 code**，不是只判 `!= []`：此前那样任何错误 code 都能
      # 让这条通过（实测：换成一个 `readme_phantom` 冒充，用例照样绿）。
-     lambda: [p.code for p in registry_vs_readme_problems(tables={
-         name: "| `REFLECT_FACTS` | x |\n" for name in
-         ("README.md", "README.zh.md", "README.de.md")})
+     lambda: [p.code for p in registry_vs_readme_problems(
+         tables={name: "| `REFLECT_FACTS` | x |\n" for name in
+                 ("README.md", "README.zh.md", "README.de.md")},
+         # 名单**钉死**：判据不该读 `REFLECT_READMES` 来决定自己考几轮。
+         names=("README.md", "README.zh.md", "README.de.md"))
      ] == ["knobs.readme_missing_rows"] * 3),
     # ③ **空输入**档（AGENTS 规则 4 的第三类）：两个对账器此前只有
     # 「不报」与「该报」两档，空输入返回 `[]` —— 与「干净」不可区分。
@@ -981,7 +992,11 @@ if __name__ == "__main__":
         if "--list" in argv:
             print(knobs_table())
             return 0
+        if argv and argv[0] in ("--help", "-h"):
+            print(M("knobs.usage"), file=sys.stderr)
+            return 0
         print(M("knobs.module_only"), file=sys.stderr)
+        print(M("knobs.usage"), file=sys.stderr)
         return 2
     # 自证标题是**开发者界面**（check_i18n 的豁免面 ②），按设计保留一种语言。
     sys.exit(main_selftest_or(sys.argv[1:],

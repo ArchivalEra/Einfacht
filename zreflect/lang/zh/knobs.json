@@ -40,5 +40,6 @@
  "knobs.sem.reflect_retractions": "翻案台账",
  "knobs.sem.reflect_stale_days": "测龄报警天数；空 = 该规则明说未启用",
  "knobs.sem.reflect_world": "world 声明（验证对象清单）；缺文件 = 未启用",
- "knobs.sem.reflect_world_line": "world 线覆盖（CI / 特殊跑法）"
+ "knobs.sem.reflect_world_line": "world 线覆盖（CI / 特殊跑法）",
+ "knobs.usage": "用法：knobs.py [--list|--selftest]（--list = 列出全部 REFLECT_* 旋钮：种类 / 默认值 / 语义）"
 }

@@ -44,5 +44,7 @@
  "facts.show.source": "    Quelle        %(value)s",
  "facts.show_unknown_key": "kein solcher Fakt: %(key)s (vorhanden: %(existing)s)",
  "facts.title": "Fakten-Tor",
- "facts.unknown_key": "kein Schlüssel `%(key)s` im Register (vorhanden: %(existing)s)"
+ "facts.unknown_command": "unbekannter Befehl `%(command)s` — `--help` zeigt die verfügbaren (es misst nichts und schreibt nichts)",
+ "facts.unknown_key": "kein Schlüssel `%(key)s` im Register (vorhanden: %(existing)s)",
+ "facts.usage": "Aufruf: facts.py [--render|--render-doc [Datei]|--check [Datei]|--get SCHLÜSSEL|--init|--accept-principles|--accept SCHLÜSSEL WERT BEFEHL QUELLE|show [SCHLÜSSEL]] (ohne Argument = messen und Register schreiben)"
 }
