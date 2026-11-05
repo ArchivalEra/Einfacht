@@ -619,38 +619,34 @@ so every `cmd` is really executed in CI too. Local hooks only bind machines that
 (Repo-local docs: `STATE.md` is the living-state example and `AGENTS.md` holds the agent rules —
 both are kept in Chinese; the trilingual rule applies to the README trio.)
 
-### Hook wiring for ZCode sessions
+### Wiring it into a host (host-agnostic)
 
-`.zcode/config.json` ships a ready-made config — **in this exact shape** (this repo's own
-wiring was once a broken copy of this example, issue #4 ①): inject living state at session
-start, refresh the machine block on stop.
+The suite does not own a hook seat and does not know any editor's config schema. It exposes
+**one entry point** and lets the host decide the rest:
 
-```json
-{
-  "hooks": {
-    "enabled": true,
-    "events": {
-      "SessionStart": [{ "matcher": "startup|resume|clear|compact",
-        "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/inject-state.py\"" }] }],
-      "Stop": [{ "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/stop-refresh.py\"" }] }]
-    }
-  }
-}
+```bash
+python3 zreflect/next.py            # one section: unpushed commits / working tree / open questions
 ```
 
-Three shapes are load-bearing:
+That is the whole contract — plain lines on stdout, computed fresh each call, nothing written
+to disk. To wire it into a session-start hook, the consumer wraps it:
 
-- **`enabled: true` is part of the shape** — config-file hooks ship disabled. Entries are
-  `{ matcher?, hooks: [{ type, command }] }` under `hooks.events.<Event>`; the flat
-  `hooks.<Event>` form is one ZCode never sees.
-- **hook stdout is parsed as strict JSON**: `inject-state.py` emits the
-  `{"hookSpecificOutput": {…}}` envelope when the hook runs it (non-tty) and plain text
-  only when run by hand in a terminal. Plain text in hook context is silently dropped —
-  the log keeps one failed line that looks minor.
-- **Stop hooks must always exit 0**. ZCode's exit codes are `0` pass / `2` block /
-  other = error, and `facts.py --render-doc` exits 2 on a missing ledger — wiring it
-  directly takes the session hostage on one missing file. `.zcode/stop-refresh.py` is the
-  always-0 wrapper: failures degrade to one stderr line.
+```python
+subprocess.run([sys.executable, "zreflect/next.py"], capture_output=True, text=True)
+```
+
+then formats the captured text however that host expects. A few consequences worth knowing:
+
+- **It is computed, not stored.** A block that changes every turn cannot be reconciled
+  byte-for-byte by `facts.py --check`: exclude it and nothing verifies it, keep it and
+  `--check` never converges. So it does not go on disk at all.
+- **Length is bounded at the source** (`next.MAX_LISTED` / `next.SECTION_MAX`), not by the
+  caller. Truncating downstream is how the "next steps" list silently disappeared.
+- **Reading is not failing.** git missing, not a repo, no `questions/` — each becomes an
+  explicit line, never a fabricated zero and never a silent blank. Real bugs still raise.
+
+The git-hook side (`reflect-hooks/`) is different and *is* owned by the suite: those hooks
+call `reflect-hooks/gate.py` and never take over `core.hooksPath`.
 
 ## What this is not
 
@@ -706,11 +702,10 @@ to plain env vars + default names (the mechanism is removable by design).
 | `REFLECT_INSTRUMENT_DAYS` | empty (absent ⇒ off) | constant-value detection threshold in days (issue #6 ①): a ledger entry whose `first_seen` is older ⇒ "is this cmd measuring, or always returning the same number?" |
 | `REFLECT_ENV_FILE` | `Einfacht.env` | file name of the hooks' knob carrier (issue #8), resolved by the removable plugin `einfacht-env.sh` (hooks dir first, repo root second) |
 | `REFLECT_NO_PRINCIPLES` | empty | set to `1` ⇒ this repo does **not** register the principles in `PRINCIPLES.md` into the ledger, so their verdict commands are not replayed every commit. This is the explicit opt-out — do not rely on deleting the file |
-| `REFLECT_INJECT_LANG` | empty | language used **only** by the SessionStart injection (the text it feeds the agent is meant to be read). Falls back to `REFLECT_LANG`, then to `zh`/`en` if installed, then to the null pack. It never changes gate output — gates follow `REFLECT_LANG` only |
 | `REFLECT_LANG` | empty | output language pack name. Ships with `zh` (Chinese), `en` (English), `de` (German); any other name works if you drop a pack in `zreflect/lang/`. **Empty = the null pack: the core emits no natural language**, only `code(param=value)` (issue #26). Comment strings (`OFF:`, `FATAL:`, `=== N PASS / M FAIL ===`) are never translated — they are literals at the emission point |
 | `REFLECT_I18N` | empty | directory holding language packs. **Empty ⇒ the pack dir that ships with the toolkit** (`zreflect/lang` beside the tool), so a run in another repo still finds them. Set it ⇒ absolute path, or a path relative to the **repo under check**. Both shapes are accepted and merged: `<lang>.json` (one file) or `<lang>/*.json` (one file per gate namespace — merged, later wins) |
 | `REFLECT_SNAPSHOT_ROOT` | empty | source dir scanned by the module-snapshot gate. It flags `from <localmodule> import SOME_GLOBAL` when that global is reassigned elsewhere — a copy by value goes stale at import time. Empty ⇒ that gate says out loud it is off |
-| `REFLECT_I18N_ROOT` | empty | source dir scanned by the coverage gate (core-has-no-language check). **Empty ⇒ it scans the toolkit's own `zreflect/` + `.zcode/`** — the gate is never off, because the rule it enforces is about the core itself. Set it to scan **your** code: it is walked **recursively** (a `src/` layout works) |
+| `REFLECT_I18N_ROOT` | empty | source dir scanned by the coverage gate (core-has-no-language check). **Empty ⇒ it scans the toolkit's own `zreflect/` + `reflect-hooks/`** — the gate is never off, because the rule it enforces is about the core itself. Set it to scan **your** code: it is walked **recursively** (a `src/` layout works) |
 | `REFLECT_ENV_HINT` | empty (on) | `off` ⇒ silences the **running-without-env hint**. Every gate whose knobs come from `Einfacht.env` prints, on a bare manual run with none of them set, *try running it with `Einfacht.env`* — with the exact `set -a; . …; set +a` line. A hint, not a judgement: it never changes rc, never touches stdout, and stays quiet in repos that have no carrier (bare runs are normal there) |
 | `REFLECT_RETRACTIONS` | `retractions.json` | refuted-claims ledger (the retraction gate scans the `REFLECT_DOCS` docs for their reappearance) |
 | `REFLECT_QUESTIONS` | `questions` | open-questions directory (one question per file; each must name a runnable settler) |

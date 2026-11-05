@@ -70,9 +70,21 @@ python3 zreflect/facts.py --render-doc STATE.md
 
 ## 记忆是自动的
 
-不用在压缩前手工整理 handoff。`Stop` 钩子每轮重渲染 `STATE.md` 的 `AUTO:NEXT`
-块（从 git 状态长出来：未推送提交、工作区、悬案），`SessionStart`
-（matcher 含 `compact`）在每次会话开始时把它注入上下文。
+不用在压缩前手工整理 handoff。`zreflect/next.py` 在每次调用时**现算**一段
+「接着上一轮」（从 git 状态长出来：未推送提交、工作区、悬案）：
+
+```bash
+python3 zreflect/next.py                    # 纯文本行，不落盘
+REFLECT_LANG=zh python3 zreflect/next.py    # 换输出语言（只影响这条命令）
+```
+
+**它不落盘** —— 每轮都变的东西不占一个会被判的位置，所以 `facts.py --check`
+里没有它，也没有「文档说它自动、其实从没写过」的中间态。
+
+⚠️ **套件不管宿主怎么接。** 它不认任何编辑器的钩子协议、不写任何宿主的配置、
+不校验任何宿主的 schema。要接进会话开始钩子，使用方自己加一层薄壳读它的
+stdout —— 这是「在别的仓里用」的一部分，不是套件的事。宿主那边的接入是否
+真的生效，只有那个宿主自己的日志能回答。
 
 ## 在别的仓里用
 

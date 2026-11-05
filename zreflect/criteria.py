@@ -126,13 +126,13 @@ def dead_interface_problems(zdir=None):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) \
                     and not node.name.startswith("_"):
                 cand.setdefault(node.name, n)
-    # ② 全仓（含 .zcode / reflect-hooks）的引用文本
+    # ② 全仓（zreflect / reflect-hooks）的引用文本
     # ⚠️ 记**文件名**而不是文本：按字符串身份（`is`）跳过自身永远失效
     # （Python 不保证两个相等字符串是同一对象）—— 实测：植入一个零消费函数
     # 判据仍然报 clean。按名字排除才可靠。
     corpus = []          # [(文件名, 文本)]
     root = os.path.dirname(d)
-    for sub in ("zreflect", ".zcode", "reflect-hooks"):
+    for sub in ("zreflect", "reflect-hooks"):
         base = os.path.join(root, sub)
         if not os.path.isdir(base):
             continue

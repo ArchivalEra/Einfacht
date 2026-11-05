@@ -676,40 +676,39 @@ des Versprechens (issue #4 ②).
 (Repo-interne Docs: `STATE.md` ist das Living-State-Beispiel, `AGENTS.md` enthält die
 Agent-Regeln — beide auf Chinesisch gepflegt; die Trilingual-Regel gilt für das README-Trio.)
 
-### Hook-Verkabelung für ZCode-Sessions
+### An einen Host anschließen (host-agnostisch)
 
-`.zcode/config.json` liefert eine fertige Konfiguration — **in genau dieser Form**
-(die eigene Verkabelung dieses Repos war einmal eine kaputte Kopie dieses Beispiels,
-issue #4 ①): Living State beim Sessionstart injizieren, beim Stopp den
-Maschinenblock auffrischen.
+Die Suite besitzt keinen Hook-Platz und kennt kein Konfigurationsschema irgendeines
+Editors. Sie bietet **einen Einstiegspunkt** und überlässt den Rest dem Host:
 
-```json
-{
-  "hooks": {
-    "enabled": true,
-    "events": {
-      "SessionStart": [{ "matcher": "startup|resume|clear|compact",
-        "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/inject-state.py\"" }] }],
-      "Stop": [{ "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/stop-refresh.py\"" }] }]
-    }
-  }
-}
+```bash
+python3 zreflect/next.py            # ein Abschnitt: ungepushte Commits / Arbeitsbaum / offene Fragen
 ```
 
-Drei Formen sind tragend:
+Das ist der ganze Vertrag — reine Textzeilen auf stdout, bei jedem Aufruf frisch
+berechnet, nichts auf Platte. Um es an einen Session-Start-Hook eines Hosts zu
+hängen, wickelt der Verbraucher es ein:
 
-- **`enabled: true` ist Teil der Form** — Config-File-Hooks sind standardmäßig
-  deaktiviert. Einträge sind `{ matcher?, hooks: [{ type, command }] }` unter
-  `hooks.events.<Event>`; die flache `hooks.<Event>`-Form sieht ZCode nie.
-- **Hook-stdout wird als striktes JSON geparst**: `inject-state.py` sendet im
-  Hook-Kontext (non-tty) den `{"hookSpecificOutput": {…}}`-Umschlag und nur
-  im Terminal von Hand plain text. Plain text im Hook-Kontext wird still
-  verworfen — das Log behält eine failed-Zeile, die wie ein Kavaliersdelikt aussieht.
-- **Stop-Hooks müssen immer mit 0 enden**. Zcodes Exit-Codes: `0` pass /
-  `2` block / sonst error — und `facts.py --render-doc` endet mit 2 bei
-  fehlendem Ledger. Direkt verdrahtet nimmt ein fehlendes Ledger die ganze
-  Session als Geisel. `.zcode/stop-refresh.py` ist der immer-0-Wrapper:
-  Fehler degradieren zu einer stderr-Zeile.
+```python
+subprocess.run([sys.executable, "zreflect/next.py"], capture_output=True, text=True)
+```
+
+und formatiert die Ausgabe so, wie dieser Host es erwartet. Ein paar Konsequenzen,
+die man kennen sollte:
+
+- **Es wird berechnet, nicht gespeichert.** Ein Block, der sich bei jedem Durchgang
+  ändert, kann von `facts.py --check` nicht byte-genau abgeglichen werden: nimmt man
+  ihn aus, prüft ihn niemand; lässt man ihn drin, konvergiert `--check` nie. Also
+  kommt er gar nicht auf Platte.
+- **Die Länge ist an der Quelle begrenzt** (`next.MAX_LISTED` / `next.SECTION_MAX`),
+  nicht beim Aufrufer. Abschneiden stromabwärts ist genau der Grund, warum die
+  „nächste Schritte"-Liste still verschwand.
+- **Nicht lesen können ist kein Fehler.** Kein git, kein Repo, kein `questions/` —
+  jedes wird zu einer ausdrücklichen Zeile, nie zu einer erfundenen Null und nie zu
+  einem stillen Leerstring. Echte Bugs werfen weiterhin.
+
+Die git-Hook-Seite (`reflect-hooks/`) ist anders und gehört **der Suite**: diese Hooks
+rufen `reflect-hooks/gate.py` und übernehmen nie `core.hooksPath`.
 
 ## Was es nicht ist
 
@@ -770,11 +769,10 @@ Defaults zurück (der Mechanismus ist nach Bauart aussteckbar).
 | `REFLECT_INSTRUMENT_DAYS` | leer (fehlt ⇒ aus) | Schwelle der Konstanten-Erkennung in Tagen (Issue #6 ①): `first_seen` älter ⇒ „mißt dieses cmd, oder liefert es immer dieselbe Zahl?" |
 | `REFLECT_ENV_FILE` | `Einfacht.env` | Dateiname des Knopf-Trägers der Hooks (Issue #8), aufgelöst vom entfernbaren Plugin `einfacht-env.sh` (Hooks-Verzeichnis zuerst, Repo-Wurzel zweitens) |
 | `REFLECT_NO_PRINCIPLES` | leer | auf `1` ⇒ dieses Repo registriert die Prinzipien aus `PRINCIPLES.md` **nicht** im Register, ihre Urteilsbefehle laufen nicht pro Commit. Das ist der ausdrückliche Ausstieg — nicht die Datei löschen |
-| `REFLECT_INJECT_LANG` | leer | Sprache, die **nur** die SessionStart-Injektion nutzt (der injizierte Text ist zum Lesen gedacht). Rückfall: `REFLECT_LANG` → installiertes `zh`/`en` → Null-Paket. Sie beeinflusst die Tor-Ausgabe **nicht** — Tore folgen nur `REFLECT_LANG` |
 | `REFLECT_LANG` | leer | Name des Ausgabe-Sprachpakets. Mitgeliefert: `zh` (Chinesisch), `en` (Englisch), `de` (Deutsch); jeder andere Name funktioniert, wenn ein Paket unter `zreflect/lang/` liegt. **Leer = Null-Paket: der Kern gibt keine natürliche Sprache aus**, nur `code(param=value)` (Issue #26). Vertragszeichenketten (`OFF:`, `FATAL:`, `=== N PASS / M FAIL ===`) werden nie übersetzt — sie sind Literale am Ausgabeort |
 | `REFLECT_I18N` | leer | Verzeichnis der Sprachpakete. **Leer ⇒ das mitgelieferte Paketverzeichnis** (`zreflect/lang` neben dem Werkzeug), damit ein Lauf in einem anderen Repo sie trotzdem findet. Gesetzt ⇒ absoluter Pfad oder ein Pfad relativ zur **geprüften Repo-Wurzel**. Beide Formen werden akzeptiert und zusammengeführt: `<lang>.json` (eine Datei) oder `<lang>/*.json` (eine Datei pro Gate-Namespace — zusammengeführt, letztere gewinnt) |
 | `REFLECT_SNAPSHOT_ROOT` | leer | Quellverzeichnis, das das Modul-Snapshot-Tor scannt. Es meldet `from <lokales Modul> import GROSS_GLOBAL`, wenn dieses Global anderswo neu zugewiesen wird — eine Wertkopie veraltet beim Import. Leer ⇒ dieses Tor sagt laut, dass es aus ist |
-| `REFLECT_I18N_ROOT` | leer | Quellverzeichnis, das das Coverage-Gate scannt (Kern-hat-keine-Sprache). **Leer ⇒ es scannt das eigene `zreflect/` + `.zcode/` des Werkzeugs** — dieses Gate ist nie aus, weil die Regel, die es durchsetzt, den Kern selbst betrifft. Auf **deinen** Code zeigen lassen: es wird **rekursiv** durchlaufen (ein `src/`-Layout funktioniert) |
+| `REFLECT_I18N_ROOT` | leer | Quellverzeichnis, das das Coverage-Gate scannt (Kern-hat-keine-Sprache). **Leer ⇒ es scannt das eigene `zreflect/` + `reflect-hooks/` des Werkzeugs** — dieses Gate ist nie aus, weil die Regel, die es durchsetzt, den Kern selbst betrifft. Auf **deinen** Code zeigen lassen: es wird **rekursiv** durchlaufen (ein `src/`-Layout funktioniert) |
 | `REFLECT_ENV_HINT` | leer (an) | `off` ⇒ schweigt den **Hinweis beim Lauf ohne env**. Jedes Gate, dessen Knöpfe aus `Einfacht.env` kommen, druckt bei einem nackten manuellen Lauf ohne gesetzten Knopf *try running it with `Einfacht.env`* — mit der exakten Zeile `set -a; . …; set +a`. Ein Hinweis, kein Urteil: ändert keinen rc, berührt stdout nicht, und bleibt in Repos ohne Träger still |
 | `REFLECT_RETRACTIONS` | `retractions.json` | Ledger widerlegter Aussagen (das Retraktions-Gate scannt die `REFLECT_DOCS`-Docs auf deren Wiederauftauchen) |
 | `REFLECT_QUESTIONS` | `questions` | Verzeichnis offener Fragen (eine Frage pro Datei; jede muss einen lauffähigen Begleicher nennen) |

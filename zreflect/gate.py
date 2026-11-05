@@ -573,8 +573,13 @@ def selftest(name, cases):
     return 1 if bad else 0
 
 
-def activate_or_fatal():
+def activate_or_fatal(lang=None):
     """进程级语言包激活点。成功返回 0；装配失败打印 FATAL 并返回 2。
+
+    `lang` 让**一个进程**装配指定的包（不传 = 读 `REFLECT_LANG`）。存在的理由：
+    有些入口的消费者与闸门不同 —— 比如使用方包一层把某段输出喂给人读，那一层
+    可以自己点名语言，而套件的闸门照旧只认 `REFLECT_LANG`。**「只影响那一个
+    进程」因此是结构性的**，不靠谁记得别乱用；套件不因此多一个旋钮。
 
     **必须在 `--selftest` 之前调用**（issue #26 复盘）：此前 `main_selftest_or`
     先判 `--selftest` 再 `activate()`，于是 `REFLECT_LANG=zh <gate> --selftest`
@@ -589,7 +594,7 @@ def activate_or_fatal():
     """
     import i18n                                          # noqa: PLC0415
     try:
-        i18n.activate()
+        i18n.activate(lang)
     except Exception as e:                               # noqa: BLE001
         # 装配失败时进程默认仍是上一档 `Catalog`（通常是 null 包）⇒ M() 照样
         # 渲染得出来（`MissingPack` 的 `str()` 本身就是 null 形状的 code）。

@@ -5,7 +5,6 @@
  "gate.env_hint": "%(file)s gefunden, aber dieser Prozess hat keinen einzigen Knopf gesetzt — Kriterien können auf Standardnamen zurückfallen und vom Hook-Kontext abweichen.\n       versuche es mit %(file)s:\n         set -a; . %(file)s; set +a\n       (oder gib den Knopf explizit: `REFLECT_*=<Wert> python3 ...`)",
  "gate.forged_row_neutralised": "★ %(count)d gerenderte Zeile(n) hätten als Maschinenzeilen durchgehen können und wurden festgehalten (Präfix `\\`) — der Wert enthält einen Zeilenumbruch, meist aus einem Dateinamen oder Dokumentinhalt",
  "gate.input_label": "Eingabe",
- "gate.module_banner": "die Tor-Plattform ist ein Modul (sie stellt selftest / require_nonempty / finish bereit; sie konsumiert keine) — sie läuft nicht eigenständig.",
  "gate.never_falsifiable_and": "`and <Falschkonstante>` — der Boolesche Wert wird durch eine Konstante kurzgeschlossen, immer fail",
  "gate.never_falsifiable_delegated": "der Zusicherungskörper ist ein **delegierter Aufruf**; die Tautologie-Prüfung kann nicht hineinsehen (Zusicherung inline schreiben oder die aufgerufene Funktion separat selbst prüfen)",
  "gate.never_falsifiable_or": "`or <Wahrheitskonstante>` — der Boolesche Wert wird durch eine Konstante kurzgeschlossen, immer PASS",

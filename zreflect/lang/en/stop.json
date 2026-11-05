@@ -1,4 +1,0 @@
-{
- "stop.no_output": "(no output)",
- "stop.refresh_failed": "machine-block re-render failed (rc=%(return_code)s): %(detail)s"
-}

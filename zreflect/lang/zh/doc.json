@@ -1,8 +1,0 @@
-{
- "doc.next_block_intro": "> 本区块由 `Stop` 钩子自动更新（`.zcode/stop-refresh.py`），**不要手改**。",
- "doc.next_block_why": "> 它存在的唯一理由：会话压缩之后 agent 不用从零重来。",
- "doc.next_last_turn": "**上一轮**：",
- "doc.next_last_turn_none": "**上一轮**：没有记录（新仓 / 钩子没接）。",
- "doc.next_pending": "**待办**：",
- "doc.next_pending_none": "**待办**：无（若你认为应该有 —— 那是记录的缺口，不是「没事了」）。"
-}
