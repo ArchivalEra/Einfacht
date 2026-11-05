@@ -324,6 +324,31 @@ def _own_code_hint():
     return str(M("facts.measure_own_code_hint", dirs=", ".join(found)))
 
 
+def _carry_first_seen(facts, old):
+    """仪器生命周期（issue #6 ①）：值没变的键沿用旧 `first_seen`
+    （换值 / 新键的 first_seen 已由 `ledger.fact()` 盖今天）——
+    恒常检测（可插拔闸门 `check_instruments.py`）靠它。
+    """
+    for key, entry in facts.items():
+        prior = old.get(key)
+        fs = prior.get("first_seen") if isinstance(prior, dict) else None
+        if fs and value_of(prior) == value_of(entry):
+            entry["first_seen"] = fs
+
+
+def _write_ledger_doc(out, facts):
+    """把台账写盘。返回 `(rc, 错误消息或 None)`。"""
+    import json                                         # noqa: PLC0415
+    import time                                         # noqa: PLC0415
+    doc = {"schema": 1, "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+           "_why": M("facts.ledger_why"),
+           "facts": facts}
+    with open(out, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=1, ensure_ascii=False)
+        fh.write("\n")
+    return 0, None
+
+
 def measure(argv):
     """量一遍并写台账。**必须接 `argv`** —— 两道守卫都要读它。
 
@@ -332,6 +357,9 @@ def measure(argv):
     NameError traceback；`--allow-drop` 从未生效过。写盘被拦住只是**顺带**（异常早于写盘），
     那不叫守卫，那叫故障。所以本文件把 argv 显式传进来；守卫的**决策**在
     `zreflect/guard.py`（decide()，接线有自证），本函数只执行它。
+
+    三段各是一个具名 helper（量 / 守卫 / 写盘）：拼在一起时「拒绝」与「成功」
+    两条结局交错，复杂度 11。
     """
     facts = _measure()
     # 原则是与数值事实同处一张表的事实 —— 一起量、一起守、一起复跑。
@@ -348,6 +376,23 @@ def measure(argv):
     out = _out()
     old = facts_of(load(out)) if os.path.exists(out) else {}
 
+    rc = _guarded_write(argv, old, facts)
+    if rc:
+        return rc
+    _carry_first_seen(facts, old)
+    rc, err = _write_ledger_doc(out, facts)
+    if err:
+        print(machine().emit("fatal", err), file=sys.stderr)
+        return 2
+    print(M("facts.measure_written",
+            path=os.path.relpath(out, gate.GATE_REPO), count=len(facts)))
+    for k, v in sorted(facts.items()):
+        print("  %-20s %s（%s）" % (k, v["value"], _age_human(v)))
+    return 0
+
+
+def _guarded_write(argv, old, facts):
+    """两道守卫（掉条 / 改口）+ 盲写守卫。返回 rc（0 = 放行，2 = 拒绝）。"""
     verdict, problems, notes = guard.decide(old, facts,
                                             accepted=guard.accepted_keys(argv),
                                             allow_drop="--allow-drop" in argv)
@@ -359,37 +404,15 @@ def measure(argv):
         for x in problems:
             print(machine().emit("fatal", x), file=sys.stderr)
         return 2
-
-    # 仪器生命周期（issue #6 ①）：值没变的键沿用旧 first_seen
-    # （换值 / 新键的 first_seen 已由 ledger.fact() 盖今天）——
-    # 恒常检测（可插拔闸门 check_instruments.py）靠它。
-    for k, entry in facts.items():
-        o = old.get(k)
-        fs = o.get("first_seen") if isinstance(o, dict) else None
-        if fs and value_of(o) == value_of(entry):
-            entry["first_seen"] = fs
-
     # 盲写守卫（issue #20 ②）：写盘前查目标 —— 被 gitignore 覆盖 ⇒ FATAL；
     # 仓里有 Einfacht.env 而本次没设旋钮 ⇒ warn（两个产地此刻分叉）。
     fatal_w, warn_w = guard.write_target_problems(
-        out, knob_set=bool(os.environ.get("REFLECT_FACTS", "").strip()))
+        _out(), knob_set=bool(os.environ.get("REFLECT_FACTS", "").strip()))
     if warn_w:
         print("⚠ %s" % warn_w, file=sys.stderr)
     if fatal_w:
         print(machine().emit("fatal", fatal_w), file=sys.stderr)
         return 2
-    import json                                         # noqa: PLC0415
-    import time                                         # noqa: PLC0415
-    doc = {"schema": 1, "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-           "_why": M("facts.ledger_why"),
-           "facts": facts}
-    with open(out, "w", encoding="utf-8") as fh:
-        json.dump(doc, fh, indent=1, ensure_ascii=False)
-        fh.write("\n")
-    print(M("facts.measure_written",
-            path=os.path.relpath(out, gate.GATE_REPO), count=len(facts)))
-    for k, v in sorted(facts.items()):
-        print("  %-20s %s（%s）" % (k, v["value"], _age_human(v)))
     return 0
 
 
@@ -544,22 +567,11 @@ def cmd_get(argv):
     return 0
 
 
-def cmd_init(argv):
-    """`--init` 命令。"""
-    # **新仓 bootstrap**：一次生成合格骨架，而不是让人照文档猜标记名。
-    #
-    # ⚠️ 这条是验收驱动的（子代理在全新仓里照 `AGENTS.md` 逐字做，卡在
-    # `FATAL: facts.doc_missing_render` —— 文档说「建 STATE.md」，
-    # 但没说它必须含 `<!-- AUTO:FACTS -->` / `<!-- AUTO:GATES -->`，
-    # 而那两个字符串只住在 `render.py` 源码里）。
-    #
-    # 它**不覆盖**已存在的文件（只补缺的），并且明确打印每一步做了什么。
+def _init_skeleton(root, state):
+    """要生成的骨架文档：`{文件名: 正文}`。**纯数据**，不碰盘。"""
     import doc                                       # noqa: PLC0415
     import registry as _reg                          # noqa: PLC0415
-    root = gate.GATE_REPO
-    state = doc.state_name()
-    created, kept = [], []
-    files = {
+    return {
         state: (
             "# " + state + "\n\n"
             "> live state: only what is true **now**. Cite numbers by\n"
@@ -588,6 +600,11 @@ def cmd_init(argv):
             "python3 zreflect/harness.py\n"
             "```\n"),
     }
+
+
+def _create_missing(root, files):
+    """建缺的文件，**不覆盖已有**。返回 `(created, kept)`。"""
+    created, kept = [], []
     for name, body in files.items():
         p = os.path.join(root, name)
         if os.path.exists(p):
@@ -596,56 +613,94 @@ def cmd_init(argv):
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(body)
         created.append(name)
-    for n in created:
-        print(str(M("facts.init_created", name=n)))
-    for n in kept:
-        print(str(M("facts.init_kept", name=n)))
-    if created:
-        # 原则也要进台账 —— 否则 `PRINCIPLES.md` 的 `[[RULES:…]]` 引用
-        # 在新仓里全是坏引用（实测：`facts.missing_key_cite(line=3)`）。
-        if doc.accepts_principles():
-            import json as _json                        # noqa: PLC0415
-            out = _out()
-            led = _load_or_empty()
-            facts = dict(facts_of(led))
-            facts.update(doc.facts_of_rules())
-            with open(out, "w", encoding="utf-8") as fh:
-                _json.dump({"schema": 1, "_why": M("facts.ledger_why"),
-                            "facts": facts}, fh, indent=1,
-                           ensure_ascii=False)
-                fh.write("\n")
-        # **按实际生成的文档**写一份 `Einfacht.env`：默认旋钮假设你已经
-        # 有六份文档（STATE/AGENTS/PRINCIPLES/README×3），而新仓只有
-        # 刚生成的那几份。不写这一份 ⇒ 每个闸门都报「找不到 README.zh.md」。
-        # `questions/` 目录：`check_questions` 要求它存在（悬案闸门）。
-        qdir = os.path.join(root, os.environ.get("REFLECT_QUESTIONS", "")
-                            .strip() or "questions")
-        if not os.path.isdir(qdir):
-            os.makedirs(qdir, exist_ok=True)
-            print(str(M("facts.init_created", name="questions/")))
-        # 空目录会被 `check_questions` 的零值守卫拒（`questions.guard_empty`）
-        # —— 放一个**示例悬案**：它同时是「怎么写悬案」的样板。
-        if os.path.isdir(qdir) and not [n for n in os.listdir(qdir)
-                                        if n.endswith(".md")]:
-            with open(os.path.join(qdir, "01-example.md"), "w",
-                      encoding="utf-8") as fh:
-                fh.write(
-                    "# Example open question\n\n"
-                    "**Status:** ready-for-agent\n\n"
-                    "**Settling:** `python3 -c \"raise SystemExit(1)\"` "
-                    "— rc=0 settles A; rc=1 settles B\n\n"
-                    "Replace this with a real open question, or delete it\n"
-                    "once you have some.\n")
-        env_path = os.path.join(root, "Einfacht.env")
-        if not os.path.exists(env_path):
-            docs = ",".join(n for n in (state, doc.PRINCIPLES, "AGENTS.md")
-                            if os.path.exists(os.path.join(root, n)))
-            with open(env_path, "w", encoding="utf-8") as fh:
-                fh.write("export REFLECT_DOC=%s\n" % state)
-                fh.write("export REFLECT_DOCS=%s\n" % docs)
-                fh.write("export REFLECT_READMES=README.md\n")
-            print(str(M("facts.init_created", name="Einfacht.env")))
-        print(str(M("facts.init_next")))
+    return created, kept
+
+
+def _init_principles_into_ledger():
+    """原则也要进台账 —— 否则 `PRINCIPLES.md` 的 `[[RULES:…]]` 引用在
+    新仓里全是坏引用（实测：`facts.missing_key_cite(line=3)`）。"""
+    import doc                                       # noqa: PLC0415
+    if not doc.accepts_principles():
+        return
+    import json as _json                             # noqa: PLC0415
+    out = _out()
+    facts = dict(facts_of(_load_or_empty()))
+    facts.update(doc.facts_of_rules())
+    with open(out, "w", encoding="utf-8") as fh:
+        _json.dump({"schema": 1, "_why": M("facts.ledger_why"),
+                    "facts": facts}, fh, indent=1, ensure_ascii=False)
+        fh.write("\n")
+
+
+def _init_questions_dir(root):
+    """`questions/` 目录 + 一条示例悬案。
+
+    空目录会被 `check_questions` 的零值守卫拒（`questions.guard_empty`）——
+    所以放一个**示例悬案**：它同时是「怎么写悬案」的样板。
+    """
+    qdir = os.path.join(root, os.environ.get("REFLECT_QUESTIONS", "")
+                        .strip() or "questions")
+    if not os.path.isdir(qdir):
+        os.makedirs(qdir, exist_ok=True)
+        print(str(M("facts.init_created", name="questions/")))
+    if [n for n in os.listdir(qdir) if n.endswith(".md")]:
+        return
+    with open(os.path.join(qdir, "01-example.md"), "w", encoding="utf-8") as fh:
+        fh.write(
+            "# Example open question\n\n"
+            "**Status:** ready-for-agent\n\n"
+            "**Settling:** `python3 -c \"raise SystemExit(1)\"` "
+            "— rc=0 settles A; rc=1 settles B\n\n"
+            "Replace this with a real open question, or delete it\n"
+            "once you have some.\n")
+
+
+def _init_env_file(root, state):
+    """**按实际生成的文档**写一份 `Einfacht.env`：默认旋钮假设你已经
+    有六份文档（STATE/AGENTS/PRINCIPLES/README×3），而新仓只有刚生成的那几份。
+    不写这一份 ⇒ 每个闸门都报「找不到 README.zh.md」。"""
+    import doc                                       # noqa: PLC0415
+    env_path = os.path.join(root, "Einfacht.env")
+    if os.path.exists(env_path):
+        return
+    docs = ",".join(n for n in (state, doc.PRINCIPLES, "AGENTS.md")
+                    if os.path.exists(os.path.join(root, n)))
+    with open(env_path, "w", encoding="utf-8") as fh:
+        fh.write("export REFLECT_DOC=%s\n" % state)
+        fh.write("export REFLECT_DOCS=%s\n" % docs)
+        fh.write("export REFLECT_READMES=README.md\n")
+    print(str(M("facts.init_created", name="Einfacht.env")))
+
+
+def cmd_init(argv):
+    """`--init` 命令。
+
+    **新仓 bootstrap**：一次生成合格骨架，而不是让人照文档猜标记名。
+
+    ⚠️ 这条是验收驱动的（子代理在全新仓里照 `AGENTS.md` 逐字做，卡在
+    `FATAL: facts.doc_missing_render` —— 文档说「建 STATE.md」，
+    但没说它必须含 `<!-- AUTO:FACTS -->` / `<!-- AUTO:GATES -->`，
+    而那两个字符串只住在 `render.py` 源码里）。
+
+    它**不覆盖**已存在的文件（只补缺的），并且明确打印每一步做了什么。
+
+    四件产物各是一个具名 helper（骨架 / 原则进台账 / 悬案目录 / env 文件）：
+    拼在一个函数里时是 103 行、四段互不相关的副作用。
+    """
+    import doc                                       # noqa: PLC0415
+    root = gate.GATE_REPO
+    state = doc.state_name()
+    created, kept = _create_missing(root, _init_skeleton(root, state))
+    for name in created:
+        print(str(M("facts.init_created", name=name)))
+    for name in kept:
+        print(str(M("facts.init_kept", name=name)))
+    if not created:
+        return 0
+    _init_principles_into_ledger()
+    _init_questions_dir(root)
+    _init_env_file(root, state)
+    print(str(M("facts.init_next")))
     return 0
 
 

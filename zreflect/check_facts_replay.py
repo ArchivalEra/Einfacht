@@ -142,6 +142,61 @@ def _depth():
         return 0
 
 
+def _probe_failure(kind, key, rc, seconds, command, got, want):
+    """一条探针的失败消息。两档各有**独立字面量 code**。
+
+    ⚠️ `i18n` 契约要求 code 是字面量（拼出来的 code 让语言包目录无法被证明
+    完备），而且语言包里「见证」与「校准」是两句不同的话 —— 把名词塞进参数
+    会让模板词序在非中文语言里崩掉。所以这里是 `if/else` 而不是 `"replay.%s_…" % kind`。
+    """
+    if rc is None:
+        return (M("replay.witness_timeout", key=key, seconds=seconds,
+                  command=command) if kind == "witness"
+                else M("replay.calibrate_timeout", key=key,
+                       seconds=seconds, command=command))
+    if rc != 0:
+        return (M("replay.witness_command_failed", key=key,
+                  return_code=rc, command=command) if kind == "witness"
+                else M("replay.calibrate_command_failed", key=key,
+                       return_code=rc, command=command))
+    return (M("replay.witness_mismatch", key=key,
+              actual=quote(got), expected=quote(want)) if kind == "witness"
+            else M("replay.calibrate_mismatch", key=key,
+                   actual=quote(got), expected=quote(want)))
+
+
+def _run_probe(kind, key, entry, run, seconds):
+    """跑一条探针（见证 / 校准）。返回 `(问题或 None, 是否通过)`。"""
+    probe = str(entry.get(kind) or "").strip()
+    if not probe:
+        return None, False
+    expect = entry.get(kind + "_expect")
+    rc, stdout = run(probe)
+    if rc is None or rc != 0:
+        return _probe_failure(kind, key, rc, seconds, probe, "", ""), False
+    got = stdout.strip()
+    want = str(expect) if expect is not None else ""
+    if got != want:
+        return _probe_failure(kind, key, rc, seconds, probe, got, want), False
+    return None, True
+
+
+def _run_probes(f, run, seconds, out, stats):
+    """探针档（#5 见证 / #6 ① 仪器校准）：与 replay 正交 —— 贵事实的来源 /
+    仪器每提交真跑，判据同裸值契约。"""
+    for kind, ok_key in (("witness", "witnessed"), ("calibrate", "calibrated")):
+        for key in sorted(f):
+            entry = f[key] if isinstance(f[key], dict) else {"value": f[key]}
+            if not str(entry.get(kind) or "").strip():
+                continue
+            stats[kind + "_attempts"] += 1
+            problem, passed = _run_probe(kind, key, entry, run, seconds)
+            if problem is not None:
+                out.append(problem)
+            if passed:
+                stats[ok_key] += 1
+
+
 def replay_all(ledger, runner=None):
     """逐条复跑，返回 {problems, ok, attempts, skipped}。**纯副作用只经由 runner**。
 
@@ -169,43 +224,7 @@ def replay_all(ledger, runner=None):
         _replay_one(k, f[k], run, seconds, out, stats)
     if stats["attempts"] and stats["ran"] == 0:
         out.append(M("replay.none_ran", attempts=stats["attempts"]))
-    # 探针档（#5 见证 / #6 ① 仪器校准）：与 replay 正交 ——
-    # 贵事实的来源/仪器每提交真跑，判据同裸值契约。
-    # 两档各自有**独立字面量 code**（`replay.witness_*` / `replay.calibrate_*`）：
-    # i18n 契约要求 code 是字面量（拼出来的 code 让语言包目录无法被证明完备），
-    # 而且语言包里「见证」与「校准」是两句不同的话 —— 把名词塞进参数会让
-    # 模板词序在非中文语言里崩掉。
-    for kind, ok_key in (("witness", "witnessed"), ("calibrate", "calibrated")):
-        for k in sorted(f):
-            entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
-            probe = str(entry.get(kind) or "").strip()
-            if not probe:
-                continue
-            expect = entry.get(kind + "_expect")
-            stats[kind + "_attempts"] += 1
-            rc, stdout = run(probe)
-            if rc is None:
-                out.append(M("replay.witness_timeout", key=k, seconds=seconds,
-                             command=probe) if kind == "witness"
-                           else M("replay.calibrate_timeout", key=k,
-                                  seconds=seconds, command=probe))
-                continue
-            if rc != 0:
-                out.append(M("replay.witness_command_failed", key=k,
-                             return_code=rc, command=probe) if kind == "witness"
-                           else M("replay.calibrate_command_failed", key=k,
-                                  return_code=rc, command=probe))
-                continue
-            got = stdout.strip()
-            want = str(expect) if expect is not None else ""
-            if got != want:
-                out.append(M("replay.witness_mismatch", key=k,
-                             actual=quote(got), expected=quote(want))
-                           if kind == "witness"
-                           else M("replay.calibrate_mismatch", key=k,
-                                  actual=quote(got), expected=quote(want)))
-                continue
-            stats[ok_key] += 1
+    _run_probes(f, run, seconds, out, stats)
     if not stats["attempts"] and stats["skipped"] and not stats["witness_attempts"] \
             and not stats["calibrate_attempts"]:
         out.append(M("replay.all_skipped", count=stats["skipped"]))

@@ -57,44 +57,59 @@ def _sha(path):
     return h.hexdigest()
 
 
+REQUIRED_FIELDS = ("name", "url", "file")
+
+
+def _entry_missing_fields(entry):
+    """缺字段的问题清单。**任一缺失 ⇒ 这条不可检查**（不能拿 None 去 hasher）。"""
+    return [M("locks.entry_missing_field", field=f, entry=entry)
+            for f in REQUIRED_FIELDS if not entry.get(f)]
+
+
+def _resolve(path, root):
+    return path if os.path.isabs(path) else os.path.join(root, path)
+
+
+def _check_one(entry, hasher, root):
+    """检查一条锁定项。返回 `(问题清单, 跳过清单)`。"""
+    missing = _entry_missing_fields(entry)
+    if missing:
+        return missing, []
+    path = _resolve(entry["file"], root)
+    if not os.path.exists(path):
+        if entry.get("optional"):
+            return [], [M("locks.absent_optional", name=entry["name"])]
+        return [M("locks.file_missing", name=entry["name"], path=path)], []
+    want = entry.get("sha256")
+    if not want:
+        if (entry.get("form") or "file") == "dir":
+            return [], []                     # 目录形态：只查存在
+        return [M("locks.no_sha256", name=entry["name"])], []
+    got = hasher(path)
+    if got != want:
+        return [M("locks.sha_mismatch", name=entry["name"],
+                  declared=want[:12], actual=got[:12])], []
+    return [], []
+
+
 def check(spec, hasher=_sha, root=None):
     """纯逻辑（自证注入 hasher）。返回 (problems, skips)。
 
     `root` = 相对 file 路径的锚（默认被检查仓库根；自证传夹具目录）。
+
+    单条检查是一个具名 helper（`_check_one`）：此前它的 `problems[-1].code`
+    回看上一轮追加的条目来判断「这条缺字段」—— 那既脆（别人在中间追加一条
+    就失效）又把复杂度推到 12。现在缺字段是**返回值**，不是上下文。
     """
     root = repo() if root is None else root
-    problems, skips = [], []
     locked = spec.get("locked") or spec.get("sources") or []
     if not locked:
-        problems.append(M("locks.empty"))
-        return problems, skips
-    for s in locked:
-        for f in ("name", "url", "file"):
-            if not s.get(f):
-                problems.append(M("locks.entry_missing_field",
-                                  field=f, entry=s))
-        if problems and problems[-1].code == "locks.entry_missing_field":
-            continue
-        path = s["file"]
-        if not os.path.isabs(path):
-            path = os.path.join(root, path)
-        if not os.path.exists(path):
-            if s.get("optional"):
-                skips.append(M("locks.absent_optional", name=s["name"]))
-            else:
-                problems.append(M("locks.file_missing",
-                                  name=s["name"], path=path))
-            continue
-        want = s.get("sha256")
-        if not want:
-            if (s.get("form") or "file") == "dir":
-                continue                      # 目录形态：只查存在
-            problems.append(M("locks.no_sha256", name=s["name"]))
-            continue
-        got = hasher(path)
-        if got != want:
-            problems.append(M("locks.sha_mismatch",
-                              name=s["name"], declared=want[:12], actual=got[:12]))
+        return [M("locks.empty")], []
+    problems, skips = [], []
+    for entry in locked:
+        probs, sk = _check_one(entry, hasher, root)
+        problems += probs
+        skips += sk
     return problems, skips
 
 

@@ -65,42 +65,56 @@ def _age_days(first_seen):
     return (datetime.now(timezone.utc) - d).total_seconds() / 86400.0
 
 
-def problems(ledger, methods=None, days=None):
-    """纯函数：返回问题清单（空 = 绿）。自证期间不许 print。
-
-    `methods` = 量法登记位（被证伪量法清单）；`days` = 恒常检测阈值
-    （None = 该规则未启用）。两者独立：恒常检测管「值从来没变过」，
-    登记位管「量法本身被证伪过」。
-    """
+def _constant_return_problems(f, days):
+    """恒常检测：`first_seen` 距今超过阈值 ⇒ 「这条 cmd 是在量，还是恒返回同一个数？」"""
     out = []
-    f = facts_of(ledger)
-    if not f:
-        return [M("instruments.ledger_empty")]
-    if days is not None:
-        for k in sorted(f):
-            entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
-            fs = entry.get("first_seen")
-            if not fs:
-                continue          # 旧台账条目没有 first_seen：不猜、不报
-            age = _age_days(fs)
-            if age is None:
-                out.append(M("instruments.first_seen_unparseable",
-                             key=k, first_seen=fs))
-            elif age > days:
-                out.append(M("instruments.constant_return", key=k,
-                             first_seen=fs, days=age, threshold=days))
+    for k in sorted(f):
+        entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
+        fs = entry.get("first_seen")
+        if not fs:
+            continue                  # 旧台账条目没有 first_seen：不猜、不报
+        age = _age_days(fs)
+        if age is None:
+            out.append(M("instruments.first_seen_unparseable",
+                         key=k, first_seen=fs))
+        elif age > days:
+            out.append(M("instruments.constant_return", key=k,
+                         first_seen=fs, days=age, threshold=days))
+    return out
+
+
+def _falsified_method_problems(f, methods):
+    """量法登记位：台账里任何 `cmd` 含被证伪片段 ⇒ 报（坏量法不许留在台账里）。"""
+    out = []
     for m in (methods or []):
         text = str(m.get("text") or "").strip()
         why = str(m.get("why") or "").strip()
         if not text or not why:
             out.append(M("instruments.entry_malformed", entry=m))
             continue
+        fixed = m.get("fixed_in") or M("instruments.fixed_in_unregistered")
         for k in sorted(f):
             entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
             if text in str(entry.get("cmd") or ""):
                 out.append(M("instruments.falsified_method", key=k, text=text,
-                             why=why, fixed_in=m.get("fixed_in") or M(
-                                 "instruments.fixed_in_unregistered")))
+                             why=why, fixed_in=fixed))
+    return out
+
+
+def problems(ledger, methods=None, days=None):
+    """纯函数：返回问题清单（空 = 绿）。自证期间不许 print。
+
+    `methods` = 量法登记位（被证伪量法清单）；`days` = 恒常检测阈值
+    （None = 该规则未启用）。**两者独立**：恒常检测管「值从来没变过」，
+    登记位管「量法本身被证伪过」—— 各是一个具名 helper，各自可单独懂。
+    """
+    f = facts_of(ledger)
+    if not f:
+        return [M("instruments.ledger_empty")]
+    out = []
+    if days is not None:
+        out += _constant_return_problems(f, days)
+    out += _falsified_method_problems(f, methods)
     return out
 
 
