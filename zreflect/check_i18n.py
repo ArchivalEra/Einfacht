@@ -302,6 +302,54 @@ def problems(paths):
     return out
 
 
+def _cases_scope(tree):
+    """自证扫描范围：`_cases()` 本身 + 它**引用的同文件顶层 helper**。
+
+    ⚠️ 范围要覆盖辅助函数：`_cases()` 调用的同文件 helper 也在自证路径上
+    （实测踩到：判据锚点写进 `_streams_documented()`，本判据扫不到 ⇒ bare_text
+    由主判据报出、这条漏）。
+
+    ⚠️ **PINNED 的函数不算夹具 helper**：`_cases()` 会调用 `render_gates()`
+    来测「渲染确定性」，但那个函数的文本是 AUTO 机器块、**本来就固定语言**
+    （第 3 族已豁免）。把它拉进夹具扫描会误报（实测：7 条 PINNED 行被
+    `fixture_literal` 抓）。豁免面之间必须互相尊重。
+    """
+    fns = [n for n in ast.walk(tree)
+           if isinstance(n, ast.FunctionDef) and n.name == "_cases"]
+    if not fns:
+        return []
+    fn = fns[0]
+    called = {n.func.id for n in ast.walk(fn)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    helpers = [n for n in tree.body
+               if isinstance(n, ast.FunctionDef) and n.name in called
+               and not _declares_pinned(ast.get_docstring(n, clean=False))]
+    return [fn] + helpers
+
+
+def _docstring_nodes(bodies):
+    """豁免面①：docstring 常量节点（维护者文档，不是输出）。"""
+    out = set()
+    for node in [n for b in bodies for n in ast.walk(b)]:
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
+            d = ast.get_docstring(node, clean=False)
+            if not d:
+                continue
+            for n in ast.walk(node):
+                if isinstance(n, ast.Constant) and n.value == d:
+                    out.add(id(n))
+                    break
+    return out
+
+
+def _label_nodes(bodies):
+    """豁免面②：自证标签（`(标签, callable)` 元组的首元素）。"""
+    return {id(node.elts[0])
+            for b in bodies for node in ast.walk(b)
+            if isinstance(node, ast.Tuple) and len(node.elts) == 2
+            and isinstance(node.elts[0], ast.Constant)}
+
+
 def _fixture_literal_problems(name, tree):
     """**自证夹具里不许有中文源码字面量**（必须是码点构造）。
 
@@ -316,52 +364,19 @@ def _fixture_literal_problems(name, tree):
     其余（夹具源码样例 / 断言里的中文串）⇒ 报。
     码点构造（`chr(CJK_LO)` / `_cj(n)`）产出的值**不在 AST 里**，天然不报 ——
     这就是正确的写法。
+
+    三步各是一个 helper（范围 / 两种豁免面）：拼在一起时节点收集的两个
+    独立循环 + 判定循环把复杂度推到 13。
     """
-    fns = [n for n in ast.walk(tree)
-           if isinstance(n, ast.FunctionDef) and n.name == "_cases"]
-    if not fns:
+    bodies = _cases_scope(tree)
+    if not bodies:
         return []
-    fn = fns[0]
-    # ⚠️ **范围要覆盖辅助函数**：`_cases()` 调用的同文件 helper 也在自证路径上
-    # （实测踩到：判据锚点写进 `_streams_documented()`，本判据扫不到 ⇒ bare_text
-    # 由主判据报出、这条漏）。把 `_cases` 里**被引用的顶层函数**一并纳入。
-    called = {n.func.id for n in ast.walk(fn)
-              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
-    # ⚠️ **PINNED 的函数不算夹具 helper**：`_cases()` 会调用 `render_gates()`
-    # 来测「渲染确定性」，但那个函数的文本是 AUTO 机器块、**本来就固定语言**
-    # （第 3 族已豁免）。把它拉进夹具扫描会误报（实测：7 条 PINNED 行被
-    # `fixture_literal` 抓）。豁免面之间必须互相尊重。
-    helpers = [n for n in tree.body
-               if isinstance(n, ast.FunctionDef) and n.name in called
-               and not _declares_pinned(ast.get_docstring(n, clean=False))]
-    bodies = [fn] + helpers                          # 统一遍历的节点清单
-    # 合法节点：docstring
-    docs = set()
-    for node in [n for b in bodies for n in ast.walk(b)]:
-        if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
-            d = ast.get_docstring(node, clean=False)
-            if d:
-                for n in ast.walk(node):
-                    if isinstance(n, ast.Constant) and n.value == d:
-                        docs.add(id(n))
-                        break
-    # 合法节点：自证标签（元组首元素）
-    labels = set()
-    for node in [n for b in bodies for n in ast.walk(b)]:
-        if isinstance(node, ast.Tuple) and len(node.elts) == 2 \
-                and isinstance(node.elts[0], ast.Constant):
-            labels.add(id(node.elts[0]))
-    out = []
-    for node in [n for b in bodies for n in ast.walk(b)]:
-        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
-            continue
-        if not cjk(node.value):
-            continue
-        if id(node) in docs or id(node) in labels:
-            continue
-        out.append(M("i18n_cover.fixture_literal",
-                     file=name, lineno=node.lineno, text=node.value[:40]))
-    return out
+    exempt = _docstring_nodes(bodies) | _label_nodes(bodies)
+    return [M("i18n_cover.fixture_literal",
+              file=name, lineno=node.lineno, text=node.value[:40])
+            for b in bodies for node in ast.walk(b)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+            and cjk(node.value) and id(node) not in exempt]
 
 
 def collect_from(d, root):
@@ -506,58 +521,66 @@ FIXTURE_DOC = ("def _cases():\n"
 BARE_FN = _cjk_src("ordinary renderer.")
 
 
-def _cases():
-    SAMPLE = _cj(4)          # 夹具里的中文样例
-    GOOD = f'''
-"""docstring may contain CJK (maintainer docs) — {SAMPLE}"""
-from i18n import M
+def _fixtures():
+    """`_cases()` 用的源码样例（码点构造中文，不写字面量）。"""
+    sample = _cj(4)
+    return {
+        "good": (
+            '"""docstring may contain CJK (maintainer docs) - ' + sample + '"""\n'
+            "from i18n import M\n"
+            "\n"
+            "def f(x):\n"
+            "    out = []\n"
+            "    out.append(M(\"replay.no_cmd\", key=x))\n"
+            "    return out\n"),
+        "bare": (
+            "def f(x):\n"
+            "    out = []\n"
+            "    out.append(\"`%s` " + sample + "\" % x)  # CJK sample\n"
+            "    return out\n"),
+        "label": (
+            "def _cases():\n"
+            "    return [(\"" + sample + "\", lambda: True)]  # flagged\n"),
+    }
 
-def f(x):
-    out = []
-    out.append(M("replay.no_cmd", key=x))
-    return out
-'''
-    BARE = f'''
-def f(x):
-    out = []
-    out.append("`%s` {SAMPLE}" % x)  # CJK sample
-    return out
-'''
-    LABEL = f'''
-def _cases():
-    return [("{SAMPLE}", lambda: True)]  # CJK label sample (must be flagged)
-'''
+
+def _cases_bare_text(fx):
+    """① 裸自然语言：该报的必须报。"""
     return [
-        # ① 正常不报
-        ("i18n_cover.good_fixture", lambda: problems([("good.py", GOOD)]) == []),
-        # ② 该报的必须报
+        ("i18n_cover.good_fixture",
+         lambda: problems([("good.py", fx["good"])]) == []),
         ("★ i18n_cover.bare_text",
-         lambda: [x.code for x in problems([("bare.py", BARE)])
+         lambda: [x.code for x in problems([("bare.py", fx["bare"])])
                   ] == ["i18n_cover.bare_text"]),
         ("★ i18n_cover.bare_text_in_label",
-         lambda: [x.code for x in problems([("label.py", LABEL)])
+         lambda: [x.code for x in problems([("label.py", fx["label"])])
                   ] == ["i18n_cover.bare_text"]),
         ("★ i18n_cover.parse_error",
-         lambda: [x.code for x in problems([("bad.py", "def (")])] == ["i18n_cover.parse_error"]),
-        # ② PINNED 按**声明**收编，不按名字（此前两份硬编码名单会漂）
+         lambda: [x.code for x in problems([("bad.py", "def (")])]
+         == ["i18n_cover.parse_error"]),
+    ]
+
+
+def _cases_pinned():
+    """② PINNED 按**声明**收编，不按名字（三向：豁免 / 未声明 / 冒充）。"""
+    return [
         ("i18n_cover.pinned_by_declaration",
-         # 带 `PINNED:` 声明的渲染器 ⇒ 豁免（名字随意 —— 不承重）
          lambda: problems([("r.py", PINNED_FN)]) == []),
         ("★ i18n_cover.undeclared_pinned_still_fires",
-         # 同样函数**不带声明** ⇒ 必须报（否则豁免变成放水）
          lambda: [p.code for p in problems([("r.py", BARE_FN)])
                   ] == ["i18n_cover.bare_text"]),
-        # **冒充 PINNED 必须有理由**（否则任何函数写一行 `PINNED: x` 就全豁免）
         ("★ i18n_cover.pinned_needs_reason",
          lambda: [p.code for p in problems([("r.py", PINNED_BARE)])]
          == ["i18n_cover.bare_text"]),
-        # **自证夹具里不许有中文源码字面量**（我踩了三次：第 8/9/13 轮）。
-        # 夹具源码必须码点构造；标签与 docstring 是合法位置。
+    ]
+
+
+def _cases_fixture_literal():
+    """③ 自证夹具里不许有中文源码字面量（我踩了三次：第 8/9/13 轮）。"""
+    return [
         ("★ i18n_cover.fixture_literal",
          lambda: [p.code for p in problems([("t.py", FIXTURE_BAD)])
                   ] == ["i18n_cover.bare_text", "i18n_cover.fixture_literal"]),
-        # helper 也在自证路径上 —— 判据必须覆盖 `_cases()` 调用的同文件函数
-        # （实测踩到：锚点写进 helper，本判据漏判、只有主判据报）
         ("★ i18n_cover.fixture_literal_in_helper",
          lambda: "i18n_cover.fixture_literal" in
          [p.code for p in problems([("t.py", FIXTURE_HELPER)])]),
@@ -565,53 +588,66 @@ def _cases():
          lambda: problems([("t.py", FIXTURE_LABEL)]) == []),
         ("i18n_cover.fixture_docstring_cjk_is_allowed",
          lambda: problems([("t.py", FIXTURE_DOC)]) == []),
-        # **端到端**：null 包下真渲染几条消息，输出里不许有 CJK。
-        # 静态扫描（本闸门主体）抓「源码里的裸中文」，抓不到「运行时拼出来的
-        # 中文」—— 实测：注入脚本曾自动挑语言包，源码干净、输出全中文。
-        ("★ i18n_cover.null_pack_output_has_no_cjk",
-         lambda: _null_output_has_no_cjk()),
-        # **模板本身**的中文：装包渲染，en/de 一条都不许有 CJK。
-        # （null 包测不到这个 —— 它根本不查表。这是那条判据的缺口，已补。）
-        ("★ i18n_cover.packs_match_their_language",
-         lambda: _packs_match_their_language()),
-        # **code 不许是算出来的**：`M("a" if x else "b")` 让第二个 code 在
-        # `knobs.used_codes()` 面前不存在 ⇒ `pack_coverage` 对它失去约束力
-        # （实测：`envfile.file_missing` 就是这样变成洞的）。
+    ]
+
+
+def _cases_code_literal():
+    """④ `M(...)` 的 code 不许是算出来的（否则包完整性对它失去约束力）。"""
+    return [
         ("★ i18n_cover.computed_code_is_rejected",
          lambda: [p.code for p in problems(
-             [("c.py", 'from i18n import M\n'
-                       'def f(x):\n'
-                       '    return M("probe.a" if x else "probe.b")\n')])
+             [("c.py", "from i18n import M\n"
+                       "def f(x):\n"
+                       "    return M(\"probe.a\" if x else \"probe.b\")\n")])
          ] == ["i18n_cover.code_not_literal"]),
-        # 字面量 code 不报（阳性对照）
         ("i18n_cover.literal_code_is_fine",
-         lambda: problems([("c.py", 'from i18n import M\n'
-                                     'def f():\n'
-                                     '    return M("probe.a")\n')]) == []),
-        # **转发**不报：`_say(code)` 这种薄壳的 code 在调用点就是字面量或
-        # 包里的键，要求它写死字面量是让正确的东西变形（诚实边界见函数文档）。
+         lambda: problems([("c.py", "from i18n import M\n"
+                                     "def f():\n"
+                                     "    return M(\"probe.a\")\n")]) == []),
         ("i18n_cover.forwarded_code_is_fine",
-         lambda: problems([("c.py", 'from i18n import M\n'
-                                     'def _say(code, **kw):\n'
-                                     '    return M(code, **kw)\n')]) == []),
-        # 反向：把一条中文塞进 null 渲染路径 ⇒ 必须被抓（证明上一条有牙）
+         lambda: problems([("c.py", "from i18n import M\n"
+                                     "def _say(code, **kw):\n"
+                                     "    return M(code, **kw)\n")]) == []),
+    ]
+
+
+def _cases_end_to_end():
+    """⑤ 端到端 + 扫描面：静态判据抓不到的运行时泄漏。"""
+    return [
+        ("★ i18n_cover.null_pack_output_has_no_cjk",
+         lambda: _null_output_has_no_cjk()),
+        ("★ i18n_cover.packs_match_their_language",
+         lambda: _packs_match_their_language()),
         ("★ i18n_cover.cjk_detector_can_red",
          lambda: cjk(chr(0x4E2D)) and not cjk("ascii only")),
-        # 扫描面必须**覆盖套件自己的全部 Python**：`reflect-hooks/` 与
-        # `zreflect/` 是同一个套件的两半，少扫一半就等于「半个本体零语言」。
         ("★ i18n_cover.hooks_dir_is_scanned",
-         lambda: "reflect-hooks" in DEFAULT_ROOTS and "zreflect" in DEFAULT_ROOTS),
-        # ③ 空输入必须报
-        # **文件名**也是攻击面：带分行符的名字必须报（此前完全没管）。
+         lambda: "reflect-hooks" in DEFAULT_ROOTS
+         and "zreflect" in DEFAULT_ROOTS),
+    ]
+
+
+def _cases_input_guards():
+    """⑥ 输入守卫：文件名本身也是攻击面；空输入必须报。"""
+    return [
         ("★ i18n_cover.filename_line_break",
          lambda: [p.code for p in problems(
              [("evil" + chr(0x0A) + "OFF: x.py", "x = 1\n")])]
          == ["i18n_cover.filename_has_line_break"]),
-        # 正常文件名不许误报
         ("i18n_cover.filename_clean_ok",
          lambda: problems([("normal.py", "x = 1\n")]) == []),
         ("★ i18n_cover.empty_scan", lambda: problems([]) != []),
     ]
+
+
+def _cases():
+    """拼装六组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    fx = _fixtures()
+    return (_cases_bare_text(fx)
+            + _cases_pinned()
+            + _cases_fixture_literal()
+            + _cases_code_literal()
+            + _cases_end_to_end()
+            + _cases_input_guards())
 
 
 GATE = meta("语言覆盖闸门", "本体零语言：用户可见文本必须走 M(code)；语言包可选",

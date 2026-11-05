@@ -95,6 +95,51 @@ def _aliases_of(trees, src_mod):
     return out
 
 
+def _import_aliases(trees):
+    """`import <mod> as <alias>` ⇒ `{alias: mod}`（别名也指向那个模块）。"""
+    aliases = {}
+    for _m, tree in trees.items():
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.asname:
+                        aliases[a.asname] = a.name
+    return aliases
+
+
+def _assign_targets(node):
+    """一个赋值类节点写到的全部 target（`Assign` / `AnnAssign` / `AugAssign`）。"""
+    if isinstance(node, ast.Assign):
+        return node.targets
+    if isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+        return [node.target]
+    return []
+
+
+def _attribute_mutations(tree, aliases):
+    """形状①：`<src_mod>.<name> = …` 或 `<alias>.<name> = …`。"""
+    out = set()
+    for node in ast.walk(tree):
+        for t in _assign_targets(node):
+            if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name):
+                owner = t.value.id
+                out.add((aliases.get(owner, owner), t.attr))
+    return out
+
+
+def _module_global_mutations(tree, module):
+    """形状②：模块自己用 `global NAME` + 再赋值（同模块内改写）。"""
+    globs = _globals_of(tree)
+    out = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Assign, ast.AugAssign)):
+            continue
+        for t in _assign_targets(node):
+            if isinstance(t, ast.Name) and t.id in globs:
+                out.add((module, t.id))
+    return out
+
+
 def _mutated_globals(trees):
     """**一次性索引**：哪些 `(模块, 名字)` 会在运行期被别人赋值。
 
@@ -106,35 +151,16 @@ def _mutated_globals(trees):
     而是「**别人会不会改它**」—— `check_envfile` / `i18n` 的自证都在
     `gate.GATE_REPO = …` 改它。只赋值一次、无人改写的常量（`REGISTRY`）不报
     —— 它们的语义是「一个数据表」，拷贝与引用没区别。
+
+    两个形状各是一个具名 helper（跨模块属性赋值 / 模块内 global 改写）：
+    拼在一个函数里时两层嵌套 + 三种声明的 isinstance 分支把复杂度推到 15。
     """
-    mutated = set()
-    # 别名索引：`import <mod> as <alias>` ⇒ alias 也指向那个模块
-    aliases = {}
-    for _m, tree in trees.items():
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for a in node.names:
-                    if a.asname:
-                        aliases[a.asname] = a.name
-    for _m, tree in trees.items():
-        globs_of = _globals_of(tree)
-        for node in ast.walk(tree):
-            targets = []
-            if isinstance(node, ast.Assign):
-                targets = node.targets
-            elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
-                targets = [node.target]
-            for t in targets:
-                # 形状①/①b：`<src_mod>.<name> = …` 或 `<alias>.<name> = …`
-                if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name):
-                    owner = t.value.id
-                    mutated.add((aliases.get(owner, owner), t.attr))
-            # 形状②：源模块自己用 `global NAME` + 再赋值（同一模块内改写）
-            if isinstance(node, (ast.Assign, ast.AugAssign)):
-                for t in targets:
-                    if isinstance(t, ast.Name) and t.id in globs_of:
-                        mutated.add((_m, t.id))
-    return mutated
+    aliases = _import_aliases(trees)
+    out = set()
+    for module, tree in trees.items():
+        out |= _attribute_mutations(tree, aliases)
+        out |= _module_global_mutations(tree, module)
+    return out
 
 
 def _globals_of(tree):
@@ -347,28 +373,40 @@ def _mutable_copy_problems(ix):
     ⇒ 拷贝停在 import 那一刻。"""
     out = []
     for mod, tree in sorted(ix["trees"].items()):
-        loaded = ix["loaded"][mod]
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
                 continue
-            src_mod = node.module
-            if src_mod not in ix["trees"]:
-                continue                # 不在扫描面里 ⇒ 不是本地兄弟模块
-            if src_mod not in ix["assigned"]:
-                continue                # 源模块不在扫描面里 ⇒ 不猜
-            for alias in node.names:
-                name = alias.name
-                if name != name.upper():
-                    continue                # 函数 / 类 / 小写名不是「值快照」
-                if name not in ix["assigned"][src_mod]:
-                    continue                # 源模块没有这个模块级名字
-                if (src_mod, name) not in ix["mutable"]:
-                    continue                # 没人改它 ⇒ 拷贝安全
-                if (alias.asname or name) not in loaded:
-                    continue                # 死导入，不报
+            for name in _frozen_imports(ix, mod, node):
                 out.append(M("snapshot.mutable_copy",
                              file=mod + ".py", imported=name,
-                             source=src_mod))
+                             source=node.module))
+    return out
+
+
+def _frozen_imports(ix, mod, node):
+    """这条 `from <src> import …` 里**哪些名字是值快照**（拷贝会冻住）。
+
+    五道守全是「不值得报」的出口，各自是不同理由 —— 挤在调用点就是 5 个
+    连续 `continue`（复杂度 11）。抽成具名函数后，调用点只剩一句。
+    """
+    src_mod = node.module
+    if src_mod not in ix["trees"]:
+        return []                       # 不在扫描面里 ⇒ 不是本地兄弟模块
+    if src_mod not in ix["assigned"]:
+        return []                       # 源模块不在扫描面里 ⇒ 不猜
+    loaded = ix["loaded"][mod]
+    out = []
+    for alias in node.names:
+        name = alias.name
+        if name != name.upper():
+            continue                    # 函数 / 类 / 小写名不是「值快照」
+        if name not in ix["assigned"][src_mod]:
+            continue                    # 源模块没有这个模块级名字
+        if (src_mod, name) not in ix["mutable"]:
+            continue                    # 没人改它 ⇒ 拷贝安全
+        if (alias.asname or name) not in loaded:
+            continue                    # 死导入，不报
+        out.append(name)
     return out
 
 

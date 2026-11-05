@@ -136,21 +136,9 @@ def resolve_line(spec, branch, override=None):
     return None, None
 
 
-def spec_problems(spec, branch, override):
-    """纯函数：规格形状 + 分支对账问题（空 = 合法）。
-    自证期间不许 print。"""
+def _line_problems(lines):
+    """每条线（line）的形状：必须是对象且字段齐。"""
     out = []
-    if not isinstance(spec, dict):
-        return [M("world.spec_not_object")]
-    lines = spec.get("lines")
-    if not isinstance(lines, dict) or not lines:
-        return [M("world.lines_empty")]
-    active = str(spec.get("active") or "").strip()
-    if not active:
-        out.append(M("world.active_missing"))
-    elif active not in lines:
-        out.append(M("world.active_unknown", active=active,
-                     lines=", ".join(sorted(lines))))
     for name in sorted(lines):
         ln = lines[name]
         if not isinstance(ln, dict):
@@ -160,15 +148,45 @@ def spec_problems(spec, branch, override):
             if not str(ln.get(f) or "").strip():
                 out.append(M("world.line_missing_field", line_name=name,
                              field=f, fields=", ".join(LINE_FIELDS)))
-    if override and override not in lines:
-        out.append(M("world.override_unknown", line_name=override))
-    # 分支对账：分支是线却 ≠ active ⇒ 红（换线没跑
-    # 换线脚本 —— 事故 1/2 的形状）。覆盖在场时是
-    # CI 的明确选择，不替人猜。
+    return out
+
+
+def _active_problems(active, lines):
+    """`active` 必须在场且是已知的线。"""
+    if not active:
+        return [M("world.active_missing")]
+    if active not in lines:
+        return [M("world.active_unknown", active=active,
+                  lines=", ".join(sorted(lines)))]
+    return []
+
+
+def _branch_problems(branch, active, lines, override):
+    """分支对账：分支是线却 ≠ active ⇒ 红（换线没跑换线脚本 —— 事故 1/2 的
+    形状）。覆盖在场时是 CI 的明确选择，不替人猜。"""
     if (branch and branch in lines and active
             and branch != active and not override):
-        out.append(M("world.branch_mismatch", branch=branch, active=active))
-    return out
+        return [M("world.branch_mismatch", branch=branch, active=active)]
+    return []
+
+
+def spec_problems(spec, branch, override):
+    """纯函数：规格形状 + 分支对账问题（空 = 合法）。
+    自证期间不许 print。
+
+    四组判据各是一个具名 helper（容器形状 / 线形状 / active / 分支对账）：
+    它们互不依赖，拼在一起只是让调用点看起来短。
+    """
+    if not isinstance(spec, dict):
+        return [M("world.spec_not_object")]
+    lines = spec.get("lines")
+    if not isinstance(lines, dict) or not lines:
+        return [M("world.lines_empty")]
+    active = str(spec.get("active") or "").strip()
+    out = _active_problems(active, lines) + _line_problems(lines)
+    if override and override not in lines:
+        out.append(M("world.override_unknown", line_name=override))
+    return out + _branch_problems(branch, active, lines, override)
 
 
 def stamp_problems(spec, runner=None):

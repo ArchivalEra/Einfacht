@@ -76,50 +76,54 @@ def _has_summary(text):
     return any(machine.is_summary(ln) for ln in (text or "").splitlines())
 
 
+def _derive_listing(repo):
+    """从 `registry --all-runnable` 派生闸门清单（发现式，不写名录）。"""
+    _rc, out = _run([sys.executable,
+                     os.path.join(repo, "zreflect", "registry.py"),
+                     "--all-runnable"], cwd=repo)
+    return [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
+
+
+def _check_one_gate(repo, rel):
+    """跑一道闸门的自证。返回 `(通过?, 输出行列表)`。"""
+    g = os.path.join(repo, rel)
+    if not os.path.isfile(g):
+        return False, [str(M("harness.missing_file", file=rel))]
+    try:
+        text = open(g, encoding="utf-8", errors="replace").read()
+    except OSError:
+        text = ""
+    if not ADVERT.search(text):
+        return False, [str(M("harness.no_selftest_entry", file=rel))]
+    env = dict(os.environ)
+    env["GATE_REPO"] = repo
+    rc, out = _run([sys.executable, g, "--selftest"], cwd=repo, env=env)
+    if rc != 0:
+        return False, ([str(M("harness.selftest_failed", file=rel))]
+                       + ["      " + ln for ln in _tail(out)])
+    if not _has_summary(out):
+        return False, [str(M("harness.no_machine_summary", file=rel))]
+    last = _tail(out, 1)
+    return True, [str(M("harness.gate_ok", file=rel,
+                        summary=last[0] if last else ""))]
+
+
 def run_gates(repo, listing=None):
     """跑一组闸门的自证。返回 `(ok, n, bad, lines)`。
 
     `listing` 可注入（自证用假清单，不依赖真仓）；None ⇒ 从 `registry` 派生。
     """
-    if listing is None:
-        _rc, out = _run([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
-                         "--all-runnable"], cwd=repo)
-        listing = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
+    listing = _derive_listing(repo) if listing is None else listing
     n = bad = 0
     lines = []
     for rel in listing:
-        g = os.path.join(repo, rel)
-        if not os.path.isfile(g):
-            lines.append(str(M("harness.missing_file", file=rel)))
-            bad += 1
-            continue
+        passed, out = _check_one_gate(repo, rel)
+        lines += out
         n += 1
-        try:
-            text = open(g, encoding="utf-8", errors="replace").read()
-        except OSError:
-            text = ""
-        if not ADVERT.search(text):
-            lines.append(str(M("harness.no_selftest_entry", file=rel)))
+        if not passed:
             bad += 1
-            continue
-        env = dict(os.environ)
-        env["GATE_REPO"] = repo
-        rc, out = _run([sys.executable, g, "--selftest"], cwd=repo, env=env)
-        if rc != 0:
-            lines.append(str(M("harness.selftest_failed", file=rel)))
-            for ln in _tail(out):
-                lines.append("      " + ln)
-            bad += 1
-            continue
-        if not _has_summary(out):
-            lines.append(str(M("harness.no_machine_summary", file=rel)))
-            bad += 1
-            continue
-        last = _tail(out, 1)
-        lines.append(str(M("harness.gate_ok", file=rel,
-                           summary=last[0] if last else "")))
-    # 零值守卫：一个闸门都没发现 ⇒ 不通过（空输入不是通过）。
     if n == 0:
+        # 零值守卫：一个闸门都没发现 ⇒ 不通过（空输入不是通过）。
         lines.append(str(M("harness.no_gates_found")))
         return False, n, bad + 1, lines
     if bad:

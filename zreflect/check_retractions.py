@@ -26,6 +26,28 @@ DOCS = tuple(d for d in os.environ.get(
 HIST_SECS = tuple(s for s in os.environ.get("REFLECT_HISTORY_SECS", "").split(",") if s)
 
 
+def _entry_field_problems(retractions):
+    """每条翻案条目的必填字段（缺一个 ⇒ 这条台账不可信）。"""
+    return [M("retractions.entry_missing_field", field=fld, entry=r.get("id"))
+            for r in retractions
+            for fld in REQUIRED if not r.get(fld)]
+
+
+def _resurfaced_problems(retractions, docs, hist):
+    """重现行：活状态里出现 `text` 的那一行**必须带更正标记**。"""
+    out = []
+    for r in retractions:
+        text = r.get("text") or ""
+        if not text:
+            continue
+        for name, body in sorted(docs.items()):
+            for i, line, is_living in living_lines(body or "", hist):
+                if is_living and text in line and not HIST_MARK.search(line):
+                    out.append(M("retractions.resurfaced", name=name, line=i,
+                                 text=text, entry=r.get("id", "?")))
+    return out
+
+
 def problems(retractions, docs, hist_secs=None):
     """返回问题清单（纯函数：自证要用）。`docs` = {文件名: 正文}。
 
@@ -33,31 +55,21 @@ def problems(retractions, docs, hist_secs=None):
     `REFLECT_HISTORY_SECS` 声明后豁免 —— 那里的"当时如此"不是"现在如此"，
     拿它跟现状比只会逼人毁掉记录。历史章节里的重现行**仍然要带标记**吗？
     不用 —— 历史章节天然就是"当时"的记录；这个豁免正是从 Octave 迁来的纪律。
+
+    两条规则各是一个具名 helper（字段完整性 / 重现行）：它们扫的是不同的
+    东西（台账自身 vs 文档），拼在一起只是让调用点看起来短。
     """
     hist = HIST_SECS if hist_secs is None else hist_secs
-    out = []
     if retractions is None or "retractions" not in (retractions or {}):
         # 零值守卫：结构都不对，就别谈「没有违规」。
         return [M("retractions.missing_key")]
     if not docs:
         # 零值守卫：一份文档都没扫到 ⇒ 「没发现重现行」是空话。
         return [M("retractions.no_docs")]
-    for r in retractions.get("retractions") or []:
-        for fld in REQUIRED:
-            if not (r.get(fld) if isinstance(r, dict) else None):
-                out.append(M("retractions.entry_missing_field", field=fld,
-                             entry=r.get("id") if isinstance(r, dict) else r))
-        text = (r or {}).get("text") or ""
-        if not text:
-            continue
-        for name, body in sorted(docs.items()):
-            for i, line, is_living in living_lines(body or "", hist):
-                if not is_living:
-                    continue
-                if text in line and not HIST_MARK.search(line):
-                    out.append(M("retractions.resurfaced", name=name, line=i,
-                                 text=text, entry=r.get("id", "?")))
-    return out
+    entries = [r for r in (retractions.get("retractions") or [])
+               if isinstance(r, dict)]
+    return _entry_field_problems(entries) + _resurfaced_problems(
+        [r for r in entries if isinstance(r, dict)], docs, hist)
 
 
 def run(argv):

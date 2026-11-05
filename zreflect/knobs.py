@@ -650,19 +650,9 @@ def pack_sync_problems(loader=None, discovery=None):
         langs = list((discovery or installed_langs)())
     except PacksUnreadable as e:
         return [M("knobs.pack_unreadable", lang="*", error=e)]
-    tables = {}
-    for lang in langs:
-        try:
-            tables[lang] = load(lang)
-        except Exception as e:                           # noqa: BLE001
-            # **这里必须捕获**：`load_pack` 对坏分片抛 `MissingPack`，
-            # `pack_sync_problems` 又可能在 `activate_or_fatal()` **之外**被调用
-            # （`registry --gates` 的 roster 对账就是），于是异常一路冒到顶层
-            # 变成裸 traceback rc=1 —— 逃出本仓的 rc 契约（配置坏 = FATAL rc 2）。
-            # 实测踩到：`REFLECT_LANG` 未设 + 坏分片 ⇒ rc=1 traceback，
-            # 同一个输入加 `REFLECT_LANG=zh` 才是 rc=2。
-            return [M("knobs.pack_unreadable", lang=lang, error=e)]
-    out = []
+    tables, err = _load_tables(langs, load)
+    if err:
+        return err
     # **零包是合法态**（用户要的「本体没有任何语言表达也能用」）：一个包都没
     # 装 ⇒ 没有「彼此一致」可言，但也不是配置坏 —— 返回空（不报）。
     # 「设了包却读不到」由 `pack_unreadable` / 激活路径的 `i18n.pack_absent`
@@ -674,32 +664,62 @@ def pack_sync_problems(loader=None, discovery=None):
         return [M("knobs.pack_sync_empty", pack_dir=pack_dir())]
     ref_lang = sorted(tables)[0]
     ref = tables[ref_lang]
+    out = []
     for lang in sorted(tables):
         if lang == ref_lang:
             continue
-        other = tables[lang]
-        only_ref = sorted(set(ref) - set(other))
-        only_other = sorted(set(other) - set(ref))
-        if only_ref:
-            out.append(M("knobs.pack_missing_keys",
-                         lang=lang, reference=ref_lang,
-                         keys=", ".join(only_ref[:8])))
-        if only_other:
-            out.append(M("knobs.pack_extra_keys",
-                         lang=lang, reference=ref_lang,
-                         keys=", ".join(only_other[:8])))
-        # 占位符名一致：差一个 ⇒ 渲染时 KeyError（或更糟，静默少显示一段）
-        for code in sorted(set(ref) & set(other)):
-            a = sorted(_PLACEHOLDER_RE.findall(ref[code]))
-            b = sorted(_PLACEHOLDER_RE.findall(other[code]))
-            if a != b:
-                # 参数名不能叫 `code`：`M(code, **params)` 的首参就叫 code，
-                # 同名 kwarg 会 `TypeError: M() got multiple values`（实测踩到）。
-                out.append(M("knobs.pack_placeholder_mismatch",
-                             lang=lang, key=code,
-                             reference_lang=ref_lang,
-                             expected_params=", ".join(a) or "-",
-                             actual_params=", ".join(b) or "-"))
+        out += _key_set_problems(lang, ref_lang, ref, tables[lang])
+        out += _placeholder_problems(lang, ref_lang, ref, tables[lang])
+    return out
+
+
+def _load_tables(langs, load):
+    """装载全部已装包。返回 `(tables, 错误清单或 None)`。
+
+    ⚠️ **必须捕获 `load_pack` 的异常**：它对坏分片抛 `MissingPack`，而
+    `pack_sync_problems` 可能在 `activate_or_fatal()` **之外**被调用
+    （`registry --gates` 的 roster 对账就是），于是异常一路冒到顶层变成
+    裸 traceback rc=1 —— 逃出本仓的 rc 契约（配置坏 = FATAL rc 2）。
+    实测踩到：`REFLECT_LANG` 未设 + 坏分片 ⇒ rc=1 traceback，
+    同一个输入加 `REFLECT_LANG=zh` 才是 rc=2。
+    """
+    tables = {}
+    for lang in langs:
+        try:
+            tables[lang] = load(lang)
+        except Exception as e:                           # noqa: BLE001
+            return {}, [M("knobs.pack_unreadable", lang=lang, error=e)]
+    return tables, None
+
+
+def _key_set_problems(lang, ref_lang, ref, other):
+    """键集差集：只有基准有 / 只有这个包有。"""
+    out = []
+    only_ref = sorted(set(ref) - set(other))
+    only_other = sorted(set(other) - set(ref))
+    if only_ref:
+        out.append(M("knobs.pack_missing_keys", lang=lang, reference=ref_lang,
+                     keys=", ".join(only_ref[:8])))
+    if only_other:
+        out.append(M("knobs.pack_extra_keys", lang=lang, reference=ref_lang,
+                     keys=", ".join(only_other[:8])))
+    return out
+
+
+def _placeholder_problems(lang, ref_lang, ref, other):
+    """占位符名一致：差一个 ⇒ 渲染时 KeyError（或更糟，静默少显示一段）。"""
+    out = []
+    for code in sorted(set(ref) & set(other)):
+        a = sorted(_PLACEHOLDER_RE.findall(ref[code]))
+        b = sorted(_PLACEHOLDER_RE.findall(other[code]))
+        if a == b:
+            continue
+        # 参数名不能叫 `code`：`M(code, **params)` 的首参就叫 code，
+        # 同名 kwarg 会 `TypeError: M() got multiple values`（实测踩到）。
+        out.append(M("knobs.pack_placeholder_mismatch",
+                     lang=lang, key=code, reference_lang=ref_lang,
+                     expected_params=", ".join(a) or "-",
+                     actual_params=", ".join(b) or "-"))
     return out
 
 

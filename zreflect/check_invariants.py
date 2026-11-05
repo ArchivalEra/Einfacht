@@ -47,57 +47,72 @@ from i18n import M                               # noqa: E402
 INVARIANTS_RAW = os.environ.get("REFLECT_INVARIANTS", "").strip()
 
 
+def _shape_problems(c):
+    """一条检查项的形状校验：返回 `(问题清单, 规范化字段或 None)`。
+
+    「形状坏」与「内容不符」是两件事：形状坏时**没有可比的片段**，
+    必须早退（否则 `frag not in text` 会 TypeError）。五道守挤在调用点
+    就是 5 个连续 `continue`（复杂度 14）。
+    """
+    if not isinstance(c, dict):
+        return [M("invariants.not_object", entry=c)], None
+    path = str(c.get("path") or "").strip()
+    why = str(c.get("why") or "").strip()
+    mc, mnc = c.get("must_contain"), c.get("must_not_contain")
+    if not path:
+        return [M("invariants.missing_path", entry=c)], None
+    out = [] if why else [M("invariants.missing_why", path=path)]
+    if not isinstance(mc, list) and not isinstance(mnc, list):
+        return out + [M("invariants.no_criteria", path=path)], None
+    if (mc is not None and not isinstance(mc, list)) or \
+            (mnc is not None and not isinstance(mnc, list)):
+        return out + [M("invariants.not_string_list", path=path)], None
+    if any(not isinstance(x, str) for x in (mc or [])) or \
+            any(not isinstance(x, str) for x in (mnc or [])):
+        return out + [M("invariants.fragment_not_string", path=path)], None
+    return out, (path, why, mc or [], mnc or [])
+
+
+def _content_problems(path, why, mc, mnc, read):
+    """片段比对：`must_contain` 必须都在、`must_not_contain` 必须都不在。"""
+    try:
+        text = read(path)
+    except OSError:
+        return [M("invariants.unreadable", path=path)]
+    out = []
+    for frag in mc:
+        if frag not in text:
+            # `DRIFT` 是机器可读标记：**字面量留在发射点**（参数值），
+            # 语言包只负责把它摆进句子里 —— 包值不许以 `^[A-Z][A-Z0-9_]*:`
+            # 开头（否则一条翻译就能伪装成机器契约行，见 i18n._validate）。
+            out.append(M("invariants.drift_missing", marker="DRIFT",
+                         path=path, fragment=frag, why=why))
+    for frag in mnc:
+        if frag in text:
+            out.append(M("invariants.drift_forbidden", marker="DRIFT",
+                         path=path, fragment=frag, why=why))
+    return out
+
+
 def problems(checks, read=None):
     """纯函数：返回问题清单（空 = 绿）。自证期间不许 print。
 
     `read(path) -> str` 可注入（自证用假文件系统 —— 真文件
     进了自证，自证就依赖机器了）。判据 = 片段的**存在/
     不存在**（grep 级，见模块文档的边界）。
+
+    两段各是一个 helper（形状 / 内容）：形状坏时没有可比的片段，
+    必须早退 —— 把两段拼在一起时，5 个形状守 + 2 个内容守 = 复杂度 14。
     """
-    out = []
     if not checks:
         return [M("invariants.empty")]
     read = read or (lambda p: open(repo(p), encoding="utf-8").read())
+    out = []
     for c in checks:
-        if not isinstance(c, dict):
-            out.append(M("invariants.not_object", entry=c))
-            continue
-        path = str(c.get("path") or "").strip()
-        why = str(c.get("why") or "").strip()
-        mc = c.get("must_contain")
-        mnc = c.get("must_not_contain")
-        if not path:
-            out.append(M("invariants.missing_path", entry=c))
-            continue
-        if not why:
-            out.append(M("invariants.missing_why", path=path))
-        if not isinstance(mc, list) and not isinstance(mnc, list):
-            out.append(M("invariants.no_criteria", path=path))
-            continue
-        if (mc is not None and not isinstance(mc, list)) or \
-                (mnc is not None and not isinstance(mnc, list)):
-            out.append(M("invariants.not_string_list", path=path))
-            continue
-        if any(not isinstance(x, str) for x in (mc or [])) or \
-                any(not isinstance(x, str) for x in (mnc or [])):
-            out.append(M("invariants.fragment_not_string", path=path))
-            continue
-        try:
-            text = read(path)
-        except OSError:
-            out.append(M("invariants.unreadable", path=path))
-            continue
-        for frag in mc or []:
-            if frag not in text:
-                # `DRIFT` 是机器可读标记：**字面量留在发射点**（参数值），
-                # 语言包只负责把它摆进句子里 —— 包值不许以 `^[A-Z][A-Z0-9_]*:`
-                # 开头（否则一条翻译就能伪装成机器契约行，见 i18n._validate）。
-                out.append(M("invariants.drift_missing", marker="DRIFT",
-                             path=path, fragment=frag, why=why))
-        for frag in mnc or []:
-            if frag in text:
-                out.append(M("invariants.drift_forbidden", marker="DRIFT",
-                             path=path, fragment=frag, why=why))
+        shape_probs, spec = _shape_problems(c)
+        out += shape_probs
+        if spec is not None:
+            out += _content_problems(*spec, read=read)
     return out
 
 

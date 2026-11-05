@@ -236,6 +236,57 @@ def trailing_newline_problems(zdir=None):
     return out
 
 
+def _source_of(rel, sources):
+    """读闸门源码；读不到 ⇒ `None`（**不是空串** —— 两种含义必须可区分）。"""
+    if sources is not None:
+        return sources.get(rel)
+    try:
+        return open(os.path.join(gate.GATE_REPO, rel),
+                    encoding="utf-8", errors="replace").read()
+    except OSError:
+        return None
+
+
+def _calls_off(text):
+    """AST 找 `off(...)` 调用（排除定义处与注释）。读不到源码 ⇒ `None`。"""
+    if text is None:
+        return None
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return False
+    return any(isinstance(n, ast.Call) and getattr(n.func, "id", "") == "off"
+               for n in ast.walk(tree))
+
+
+def _reason_shape_problems(rel, reason, calls_off):
+    """三向：会 off 却没理由 / 理由太短 / 声明了理由却从不 off。
+
+    ⚠️ **读不到源码（`calls_off is None`）⇒ 这一向整个跳过**：夹具仓里没有
+    该文件时把 `False` 当真会报一堆假的「理由白写」（实测：`GATE_REPO=$tmp
+    registry --gates` 报 8 条）。理由真实性不依赖源码，仍照常检查。
+    """
+    if calls_off is None:
+        return []
+    if not calls_off:
+        return ([M("registry.off_reason_without_off", file=rel)]
+                if reason else [])
+    if not reason:
+        return [M("registry.off_without_reason", file=rel)]
+    if len(str(reason).strip()) < MUST_REASON_MIN:
+        return [M("registry.off_reason_too_short", file=rel, reason=str(reason))]
+    return []
+
+
+def _reason_truth_problems(rel, reason):
+    """**理由真实性**：理由里点名「本仓没有 X.json」——那 X.json 若实际存在，
+    理由就已经失效（闸门早该启用而没启用）。第 17 轮补的对称判据：
+    第 12 轮只要求「必须有理由」，没要求「理由得是真的」。
+    """
+    return [M("registry.off_reason_stale", file=rel, name=tok)
+            for tok, exists in _reason_files(reason) if exists]
+
+
 def off_reason_problems(gs, sources=None):
     """C4 对账⑥：**会 `off()` 的闸门必须声明它为何可以未启用**。
 
@@ -247,53 +298,17 @@ def off_reason_problems(gs, sources=None):
       · 源码里**会调 `off(`** 但声明行没有 `off_reason`（或太短）⇒ 报
       · 声明行有 `off_reason` 但源码**从不调 `off(`** ⇒ 报（谎言：理由白写）
     发现式：扫 `gs`（registry 已抽好的声明）+ 各文件源码，不写任何名录。
+
+    两组判据各是一个具名 helper（形状 / 真实性）：拼在一起时 6 个分支
+    把复杂度推到 12，而两组之间没有任何共享状态。
     """
-    import ast                                           # noqa: PLC0415
     out = []
     for g in gs:
         rel = g["file"]
         reason = g.get("off_reason")
-        # 源码读不到**不该跳过整条判据**：理由真实性（下面 `_reason_files`）
-        # 不依赖源码，只依赖「仓里有没有那个文件」。此前 `continue` 会让
-        # 读不到源码的闸门绕过全部三向检查（自证随手的 fixture 就撞上）。
-        text = None
-        if sources is not None:
-            text = sources.get(rel)
-        else:
-            try:
-                text = open(os.path.join(gate.GATE_REPO, rel),
-                            encoding="utf-8", errors="replace").read()
-            except OSError:
-                text = None
-        # 更精确：AST 找 `off(...)` 调用（排除定义处与注释）
-        calls_off = False
-        if text is not None:
-            try:
-                tree = ast.parse(text)
-                calls_off = any(isinstance(n, ast.Call)
-                                and getattr(n.func, "id", "") == "off"
-                                for n in ast.walk(tree))
-            except SyntaxError:
-                calls_off = False
-        # ⚠️ **读不到源码 ≠ 不调 off**：夹具仓里没有该文件时 `text` 为 None，
-        # 若把 `calls_off=False` 当真就会报一堆假的「理由白写」（实测：
-        # `GATE_REPO=$tmp registry --gates` 报 8 条）。源码读不到时**只做
-        # 理由真实性检查**，跳过「有没有调 off」这一向。
-        if text is not None:
-            if calls_off and not reason:
-                out.append(M("registry.off_without_reason", file=rel))
-            elif calls_off and reason and len(str(reason).strip()) < MUST_REASON_MIN:
-                out.append(M("registry.off_reason_too_short",
-                             file=rel, reason=str(reason)))
-            elif not calls_off and reason:
-                out.append(M("registry.off_reason_without_off", file=rel))
-        # **理由真实性**：理由里点名「本仓没有 X.json」——那 X.json 若实际存在，
-        # 理由就已经失效（闸门早该启用而没启用）。第 17 轮补的对称判据：
-        # 第 12 轮只要求「必须有理由」，没要求「理由得是真的」。
-        for tok, exists in _reason_files(reason):
-            if exists:
-                out.append(M("registry.off_reason_stale", file=rel,
-                             name=tok))
+        out += _reason_shape_problems(rel, reason,
+                                      _calls_off(_source_of(rel, sources)))
+        out += _reason_truth_problems(rel, reason)
     return out
 
 
@@ -337,6 +352,44 @@ def reason_bases_agree(hook=False):
         shutil.rmtree(d, True)
 
 
+def _scan_sources(sources, base):
+    """扫描面：给了 `sources` 就用它（自证注入假文件系统），否则扫真目录。"""
+    if sources is not None:
+        return sorted(sources.items())
+    items = []
+    for n in sorted(os.listdir(base)):
+        if not n.endswith(".py"):
+            continue
+        try:
+            items.append((n, open(os.path.join(base, n), encoding="utf-8").read()))
+        except OSError:
+            continue
+    return items
+
+
+def _returns_self_computed_dir(text):
+    """函数体里有没有 `return dirname(abspath(__file__))`。
+
+    ⚠️ **只抓「作为返回值的自算」**，不抓 `sys.path.insert(0, …)` ——
+    后者是**导入引导**（每个闸门顶部都有，22 处），它不表达「工具目录
+    是什么」，只是让脚本能找到兄弟模块。抓它会把判据变成 22 条噪音。
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Return) and sub.value is not None \
+                    and "dirname(os.path.abspath(__file__)" in ast.unparse(sub.value):
+                out.append(node.name)
+                break
+    return out
+
+
 def path_rule_problems(sources=None):
     """C4 对账⑧：**「工具的 zreflect/」只能有一个产地**。
 
@@ -348,42 +401,12 @@ def path_rule_problems(sources=None):
     这种**自算工具目录**的地方，除 `gate.py`（唯一产地在它）外都报。
     `i18n` 的懒代理 `return gate.zdir()` 不算自算（它没有那个表达式）。
     """
-    import ast                                           # noqa: PLC0415
     out = []
-    base = gate.zdir()
-    # `sources` 给了 ⇒ **只扫那些**（自证注入假文件系统）；否则扫真目录。
-    if sources is not None:
-        items = sorted(sources.items())
-    else:
-        items = []
-        for n in sorted(os.listdir(base)):
-            if not n.endswith(".py"):
-                continue
-            try:
-                items.append((n, open(os.path.join(base, n),
-                                      encoding="utf-8").read()))
-            except OSError:
-                continue
-    for n, text in items:
-        if n == "gate.py":
+    for name, text in _scan_sources(sources, gate.zdir()):
+        if name == "gate.py":
             continue                    # gate.py 是唯一产地，它自己有
-        # ⚠️ **只抓「作为返回值的自算」**，不抓 `sys.path.insert(0, …)` ——
-        # 后者是**导入引导**（每个闸门顶部都有，22 处），它不表达「工具目录
-        # 是什么」，只是让脚本能找到兄弟模块。抓它会把判据变成 22 条噪音。
-        # 判据形状：函数体里 `return dirname(abspath(__file__))`。
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            continue
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.FunctionDef):
-                continue
-            for sub in ast.walk(node):
-                if isinstance(sub, ast.Return) and sub.value is not None \
-                        and "dirname(os.path.abspath(__file__)" in ast.unparse(sub.value):
-                    out.append(M("registry.path_rule_split", file=n,
-                                 function=node.name))
-                    break
+        for fn in _returns_self_computed_dir(text):
+            out.append(M("registry.path_rule_split", file=name, function=fn))
     return out
 
 
@@ -428,39 +451,75 @@ def _asserted_names(case_bodies):
     return asserted
 
 
+def _record(consumed, consumers, pair, file):
+    """记一次「某文件消费了某平台函数」。"""
+    consumed.add(pair)
+    consumers.setdefault(pair, set()).add(file)
+
+
+def _import_aliases(tree, platform):
+    """`import <mod>` 的别名表：`{alias: mod}`（只收平台模块）。"""
+    aliases = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name in platform:
+                    aliases[a.asname or a.name] = a.name
+    return aliases
+
+
+def _from_import_uses(tree, platform):
+    """`from <平台模块> import <平台函数>` ⇒ `[(模块, 函数)]`。"""
+    out = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.ImportFrom) and node.module in platform):
+            continue
+        for a in node.names:
+            if a.name in platform[node.module]:
+                out.append((node.module, a.name))
+    return out
+
+
+def _attribute_uses(tree, platform, aliases):
+    """`<mod>.<fn>` / `<alias>.<fn>`（Load 上下文）⇒ `[(模块, 函数)]`。"""
+    out = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Attribute)
+                and isinstance(node.ctx, ast.Load)
+                and isinstance(node.value, ast.Name)):
+            continue
+        mod = aliases.get(node.value.id, node.value.id)
+        if mod in platform and node.attr in platform[mod]:
+            out.append((mod, node.attr))
+    return out
+
+
+def _consumer_files(files):
+    """真的**调用方**：`check_*` / `doctor.py`（平台模块互相调用不算）。"""
+    return {n: t for n, t in files.items()
+            if n.startswith("check_") or n == "doctor.py"}
+
+
 def _consumers(files, platform):
     """谁消费了哪个平台函数：`({(模块, 函数)}, {(模块, 函数): {文件名}})`。
 
     只扫 `check_*` / `doctor.py` —— 它们是真的调用方；平台模块互相调用不算
     「闸门消费」。
+
+    三种发现方式（`from import` / 别名属性 / 裸属性）各是一个 helper：
+    拼在一个函数里时，两轮 `ast.walk` + 三处 isinstance 分支把复杂度推到 14。
     """
-    consumed = set()
-    consumers = {}
-    for n, text in files.items():
-        if not (n.startswith("check_") or n == "doctor.py"):
-            continue
+    consumed, consumers = set(), {}
+    for file, text in _consumer_files(files).items():
         try:
             tree = ast.parse(text)
         except SyntaxError:
             continue
-        aliases = {}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module in platform:
-                for a in node.names:
-                    if a.name in platform[node.module]:
-                        consumed.add((node.module, a.name))
-                        consumers.setdefault((node.module, a.name), set()).add(n)
-            elif isinstance(node, ast.Import):
-                for a in node.names:
-                    if a.name in platform:
-                        aliases[a.asname or a.name] = a.name
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) \
-                    and isinstance(node.value, ast.Name):
-                mod = aliases.get(node.value.id, node.value.id)
-                if mod in platform and node.attr in platform[mod]:
-                    consumed.add((mod, node.attr))
-                    consumers.setdefault((mod, node.attr), set()).add(n)
+        aliases = _import_aliases(tree, platform)
+        uses = (_from_import_uses(tree, platform)
+                + _attribute_uses(tree, platform, aliases))
+        for pair in uses:
+            _record(consumed, consumers, pair, file)
     return consumed, consumers
 
 
@@ -472,14 +531,11 @@ def _consumers(files, platform):
 FRAMEWORK_MIN_GATES = 3
 
 
-def dependency_coverage_problems(zdir=None, sources=None):
-    """C4 对账⑨：**被闸门消费的平台函数，必须在某处有断言**。
+def _load_platform_sources(zdir, sources):
+    """装载扫描面：`(names, files, read)`。读不到 ⇒ 空表（不是异常）。
 
-    一个被消费但没被测的模块，是依赖链上的哑火环节：它判错了，消费它的闸门
-    丢掉判据，而那个闸门自己的自证照样绿（第 24 轮 `living.living_lines()`）。
-
-    三段各是一个 helper（`_platform_functions` / `_asserted_names` /
-    `_consumers`），本函数只做**判定** —— 142 行 → 25 行。
+    `read(n)` 对**未装载**的文件返回 None —— 「没有这个文件」与「文件是空的」
+    必须可区分（空模块与缺失模块在判据里含义不同）。
     """
     d = zdir if zdir is not None else gate.zdir()
 
@@ -494,32 +550,43 @@ def dependency_coverage_problems(zdir=None, sources=None):
 
     if sources is not None:
         names = sorted(sources)
-        files = {n: sources[n] for n in names}
-    else:
-        try:
-            names = sorted(n for n in os.listdir(d) if n.endswith(".py"))
-        except OSError:
-            return []
-        files = {}
-        for n in names:
-            text = read(n)
-            if text is not None:
-                files[n] = text
+        return names, {n: sources[n] for n in names}, read
+    try:
+        names = sorted(n for n in os.listdir(d) if n.endswith(".py"))
+    except OSError:
+        return [], {}, read
+    files = {n: t for n in names if (t := read(n)) is not None}
+    return names, files, read
 
+
+def _untested_consumed(consumed, consumers, asserted):
+    """被闸门消费、却没有任何断言、且不是框架 API 的函数。
+
+    ⚠️ 框架 API 的判据是**绝对数**（≥3 个闸门共用），不是「半数闸门」：
+    后者在单闸门夹具里退化成 1，会把夹具里唯一那个消费关系也当框架跳过。
+    """
+    return [(mod, fn) for mod, fn in sorted(consumed)
+            if fn not in asserted
+            and len(consumers[(mod, fn)]) < FRAMEWORK_MIN_GATES]
+
+
+def dependency_coverage_problems(zdir=None, sources=None):
+    """C4 对账⑨：**被闸门消费的平台函数，必须在某处有断言**。
+
+    一个被消费但没被测的模块，是依赖链上的哑火环节：它判错了，消费它的闸门
+    丢掉判据，而那个闸门自己的自证照样绿（第 24 轮 `living.living_lines()`）。
+
+    四段各是一个 helper（`_load_platform_sources` / `_platform_functions` /
+    `_asserted_names` / `_consumers` / `_untested_consumed`），本函数只做编排。
+    """
+    names, files, read = _load_platform_sources(zdir, sources)
+    if not files:
+        return []
     platform = _platform_functions(names, read)
-    case_bodies = [text for n, text in files.items() if "def _cases(" in text]
-    asserted = _asserted_names(case_bodies)
+    asserted = _asserted_names([t for t in files.values() if "def _cases(" in t])
     consumed, consumers = _consumers(files, platform)
-
-    out = []
-    for mod, fn in sorted(consumed):
-        if fn in asserted:
-            continue
-        if len(consumers[(mod, fn)]) >= FRAMEWORK_MIN_GATES:
-            continue                    # 框架 API
-        out.append(M("registry.dependency_untested", module=mod, function=fn))
-    return out
-
+    return [M("registry.dependency_untested", module=m, function=f)
+            for m, f in _untested_consumed(consumed, consumers, asserted)]
 
 
 # ── 自证：判据属于自己的被测对象 ──────────────────────────────────────────────

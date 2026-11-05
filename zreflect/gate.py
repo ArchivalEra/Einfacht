@@ -28,6 +28,7 @@
 自证期间纯函数保持安静（print 归 run()/顶层，issue #1 ③）。
 """
 import json
+import ast
 import os
 import sys
 
@@ -420,6 +421,56 @@ def _short_circuit_reason(node):
     return None
 
 
+# 内建函数白名单：它们**在 lambda 里内联逻辑**，不是委托 —— 生成器/实参就在
+# 这个 AST 里，恒真检测照样能扫（把内建也判成委托会误伤一半的断言，实测 6 条
+# 假阳性）。
+_BUILTIN_OK = frozenset({
+    "any", "all", "bool", "len", "sorted", "sum", "min", "max",
+    "isinstance", "getattr", "hasattr", "str", "int", "set",
+    "list", "tuple", "dict", "repr",
+})
+
+
+def _assertion_node(fn):
+    """定位这条断言对应的 lambda AST 节点。定位不到 ⇒ `[]`（不猜）。"""
+    code = getattr(fn, "__code__", None)
+    if code is None:
+        return []                                        # 非 Python 函数
+    tree = _ast_for(code.co_filename)
+    if not tree:
+        return []                                        # 读不到 / 解析不了
+    return _lambda_nodes(tree, code.co_firstlineno)
+
+
+def _delegation_reason(nodes):
+    """**纯委托**（lambda 体就是一次非内建 Call）⇒ 断言逻辑住在被调用函数里，
+    本判据**看不见**它。
+
+    ⚠️ 此前这种情况返回 None（与「扫过且干净」不可区分），于是「提取成 helper」
+    就成了关掉恒真检测的合法手段（实测：helper 改成 `return True` 后自证
+    26 PASS / 0 FAIL 全绿）。现在把它**明说成未审计** —— 与「读不到就明说」
+    同一条纪律。
+    """
+    import i18n                                          # noqa: PLC0415
+    for node in nodes:
+        if isinstance(node.body, ast.Call):
+            f = node.body.func
+            fname = getattr(f, "id", None) or getattr(f, "attr", None)
+            if fname not in _BUILTIN_OK:
+                return i18n.M("gate.never_falsifiable_delegated")
+    return None
+
+
+def _short_circuit_reason_of(nodes):
+    """扫恒真短路：`or <真值常量>` / `and <假值常量>` / `x == x`。"""
+    for node in nodes:
+        for n in ast.walk(node):
+            reason = _short_circuit_reason(n)
+            if reason:
+                return reason
+    return None
+
+
 def never_falsifiable(fn):
     """**恒真断言探测**（issue #23）：这条自证用例有证伪能力吗？
 
@@ -442,57 +493,28 @@ def never_falsifiable(fn):
        自我比较；更强的保证是变异测试（每条断言注入破坏器），代价过大 —— 见
        issue #23 的讨论。本判据的价值：把已知的几种无意识写法从「人工复查才
        发现」变成「自证当场红」。
-    2. **「委托」只在 body 是**单次 `Call`** 时才报**（见 `selftest()` 的
-       `_is_delegated` 分支）。若 body 是 `Compare`/`BoolOp` 包着一次 helper 调用
-       —— 例如 `lambda: _nf_catches("x") is not None` —— 就**不算委托**，本判据
-       扫不到 helper 内部。实测：第 22 轮我把 `never_falsifiable` 的自证写成
-       那个形状，四条断言在语义上确实有牙（变异测试 RED-OK），但**形态上**躲过
-       了审计。放宽判据会误伤大量「复合断言」（`codes(...)==[...] and helper(...)`），
-       所以这里选择**明说缺口**而不是把判据改宽。
-    3. **读不到源码文件时不猜**（`-c` 里的 lambda 没有 `co_filename` ⇒ 返回 None）。
-       自证用例必须写在真文件里 —— 这是第 22 轮补 `never_falsifiable` 自证时
-       踩到的（`python -c` 里测它永远 None）。
+    2. **「委托」只在 body 是**单次 `Call`** 时才报**（见 `_delegation_reason`）。
+       若 body 是 `Compare`/`BoolOp` 包着一次 helper 调用 —— 例如
+       `lambda: _nf_catches("x") is not None` —— 就**不算委托**，本判据扫不到
+       helper 内部。实测：第 22 轮我把 `never_falsifiable` 的自证写成那个形状，
+       四条断言在语义上确实有牙（变异测试 RED-OK），但**形态上**躲过了审计。
+       放宽判据会误伤大量「复合断言」，所以这里选择**明说缺口**而不是改宽。
+    3. **读不到源码文件时不猜**（`-c` 里的 lambda 没有 `co_filename` ⇒ 返回
+       None）。自证用例必须写在真文件里 —— 这是第 22 轮补 `never_falsifiable`
+       自证时踩到的（`python -c` 里测它永远 None）。
+
+    三段各是一个具名 helper（定位 / 委托 / 短路）：三段互不依赖，拼在一起时
+    73 行且「不猜」的三种出口散在中间。
     """
-    import ast as _ast                                   # noqa: PLC0415
-    import i18n                                          # noqa: PLC0415
-    code = getattr(fn, "__code__", None)
-    if code is None:
-        return None                                      # 非 Python 函数 ⇒ 不猜
-    tree = _ast_for(code.co_filename)
-    if not tree:
-        return None                                      # 读不到 / 解析不了 ⇒ 不猜
-    nodes = _lambda_nodes(tree, code.co_firstlineno)
+    nodes = _assertion_node(fn)
     if not nodes:
         return None                                      # 定位不到 ⇒ 不猜
     if len(nodes) > 1:
         # 同一行有多条 lambda：code object 无法告诉我们是哪一条（co_firstlineno
-        # 相同、co_positions 只给外层位置）。**不确定就不猜** —— 与「读不到就
-        # 明说」同一条纪律：这里宁可漏报也不误伤（本仓 99% 的断言都独占一行，
-        # 这个退化只影响把多条断言挤一行的写法）。
+        # 相同、co_positions 只给外层位置）。**不确定就不猜** —— 宁可漏报也不
+        # 误伤（本仓 99% 的断言都独占一行）。
         return None
-    # ⚠️ **纯委托**（lambda 体就是一次 Call）⇒ 断言逻辑住在被调用函数里，
-    # 本判据**看不见**它。此前这种情况返回 None（与「扫过且干净」不可区分），
-    # 于是「提取成 helper」就成了关掉恒真检测的合法手段（实测：helper 改成
-    # `return True` 后自证 26 PASS / 0 FAIL 全绿）。
-    # 现在把它**明说成未审计**，而不是假装干净 —— 与「读不到就明说」同一条纪律。
-    # 只看「委托给**自己写的**函数」：`any(... for …)` / `all(...)` / `bool(x)`
-    # 这类内建是**在 lambda 里内联逻辑**，不是委托 —— 它们的生成器/实参就在
-    # 这个 AST 里，恒真检测照样能扫（把内建也判成委托会误伤一半的断言，
-    # 实测 6 条假阳性）。
-    _BUILTIN_OK = {"any", "all", "bool", "len", "sorted", "sum", "min", "max",
-                   "isinstance", "getattr", "hasattr", "str", "int", "set",
-                   "list", "tuple", "dict", "repr"}
-    for node in nodes:
-        if isinstance(node.body, _ast.Call):
-            f = node.body.func
-            fname = getattr(f, "id", None) or getattr(f, "attr", None)
-            if fname not in _BUILTIN_OK:
-                return i18n.M("gate.never_falsifiable_delegated")
-        for n in _ast.walk(node):
-            reason = _short_circuit_reason(n)
-            if reason:
-                return reason
-    return None
+    return _delegation_reason(nodes) or _short_circuit_reason_of(nodes)
 
 
 def _is_delegated(why):
