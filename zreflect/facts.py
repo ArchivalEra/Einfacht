@@ -870,9 +870,18 @@ def _fresh_bootstraps():
         for sub in ("zreflect", "reflect-hooks"):
             shutil.copytree(os.path.join(gate.tool_repo(), sub),
                             os.path.join(d, sub))
-        shutil.copy(os.path.join(gate.tool_repo(), "ruff.toml"), d)
+        # `ruff.toml` 是可选判据（`check_lint` 缺它就明说未启用）：
+        # 源仓没有它（例如套件被拷成 `zreflect/` + `reflect-hooks/` 两棵子树）
+        # 时不该让夹具失败 —— 那考的是「bootstrap 能不能收敛」，不是「有没有装 lint」。
+        ruff_conf = os.path.join(gate.tool_repo(), "ruff.toml")
+        if os.path.isfile(ruff_conf):
+            shutil.copy(ruff_conf, d)
+        # ⚠️ 必须连 `GATE_REPO` 一起清：`harness` 跑自证时把它设成**本仓**，
+        # 而这里的夹具是另一个仓 —— 留着它，子进程会回头检查本仓，
+        # 报出与夹具无关的 `facts.doc_has_no_home`（实测：外仓里 `facts`
+        # 自证 10 PASS / 1 FAIL，红的原因是本仓的文档名单）。
         env = {k: v for k, v in os.environ.items()
-               if not k.startswith("REFLECT_")}
+               if not k.startswith("REFLECT_") and k != "GATE_REPO"}
 
         def run(argv, with_env=False):
             prefix = "set -a; . ./Einfacht.env; set +a; " if with_env else ""
