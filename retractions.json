@@ -39,6 +39,34 @@
       "why": "这句断言曾经成立过，后来 `main` 里加了一句 `import doc as _doc`（`--accept-principles` 分支）⇒ `_doc` 变成整个函数的局部变量 ⇒ `python3 zreflect/facts.py --render-doc`（AGENTS.md 的首要命令之一）直接崩 `UnboundLocalError`。`ruff --select=F823` 早就报过，但那时没有任何闸门跑 ruff。",
       "evidence": "python3 zreflect/facts.py --render-doc（改名后正常；原状 rc=0 但 traceback）",
       "fixed_in": "别名改 `doc_mod`；`facts.main` 拆成每个命令一个 handler，命令间不再共享作用域 ⇒ 这类名字污染在结构上消失"
+    },
+    {
+      "id": "R-006",
+      "text": "照 README 的 Usage 走就能在全新仓 bootstrap",
+      "why": "不能。`--init` 在三份 README 里出现 0 次，而 `cp -r` 之后直接 `--render-doc STATE.md` 必然 `FATAL: facts.doc_missing_render`，且报错不提 `--init`。实测：子代理辞书照做，第二步就死。",
+      "evidence": "python3 zreflect/facts.py --help；三语 README 的 Usage 段",
+      "fixed_in": "161c940（无语言包可用性验收）"
+    },
+    {
+      "id": "R-007",
+      "text": "`facts.py --help` 只打印帮助、不碰台账",
+      "why": "它会**量一遍并写台账** —— 未知首参回落给 `measure()`，那是一条真实写盘路径。实测：`--help` 在夹具仓里改写了 FACTS.json。没人会去想「查帮助会写文件」。",
+      "evidence": "python3 zreflect/facts.py --help && md5sum FACTS.json",
+      "fixed_in": "161c940（无语言包可用性验收）"
+    },
+    {
+      "id": "R-008",
+      "text": "bootstrap 完的仓里 `registry --run commit` 与 `harness.py` 可以同时绿",
+      "why": "不能，它们是两个互相打架的门槛：不 source `Einfacht.env` ⇒ registry 3 红（默认名去找不存在的 README）；source 之后 ⇒ harness 红（`knobs.readme_missing_rows` 的自证夹具硬写三份 README，而 `--init` 给单 README 的仓写了 `REFLECT_READMES=README.md`）。",
+      "evidence": "python3 zreflect/facts.py --selftest 的 ★ facts.fresh_repo_bootstraps_green",
+      "fixed_in": "161c940（无语言包可用性验收）"
+    },
+    {
+      "id": "R-009",
+      "text": "`md_lines` 已经排除机器块，渲染不会让它变",
+      "why": "只排除了 `AUTO:FACTS`，而 `AUTO:GATES`(25 行) + `AUTO:RULES`(22 行) 也是渲染产出的 ⇒ 渲染一次行数 +47（实测 38→59），replay 永久红，且修法看起来是「再量一遍」（再量只把新值写进台账，下次渲染又变）。",
+      "evidence": "python3 zreflect/facts.py --get md_lines 与复跑命令对比",
+      "fixed_in": "161c940（无语言包可用性验收）"
     }
   ]
 }
