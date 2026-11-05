@@ -39,7 +39,7 @@ jobs:
       # ⚠️ 这一步是 R-004 的判据。`gitroll-dispositions.json` 的 `_summary`
       # 曾声称「All checks passed」而实测 159 errors —— 因为**没有任何闸门
       # 跑过它**。静态机器检查不接进执行面，就会安静地烂一年。
-      # 本地同一判据：`python3 zreflect/lint.py`（缺 ruff 时明说未启用，退 0）。
+      # 本地同一判据：`python3 zreflect/check_lint.py`（缺 ruff 时明说未启用，退 0）。
       - name: 静态机器检查（ruff，判据在 ruff.toml）
         run: |
           python3 -m pip install --quiet 'ruff==0.17.3'
