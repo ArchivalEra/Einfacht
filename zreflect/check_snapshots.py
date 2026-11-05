@@ -54,7 +54,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate                                               # noqa: E402
-from gate import fatal, finish, main_selftest_or, meta, off, selftest  # noqa: E402
+from gate import fatal, finish, main_selftest_or, meta  # noqa: E402
 from i18n import M                                        # noqa: E402
 
 # ⚠️ 默认值**不是空**：本闸门守的正是本仓自己的代码（`zreflect/*.py`），
@@ -293,10 +293,93 @@ def _loaded_names(tree):
             if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
 
 
+def _index(sources):
+    """建索引：AST / 模块级赋值 / 被别处改的名字 / 读取名 / 调用图 / 读者集。
+
+    ⚠️ 全部**预计算**。此前在双重循环里对每个 `(模块 × 名字)` 都重算一次
+    `ast.walk` 全部模块的 AST ⇒ O(M²·N)，实测 400+ 次调用后 timeout 60s。
+    这些量都只依赖单个模块（或单个 `(src_mod, name)` 对），与调用方无关。
+    """
+    trees = {}
+    for mod, src in sources.items():
+        try:
+            trees[mod] = ast.parse(src)
+        except SyntaxError:
+            continue
+    assigned = {mod: _module_level_assigns(tree) for mod, tree in trees.items()}
+    mutated = _mutated_globals(trees)
+    mutable = {(m, n) for m, names in assigned.items() for n in names
+               if (m, n) in mutated}
+    return {
+        "trees": trees,
+        "assigned": assigned,
+        "mutable": mutable,
+        "loaded": {mod: _loaded_names(tree) for mod, tree in trees.items()},
+        "graph": {mod: _call_graph(tree) for mod, tree in trees.items()},
+        "readers": {(m, n): _functions_reading(trees[m], m, n)
+                    for (m, n) in mutable},
+    }
+
+
+def _derived_copy_problems(ix):
+    """② **派生快照**：模块顶层把「含可变全局的表达式」存成常量（同 import 一样
+    会冻住）。"""
+    out = []
+    for mod, tree in sorted(ix["trees"].items()):
+        loaded = ix["loaded"][mod]
+        graph = ix["graph"][mod]
+        for src_mod, names in sorted(ix["assigned"].items()):
+            for name in sorted(names):
+                if (src_mod, name) not in ix["mutable"]:
+                    continue
+                readers = ix["readers"].get((src_mod, name), set())
+                for derived in _module_level_derivations(tree, src_mod, name,
+                                                         readers, graph):
+                    if derived in loaded:
+                        out.append(M("snapshot.derived_copy",
+                                     file=mod + ".py", derived=derived,
+                                     source=src_mod, imported=name))
+    return out
+
+
+def _mutable_copy_problems(ix):
+    """① **值快照**：`from <本地模块> import ALL_CAPS`，而那个全局被别处重赋值
+    ⇒ 拷贝停在 import 那一刻。"""
+    out = []
+    for mod, tree in sorted(ix["trees"].items()):
+        loaded = ix["loaded"][mod]
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            src_mod = node.module
+            if src_mod not in ix["trees"]:
+                continue                # 不在扫描面里 ⇒ 不是本地兄弟模块
+            if src_mod not in ix["assigned"]:
+                continue                # 源模块不在扫描面里 ⇒ 不猜
+            for alias in node.names:
+                name = alias.name
+                if name != name.upper():
+                    continue                # 函数 / 类 / 小写名不是「值快照」
+                if name not in ix["assigned"][src_mod]:
+                    continue                # 源模块没有这个模块级名字
+                if (src_mod, name) not in ix["mutable"]:
+                    continue                # 没人改它 ⇒ 拷贝安全
+                if (alias.asname or name) not in loaded:
+                    continue                # 死导入，不报
+                out.append(M("snapshot.mutable_copy",
+                             file=mod + ".py", imported=name,
+                             source=src_mod))
+    return out
+
+
 def problems(paths=None, sources=None):
     """纯函数：返回问题清单（空 = 没有快照风险）。
 
     `sources` 可注入 `{模块名: 源码}`（自证用，零文件 I/O）。
+
+    只编排：索引一次建好（`_index`），两段检测各读它（`_mutable_copy_problems` /
+    `_derived_copy_problems`）。此前两段拼在同一个函数里，索引与检测交错 ——
+    改一段要读懂另一段。
     """
     if sources is None:
         if paths is None:
@@ -306,72 +389,8 @@ def problems(paths=None, sources=None):
             sources[name[:-3] if name.endswith(".py") else name] = src
     if not sources:
         return [M("snapshot.empty_scan")]
-
-    # 先建「各模块的可变模块级名字」索引
-    trees = {}
-    for mod, src in sources.items():
-        try:
-            trees[mod] = ast.parse(src)
-        except SyntaxError:
-            continue
-    # 一个（模块, 名字）对是否构成「可变全局」：它在本模块顶层被赋值，
-    # 且**有别的模块在运行期改它**。
-    assigned = {mod: _module_level_assigns(tree) for mod, tree in trees.items()}
-
-    # ⚠️ **预计算**：`(src_mod, name)` 是否「被别处改」与调用方无关。
-    # 此前在双重循环里对每个 (模块 × 名字) 都重算一次，每次 `ast.walk` 全部
-    # 28 个模块的 AST ⇒ O(M²·N)，实测 400+ 次调用后仍不返回（timeout 60s）。
-    _mutated = _mutated_globals(trees)
-    mutable_names = {(m, n) for m, names in assigned.items() for n in names
-                     if (m, n) in _mutated}
-    # 同样预计算：每模块的「被读取名字集」与「调用图」都只依赖该模块自己，
-    # 内层循环里重复构建就是浪费（实测 `_call_graph` 也是热点）。
-    loaded_of = {mod: _loaded_names(tree) for mod, tree in trees.items()}
-    graph_of = {mod: _call_graph(tree) for mod, tree in trees.items()}
-    # `readers` 只依赖 (src_mod, name)，也预计算 —— 否则在内层循环里对每个
-    # (模块 × 名字) 都要 walk 源模块的所有函数体（实测这是最后的热点）。
-    readers_of = {(m, n): _functions_reading(trees[m], m, n)
-                  for (m, n) in mutable_names}
-    out = []
-    # ② **派生快照**：模块顶层把「含可变全局的表达式」存成常量（同 import 一样会冻住）
-    for mod, tree in sorted(trees.items()):
-        loaded = loaded_of[mod]
-        for src_mod, names in sorted(assigned.items()):
-            for name in sorted(names):
-                if (src_mod, name) not in mutable_names:
-                    continue
-                readers = readers_of.get((src_mod, name), set())
-                graph = graph_of[mod]
-                for derived in _module_level_derivations(tree, src_mod, name,
-                                                         readers, graph):
-                    if derived in loaded:
-                        out.append(M("snapshot.derived_copy",
-                                     file=mod + ".py", derived=derived,
-                                     source=src_mod, imported=name))
-    for mod, tree in sorted(trees.items()):
-        loaded = loaded_of[mod]
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.ImportFrom):
-                continue
-            if node.module not in trees:
-                continue                # 不在扫描面里 ⇒ 不是本地兄弟模块（如第三方）
-            src_mod = node.module
-            if src_mod not in assigned:
-                continue                    # 源模块不在扫描面里 ⇒ 不猜
-            for alias in node.names:
-                name = alias.name
-                if name != name.upper():
-                    continue                # 函数 / 类 / 小写名不是「值快照」
-                if name not in assigned[src_mod]:
-                    continue                # 源模块没有这个模块级名字
-                if (src_mod, name) not in mutable_names:
-                    continue                # 没人改它 ⇒ 拷贝安全
-                if (alias.asname or name) not in loaded:
-                    continue                # 死导入，不报
-                out.append(M("snapshot.mutable_copy",
-                             file=mod + ".py", imported=name,
-                             source=src_mod))
-    return out
+    ix = _index(sources)
+    return _derived_copy_problems(ix) + _mutable_copy_problems(ix)
 
 
 def collect(root):

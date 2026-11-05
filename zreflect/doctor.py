@@ -338,9 +338,8 @@ def _cases_fixture():
 
 def _cases_spec(fx):
     """见 `_cases()`：本组 6 条。"""
-    ok_probe, down_probe = fx["ok_probe"], fx["down_probe"]
+    ok_probe = fx["ok_probe"]
     good = fx["good"]
-    timeout_threaded = fx["timeout_threaded"]
     return [
     # ① 正常不报
     ("doctor.valid_spec_all_alive",
@@ -365,9 +364,7 @@ def _cases_spec(fx):
 
 def _cases_http(fx):
     """见 `_cases()`：本组 7 条。"""
-    ok_probe, down_probe = fx["ok_probe"], fx["down_probe"]
     good = fx["good"]
-    timeout_threaded = fx["timeout_threaded"]
     return [
     ("doctor.http_verdict_ok",
      lambda: _http_verdict(
@@ -404,9 +401,6 @@ def _cases_http(fx):
 
 def _cases_docker(fx):
     """见 `_cases()`：本组 4 条。"""
-    ok_probe, down_probe = fx["ok_probe"], fx["down_probe"]
-    good = fx["good"]
-    timeout_threaded = fx["timeout_threaded"]
     return [
     ("doctor.docker_verdict_ok",
      lambda: _docker_verdict("true\n") == (True, "")),
@@ -427,9 +421,6 @@ def _cases_docker(fx):
 
 def _cases_port(fx):
     """见 `_cases()`：本组 3 条。"""
-    ok_probe, down_probe = fx["ok_probe"], fx["down_probe"]
-    good = fx["good"]
-    timeout_threaded = fx["timeout_threaded"]
     return [
     ("doctor.port_free_verdict_ok",
      lambda: _port_free_verdict(False) == (True, "")),
@@ -445,7 +436,7 @@ def _cases_port(fx):
 
 def _cases_misc(fx):
     """见 `_cases()`：本组 2 条。"""
-    ok_probe, down_probe = fx["ok_probe"], fx["down_probe"]
+    down_probe = fx["down_probe"]
     good = fx["good"]
     timeout_threaded = fx["timeout_threaded"]
     return [

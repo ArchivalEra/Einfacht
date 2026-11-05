@@ -799,8 +799,13 @@ def _nf_no_source():
     读不到就明说不猜，而不是当成「恒真」或「干净」。
     """
     from gate import never_falsifiable                   # noqa: PLC0415
-    f = eval("lambda: True")                             # 无源码文件的 lambda
-    return never_falsifiable(f)
+    # 用 `compile` + `exec` 造一个**没有 co_filename** 的函数，而不是 `eval`：
+    # 语义完全相同（工具要的就是「读不到源码」这个边界），但静态安全扫描
+    # 不必为一个测试夹具的 `eval` 开豁免（`S307`）。夹具里的 eval 与产品里
+    # 的 eval 长得一样，将来没人分得清哪个是故意的。
+    ns = {}
+    exec(compile("f = lambda: True", "<no-source>", "exec"), ns)  # noqa: S102
+    return never_falsifiable(ns["f"])
 
 
 def _gate_desc_states_selftest():
@@ -879,7 +884,6 @@ def _cases_discovery(fx):
      real_files) = (fx["ok"], fx["plain"], fx["real"],
                     fx["real_missing"], fx["gs"],
                     fx["missing"], fx["real_files"])
-    d = fx["d"]
     return [
     # ① 正常不报
     ("registry.ast_declaration_fields",
@@ -948,11 +952,7 @@ def _cases_discovery(fx):
 
 def _cases_render(fx):
     """见 `_cases()`：本组 4 条。"""
-    (ok, plain, real, real_missing, gs, missing,
-     real_files) = (fx["ok"], fx["plain"], fx["real"],
-                    fx["real_missing"], fx["gs"],
-                    fx["missing"], fx["real_files"])
-    d = fx["d"]
+    gs = fx["gs"]
     return [
     ("★ registry.auto_block_pinned_across_langs",
      lambda: _pinned_under("en") == _pinned_under("zh")
@@ -973,10 +973,7 @@ def _cases_render(fx):
 
 def _cases_phase(fx):
     """见 `_cases()`：本组 9 条。"""
-    (ok, plain, real, real_missing, gs, missing,
-     real_files) = (fx["ok"], fx["plain"], fx["real"],
-                    fx["real_missing"], fx["gs"],
-                    fx["missing"], fx["real_files"])
+    plain = fx["plain"]
     d = fx["d"]
     return [
     ("registry.runnable_filters_by_phase",

@@ -292,9 +292,9 @@ def _cases_fixture():
 
 def _cases_replay(fx):
     """见 `_cases()`：本组 11 条。"""
-    said, _hint_has, params = fx["said"], fx["hint_has"], fx["params"]
+    _hint_has, params = fx["hint_has"], fx["params"]
     codes, pack_lang = fx["codes"], fx["pack_lang"]
-    multi, wit, cal = fx["multi"], fx["wit"], fx["cal"]
+    multi = fx["multi"]
     return [
     # ① 正常不报
     ("replay.ok_trailing_newline",
@@ -350,9 +350,8 @@ def _cases_replay(fx):
 
 def _cases_witness(fx):
     """见 `_cases()`：本组 6 条。"""
-    said, _hint_has, params = fx["said"], fx["hint_has"], fx["params"]
-    codes, pack_lang = fx["codes"], fx["pack_lang"]
-    multi, wit, cal = fx["multi"], fx["wit"], fx["cal"]
+    codes = fx["codes"]
+    wit = fx["wit"]
     return [
     # ③ 见证档（issue #5）
     ("replay.witness_ok",
@@ -374,9 +373,8 @@ def _cases_witness(fx):
 
 def _cases_calibrate(fx):
     """见 `_cases()`：本组 6 条。"""
-    said, _hint_has, params = fx["said"], fx["hint_has"], fx["params"]
-    codes, pack_lang = fx["codes"], fx["pack_lang"]
-    multi, wit, cal = fx["multi"], fx["wit"], fx["cal"]
+    codes = fx["codes"]
+    cal = fx["cal"]
     return [
     # ④ 仪器校准档（issue #6 ①）
     ("replay.calibrate_ok",

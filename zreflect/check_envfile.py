@@ -285,7 +285,7 @@ def _cases_fixture():
 
 def _cases_knobs(fx):
     """见 `_cases()`：本组 7 条。"""
-    good_files, fe, de, registry, good_env, typo = (fx["good_files"], fx["fe"], fx["de"], fx["registry"], fx["good_env"], fx["typo"])
+    fe, de, registry, good_env, typo = fx["fe"], fx["de"], fx["registry"], fx["good_env"], fx["typo"]
     return [
     # ① 正常不报
     ("envfile.ok",
@@ -323,7 +323,7 @@ def _cases_knobs(fx):
 
 def _cases_carrier(fx):
     """见 `_cases()`：本组 8 条。"""
-    good_files, fe, de, registry, good_env, typo = (fx["good_files"], fx["fe"], fx["de"], fx["registry"], fx["good_env"], fx["typo"])
+    fe, de, registry, typo = fx["fe"], fx["de"], fx["registry"], fx["typo"]
     return [
     ("envfile.non_reflect_export",
      lambda: problems({"PATH": "/usr/bin"}, registry, fe, de,
@@ -364,7 +364,7 @@ def _cases_carrier(fx):
 
 def _cases_syntax(fx):
     """见 `_cases()`：本组 2 条。"""
-    good_files, fe, de, registry, good_env, typo = (fx["good_files"], fx["fe"], fx["de"], fx["registry"], fx["good_env"], fx["typo"])
+    fe, de, registry, good_env = fx["fe"], fx["de"], fx["registry"], fx["good_env"]
     return [
     ("★ envfile.syntax_broken",
      lambda: any(getattr(p,"code","") == "envfile.syntax_broken" for p in problems(

@@ -228,7 +228,7 @@ def _cases_fixture():
 
 def _cases_sha(fx):
     """见 `_cases()`：本组 8 条。"""
-    led_sha, led_plain, bare, fresh, led_fresh, led_old = (fx["led_sha"], fx["led_plain"], fx["bare"], fx["fresh"], fx["led_fresh"], fx["led_old"])
+    led_sha, led_plain, bare = fx["led_sha"], fx["led_plain"], fx["bare"]
     return [
     ("stale.sourced_history_sha",
      lambda: problems(led_plain, {"A.md": "old sha abcdef01 (retracted, see `abc1234`)\n"})
@@ -261,7 +261,7 @@ def _cases_sha(fx):
 
 def _cases_retired(fx):
     """见 `_cases()`：本组 4 条。"""
-    led_sha, led_plain, bare, fresh, led_fresh, led_old = (fx["led_sha"], fx["led_plain"], fx["bare"], fx["fresh"], fx["led_fresh"], fx["led_old"])
+    led_plain = fx["led_plain"]
     return [
     ("stale.retired_unconfigured",
      lambda: problems(led_plain, {"A.md": "still using the old component\n"},
@@ -282,7 +282,7 @@ def _cases_retired(fx):
 
 def _cases_age(fx):
     """见 `_cases()`：本组 4 条。"""
-    led_sha, led_plain, bare, fresh, led_fresh, led_old = (fx["led_sha"], fx["led_plain"], fx["bare"], fx["fresh"], fx["led_fresh"], fx["led_old"])
+    led_plain, led_fresh, led_old = fx["led_plain"], fx["led_fresh"], fx["led_old"]
     return [
     # ② 测龄（issue #3 ②）
     ("stale.age_fresh",
@@ -301,7 +301,7 @@ def _cases_age(fx):
 
 def _cases_empty(fx):
     """见 `_cases()`：本组 3 条。"""
-    led_sha, led_plain, bare, fresh, led_fresh, led_old = (fx["led_sha"], fx["led_plain"], fx["bare"], fx["fresh"], fx["led_fresh"], fx["led_old"])
+    led_sha, led_plain = fx["led_sha"], fx["led_plain"]
     return [
     # ① 正常不报
     ("stale.ok",
