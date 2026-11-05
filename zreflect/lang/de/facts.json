@@ -1,5 +1,4 @@
 {
- "facts.accept_principles_ok": "Prinzipien ins Register geschrieben",
  "facts.accept_usage": "Aufruf: facts.py --accept <Schlüssel> <Nacktwert> <Replay-Kommando> <Quelle> — eine Tatsache manuell registrieren (landet im Register; dasselbe Replay-Tor führt ihr cmd danach wörtlich aus)",
  "facts.age.days_ago": "vor %(days)d Tagen gemessen",
  "facts.age.today": "heute gemessen",

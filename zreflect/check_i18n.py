@@ -47,11 +47,17 @@ import machine                                            # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, off, repo, selftest  # noqa: E402
 from i18n import M                                        # noqa: E402
 
-# 未配旋钮时扫**这些**目录 —— 套件自己的全部 Python。此前只扫 `zreflect/`，
-# `.zcode/` 的两个钩子脚本（`inject-state.py` / `stop-refresh.py`）在面外，
-# 于是它们**整份裸中文**且无人拦（实测：未装语言包时注入吐中文，而闸门吐 code）。
-# 钩子是套件的一部分 ⇒ 同一道判据要管它们。
-DEFAULT_ROOTS = ("zreflect", ".zcode")
+# 未配旋钮时扫**这些**目录 —— 套件自己的全部 Python。
+#
+# ⚠️ 这个清单必须**覆盖套件的两半**（判据库 + 钩子入口）：只扫一半，就等于
+# 「半个本体零语言」，而另一半的裸中文照样发得出去。
+#
+# ⚠️ 它**不该**包含任何宿主的目录 —— 那会把套件焊死在某个宿主的目录约定上。
+# 曾经这里确实有过那样一项（同时扫描一个编辑器专用的钩子目录），而那种耦合
+# 的完整经过与判据见 `retractions.json` 的 R-003 与 `doc.RULES` 的
+# `host_agnostic`。历史不留在代码注释里：那既不该被维护，也会让
+# `host_agnostic` 扫到自己（本文件正是它的扫描面）。
+DEFAULT_ROOTS = ("zreflect", "reflect-hooks")
 KNOB = "REFLECT_I18N_ROOT"
 
 
@@ -216,6 +222,43 @@ def _bare_text_problems(name, tree, src):
                      file=name, lineno=node.lineno, text=v[:40]))
     return out
 
+def _non_literal_code_problems(name, tree):
+    """`M(...)` 的首参**不许是算出来的** code（条件表达式 / 拼接 / f-string / 调用）。
+
+    为什么值得一条判据：`i18n.M` 的 docstring 从第一天就写着「`code` 必须是
+    字面量（覆盖闸门会拒变量 code）」—— 而**没有任何闸门执行这条**。
+    实测的代价：`check_envfile` 里写着 `M("a" if is_dir else "b", …)`，
+    两个 code 都真实存在于语言包里、也真的会渲染给用户，但
+    `knobs.used_codes()`（正则扫字面 `M("..."`）只抓得到第一个 ⇒
+    另一个对 `pack_coverage` **完全不可见**。它在包完整性对账里是一个洞，
+    而不是一条违规 —— 洞比违规更坏，因为没有任何一行输出说它存在。
+
+    **转发不算违规**：`_say(code)` 这种薄壳、`_Semantic` 的延迟渲染、以及
+    遍历语言包做完整性自证的探针，它们的 code 在**调用点**是字面量或者
+    **就是包里的键**。让它们变形去满足一条形状判据是本末倒置。
+    所以这里只抓**表达式**：`IfExp` / `BinOp` / `JoinedStr` / `Call` /
+    `Subscript` —— 那才是「运行时才拼出来、静态无法枚举」的那一类。
+
+    **诚实边界**：首参是 `Name` / `Attribute` 时**不查**。它可能是合法转发，
+    也可能是从别处传来的非字面量，静态上无法区分；逐调用点做类型分析代价
+    过大。这条边界写在这里，而不是假装判据覆盖了它。
+    """
+    computed = (ast.IfExp, ast.BinOp, ast.JoinedStr, ast.Call, ast.Subscript)
+    out = []
+    for node in ast.walk(tree):
+        if not _is_msg_call(node) or not node.args:
+            continue
+        first = node.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            continue
+        if not isinstance(first, computed):
+            continue                       # 转发（见诚实边界）
+        out.append(M("i18n_cover.code_not_literal",
+                     file=name, lineno=node.lineno,
+                     kind=type(first).__name__))
+    return out
+
+
 def problems(paths):
     """纯函数：返回问题清单（空 = 零语言）。`paths` = [(名字, 源码文本)]。
 
@@ -244,6 +287,7 @@ def problems(paths):
             continue
         out += _bare_text_problems(name, tree, src)
         out += _fixture_literal_problems(name, tree)
+        out += _non_literal_code_problems(name, tree)
     return out
 
 
@@ -361,8 +405,8 @@ def _null_output_has_no_cjk():
     """**未装语言包**时渲染全部 code，断言输出零 CJK。
 
     null 包只输出 `code(param=…)` —— 这是「没要语言包 ⇒ 零自然语言」的
-    **行为**判据。穷举全部 key（此前只探六个手挑的，漏掉了 `inject.*` 等
-    后加的模板）。
+    **行为**判据。穷举**全部** key，不手挑：手挑的清单漏过一次后加的命名空间
+    （那时漏的是注入模板），而漏掉的部分照样绿。
 
     ⚠️ 注意它**不能**证明「模板里没有中文」：null 包根本不查表。后者由
     `_packs_match_their_language()` 管（装包渲染 + 按语言判 CJK）。
@@ -521,13 +565,33 @@ def _cases():
         # （null 包测不到这个 —— 它根本不查表。这是那条判据的缺口，已补。）
         ("★ i18n_cover.packs_match_their_language",
          lambda: _packs_match_their_language()),
+        # **code 不许是算出来的**：`M("a" if x else "b")` 让第二个 code 在
+        # `knobs.used_codes()` 面前不存在 ⇒ `pack_coverage` 对它失去约束力
+        # （实测：`envfile.file_missing` 就是这样变成洞的）。
+        ("★ i18n_cover.computed_code_is_rejected",
+         lambda: [p.code for p in problems(
+             [("c.py", 'from i18n import M\n'
+                       'def f(x):\n'
+                       '    return M("probe.a" if x else "probe.b")\n')])
+         ] == ["i18n_cover.code_not_literal"]),
+        # 字面量 code 不报（阳性对照）
+        ("i18n_cover.literal_code_is_fine",
+         lambda: problems([("c.py", 'from i18n import M\n'
+                                     'def f():\n'
+                                     '    return M("probe.a")\n')]) == []),
+        # **转发**不报：`_say(code)` 这种薄壳的 code 在调用点就是字面量或
+        # 包里的键，要求它写死字面量是让正确的东西变形（诚实边界见函数文档）。
+        ("i18n_cover.forwarded_code_is_fine",
+         lambda: problems([("c.py", 'from i18n import M\n'
+                                     'def _say(code, **kw):\n'
+                                     '    return M(code, **kw)\n')]) == []),
         # 反向：把一条中文塞进 null 渲染路径 ⇒ 必须被抓（证明上一条有牙）
         ("★ i18n_cover.cjk_detector_can_red",
          lambda: cjk(chr(0x4E2D)) and not cjk("ascii only")),
-        # 扫描面必须**包含钩子目录**：`.zcode/` 的两个钩子是套件的一部分，
-        # 曾经整份裸中文且无人拦（实测）。判据是「默认根里有它」。
+        # 扫描面必须**覆盖套件自己的全部 Python**：`reflect-hooks/` 与
+        # `zreflect/` 是同一个套件的两半，少扫一半就等于「半个本体零语言」。
         ("★ i18n_cover.hooks_dir_is_scanned",
-         lambda: ".zcode" in DEFAULT_ROOTS),
+         lambda: "reflect-hooks" in DEFAULT_ROOTS and "zreflect" in DEFAULT_ROOTS),
         # ③ 空输入必须报
         # **文件名**也是攻击面：带分行符的名字必须报（此前完全没管）。
         ("★ i18n_cover.filename_line_break",

@@ -509,36 +509,33 @@ install.py 的机器；CI 才是承诺的正面（issue #4 ②）。
 （仓内文档：`STATE.md` 是活状态示例、`AGENTS.md` 是给 agent 的硬规矩 —— 两份都用中文维护；
 三语同批规则只管 README trio。）
 
-### ZCode hook 接线
+### 接进宿主的钩子（宿主无关）
 
-`.zcode/config.json` 给了一份可直接用的配置 —— **就是下面这个形状**（本仓自己那份接线
-曾经是这个示例的坏拷贝，issue #4 ①）：会话开始注入活状态、停止时刷新机器块。
+套件不占钩子座位，也不认识任何编辑器的配置 schema。它只暴露**一个入口**，
+剩下的归宿主：
 
-```json
-{
-  "hooks": {
-    "enabled": true,
-    "events": {
-      "SessionStart": [{ "matcher": "startup|resume|clear|compact",
-        "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/inject-state.py\"" }] }],
-      "Stop": [{ "hooks": [{ "type": "command", "command": "python3 \"${ZCODE_PROJECT_DIR}/.zcode/stop-refresh.py\"" }] }]
-    }
-  }
-}
+```bash
+python3 zreflect/next.py            # 一段：未推送提交 / 工作区 / 未结案悬案
 ```
 
-三个形状都是承重的：
+这就是全部契约 —— stdout 上的纯文本行，每次现算，不写盘。要接进某个宿主的
+会话开始钩子，使用方自己包一层：
 
-- **`enabled: true` 是形状的一部分** —— 配置文件 hook 默认禁用。条目是
-  `hooks.events.<Event>` 下的 `{ matcher?, hooks: [{ type, command }] }`；
-  `hooks.<Event>` 平铺写法 ZCode 根本看不见。
-- **hook 的 stdout 按严格 JSON 解析**：`inject-state.py` 被 hook 调用（非 tty）时发
-  `{"hookSpecificOutput": {…}}` 信封，只有手工在终端跑才发纯文本。hook 上下文里的
-  纯文本会被静默丢弃 —— 日志只留一条看起来像小毛病的 failed。
-- **Stop 类 hook 必须永远退 0**。ZCode 的退出码语义是 `0` 放行 / `2` 阻塞 /
-  其它非零算错误，而 `facts.py --render-doc` 在台账缺失时退 2 —— 直接接线，
-  一次台账缺文件就把整个会话当人质。`.zcode/stop-refresh.py` 是永远退 0 的壳：
-  失败降级为 stderr 一句。
+```python
+subprocess.run([sys.executable, "zreflect/next.py"], capture_output=True, text=True)
+```
+
+再按那个宿主要求的形状拼装。几条值得知道的后果：
+
+- **它是算出来的，不是存下来的。** 每轮都变的东西没法被 `facts.py --check` 逐字节
+  对账：排除它，就没人验它；留着它，`--check` 永不收敛。所以它干脆不落盘。
+- **长度在产地有界**（`next.MAX_LISTED` / `next.SECTION_MAX`），不由调用方裁剪。
+  下游截断正是「下一步」那一段悄悄消失的原因。
+- **读不到 ≠ 失败。** git 不在 / 不是仓 / 没有 `questions/` —— 每一种都变成一句明说的行，
+  绝不编 0、绝不静默留白。真正的 bug 仍然照抛。
+
+git 钩子那一侧（`reflect-hooks/`）不一样，是**套件自己拥有**的：它们调
+`reflect-hooks/gate.py`，且从不接管 `core.hooksPath`。
 
 ## 它不做什么
 
@@ -587,11 +584,10 @@ install.py 的机器；CI 才是承诺的正面（issue #4 ②）。
 | `REFLECT_INSTRUMENT_DAYS` | 空（不在 ⇒ 未启用） | 恒常检测阈值天（issue #6 ①）：台账条目 `first_seen` 超阈值 ⇒「这条 cmd 是在量，还是恒返回同一个数？」 |
 | `REFLECT_ENV_FILE` | `Einfacht.env` | 钩子旋钮载体的文件名（issue #8），由可拔插件 `einfacht-env.sh` 解析（钩子目录优先、仓库根次之） |
 | `REFLECT_NO_PRINCIPLES` | 空 | 设 `1` ⇒ 本仓**不**把 `PRINCIPLES.md` 里的原则登记进台账，判定命令不每提交复跑。这是显式出口 —— 别靠删文件来表达「不遵守」 |
-| `REFLECT_INJECT_LANG` | 空 | **只**给 SessionStart 注入用的语言（注入进上下文的文本是给人读的）。回退顺序：`REFLECT_LANG` → 装了的 `zh`/`en` → null 包。它**不**影响闸门输出 —— 闸门只认 `REFLECT_LANG` |
 | `REFLECT_LANG` | 空 | 输出语言包名。自带 `zh`（中文）、`en`（英语）、`de`（德语）；往 `zreflect/lang/` 里放一份包，任何别的语言名也认。**空 = null 包：本体不发任何自然语言**，只输出 `code(param=value)`（issue #26）。注释串（`OFF:` / `FATAL:` / `=== N PASS / M FAIL ===`）永不翻译 —— 它们是发射点的字面量 |
 | `REFLECT_I18N` | 空 | 语言包目录。**空 ⇒ 用套件自带的那份**（工具旁的 `zreflect/lang`），跨仓跑也能找到。设了 ⇒ 绝对路径，或**相对被检查仓根**的路径。两种形状都认且合并：`<lang>.json`（单文件）或 `<lang>/*.json`（按闸门命名空间分文件 —— 合并，后者覆盖） |
 | `REFLECT_SNAPSHOT_ROOT` | 空 | 模块级快照闸门扫描的源码目录。它抓 `from <本地模块> import 大写全局名` —— 那个全局若被别人重新赋值，值拷贝会停在 import 那一刻变成陈旧快照。空 ⇒ 该闸门明说未启用 |
-| `REFLECT_I18N_ROOT` | 空 | 覆盖闸门扫描的源码目录（本体零语言检查）。**空 ⇒ 扫套件自己的 `zreflect/` + `.zcode/`** —— 这道闸门从不 off，因为它守的规则就是关于本体的。要扫**你自己的代码**就设它：会**递归**遍历（`src/` 布局可以） |
+| `REFLECT_I18N_ROOT` | 空 | 覆盖闸门扫描的源码目录（本体零语言检查）。**空 ⇒ 扫套件自己的 `zreflect/` + `reflect-hooks/`** —— 这道闸门从不 off，因为它守的规则就是关于本体的。要扫**你自己的代码**就设它：会**递归**遍历（`src/` 布局可以） |
 | `REFLECT_ENV_HINT` | 空（开） | `off` ⇒ 关闭**裸跑提示**。凡是旋钮来自 `Einfacht.env` 的闸门，在「手工裸跑且一个旋钮都没设」时会提示 *try running it with `Einfacht.env`*，并给出确切的 `set -a; . …; set +a` 一行。它是**提示不是判据**：不改 rc、不碰 stdout；没有载体的仓保持安静（那里裸跑是正常用法） |
 | `REFLECT_RETRACTIONS` | `retractions.json` | 翻案台账（翻案闸门扫 `REFLECT_DOCS` 文档里的重现行） |
 | `REFLECT_QUESTIONS` | `questions` | 悬案目录（一题一文件；每份必须挂可跑的结算件） |

@@ -1,5 +1,4 @@
 {
- "facts.accept_principles_ok": "principles written to the ledger",
  "facts.accept_usage": "usage: facts.py --accept <key> <bare value> <replay command> <source> — manually register one fact (it lands in the ledger; the same replay gate then runs its cmd verbatim)",
  "facts.age.days_ago": "measured %(days)d days ago",
  "facts.age.today": "measured today",

@@ -48,6 +48,7 @@
 | `assertion_lifecycle` | 被推翻的断言不许悄悄回来当现状 | `python3 zreflect/check_retractions.py` |
 | `declared_not_globbed` | 谓词是声明不是文件名：执行面读 registry --run <相位> | `python3 zreflect/registry.py --gates` |
 | `falsifiable` | 断言要能证伪：恒真短路由 AST 扫出，命中即判 fail | `python3 zreflect/registry.py --selftest` |
+| `host_agnostic` | 套件源码不认任何宿主的目录名 / 配置格式（宿主接线归使用方） | `python3 -c "import os,sys;w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR','hook'+'SpecificOutput'];bad=[(d,f) for d in ('zreflect','reflect-hooks') for r,_,fs in os.walk(d) for f in fs if f.endswith(('.py','.sh')) and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)"` |
 | `machine_rows` | 机器行由 machine.ROWS 唯一产地定义；shell 侧有行为对账器 | `python3 zreflect/machine.py --selftest` |
 | `no_retired_names` | 退役名不许以现状出现；sha 出处与测龄可查 | `python3 zreflect/check_stale.py` |
 | `number_once` | 数字只生产一次：文档引用写 [[键名]]，不手抄（双向拦） | `python3 zreflect/check_facts.py` |
@@ -59,7 +60,7 @@
 | `three_readmes` | 三语 README 是同一条断言的三份拷贝：改一份必须三份同批 | `python3 zreflect/check_readme_sync.py` |
 | `zero_language` | 本体零语言：用户可见消息走 M(code)，机器契约结构上不可译 | `python3 zreflect/check_i18n.py` |
 
-13 条原则 —— 每条都有一条**真的会跑**的判定命令。
+14 条原则 —— 每条都有一条**真的会跑**的判定命令。
 <!-- /AUTO:RULES -->
 
 ## 怎么用这张表

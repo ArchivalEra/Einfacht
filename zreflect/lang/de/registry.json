@@ -4,7 +4,6 @@
  "registry.dependency_untested": "`%(module)s.%(function)s()` wird von einem Gate konsumiert, hat aber **null Zusicherungen** — urteilt es falsch, verliert das konsumierende Gate seine Kriterien, während dessen Selbsttest grün bleibt (ein totes Glied in der Abhängigkeitskette)",
  "registry.empty_phase": "Phase %(phase)s hat keine ausführbaren Tore — Nullwert-Wächter: eine leere Liste ist kein Bestehen (ist das Prädikat oder eine Deklaration kaputt?)",
  "registry.empty_roster": "nicht ein einziges Tor gefunden — Nullwert-Wächter: eine leere Eingabe ist kein Bestehen",
- "registry.machine_vocab_drift": "der Grep im Shell-Teil und machine.ROWS sind sich uneinig (Beispiele: %(samples)s, %(count)d gesamt) — beide Seiten müssen jede Zeile gleich einordnen",
  "registry.missing_declaration": "diese Tore haben keine GATE = gate.meta(…) Deklarationszeile — die Namensliste verweigert namenlose Einträge (handgeschriebene Namenslisten driften; eine Deklaration ist eine Registrierung): %(files)s",
  "registry.name_dependent_wrong": "`%(file)s` ist als name_dependent markiert, aber keiner der konsumierten Knöpfe hat einen Standardnamen in der Umbenennungs-Fixture-Liste — die Markierung ist falsch (entweder Markierung entfernen oder den neuen Standardnamen zu registry.RENAMED_DEFAULTS hinzufügen)",
  "registry.no_module_selftest": "kein Selbsttest eines Plattformmoduls entdeckbar — Nullwert-Wächter: eine leere Eingabe ist kein Bestehen",

@@ -11,6 +11,20 @@
       "why": "（示例）把一条**假**的翻案条目留在仓里，是为了让这条机制开箱就有一次真实运行 —— 删掉它即可。",
       "evidence": "python3 zreflect/check_retractions.py（它必须扫到 STATE.md / AGENTS.md / README.md / README.zh.md / README.de.md）",
       "fixed_in": "本文件（示例条目）"
+    },
+    {
+      "id": "R-002",
+      "text": "`Stop` 钩子每轮重渲染 `STATE.md` 的 `AUTO:NEXT` 块",
+      "why": "那个块**从未进过任何文档**：`facts.py --render-doc` 只认 AUTO:FACTS / AUTO:GATES / AUTO:RULES，`next.render()` 除自证外没有调用方。而且它与 --check 的逐字节对账天然互斥（每轮都变）。",
+      "evidence": "python3 zreflect/next.py --selftest",
+      "fixed_in": "zreflect/next.py（section() 现算，不落盘）+ AGENTS.md「记忆是自动的」"
+    },
+    {
+      "id": "R-003",
+      "text": "zreflect/check_wire.py",
+      "why": "套件去校验宿主的 config schema 是把耦合方向搞反了：换一个编辑器就得改闸门，而宿主自己的信任闸门（project hooks pending_trust）套件根本看不见。接线是否生效只有宿主的日志能回答。",
+      "evidence": "python3 zreflect/registry.py --gates（名录里不应再有 check_wire）",
+      "fixed_in": "zreflect/next.py 暴露宿主无关的 section()/stdout；宿主接线归使用方"
     }
   ]
 }

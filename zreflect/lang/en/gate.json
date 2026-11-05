@@ -5,7 +5,6 @@
  "gate.env_hint": "found %(file)s, but this process set no knob at all — criteria may fall back to default names and differ from the hook context.\n       try running it with %(file)s:\n         set -a; . %(file)s; set +a\n       (or pass the knob explicitly: `REFLECT_*=<value> python3 ...`)",
  "gate.forged_row_neutralised": "★ %(count)d rendered line(s) would have passed as machine rows and were held down (prefixed with `\\`) — the value contains a line break, usually from a filename or document content",
  "gate.input_label": "input",
- "gate.module_banner": "the gate platform is a module (it provides selftest / require_nonempty / finish; it consumes none) — it does not run standalone.",
  "gate.never_falsifiable_and": "`and <falsy constant>` — the boolean is short-circuited by a constant, always fail",
  "gate.never_falsifiable_delegated": "the assertion body is a **delegated call**, so tautology detection cannot see inside it (inline the assertion, or self-verify the callee separately)",
  "gate.never_falsifiable_or": "`or <truthy constant>` — the boolean is short-circuited by a constant, always PASS",

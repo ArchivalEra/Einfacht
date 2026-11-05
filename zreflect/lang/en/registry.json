@@ -4,7 +4,6 @@
  "registry.dependency_untested": "`%(module)s.%(function)s()` is consumed by a gate but has **zero assertions** — if it judges wrong, the consuming gate loses its criteria while its own self-test stays green (a dead link in the dependency chain)",
  "registry.empty_phase": "phase %(phase)s has no runnable gates — zero-value guard: an empty list is not a pass (is the predicate or a declaration broken?)",
  "registry.empty_roster": "not a single gate was found — zero-value guard: an empty input is not a pass",
- "registry.machine_vocab_drift": "the shell-side machine-summary grep and machine.ROWS disagree (samples: %(samples)s, %(count)d total) — both sides must classify every line identically",
  "registry.missing_declaration": "these gates have no GATE = gate.meta(…) declaration line — the roster refuses nameless entries (handwritten rosters drift; a declaration is a registration): %(files)s",
  "registry.name_dependent_wrong": "`%(file)s` is flagged name_dependent but none of the knobs it consumes has a default name in the rename fixture list — the flag is wrong (either drop the flag or add the new default name to registry.RENAMED_DEFAULTS)",
  "registry.no_module_selftest": "no platform module self-test could be discovered — zero-value guard: an empty input is not a pass",

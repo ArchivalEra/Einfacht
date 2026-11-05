@@ -169,17 +169,21 @@ def _export_problems(name, value, registry, file_exists, dir_exists):
     if targets is None:
         return []
     paths, is_dir = targets
+    # 「文件 / 目录」是语法名词而非旋钮值：拆成两个 code，模板里不出现中文常量
+    # （本体零语言），旋钮名与路径仍走参数。
+    #
+    # ⚠️ **两个 code 各写一条 `M(...)`**：写成 `M("a" if is_dir else "b")` 时，
+    # `knobs.used_codes()` 的正则只抓得到第一个 ⇒ 另一个在 `pack_coverage`
+    # 面前不存在。语言包缺了它、用户看到裸 code，而对账照样绿（实测：
+    # 这条正是新加的 `i18n_cover.code_not_literal` 抓出来的）。
     out = []
     for t in paths:
         hit = dir_exists(t) if is_dir else file_exists(t)
         if not hit:
-            # 「文件 / 目录」是语法名词而非旋钮值：拆成两个 code，模板里
-            # 不出现中文常量（本体零语言），旋钮名与路径仍走参数。
-            out.append(M("envfile.dir_missing" if is_dir
-                         else "envfile.file_missing",
-                         key=name,
-                         entry=registry.get(name, ("", "", "?"))[2],
-                         target=t))
+            entry = registry.get(name, ("", "", "?"))[2]
+            out.append(M("envfile.dir_missing", key=name, entry=entry, target=t)
+                       if is_dir else
+                       M("envfile.file_missing", key=name, entry=entry, target=t))
     return out
 
 

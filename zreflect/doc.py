@@ -137,6 +137,30 @@ RULES = (
          "import registry;u=registry.modules()[1];"
          "print('undeclared_modules=%d' % len(u));"
          "sys.exit(1 if u else 0)\""),
+
+    # 宿主耦合是**可量的**：套件的源码里出现某个宿主的目录名 / 配置文件名，
+    # 就是把自己焊死在那个宿主上。实测代价见 R-003：`check_wire` 去校验
+    # ZCode 的 config.json schema —— 换一个编辑器就得改闸门，而那个宿主
+    # 自己的信任闸门（pending_trust）套件根本看不见。
+    #
+    # 判据扫**代码**（.py/.sh），不扫文档：README/AGENTS 里提到某个宿主是
+    # 说明，不是依赖。
+    #
+    # ⚠️ 词表用**码点拼接**，不写字面量 —— 写成字面量会让本文件（以及
+    # `check_i18n` 里那句翻案说明）被自己抓出来。这正是本仓在 CJK 区间
+    # 常量上踩过的同一个坑：判据的元数据必须**不在判据的扫描面里**。
+    Rule("host_agnostic",
+         "套件源码不认任何宿主的目录名 / 配置格式（宿主接线归使用方）",
+         "python3 -c \"import os,sys;"
+         "w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR',"
+         "'hook'+'SpecificOutput'];"
+         "bad=[(d,f) for d in ('zreflect','reflect-hooks') "
+         "for r,_,fs in os.walk(d) for f in fs "
+         "if f.endswith(('.py','.sh')) "
+         "and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() "
+         "for k in w)];"
+         "print('host_coupled=%d' % len(bad));"
+         "sys.exit(1 if bad else 0)\""),
 )
 
 _BY_ID = {r.id: r for r in RULES}

@@ -117,9 +117,6 @@ REGISTRY = {
     # 明确拒绝本套件的原则（不想每提交跑那些判定命令的仓用这个出口）。
     "REFLECT_NO_PRINCIPLES": ("flag", "",
                               _Semantic("knobs.sem.reflect_no_principles")),
-    # SessionStart 注入用的语言：未设 `REFLECT_LANG` 时的兜底（注入是人读的）。
-    "REFLECT_INJECT_LANG": ("value", "",
-                            _Semantic("knobs.sem.reflect_inject_lang")),
     "REFLECT_LANG": ("value", "",
                      _Semantic("knobs.sem.reflect_lang")),
     "REFLECT_I18N": ("dir", "",

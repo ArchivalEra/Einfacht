@@ -5,7 +5,6 @@
  "gate.env_hint": "检测到 %(file)s，但本次进程一个旋钮都没设 —— 判据可能回落默认名，结果与钩子语境不同。\n       try running it with %(file)s：\n         set -a; . %(file)s; set +a\n       （或 `REFLECT_*=<值> python3 ...` 显式给旋钮）",
  "gate.forged_row_neutralised": "★ 有 %(count)d 行文本本想伪装成机器行，已被按住（加了 `\\` 前缀）—— 值里有换行符，多半来自文件名或文档内容",
  "gate.input_label": "输入",
- "gate.module_banner": "闸门平台是模块（提供 selftest / require_nonempty / finish；自己不消费）—— 不单独跑。",
  "gate.never_falsifiable_and": "`and <假值常量>` —— 布尔与被常量短路，永远 fail",
  "gate.never_falsifiable_delegated": "断言体是**委托调用**，恒真检测看不见它内部（把断言写回 lambda 内，或被调函数单独自证）",
  "gate.never_falsifiable_or": "`or <真值常量>` —— 布尔或被常量短路，永远 PASS",
