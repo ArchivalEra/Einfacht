@@ -111,45 +111,59 @@ def filter_accepted(changed, accepted):
     return [c for c in (changed or []) if c[0] not in accepted]
 
 
-def decide(old_facts, new_facts, accepted=False, allow_drop=False):
-    """重测写盘的**决策**（纯函数：自证要用，不许 print）。"""
-    problems, notes = [], {"err": [], "out": []}
-
-    # 守卫一：掉条（键没了）
+def _drop_verdict(old_facts, new_facts, allow_drop, notes):
+    """守卫一：掉条（键没了）。返回 `(拒绝问题清单, 是否已拒绝)`。"""
     dropped = dropped_keys(old_facts, new_facts)
-    if dropped and not allow_drop:
-        problems.append(M("guard.refuse_dropped",
-                          count=len(dropped), keys=", ".join(dropped)))
-        problems.append(M("guard.refuse_dropped_advice"))
-        return "refuse", problems, notes
-    if dropped:
-        notes["err"].append(M("guard.note_allow_drop",
-                              count=len(dropped), keys=", ".join(dropped)))
+    if not dropped:
+        return [], False
+    if not allow_drop:
+        return [M("guard.refuse_dropped", count=len(dropped),
+                  keys=", ".join(dropped)),
+                M("guard.refuse_dropped_advice")], True
+    notes["err"].append(M("guard.note_allow_drop", count=len(dropped),
+                          keys=", ".join(dropped)))
+    return [], False
 
-    # 守卫二：改口（值换了）
+
+def _change_verdict(old_facts, new_facts, accepted, notes):
+    """守卫二：改口（值换了）。返回 `(拒绝问题清单, 是否已拒绝)`。"""
     changed = changed_keys(old_facts, new_facts)
     remaining = filter_accepted(changed, accepted)
     if remaining:
-        problems.append(M("guard.refuse_changed", count=len(remaining)))
-        for k, o, n in remaining:
-            problems.append(M("guard.changed_row",
-                              key=k, before=short_value(o), after=short_value(n)))
+        problems = [M("guard.refuse_changed", count=len(remaining))]
+        problems += [M("guard.changed_row", key=k, before=short_value(o),
+                       after=short_value(n)) for k, o, n in remaining]
         if accepted:
             problems.append(M("guard.accepted_boundary",
                               accepted=len(changed) - len(remaining),
                               keys=", ".join(sorted(accepted))))
         problems.append(M("guard.refuse_changed_advice"))
-        return "refuse", problems, notes
+        return problems, True
     if changed:
         notes["out"].append(M("guard.note_accept_changes", count=len(changed)))
-        for k, o, n in changed:
-            notes["out"].append(M("guard.changed_row",
-                                  key=k, before=short_value(o), after=short_value(n)))
+        notes["out"] += [M("guard.changed_row", key=k, before=short_value(o),
+                           after=short_value(n)) for k, o, n in changed]
+    return [], False
 
+
+def decide(old_facts, new_facts, accepted=False, allow_drop=False):
+    """重测写盘的**决策**（纯函数：自证要用，不许 print）。
+
+    两道守卫各是一个具名 helper：它们判的是**不同**的破坏（键消失 vs 值换了），
+    拒绝消息也完全不同（一个给 `--allow-drop` 的建议、一个给
+    `--accept-changes` 的）。挤在一个函数里时，两条 `return "refuse"` 与
+    它们的 notes 副作用交错，读者要记「哪些 notes 已经写过」。
+    """
+    notes = {"err": [], "out": []}
+    problems, refused = _drop_verdict(old_facts, new_facts, allow_drop, notes)
+    if refused:
+        return "refuse", problems, notes
+    problems, refused = _change_verdict(old_facts, new_facts, accepted, notes)
+    if refused:
+        return "refuse", problems, notes
     # 零值守卫：一条都没量到 ⇒ 不是「没有改口」，是什么都没量。
     if not new_facts:
-        problems.append(M("guard.empty_ledger"))
-        return "refuse", problems, notes
+        return "refuse", [M("guard.empty_ledger")], notes
     return "write", problems, notes
 
 

@@ -66,39 +66,62 @@ def field(text, name):
     return None
 
 
+def _status_problems(name, text):
+    """`Status` 字段：必须存在且是已知取值。"""
+    st = field(text, "Status")
+    if not st:
+        return [M("questions.missing_status", name=name)]
+    if st.split()[0] not in VALID_STATUS:
+        return [M("questions.bad_status", name=name, actual=st,
+                  expected=", ".join(VALID_STATUS))]
+    return []
+
+
+def _none_like_problems(name, sv):
+    """`Settling` 声明了「无」（如 None）：必须**同时**点出第一交付物。
+
+    ⚠️ 接受「第一交付物」与「第一个交付物」两种写法 —— 约定文档里写的是后者，
+    检查器只认前者的话，**合规的悬案会被判成不合规**（本仓实测踩到：
+    15 张单里那张用了自然语序的，被自己的闸门报「没说明第一交付物」）。
+    """
+    if _FIRST_DELIVERABLE in sv.replace(_PARTICLE, ""):
+        return []
+    return [M("questions.none_without_first_deliverable", name=name)]
+
+
+def _settling_problems(name, text, chk):
+    """`Settling` 字段：存在 / 两种结论可区分 / 结算件真能跑。"""
+    sv = field(text, "Settling")
+    if not sv:
+        return [M("questions.missing_settling", name=name)]
+    if sv.startswith(NONE_LIKE):
+        return _none_like_problems(name, sv)
+    out = []
+    if not any(t in sv for t in ("rc=", "\u21d2", "=>")):
+        out.append(M("questions.no_distinct_outcomes", name=name))
+    tok = sv.split()[0].strip("`")
+    if any(tok.endswith(x) or x in tok for x in PATHISH) and not chk(tok):
+        out.append(M("questions.settler_missing", name=name, target=tok))
+    return out
+
+
 def problems(files, exists=None):
     """返回问题清单（纯函数：自证要用）。`files` = {文件名: 正文}。
 
     `exists` 可注入（测试夹具用）—— 默认判断相对仓库根的路径是否存在。
+
+    两个字段各有一组具名 helper（Status / Settling）：它们判的是不同的字段，
+    而且 `Settling` 有三条互斥分支（缺 / 声明无 / 有命令），挤在一起时
+    调用点的 `continue` 让「哪条分支已处理」变成隐式状态。
     """
-    out = []
     if not files:
         # 零值守卫：一条悬案都没收到 ⇒ 「没有缺结算件的悬案」是空话。
         return [M("questions.empty")]
     chk = exists or (lambda p: os.path.exists(os.path.join(gate.GATE_REPO, p)))
+    out = []
     for name, text in sorted(files.items()):
-        st = field(text, "Status")
-        if not st:
-            out.append(M("questions.missing_status", name=name))
-        elif st.split()[0] not in VALID_STATUS:
-            out.append(M("questions.bad_status", name=name, actual=st,
-                         expected=", ".join(VALID_STATUS)))
-        sv = field(text, "Settling")
-        if not sv:
-            out.append(M("questions.missing_settling", name=name))
-            continue
-        if sv.startswith(NONE_LIKE):
-            # 接受「第一交付物」与「第一个交付物」两种写法 —— 约定文档里写的是后者，
-            # 检查器只认前者的话，**合规的悬案会被判成不合规**（本仓实测踩到：
-            # 15 张单里那张用了自然语序的，被自己的闸门报「没说明第一交付物」）。
-            if _FIRST_DELIVERABLE not in sv.replace(_PARTICLE, ""):
-                out.append(M("questions.none_without_first_deliverable", name=name))
-            continue
-        if not any(t in sv for t in ("rc=", "⇒", "=>")):
-            out.append(M("questions.no_distinct_outcomes", name=name))
-        tok = sv.split()[0].strip("`")
-        if any(tok.endswith(x) or x in tok for x in PATHISH) and not chk(tok):
-            out.append(M("questions.settler_missing", name=name, target=tok))
+        out += _status_problems(name, text)
+        out += _settling_problems(name, text, chk)
     return out
 
 

@@ -288,53 +288,70 @@ def pack_dir():
     return os.path.join(gate.GATE_REPO, raw)
 
 
+def _load_shards(base, lang):
+    """`<lang>/*.json` 分片（按命名空间分文件，并行开发用，后者覆盖同 code）。
+
+    ⚠️ **坏 JSON 不许静默跳过**：此前 `except: continue`，一个坏分片只让那部分
+    code 退回裸 code 而 **rc 仍 0** —— 「半装看起来像装好了」（实测）。
+    现在坏分片 / 非对象一律抛 `MissingPack`。
+    """
+    import json                                          # noqa: PLC0415
+    d = os.path.join(base, lang)
+    if not os.path.isdir(d):
+        return {}
+    table = {}
+    for n in sorted(os.listdir(d)):
+        if not n.endswith(".json"):
+            continue
+        p = os.path.join(d, n)
+        try:
+            with open(p, encoding="utf-8") as fh:
+                part = json.load(fh)
+        except (OSError, ValueError) as e:
+            raise MissingPack("i18n.shard_unreadable", lang=lang,
+                              path=p, error=e) from e
+        if not isinstance(part, dict):
+            raise MissingPack("i18n.shard_not_object", lang=lang, name=n)
+        table.update(part)
+    return table
+
+
+def _load_single(base, lang):
+    """`<lang>.json` 单文件（小仓 / 样板）。坏文件同样抛 `MissingPack`。"""
+    import json                                          # noqa: PLC0415
+    single = os.path.join(base, "%s.json" % lang)
+    if not os.path.exists(single):
+        return {}
+    try:
+        with open(single, encoding="utf-8") as fh:
+            part = json.load(fh)
+    except (OSError, ValueError) as e:
+        raise MissingPack("i18n.single_unreadable", lang=lang,
+                          path=single, error=e) from e
+    if not isinstance(part, dict):
+        raise MissingPack("i18n.single_not_object", lang=lang, path=single)
+    return part
+
+
 def load_pack(lang):
     """读语言包的**合并表**（与 `Catalog.load` 看到的那张表一致）。
 
-    两种形状都认，且**总是合并**：
-
-      · `<lang>/*.json`  按命名空间分文件（并行开发用，后者覆盖同 code）
-      · `<lang>.json`    单文件（小仓 / 样板）
+    两种形状都认，且**总是合并**：`<lang>/*.json` 分片 + `<lang>.json` 单文件
+    （后者覆盖同 code）。
 
     合并必须与真装载器同形 —— 任何只读一个分片的读者都会与装载器分叉
     （实测踩到：自证按分片读，文档认可的单文件包被判红）。
 
-    ⚠️ **坏 JSON 不许静默跳过**：此前 `except: continue`，一个坏分片只让那部分
-    code 退回裸 code 而 **rc 仍 0** —— 正是「半装看起来像装好了」（实测）。
-    现在坏分片 / 坏单文件 / 非对象一律抛 `MissingPack`。
-
     缺失 / 空 ⇒ `{}`（不抛）：自证「读真包」的断言靠空表当场红。区分的是
     「没有」与「有但坏了」：后者是配置事故，必须响。
+
+    两种形状各是一个 helper（`_load_shards` / `_load_single`）：它们各有
+    自己的错误码（`shard_*` / `single_*`），拼在一起时那两组 try/except
+    让「哪个码对应哪种形状」变成读代码才能知道的事。
     """
-    import json                                          # noqa: PLC0415
     base = pack_dir()
-    table = {}
-    d = os.path.join(base, lang)
-    if os.path.isdir(d):
-        for n in sorted(os.listdir(d)):
-            if not n.endswith(".json"):
-                continue
-            p = os.path.join(d, n)
-            try:
-                with open(p, encoding="utf-8") as fh:
-                    part = json.load(fh)
-            except (OSError, ValueError) as e:
-                raise MissingPack("i18n.shard_unreadable", lang=lang,
-                                  path=p, error=e) from e
-            if not isinstance(part, dict):
-                raise MissingPack("i18n.shard_not_object", lang=lang, name=n)
-            table.update(part)
-    single = os.path.join(base, "%s.json" % lang)
-    if os.path.exists(single):
-        try:
-            with open(single, encoding="utf-8") as fh:
-                part = json.load(fh)
-        except (OSError, ValueError) as e:
-            raise MissingPack("i18n.single_unreadable", lang=lang,
-                              path=single, error=e) from e
-        if not isinstance(part, dict):
-            raise MissingPack("i18n.single_not_object", lang=lang, path=single)
-        table.update(part)
+    table = _load_shards(base, lang)
+    table.update(_load_single(base, lang))
     return table
 
 

@@ -189,41 +189,44 @@ def spec_problems(spec, branch, override):
     return out + _branch_problems(branch, active, lines, override)
 
 
+def _one_stamp_problem(name, st, run):
+    """一个印章的判定。返回问题清单（空 = 通过）。"""
+    if not isinstance(st, dict):
+        return [M("world.stamp_not_object", name=name, entry=st)]
+    value = str(st.get("value") or "").strip()
+    cmd = str(st.get("cmd") or "").strip()
+    if not value:
+        return [M("world.stamp_missing_value", name=name)]
+    if not cmd:
+        return [M("world.stamp_missing_cmd", name=name)]
+    rc, stdout = run(cmd)
+    if rc is None:
+        return [M("world.stamp_timeout", name=name, command=cmd)]
+    if rc != 0:
+        return [M("world.stamp_command_failed", name=name,
+                  return_code=rc, command=cmd)]
+    got = stdout.strip()
+    if got != value:
+        return [M("world.stamp_mismatch", name=name,
+                  actual=quote(got), expected=quote(value))]
+    return []
+
+
 def stamp_problems(spec, runner=None):
     """印章对账（纯副作用只经 runner）：每个印章的 cmd
     逐字复跑，stdout 必须等于声明的 value —— 裸值契约
-    与判据直接嫁接复跑闸门（`run_cmd` / `_q`）。"""
-    out = []
+    与判据直接嫁接复跑闸门（`run_cmd` / `_q`）。
+
+    单印章的判定是一个具名 helper：五个 `continue` 各是一种不同的失败
+    （形状 / 缺值 / 缺命令 / 超时 / 退出码 / 值不符），挤在循环里时
+    读者要数 continue 才知道哪个都覆盖了。
+    """
     stamps = spec.get("stamps") if isinstance(spec, dict) else None
     if not isinstance(stamps, dict) or not stamps:
         return [M("world.stamps_empty")]
     run = runner or run_cmd
-    for name in sorted(stamps):
-        st = stamps[name]
-        if not isinstance(st, dict):
-            out.append(M("world.stamp_not_object", name=name, entry=st))
-            continue
-        value = str(st.get("value") or "").strip()
-        cmd = str(st.get("cmd") or "").strip()
-        if not value:
-            out.append(M("world.stamp_missing_value", name=name))
-            continue
-        if not cmd:
-            out.append(M("world.stamp_missing_cmd", name=name))
-            continue
-        rc, stdout = run(cmd)
-        if rc is None:
-            out.append(M("world.stamp_timeout", name=name, command=cmd))
-            continue
-        if rc != 0:
-            out.append(M("world.stamp_command_failed", name=name,
-                         return_code=rc, command=cmd))
-            continue
-        got = stdout.strip()
-        if got != value:
-            out.append(M("world.stamp_mismatch", name=name,
-                         actual=quote(got), expected=quote(value)))
-    return out
+    return [p for name in sorted(stamps)
+            for p in _one_stamp_problem(name, stamps[name], run)]
 
 
 def _spec_path():

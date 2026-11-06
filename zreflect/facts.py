@@ -160,6 +160,34 @@ def _block_homes(ledger):
 
 
 
+def _own_blocks(path_rel, ledger):
+    """这个文档**归属**的机器块。返回 `(blocks, rc)`；rc 非 0 = 必须回报。
+
+    ⚠️ **找不到归属 ⇒ 必须报**（零值守卫），不许 `blocks=[]` 静默绿。一个不在
+    归属表里的文档（比如老用户传了个自定义名字）没有块可校验，那「返回 0」
+    就是在说「没有块过期」—— 一句什么都没查过的话。
+
+    `write_doc` 与 `check_doc` 此前各抄一份这段（含注释），任何改动要同时
+    动两处 —— 正是本仓「两份必须一致的东西一定会不一致」的假定。
+    """
+    homes, err = _block_homes(ledger)
+    if err:
+        print(machine().emit("fatal", err), file=sys.stderr)
+        return None, 2
+    # 只校验**属于这个文档**的块。别的块的标记在别的文档里 —— 在这儿找不到是
+    # 正常的（此前把所有块都往一份文档塞：纪律块的标记不在 STATE.md 里 ⇒ 报）。
+    mine = [b for name, blocks in homes
+            if name in (os.path.basename(path_rel), path_rel)
+            for b in blocks]
+    if mine:
+        return mine, 0
+    print(machine().emit("fatal",
+                          M("facts.doc_has_no_home", path=path_rel,
+                            known=", ".join(name for name, _ in homes))),
+          file=sys.stderr)
+    return None, 2
+
+
 def write_doc(path_rel, ledger):
     """把机器块写进文档（就地替换）。没有标记就报错，**不悄悄追加** ——
     悄悄追加会让「块过期」变成「有两份块」，那是更难查的坏法。"""
@@ -168,26 +196,9 @@ def write_doc(path_rel, ledger):
         print(machine().emit("fatal", M("facts.doc_missing_render", path=p)),
               file=sys.stderr)
         return 2
-    homes, err = _block_homes(ledger)
-    if err:
-        print(machine().emit("fatal", err), file=sys.stderr)
-        return 2
-    # 只校验**属于这个文档**的块。别的块的标记在别的文档里 —— 在这儿找不到是
-    # 正常的（此前把所有块都往一份文档塞：纪律块的标记不在 STATE.md 里 ⇒ 报）。
-    #
-    # ⚠️ 找不到归属 ⇒ **必须报**，不许 `blocks=[]` 静默绿。一个不在归属表里的
-    # 文档（比如老用户传了个自定义名字）没有块可校验，那「返回 0」就是在说
-    # 「没有块过期」—— 一句什么都没查过的话。这是零值守卫。
-    mine = [b for name, blocks in homes
-            if name in (os.path.basename(path_rel), path_rel)
-            for b in blocks]
-    if not mine:
-        print(machine().emit("fatal",
-                              M("facts.doc_has_no_home", path=path_rel,
-                                known=", ".join(name for name, _ in homes))),
-              file=sys.stderr)
-        return 2
-    blocks = mine
+    blocks, rc = _own_blocks(path_rel, ledger)
+    if rc:
+        return rc
     text = open(p, encoding="utf-8").read()
     new = text
     for begin, end, body in blocks:
@@ -225,26 +236,9 @@ def check_doc(path_rel, ledger):
     if not os.path.exists(p):
         print(machine().emit("fatal", M("facts.doc_missing_check", path=p)), file=sys.stderr)
         return 2
-    homes, err = _block_homes(ledger)
-    if err:
-        print(machine().emit("fatal", err), file=sys.stderr)
-        return 2
-    # 只校验**属于这个文档**的块。别的块的标记在别的文档里 —— 在这儿找不到是
-    # 正常的（此前把所有块都往一份文档塞：纪律块的标记不在 STATE.md 里 ⇒ 报）。
-    #
-    # ⚠️ 找不到归属 ⇒ **必须报**，不许 `blocks=[]` 静默绿。一个不在归属表里的
-    # 文档（比如老用户传了个自定义名字）没有块可校验，那「返回 0」就是在说
-    # 「没有块过期」—— 一句什么都没查过的话。这是零值守卫。
-    mine = [b for name, blocks in homes
-            if name in (os.path.basename(path_rel), path_rel)
-            for b in blocks]
-    if not mine:
-        print(machine().emit("fatal",
-                              M("facts.doc_has_no_home", path=path_rel,
-                                known=", ".join(name for name, _ in homes))),
-              file=sys.stderr)
-        return 2
-    blocks = mine
+    blocks, rc = _own_blocks(path_rel, ledger)
+    if rc:
+        return rc
     text = open(p, encoding="utf-8").read()
     for begin, end, body in blocks:
         if begin not in text or end not in text:

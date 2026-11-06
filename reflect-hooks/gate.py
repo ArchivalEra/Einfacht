@@ -162,6 +162,28 @@ def _push_readmes_together(repo, refs):
     return True, lines
 
 
+def _prepare(phase, repo, doc):
+    """① 相位的前置步。返回 `(是否应当拒绝)`。
+
+    两个相位做**性质相反**的事，因此各是一个具名分支：
+
+      · commit —— 重渲染机器块并 `git add`（**只渲染，不重测**；重测由人负责）
+      · push   —— **不改文件、不动历史**：块不新鲜就直接拒
+    """
+    facts = os.path.join(repo, "zreflect", "facts.py")
+    if phase == "commit":
+        if os.path.isfile(os.path.join(repo, doc)):
+            _sh([sys.executable, facts, "--render-doc", doc])
+            _sh(["git", "-C", repo, "add", doc])
+        return False
+    rc, out = _sh([sys.executable, facts, "--check"])
+    if rc == 0:
+        return False
+    print(str(M("hookgate.blocks_stale", detail=(out or "").strip()[:400])),
+          file=sys.stderr)
+    return True
+
+
 def run(phase, repo, stdin_rows=None):
     """执行一个相位。返回 rc。**纯编排**：所有判断都在被调的命令里。"""
     if phase not in PHASES:
@@ -174,20 +196,8 @@ def run(phase, repo, stdin_rows=None):
     _load_env_plugin(HERE)
     doc = os.environ.get("REFLECT_DOC", "").strip() or "STATE.md"
 
-    if phase == "commit":
-        # ① 机器块重渲染（**只渲染，不重测** —— 重测由人负责）
-        if os.path.isfile(os.path.join(repo, doc)):
-            _sh([sys.executable, os.path.join(repo, "zreflect", "facts.py"),
-                 "--render-doc", doc])
-            _sh(["git", "-C", repo, "add", doc])
-    else:
-        # ①' pre-push **不改文件、不动历史**：不新鲜就直接拒
-        rc, out = _sh([sys.executable, os.path.join(repo, "zreflect", "facts.py"),
-                       "--check"])
-        if rc != 0:
-            print(str(M("hookgate.blocks_stale", detail=(out or "").strip()[:400])),
-                  file=sys.stderr)
-            return 1
+    if _prepare(phase, repo, doc):
+        return 1
 
     # ② 全部闸门：执行面唯一产地（C1）
     rc, out = _sh([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
@@ -277,21 +287,33 @@ def _run_cli(argv, quiet=False):
         if not quiet:
             _usage()
         return 0
+    rc = _validate(argv, _say)
+    if rc is not None:
+        return rc
+    return run(argv[0], argv[1], _refs_from_stdin())
+
+
+def _validate(argv, say):
+    """命令行形状校验。返回 rc（`None` = 形状合法，可以往下跑）。
+
+    四道校验各是一个「不值得继续」的出口，全挤在调用点时复杂度 9 —— 而
+    它们判的是**同一个问题**（这次调用能不能跑），所以归一个函数。
+    """
     phase = argv[0]
     if phase not in PHASES:
-        _say("hookgate.unknown_phase", phase=phase)
+        say("hookgate.unknown_phase", phase=phase)
         return 2
     if len(argv) < 2:
-        _say("hookgate.missing_root")
+        say("hookgate.missing_root")
         return 2
     repo = argv[1]
     if not os.path.isdir(repo):
-        _say("hookgate.repo_missing", repo=repo)
+        say("hookgate.repo_missing", repo=repo)
         return 2
     if not os.path.isdir(os.path.join(repo, "zreflect")):
-        _say("hookgate.not_a_suite_repo", repo=repo)
+        say("hookgate.not_a_suite_repo", repo=repo)
         return 2
-    return run(phase, repo, _refs_from_stdin())
+    return None
 
 
 def _main(argv):

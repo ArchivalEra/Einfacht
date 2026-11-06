@@ -85,18 +85,22 @@ def _replay_one(k, raw_entry, run, seconds, out, stats):
                      command=cmd))
         return
     stats["ran"] += 1
-    # 原则档：rc==0 **还不够**。
-    #
-    # ⚠️ 这里踩过一个**方向性错误**，而且它正是本仓立身要杀的那件事：
-    # 一条闸门在 `off`（没跑）时 rc 也是 0，只看 rc ⇒「没跑」被记成「通过」。
-    # 本仓历史上的「8/13 道 off 而全绿不可见」就是这个形状；在「杀它」的机制里
-    # 再造一遍，是最严重的自相矛盾（review 抓到）。
-    #
-    # 所以原则档的契约是**两条一起**：
-    #   · stdout **非空** —— 真的跑过的闸门会表态（`ok(…)` 或 `OFF: …`）；
-    #     一条什么都不说的命令，我们无法区分「跑过且通过」与「根本没跑」。
-    #   · stdout **不含 `OFF:` 行** —— 那是「未启用」，不是「通过」。
-    # 只看 rc 的写法把 off 洗成绿；只看 stdout 会把「静默通过」误判 —— 两条都要。
+    _judge_ok(k, entry, cmd, stdout, out, stats)
+
+
+def _judge_ok(k, entry, cmd, stdout, out, stats):
+    """rc==0 之后的判定：原则档查「表态」，数值档查裸值相等。
+
+    ⚠️ 原则档的契约是**两条一起**（这里踩过一个方向性错误，正是本仓立身
+    要杀的那件事 —— 在「杀假绿」的机制里再造一遍假绿）：
+
+      · stdout **非空** —— 真的跑过的闸门会表态（`ok(…)` 或 `OFF: …`）；
+        一条什么都不说的命令，无法区分「跑过且通过」与「根本没跑」。
+      · stdout **不含 `OFF:` 行** —— 那是「未启用」，不是「通过」。
+
+    只看 rc 的写法把 off 洗成绿（本仓历史上的「8/13 道 off 而全绿不可见」）；
+    只看 stdout 会把「静默通过」误判。两条都要。
+    """
     if entry.get("kind") == "principle":
         got = stdout.strip()
         if not got:
@@ -116,6 +120,8 @@ def _replay_one(k, raw_entry, run, seconds, out, stats):
                      actual=quote(got), expected=quote(want)))
         return
     stats["ok"] += 1
+
+
 
 
 # ⚠️ **环守卫**（实测把内存打爆过：OOM）。
