@@ -73,11 +73,11 @@ def _shell_argv(cmd):
     # Windows：**不经 shell**，由 `_windows_argv` 拆成参数表。
     #
     # ⚠️ 走 `cmd.exe /c` 会掉进引号地狱：`sys.executable` 常在
-    # `C:\Program Files\...`（含空格），cmd 会把外层引号剥掉再重新切分
+    # `C:/Program Files/...`（含空格），cmd 会把外层引号剥掉再重新切分
     # ⇒ **127 找不到命令**。实测：CI 的 Windows 腿 19 条 replay 全红在这里。
     #
     # ⚠️ 也不用 `shlex.split`：`posix=False` **保留引号**（带引号的路径原样
-    # 传给 CreateProcess ⇒ 找不到文件）；`posix=True` 会把 `C:\Program Files`
+    # 传给 CreateProcess ⇒ 找不到文件）；`posix=True` 会把 `C:/Program Files`
     # 的反斜杠当转义符吃掉。两者都错。见 `_windows_argv`。
     return None, "no-shell"
 
@@ -120,12 +120,36 @@ def _python_of(cmd):
     `No such file` —— 而错误信息会指向「命令失败」，不是「路径解析错了」。
     实测：harness 的换名夹具就撞上这个。
     """
-    interp = ('"%s"' % sys.executable
-              if " " in sys.executable else sys.executable)
+    interp = _quote_for_shell(sys.executable)
     out = _PY_CMD.sub(lambda _m: interp, cmd, count=1)
     return _TOOL_REL.sub(
-        lambda m: '"%s"' % os.path.join(gate.tool_repo(), m.group(1)),
+        lambda m: _quote_for_shell(os.path.join(gate.tool_repo(), m.group(1))),
         out, count=1)
+
+
+# shell 会让这些字符「有含义」：空格（切词）、反斜杠（转义，POSIX sh 里
+# `C:/hosted` 里的反斜杠会被吃成 `C:hosted`）、shell 元字符。
+_NEEDS_QUOTING = re.compile(r"""[\s\\$`"'|&;<>()*?{}\[\]#~]""")
+
+
+def _quote_for_shell(path):
+    """把一个路径包成**任何 shell 都不会误解**的形式。
+
+    ⚠️ 这条是 CI 的 Windows 腿用一整轮换来的：GitHub 的 windows-latest
+    **装了 Git Bash**，于是 `shutil.which("bash")` 有值 ⇒ 走 bash 分支。
+    而 `sys.executable` 形如 `C:/hostedtoolcache/windows/Python/3.13/x64/python.exe` ——
+    在 bash 里**反斜杠是转义符**：一个 `C:` 后面跟反斜杠的路径会被吃成 `C:hosted`，
+    于是 `python` 找不到 ⇒ **rc=127**（实测：19 条 replay 全红）。
+
+    `" " in path` 判据不够：`C:/...` 没有空格，但有反斜杠。
+    """
+    if not _NEEDS_QUOTING.search(path):
+        return path
+    # POSIX sh 里单引号是最安全的（不解释任何字符）；但 Windows 路径可能
+    # 含单引号（极罕见）——那一次用双引号 + 转义。
+    if "'" not in path:
+        return "'%s'" % path
+    return '"%s"' % path.replace('"', '\\"')
 
 
 # 行首 `python3` 之后的 `zreflect/<script>`（工具仓相对路径）
