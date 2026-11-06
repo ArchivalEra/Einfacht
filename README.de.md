@@ -614,7 +614,9 @@ drei gemeinsam aktualisieren.**
 ## Benutzung
 
 ```bash
-cp -r zreflect reflect-hooks /path/to/your-repo/
+# Die Suite hineinkopieren. `ruff.toml` gehört dazu — ohne sie meldet
+# `check_lint` ausdrücklich, dass es aus ist, und das statische Tor fehlt.
+cp -r zreflect reflect-hooks ruff.toml /path/to/your-repo/
 # 0. In einem frischen Repo zuerst bootstrappen — sonst existiert das erwartete Doc nicht.
 #    --init legt state / PRINCIPLES / AGENTS / README / retractions / questions an und
 #    schreibt eine auf die tatsächlich erzeugten Docs zugeschnittene Einfacht.env.
@@ -666,11 +668,43 @@ python3 reflect-hooks/install.py --chain      # oder: verkettet in .git/hooks (d
 #     die Krankheit, zwei Dateien nicht.
 # 3. manuelle Nachprüfung (dieselben Befehle, die die Hooks fahren)
 python3 zreflect/harness.py                      # jedes Gate muss erst beweisen, dass es rot kann
-for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # Entdeckungsregister — keine handgeschriebenen Listen, nicht mal hier
+python3 zreflect/registry.py --run commit       # die EINZIGE Ausführungsfläche — niemals check_*.py globben
 ```
+
+### Dein eigenes `measure()` schreiben
 
 `measure_example()` in `facts.py` ist ein **Platzhalter** (er zählt die eigenen Repo-Dateien) —
 ersetzen. Das System liefert den Mechanismus; nur du weißt, wie *deine* Eingänge zu messen sind.
+
+**Wohin.** Lege das Modul **in `zreflect/`** und setze den Schalter auf den nackten Modulnamen:
+
+```bash
+# Einfacht.env
+export REFLECT_MEASURE_MODULE=measure_myproject
+```
+
+```python
+# zreflect/measure_myproject.py
+from ledger import fact
+
+def measure():
+    return {
+        "tests_total": fact(
+            run_and_count_tests(),          # der Wert
+            "python -m pytest --collect-only -q | tail -1",  # Wiederholungsbefehl
+            "repo",                          # Herkunft
+        ),
+    }
+```
+
+Ein Modul, das nicht importierbar ist, ist **fatal** (`rc=2`, nichts geschrieben) — es fällt
+**nicht** auf den Platzhalter zurück. Absicht: ein stiller Rückfall ließe dich glauben, die Zahlen
+beschrieben dein Projekt, während sie das Toolkit beschreiben.
+
+**Der Vertrag ist `fact(value, cmd, source)`, nichts Lockereres.** Ein nackter Wert
+(`{"k": 12}`) wird **vor** dem Schreiben abgelehnt, mit der richtigen Form in der Meldung.
+`cmd` darf **nur den Wert** ausgeben (das Wiederholungstor vergleicht `stdout.strip()`
+zeichengenau) und muss wirklich laufen — sonst ist dieser „Fakt" Prosa mit einer Zahl darin.
 
 Konsumenten (CI-Jobs, Tests in anderen Sprachen) lesen das Ledger über
 `--get KEY` — **nie `FACTS.json` selbst parsen**: das klassische Scheitern
@@ -781,7 +815,7 @@ Defaults zurück (der Mechanismus ist nach Bauart aussteckbar).
 | `REFLECT_NO_PRINCIPLES` | leer | auf `1` ⇒ dieses Repo registriert die Prinzipien aus `PRINCIPLES.md` **nicht** im Register, ihre Urteilsbefehle laufen nicht pro Commit. Das ist der ausdrückliche Ausstieg — nicht die Datei löschen |
 | `REFLECT_LANG` | leer | Name des Ausgabe-Sprachpakets. Mitgeliefert: `zh` (Chinesisch), `en` (Englisch), `de` (Deutsch); jeder andere Name funktioniert, wenn ein Paket unter `zreflect/lang/` liegt. **Leer = Null-Paket: der Kern gibt keine natürliche Sprache aus**, nur `code(param=value)` (Issue #26). Vertragszeichenketten (`OFF:`, `FATAL:`, `=== N PASS / M FAIL ===`) werden nie übersetzt — sie sind Literale am Ausgabeort |
 | `REFLECT_I18N` | leer | Verzeichnis der Sprachpakete. **Leer ⇒ das mitgelieferte Paketverzeichnis** (`zreflect/lang` neben dem Werkzeug), damit ein Lauf in einem anderen Repo sie trotzdem findet. Gesetzt ⇒ absoluter Pfad oder ein Pfad relativ zur **geprüften Repo-Wurzel**. Beide Formen werden akzeptiert und zusammengeführt: `<lang>.json` (eine Datei) oder `<lang>/*.json` (eine Datei pro Gate-Namespace — zusammengeführt, letztere gewinnt) |
-| `REFLECT_SNAPSHOT_ROOT` | leer | Quellverzeichnis, das das Modul-Snapshot-Tor scannt. Es meldet `from <lokales Modul> import GROSS_GLOBAL`, wenn dieses Global anderswo neu zugewiesen wird — eine Wertkopie veraltet beim Import. Leer ⇒ dieses Tor sagt laut, dass es aus ist |
+| `REFLECT_SNAPSHOT_ROOT` | leer | Quellverzeichnis, das das Modul-Snapshot-Tor scannt. Es meldet `from <lokales Modul> import GROSS_GLOBAL`, wenn dieses Global anderswo neu zugewiesen wird — eine Wertkopie veraltet beim Import. **Leer ⇒ es scannt das eigene `zreflect/` der Suite** (die Suite ist der größte Leidtragende dieses Bugs: `gate.GATE_REPO` wird von mehreren Selbsttests neu zugewiesen). Setze es, um **deinen** Code zu scannen |
 | `REFLECT_I18N_ROOT` | leer | Quellverzeichnis, das das Coverage-Gate scannt (Kern-hat-keine-Sprache). **Leer ⇒ es scannt das eigene `zreflect/` + `reflect-hooks/` des Werkzeugs** — dieses Gate ist nie aus, weil die Regel, die es durchsetzt, den Kern selbst betrifft. Auf **deinen** Code zeigen lassen: es wird **rekursiv** durchlaufen (ein `src/`-Layout funktioniert) |
 | `REFLECT_ENV_HINT` | leer (an) | `off` ⇒ schweigt den **Hinweis beim Lauf ohne env**. Jedes Gate, dessen Knöpfe aus `Einfacht.env` kommen, druckt bei einem nackten manuellen Lauf ohne gesetzten Knopf *try running it with `Einfacht.env`* — mit der exakten Zeile `set -a; . …; set +a`. Ein Hinweis, kein Urteil: ändert keinen rc, berührt stdout nicht, und bleibt in Repos ohne Träger still |
 | `REFLECT_RETRACTIONS` | `retractions.json` | Ledger widerlegter Aussagen (das Retraktions-Gate scannt die `REFLECT_DOCS`-Docs auf deren Wiederauftauchen) |

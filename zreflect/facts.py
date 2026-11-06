@@ -694,29 +694,50 @@ def main(argv):
     在走到那一行之前就抛 `UnboundLocalError`（见 `retractions.json` R-004）。
     命令之间不再共享作用域 ⇒ 这类跨命令的名字污染在结构上消失。
     """
-    if not argv:
+    kind = _classify(argv)
+    if kind == "measure":
         return measure(argv)
-    table = _command_table()
-    cmd = table.get(argv[0])
-    if cmd is not None:
-        return cmd(argv)
-    if argv[0] in ("--help", "-h", "help"):
+    if kind == "help":
         print(_usage(), file=sys.stderr)
         return 0
+    if kind == "unknown":
+        print(_usage(), file=sys.stderr)
+        print(machine().emit("fatal", M("facts.unknown_command",
+                                       command=argv[0])), file=sys.stderr)
+        return 2
+    return _command_table()[argv[0]](argv)
+
+
+def _classify(argv):
+    """首参 → `"measure"` / `"help"` / `"command"` / `"unknown"`。**纯函数**。
+
+    自证要验「未知命令不会回落 measure」时，此前直接调 `main(["--bogus"])` ——
+    而 `main(["--accept-changes=k1"])` 会**真的跑 measure 并写盘**，于是
+    `facts.py --selftest` 会污染调用方的 `FACTS.json`（实测：md5 变了，
+    README 却写着 "selftests … never touch the real repo"）。
+
+    把分派决策抽成纯函数之后，自证测的是**决策**，不是**执行** ——
+    「表里有 / 是修饰符」的判断仍然只有一处产地（`_classify`），
+    但不再需要真的跑命令才能验证它。
+    """
+    if not argv:
+        return "measure"
+    first = argv[0]
+    if first in ("--help", "-h", "help"):
+        return "help"
+    if first in _command_table():
+        return "command"
     # ⚠️ `--allow-drop` / `--accept-changes[=keys]` 是 **measure() 的修饰符**，
     # 不是命令 —— 它们是「以无子命令起的 measure，但放行某类写盘」。
-    # 上面那条「未知命令不许回落 measure」的守卫曾把它们误判成未知命令，
-    # 于是**唯一能推进台账的出口失效**（实测：`--accept-changes` 打 usage
-    # 并退 2，而打出来的 usage 里还写着它）。
-    if argv[0].startswith(("--allow-drop", "--accept-changes")):
-        return measure(argv)
+    # 曾把它们误判成未知命令，于是**唯一能推进台账的出口失效**
+    # （实测：`--accept-changes` 打 usage 并退 2，而打出来的 usage 里还写着它）。
+    if first.startswith(("--allow-drop", "--accept-changes")):
+        return "measure"
     # ⚠️ **未知命令不许回落 `measure()`**：那会「量一遍并写台账」——
     # `--help` / `--bogus` 变成一次真实写盘（实测：`facts.py --help`
     # 在未完仓里 rc=0 且改写了 FACTS.json）。没人会去想「查帮助会写文件」。
-    print(_usage(), file=sys.stderr)
-    print(machine().emit("fatal", M("facts.unknown_command",
-                                   command=argv[0])), file=sys.stderr)
-    return 2
+    return "unknown"
+
 
 
 # 命令名 → handler。**表在函数外**：分派逻辑本身只有一行，加命令 = 加一个函数
@@ -879,10 +900,24 @@ def _init_questions_dir(root):
 def _init_env_file(root, state):
     """**按实际生成的文档**写一份 `Einfacht.env`：默认旋钮假设你已经
     有六份文档（STATE/AGENTS/PRINCIPLES/README×3），而新仓只有刚生成的那几份。
-    不写这一份 ⇒ 每个闸门都报「找不到 README.zh.md」。"""
+    不写这一份 ⇒ 每个闸门都报「找不到 README.zh.md」。
+
+    ⚠️ **已有 `reflect-hooks/Einfacht.env` 时不再造第二份。**
+    插件（`einfacht-env.sh`）先找钩子目录、再找仓根 —— 两份同时存在时
+    **钩子读 A、README 让你 source B**，`check_facts` 扫的文档集合就分叉了。
+    实测：一个仓里 `reflect-hooks/` 有 `REFLECT_MEASURE_MODULE=…` 与
+    `REFLECT_DOCS=STATE.md,README.md,maintaince.md`，而 `--init` 在仓根又写了
+    `REFLECT_DOCS=STATE.md,PRINCIPLES.md,AGENTS.md` —— 两套判据同时在跑，
+    而 `--init` 一个字都没提。
+    """
     import doc  # noqa: PLC0415
     env_path = os.path.join(root, "Einfacht.env")
     if os.path.exists(env_path):
+        return
+    hooks_env = os.path.join(root, "reflect-hooks", "Einfacht.env")
+    if os.path.exists(hooks_env):
+        # 已经有载体了（钩子优先读那一份）——再造一份只会分叉。
+        print(str(M("facts.init_env_exists_in_hooks")))
         return
     docs = ",".join(n for n in (state, doc.PRINCIPLES, "AGENTS.md")
                     if os.path.exists(os.path.join(root, n)))
@@ -1145,23 +1180,17 @@ def _help_rc():
 
 
 def _is_unknown_cmd(first):
-    """走**真分派**，看这个首参会不会落到「未知命令」那一支。
+    """这个首参会不会落到「未知命令」那一支。**走纯函数 `_classify`**。
 
-    刻意不复制一遍「表里有 / 是修饰符」的判断：那样写出来的断言只证明
-    那份复制品自己是自洽的，**不证明 `main` 真的按它分派**（实测：
-    拆掉 `main` 里的守卫，复制版断言照样 PASS —— 一条没有牙的用例）。
+    ⚠️ 此前这里调 `main([first])` —— 对 `--accept-changes=k1` 那会**真的跑
+    measure 并写盘**，于是 `facts.py --selftest` 污染调用方的 `FACTS.json`
+    （实测：md5 变了，随后 `--check` 变红，而 README 写着
+    "selftests … never touch the real repo"）。自证必须**零副作用**。
 
-    判据看的是**输出里有没有 `unknown_command` 这一条**，不是 rc：
-    measure 本身可能因为写盘守卫返回 2（那是另一件事），按 rc 判会把
-    「被误判成未知命令」与「写盘被拒」混为一谈。
+    仍然不是「复制一遍判断」：`_classify` 就是 `main` 分派用的那个函数 ——
+    断言测的是**同一份逻辑**，只是不执行它的后果。
     """
-    import contextlib  # noqa: PLC0415
-    import io  # noqa: PLC0415
-    cap = io.StringIO()
-    with contextlib.redirect_stdout(io.StringIO()), \
-            contextlib.redirect_stderr(cap):
-        main([first])
-    return "unknown_command" in cap.getvalue()
+    return _classify([first]) == "unknown"
 
 
 def _corrupt_ledger_rc():

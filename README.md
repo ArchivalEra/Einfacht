@@ -563,7 +563,9 @@ deliberately brutal: **every push must update all three together.**
 ## Usage
 
 ```bash
-cp -r zreflect reflect-hooks /path/to/your-repo/
+# Copy the suite in. `ruff.toml` is part of it too — without it `check_lint`
+# says out loud that it is off, and you lose the static-check gate.
+cp -r zreflect reflect-hooks ruff.toml /path/to/your-repo/
 # 0. In a fresh repo, bootstrap first — otherwise the doc it expects does not exist.
 #    --init creates state/PRINCIPLES/AGENTS/README/retractions/questions plus an
 #    Einfacht.env trimmed to the docs it actually made. It never overwrites.
@@ -610,11 +612,43 @@ python3 reflect-hooks/install.py --chain      # or: chain into .git/hooks (keeps
 #     two files are not.
 # 3. Manual re-verification (the same commands the hooks run)
 python3 zreflect/harness.py                     # every gate must first prove it can turn red
-for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # discovered registry — no hand-written lists, not even here
+python3 zreflect/registry.py --run commit       # the ONLY execution face — never glob check_*.py
 ```
+
+### Writing your `measure()`
 
 `measure_example()` in `facts.py` is a **placeholder** (it counts this repo's own files) — replace
 it. The system ships the mechanism; only you know how to measure *your* inputs.
+
+**Where it lives.** Put your module **inside `zreflect/`** and point the knob at its bare name:
+
+```bash
+# Einfacht.env
+export REFLECT_MEASURE_MODULE=measure_myproject
+```
+
+```python
+# zreflect/measure_myproject.py
+from ledger import fact
+
+def measure():
+    return {
+        "tests_total": fact(
+            run_and_count_tests(),          # the value
+            "python -m pytest --collect-only -q | tail -1",  # replay command
+            "repo",                          # provenance
+        ),
+    }
+```
+
+A module that cannot be imported is **fatal** (`rc=2`, nothing written) — it does *not* fall back
+to the placeholder. That is deliberate: a silent fallback would let you believe the numbers
+describe your project when they describe the toolkit.
+
+**The contract is `fact(value, cmd, source)`, nothing looser.** A bare value (`{"k": 12}`) is
+rejected *before* the ledger is written, with the correct shape in the message. `cmd` must print
+**only the value** (the replay gate compares `stdout.strip()` against it verbatim), and must
+really run — otherwise that "fact" is prose with a number in it.
 
 Consumers (CI jobs, tests in other languages) read the ledger through `--get KEY` —
 **never parse `FACTS.json` yourselves**: a hand-rolled parser's classic failure is
@@ -713,7 +747,7 @@ to plain env vars + default names (the mechanism is removable by design).
 | `REFLECT_NO_PRINCIPLES` | empty | set to `1` ⇒ this repo does **not** register the principles in `PRINCIPLES.md` into the ledger, so their verdict commands are not replayed every commit. This is the explicit opt-out — do not rely on deleting the file |
 | `REFLECT_LANG` | empty | output language pack name. Ships with `zh` (Chinese), `en` (English), `de` (German); any other name works if you drop a pack in `zreflect/lang/`. **Empty = the null pack: the core emits no natural language**, only `code(param=value)` (issue #26). Comment strings (`OFF:`, `FATAL:`, `=== N PASS / M FAIL ===`) are never translated — they are literals at the emission point |
 | `REFLECT_I18N` | empty | directory holding language packs. **Empty ⇒ the pack dir that ships with the toolkit** (`zreflect/lang` beside the tool), so a run in another repo still finds them. Set it ⇒ absolute path, or a path relative to the **repo under check**. Both shapes are accepted and merged: `<lang>.json` (one file) or `<lang>/*.json` (one file per gate namespace — merged, later wins) |
-| `REFLECT_SNAPSHOT_ROOT` | empty | source dir scanned by the module-snapshot gate. It flags `from <localmodule> import SOME_GLOBAL` when that global is reassigned elsewhere — a copy by value goes stale at import time. Empty ⇒ that gate says out loud it is off |
+| `REFLECT_SNAPSHOT_ROOT` | empty | source dir scanned by the module-snapshot gate. It flags `from <localmodule> import SOME_GLOBAL` when that global is reassigned elsewhere — a copy by value goes stale at import time. **Empty ⇒ it scans the toolkit's own `zreflect/`** (the suite is the biggest victim of this bug: `gate.GATE_REPO` is reassigned by several selftests). Set it to scan **your** code |
 | `REFLECT_I18N_ROOT` | empty | source dir scanned by the coverage gate (core-has-no-language check). **Empty ⇒ it scans the toolkit's own `zreflect/` + `reflect-hooks/`** — the gate is never off, because the rule it enforces is about the core itself. Set it to scan **your** code: it is walked **recursively** (a `src/` layout works) |
 | `REFLECT_ENV_HINT` | empty (on) | `off` ⇒ silences the **running-without-env hint**. Every gate whose knobs come from `Einfacht.env` prints, on a bare manual run with none of them set, *try running it with `Einfacht.env`* — with the exact `set -a; . …; set +a` line. A hint, not a judgement: it never changes rc, never touches stdout, and stays quiet in repos that have no carrier (bare runs are normal there) |
 | `REFLECT_RETRACTIONS` | `retractions.json` | refuted-claims ledger (the retraction gate scans the `REFLECT_DOCS` docs for their reappearance) |
@@ -741,7 +775,10 @@ Python and silently change behaviour — verified per site).
 and design intent is a worse repo with a better number.
 
 `GATE_REPO` (`zreflect/gate.py`) points at **the repo being checked** — selftests run against
-fixture trees through it and never touch the real repo.
+fixture trees through it and **never write into the real repo**. That is asserted, not assumed:
+an earlier version did pollute the caller's `FACTS.json` via `facts.py --selftest`, because a
+self-test called `main()` for real. Dispatch decisions now live in a pure function
+(`facts._classify`), so the test checks the decision without executing it.
 
 **Cross-repo selftest** (re-runnable): the last section of `zreflect/harness.py` builds a
 **throwaway fixture repo**, renames **all of these** (`LEDGER.json` / `NOTES.md` / `RETRACT.json` / `cases/` /

@@ -19,6 +19,7 @@
  "facts.empty_ledger": "Register ist leer — leer ist kein Bestehen (Nullwert-Wächter): prüfe, ob measure_example() kaputt ist",
  "facts.get_needs_key": "--get braucht einen Schlüsselnamen: --get KEY",
  "facts.init_created": "erstellt: %(name)s",
+ "facts.init_env_exists_in_hooks": "`reflect-hooks/Einfacht.env` existiert bereits ⇒ keine zweite im Repo-Root (das Plugin liest zuerst das Hooks-Verzeichnis; zwei Kopien ließen die Hooks A lesen, während du B sourcst)",
  "facts.init_kept": "existiert bereits, unverändert: %(name)s",
  "facts.init_next": "weiter: python3 zreflect/facts.py (messen) → --render-doc <dein Zustandsdokument>",
  "facts.ledger_missing": "Faktenregister (%(name)s) fehlt. Führe zuerst python3 zreflect/facts.py aus, um zu messen.",
