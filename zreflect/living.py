@@ -42,9 +42,8 @@ def section_is_living(heading, historical_secs=()):
     m = re.match(r"^##\s+([0-9]+)", heading)
     if m:
         return m.group(1) not in {str(s) for s in historical_secs}
-    if heading.startswith("## 附"):
-        return False          # 文末机器维护的区块（由渲染器负责），闸门不扫
-    return True
+    # 文末机器维护的区块（由渲染器负责），闸门不扫
+    return not heading.startswith("## 附")
 
 
 def living_lines(text, historical_secs=()):

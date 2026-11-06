@@ -428,8 +428,7 @@ def main(argv):
     ok, lines = run_zero_language(repo)
     for ln in lines:
         print(ln)
-    rc = rc or (0 if ok else 1)
-    return rc
+    return rc or (0 if ok else 1)
 
 
 # ── 自证 ──────────────────────────────────────────────────────────────────────

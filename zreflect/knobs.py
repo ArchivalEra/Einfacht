@@ -438,15 +438,14 @@ def installed_langs():
     try:
         for n in sorted(os.listdir(base)):
             p = os.path.join(base, n)
-            if os.path.isdir(p):
-                if any(x.endswith(".json") for x in os.listdir(p)):
-                    out.add(n)
-            elif n.endswith(".json"):
-                # ⚠️ 单文件形状（`<lang>.json`）与「pack 根随便一个 json」同形 ——
-                # 只按文件名收会把 `config.json` 当成 `config` 语言，凭空报缺键
-                # （实测）。语言包的判据是**内容**：code 形键（`x.y`）或占位符值。
-                if _looks_like_pack(p):
-                    out.add(n[:-len(".json")])
+            if os.path.isdir(p) and any(x.endswith(".json")
+                                        for x in os.listdir(p)):
+                out.add(n)
+            # ⚠️ 单文件形状（`<lang>.json`）与「pack 根随便一个 json」同形 ——
+            # 只按文件名收会把 `config.json` 当成 `config` 语言，凭空报缺键
+            # （实测）。语言包的判据是**内容**：code 形键（`x.y`）或占位符值。
+            elif n.endswith(".json") and _looks_like_pack(p):
+                out.add(n[:-len(".json")])
     except OSError as e:
         # ⚠️ **不许编 0**（AGENTS 纪律 7：读不到就明说，绝不编造）。此前这里
         # `return []`，于是「权限坏掉 / 目录读不了」与「一个包都没装」塌缩成

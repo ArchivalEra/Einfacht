@@ -190,12 +190,12 @@ def _pinned_constants(tree, src):
     """
     out = set()
     for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if _declares_pinned(ast.get_docstring(node, clean=False)):
-                out |= _branch_constants(node)
-        elif isinstance(node, ast.Assign):
-            if _pinned_by_comment(src, node):
-                out |= _branch_constants(node)
+        fn_pinned = (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                     and _declares_pinned(ast.get_docstring(node, clean=False)))
+        assign_pinned = (isinstance(node, ast.Assign)
+                         and _pinned_by_comment(src, node))
+        if fn_pinned or assign_pinned:
+            out |= _branch_constants(node)
     return out
 
 
