@@ -67,6 +67,27 @@
       "why": "只排除了 `AUTO:FACTS`，而 `AUTO:GATES`(25 行) + `AUTO:RULES`(22 行) 也是渲染产出的 ⇒ 渲染一次行数 +47（实测 38→59），replay 永久红，且修法看起来是「再量一遍」（再量只把新值写进台账，下次渲染又变）。",
       "evidence": "python3 zreflect/facts.py --get md_lines 与复跑命令对比",
       "fixed_in": "161c940（无语言包可用性验收）"
+    },
+    {
+      "id": "R-010",
+      "text": "本地全绿 ⇒ CI 会绿",
+      "why": "不是。跨平台问题本地（Linux）**零信息量**：Windows 的默认编码是 cp1252、shell 是 cmd.exe、路径分隔符是 `\\`、`chmod` 只切只读位、并且装了 Git Bash。本轮为此连红 **9 轮**，每一轮只暴露最外层一条（前面的先红），共修掉 8 个真缺陷：① `/dev/null` 被 PowerShell 当路径 ② cp1252 stdout 编不出中文 ③ subprocess 读线程崩（解码失败，stdout=None）④ `/` 判别失效导致 `.git/hooks` 被扫 ⑤ relpath 反斜杠 ≠ 白名单 ⑥ py_sources 的 rel 反斜杠让文件级豁免失效 ⑦ Git Bash 把 `C:\\...` 的反斜杠吃掉 ⇒ 127 ⑧ chmod 夹具在 Windows 造不出不可读目录",
+      "evidence": "github Actions run 42165351810（两平台全绿）",
+      "fixed_in": "CI 落地（60014a6..80014a6 系列）"
+    },
+    {
+      "id": "R-011",
+      "text": "`selftest` 会执行委托给 helper 的断言",
+      "why": "不会。`_case_verdict` 的 delegated 分支直接 `return True`（**从不执行 fn()**），而 `selftest` 循环里 `if was_delegated: continue` 又把结果丢掉。合起来：**60+ 条委托断言从来没被验证过「返回 False 会不会红」**。修好后立刻暴露一条真失败（`facts.fresh_repo_bootstraps_green` 一直是假绿）。",
+      "evidence": "python3 zreflect/criteria.py --selftest（掏空一条修复 ⇒ 18 PASS / 1 FAIL）",
+      "fixed_in": "CI 落地（60014a6..80014a6 系列）"
+    },
+    {
+      "id": "R-012",
+      "text": "`md_lines` 的旧 awk 实现数得对",
+      "why": "不对。`/<!-- AUTO:[A-Z]+ -->/` 把**正文里提到标记**也当成块开始 —— `AGENTS.md` 有一行写着「`STATE.md` 里预先放好 `<!-- AUTO:FACTS -->` 标记」，从那行起剩余 23 行全被排除。台账长期少算 23（2663 vs 2686），无人发现。",
+      "evidence": "python3 zreflect/facts.py --count -md",
+      "fixed_in": "CI 落地（60014a6..80014a6 系列）"
     }
   ]
 }
