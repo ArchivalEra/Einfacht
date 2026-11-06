@@ -116,6 +116,13 @@
       "why": "不是有意为之，是从没判过。接进真实项目时，使用方的 `examples/` / `scripts/` 被当成套件本体来审：实测一个真项目 `registry --run commit` 报 149 条 ruff + 59 条中文 + 3 条快照违规，**全部指向那个项目自己的文件**。套件的纪律只对套件成立，把它强加给使用方等于让人修别人的偏好。",
       "evidence": "python3 zreflect/criteria.py --selftest（★ registry.scope_two_ways：两种口径各一次）；另见 facts._real_repo_shaped 的 `examples/bad.py` —— 每一轮 bootstrap 都验一次",
       "fixed_in": "gate.declares_itself / gate.scanned_sources（作用域收窄 + opt-in 保留）"
+    },
+    {
+      "id": "R-017",
+      "text": "`next.py` 能把结案的悬案从「下一步」里去掉",
+      "why": "不能。`_question_status` 用 `ln.split(\":\", 1)[1]` 取 `**Status:** resolved` 的值，而冒号在**那对星号中间** —— 切出来是 `\"** resolved\"`，永远不等于 `resolved`。于是结案的悬案被永久报成待办，每轮提示去查一件已经查完的事。同一个坑 `check_questions.field` 早就填过（它的 docstring 专门写了这件事），`next.py` 是第二份自己写了一遍的判据。",
+      "evidence": "python3 zreflect/next.py --selftest（★ next.resolved_question_is_dropped：一个结案 + 一个没结案的夹具，只有后者该出现）",
+      "fixed_in": "next._question_status 转调 check_questions.field（唯一产地）"
     }
   ]
 }

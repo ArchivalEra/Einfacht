@@ -188,11 +188,23 @@ def collect(repo):
 
 
 def _question_status(text):
-    """悬案正文里的 `**Status:**` 值（小写）；没有 ⇒ 空串。"""
-    for ln in text.splitlines():
-        if ln.strip().lower().startswith("**status:**"):
-            return ln.split(":", 1)[1].strip().lower()
-    return ""
+    """悬案正文里的 `**Status:**` 值（小写）；没有 ⇒ 空串。
+
+    ⚠️ **必须转调 `check_questions.field`**：此前这里自己写了一遍
+    `ln.split(":", 1)[1]`，而真实写法是 `**Status:** resolved`（冒号在
+    **那对星号中间**）—— 于是切出来的是 `"** resolved"`，永远不等于
+    `"resolved"`。后果：**结案的悬案一直被当成待办**报进「接着上一轮」，
+    每轮都提示去查一件已经查完的事。实测（本仓 `questions/01-example.md`
+    结案后 `next.py` 仍列它）。
+
+    两份判据必有一份错 —— 而 `check_questions` 那份有 196 行自证守着。
+    """
+    import check_questions  # noqa: PLC0415
+    raw = (check_questions.field(text, "Status") or "").strip().lower()
+    # `field()` 有**续行**语义（给 `Settling:` 那种多行正文用的），而
+    # `Status` 是一个词：`**Status:** resolved` 后面若跟着一段没有下一个
+    # 字段的散文，`field` 会把散文并进来。所以只取第一个词。
+    return raw.split()[0] if raw else ""
 
 
 def _open_question_names(repo):
@@ -293,10 +305,41 @@ def _cases():
         # 被挤掉，整段 ≤ SECTION_MAX。此前调用方的 `[:8]` 把待办截掉了
         # （实测：27 个未推送提交时，压缩后最需要的那段整段消失）。
         ("★ next.section_budget_holds", lambda: _section_budget_holds()),
+        # `**Status:**` 的星号写法 —— 结案的悬案不许再出现在「下一步」里。
+        # 此前 `_question_status` 用 `split(":", 1)` 切出 `"** resolved"`，
+        # 于是**每一条结案的悬案都被永远报成待办**（实测本仓 01-example.md）。
+        ("★ next.resolved_question_is_dropped",
+         lambda: _resolved_question_dropped()),
         # ③ 空输入必须报：一个不存在的仓根
         ("★ next.nonexistent_root_is_loud",
          lambda: _nonexistent_root_loud()),
     ]
+
+
+def _resolved_question_dropped():
+    """**结案的悬案不得出现在「下一步」里**（`**Status:**` 的星号写法）。
+
+    夹具刻意一个结案、一个没结案：`**Status:** resolved` 必须不列，
+    `**Status:** ready-for-agent` 必须列。任何一侧错都会红 —— 这就是那个
+    「切出 `"** resolved"`」的 bug 的判据。
+
+    ⚠️ **不许用真仓**：真仓的悬案会被结掉，那时这条用例就验不到任何东西
+    （绿得毫无意义）。所以造临时目录。
+    """
+    import tempfile  # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        q = os.path.join(d, "questions")
+        os.makedirs(q)
+        with open(os.path.join(q, "01-done.md"), "w", encoding="utf-8") as fh:
+            fh.write("# done\n\n**Status:** resolved\n")
+        with open(os.path.join(q, "02-open.md"), "w", encoding="utf-8") as fh:
+            fh.write("# open\n\n**Status:** ready-for-agent\n")
+        names = _open_question_names(d)
+        return names == ["02-open.md"]
+    finally:
+        import shutil  # noqa: PLC0415
+        shutil.rmtree(d, True)
 
 
 def _real_git_case():
