@@ -677,6 +677,50 @@ def default_runner(f, repo_root=None):
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
+def _empty_result():
+    """聚合结果的初始形状。`fail_out` 收**每个失败闸门的原始输出**。
+
+    ⚠️ 聚合方只打文件名时，用户得自己重跑一遍才知道为什么红（实测：hook
+    只报 `FAILED check_facts.py`，而直接跑它才有
+    `facts.bare_number_unaccounted(line=9, …)`）。
+    """
+    return {"ran": 0, "off": 0, "failed": 0, "fatal": 0, "error": 0,
+            "off_list": [], "fail_list": [], "fatal_list": [], "error_list": [],
+            "fail_out": {}}
+
+
+def _record(res, f, rc, out):
+    """按 rc 与 `OFF:` 标记把一道闸门归入五档之一。
+
+    五档是**互不重叠的修法分类**：
+
+      rc=2   配置 / 环境坏        → 改配置
+      rc<0   被信号杀掉
+      rc>2   用了未约定的码        → 执行器层面坏了
+      rc=1   判据红                → 修问题
+      rc=0 + `OFF:` 标记           → 未启用（不是通过）
+      rc=0 干净                    → 跑过且通过
+
+    ⚠️ rc<0 / rc>2 单列成 `error`：此前一律塞进 `failed`，于是「闸门报了个
+    问题」与「闸门被 SIGKILL」不可区分（review 实测 rc=3 / rc=-9 都落进 failed）。
+    """
+    if rc == 2:
+        res["fatal"] += 1
+        res["fatal_list"].append(f)
+    elif rc < 0 or rc > 2:
+        res["error"] += 1
+        res["error_list"].append(f)
+    elif rc != 0:
+        res["failed"] += 1
+        res["fail_list"].append(f)
+        res["fail_out"][f] = out or ""
+    elif any(kind == "off" for _i, kind, _ln in machine().scan(out)):
+        res["off"] += 1
+        res["off_list"].append(f)
+    else:
+        res["ran"] += 1
+
+
 def run_phase(phase, gates, runner=None, repo_root=None):
     """按相位跑一组闸门并**聚合 ran / off / failed**（C1+C2 的执行面）。
 
@@ -691,43 +735,16 @@ def run_phase(phase, gates, runner=None, repo_root=None):
 
     返回 `{ran, off, failed, fatal, off_list, fail_list, fatal_list}`。
 
-    ⚠️ **rc=2 与 rc=1 必须分开**：本平台的 rc 契约明写「配置性失败 ≠ 检查失败，
-    混进 1 会让『发现问题』与『配置坏了』不可区分」。此前这里把所有 rc≠0 塞进
-    同一个 `failed`，聚合结果看不出「有三道闸门报了真实问题」还是「有一道闸门
-    配置坏了」—— 修复动作完全不同（改配置 vs 修问题）。
+    分类逻辑在 `_record`（五档互不重叠，见其文档）：本函数只做过滤与遍历。
     """
     run = runner or (lambda f: default_runner(f, repo_root))
-    res = {"ran": 0, "off": 0, "failed": 0, "fatal": 0, "error": 0,
-           "off_list": [], "fail_list": [], "fatal_list": [], "error_list": [],
-           # ⚠️ **每个失败闸门的原始输出**：聚合方只打文件名时，用户得自己
-           # 重跑一遍才知道为什么红（实测：hook 只报 `FAILED check_facts.py`，
-           # 而直接跑它才有 `facts.bare_number_unaccounted(line=9, …)`）。
-           "fail_out": {}}
+    res = _empty_result()
     for item in gates:
         f = item["file"] if isinstance(item, dict) else item
         if isinstance(item, dict) and item.get("runs_at") not in (None, phase):
             continue
         rc, out = run(f)
-        if rc == 2:
-            # 配置 / 环境坏：不是「检查发现的问题」，单列（见 docstring）
-            res["fatal"] += 1
-            res["fatal_list"].append(f)
-        elif rc < 0 or rc > 2:
-            # ⚠️ rc<0（被信号杀掉）/ rc>2（脚本用了未约定的码）既不是「判据红」
-            # 也不是「配置坏」——它们是**执行器层面坏了**。此前一律塞进 failed，
-            # 于是「闸门报了个问题」与「闸门被 SIGKILL」不可区分（review 实测
-            # rc=3 / rc=-9 都落进 failed）。单列成 error 档。
-            res["error"] += 1
-            res["error_list"].append(f)
-        elif rc != 0:
-            res["failed"] += 1
-            res["fail_list"].append(f)
-            res["fail_out"][f] = out or ""
-        elif any(kind == "off" for _i, kind, _ln in machine().scan(out)):
-            res["off"] += 1
-            res["off_list"].append(f)
-        else:
-            res["ran"] += 1
+        _record(res, f, rc, out)
     return res
 
 
