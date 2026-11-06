@@ -53,6 +53,16 @@ def ruff_argv():
     return [sys.executable, "-m", "ruff", "check", "--output-format=concise", "."]
 
 
+def _has_located_finding(out):
+    """ruff 的输出里有没有**定位行**（`path:line:col: CODE message`）。
+
+    判据：至少一行同时含 `.py:` 与行号风格的冒号 —— 那才是「发现了问题」。
+    没有定位行的非零退出是工具/配置事故。
+    """
+    return any(".py:" in ln or '.py"' in ln
+               for ln in (out or "").splitlines())
+
+
 def problems(out, rc):
     """纯函数：ruff 的输出 + rc → 问题清单（空 = 干净）。自证用。
 
@@ -90,7 +100,16 @@ def run(argv=None):
                            capture_output=True, text=True, timeout=300)
     except (OSError, subprocess.SubprocessError) as e:
         return fatal(M("lint.tool_broken", error=e))
-    probs = problems((p.stdout or "") + (p.stderr or ""), p.returncode)
+    out = (p.stdout or "") + (p.stderr or "")
+    if p.returncode != 0 and not _has_located_finding(out):
+        # ⚠️ **没有定位行的非零退出 ≠ 判据红**：那是 ruff 自己起不来
+        # （`ruff.toml` 语法坏 / 参数不认 / 版本不对）—— 配置事故，FATAL rc=2。
+        # 此前一律走 `problems()` 变成 `lint.no_output` + rc=1，调用方会去
+        # 修代码，而问题是判据文件本身。
+        detail = [ln for ln in out.splitlines() if ln.strip()]
+        return fatal(M("lint.config_broken", path=CONFIG,
+                       detail=(detail[-1][:200] if detail else "")))
+    probs = problems(out, p.returncode)
     return finish(M("lint.title"), probs, M("lint.ok", config=CONFIG))
 
 
@@ -122,6 +141,14 @@ def _cases():
         # 良性输出不被误报：rc=0 就是干净，哪怕有警告行（如 deprecated 提示）
         ("lint.warning_with_rc0_is_clean",
          lambda: problems("warning: config deprecated", 0) == []),
+        # **配置事故与判据红必须可区分**（rc=2 vs rc=1）：
+        # 有定位行 ⇒ 发现了问题；没有 ⇒ ruff 自己起不来（`ruff.toml` 语法坏）。
+        ("\u2605 lint.located_finding_detected",
+         lambda: _has_located_finding(
+             "zreflect/x.py:3:1: F841 Local variable `y` is unused")),
+        ("\u2605 lint.config_error_is_not_a_finding",
+         lambda: not _has_located_finding(
+             "key with no value, expected `=`")),
     ]
 
 

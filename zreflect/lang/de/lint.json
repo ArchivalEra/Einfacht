@@ -1,5 +1,6 @@
 {
  "gate.title.lint": "statische Maschinenprüfung",
+ "lint.config_broken": "statische Maschinenprüfung läuft nicht (Kriteriendatei `%(path)s`): %(detail)s — das ist ein Konfigurationsunfall, nicht „der Code hat Probleme“",
  "lint.config_missing": "Kriteriendatei fehlt: `%(path)s` — nie auf ruff-Standard zurückfallen (das ist ein anderes Kriterienset)",
  "lint.finding": "%(text)s",
  "lint.no_output": "ruff endete mit %(return_code)s ohne eine einzige Fundstelle — „Werkzeug kaputt“ muss von „keine Probleme“ unterscheidbar sein (%(detail)s)",
