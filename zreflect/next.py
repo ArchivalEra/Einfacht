@@ -120,6 +120,50 @@ def working_tree(repo):
     return changed, untracked
 
 
+def _commit_lines(repo, last):
+    """未推送提交那一段：计数 + 前 N 条 + 「还有 N 条」。"""
+    commits = unpublished_commits(repo)
+    if commits is None:
+        last.append(M("next.commits_unreadable"))
+        return
+    if not commits:
+        last.append(M("next.commits_none"))
+        return
+    last.append(M("next.commits_count", count=len(commits)))
+    last.extend("  `%s`" % c for c in commits[:MAX_LISTED])
+    if len(commits) > MAX_LISTED:
+        last.append("  " + M("next.commits_more",
+                             count=len(commits) - MAX_LISTED))
+
+
+def _tree_lines(repo, last, pending):
+    """工作区那一段：多少改动 / 有没有脏。"""
+    wt = working_tree(repo)
+    if wt is None:
+        last.append(M("next.tree_unreadable"))
+        return
+    changed, untracked = wt
+    last.append(M("next.tree_state", changed=changed, untracked=untracked))
+    if changed or untracked:
+        pending.append(M("next.tree_dirty"))
+
+
+def _question_lines(repo, pending):
+    """**未结案的悬案 = 下一步**。
+
+    此前这里刻意留空（理由是「`inject-state.py` 已有悬案段，两处都列会重复」）
+    —— 但那个段只报「有几条未结案」，不报「它们是什么」，而压缩后 agent
+    最需要的正是**名字**。现在这里给名字，那段给状态，各司其职。
+
+    预算：提交段与工作区段可能已占掉一部分 `MAX_LISTED`，剩下的给悬案。
+    """
+    room = MAX_LISTED - len(pending)
+    if room <= 0:
+        return
+    pending.extend(M("next.open_question", name=q)
+                   for q in _open_question_names(repo)[:room])
+
+
 def collect(repo):
     """采集「接着上一轮」的输入。返回 `(last_turn, pending)` 两个**Message 列表**。
 
@@ -131,41 +175,23 @@ def collect(repo):
     此前这里写的是裸中文 + 一句 PINNED，理由是「它进 STATE.md 被 --check
     逐字节对账」——**那句是假的**（那个块从未进过文档，也从不参与对账）。
     拿一个不成立的理由去豁免，正是本仓在 `machine_vocab_ok` 上抓过的同一个错。
+
+    三段各是一个具名 helper（提交 / 工作区 / 悬案）：它们读三个不同的来源，
+    拼在一起时「预算怎么分」变成隐式知识。
     """
-    last = []
-    pending = []
-
-    commits = unpublished_commits(repo)
-    if commits is None:
-        last.append(M("next.commits_unreadable"))
-    elif not commits:
-        last.append(M("next.commits_none"))
-    else:
-        last.append(M("next.commits_count", count=len(commits)))
-        for c in commits[:MAX_LISTED]:
-            last.append("  `%s`" % c)
-        if len(commits) > MAX_LISTED:
-            last.append("  " + M("next.commits_more",
-                                 count=len(commits) - MAX_LISTED))
-
-    wt = working_tree(repo)
-    if wt is None:
-        last.append(M("next.tree_unreadable"))
-    else:
-        changed, untracked = wt
-        last.append(M("next.tree_state", changed=changed, untracked=untracked))
-        if changed or untracked:
-            pending.append(M("next.tree_dirty"))
-
-    # **未结案的悬案 = 下一步**。此前这里刻意留空（理由是「`inject-state.py`
-    # 已有悬案段，两处都列会重复」）—— 但那个段只报「有几条未结案」，
-    # 不报「它们是什么」，而压缩后 agent 最需要的正是**名字**。
-    # 现在这里给名字，那段给状态，各司其职。
-    room = MAX_LISTED - len(pending)
-    for q in _open_question_names(repo)[:max(room, 0)]:
-        pending.append(M("next.open_question", name=q))
-
+    last, pending = [], []
+    _commit_lines(repo, last)
+    _tree_lines(repo, last, pending)
+    _question_lines(repo, pending)
     return last, pending
+
+
+def _question_status(text):
+    """悬案正文里的 `**Status:**` 值（小写）；没有 ⇒ 空串。"""
+    for ln in text.splitlines():
+        if ln.strip().lower().startswith("**status:**"):
+            return ln.split(":", 1)[1].strip().lower()
+    return ""
 
 
 def _open_question_names(repo):
@@ -178,23 +204,19 @@ def _open_question_names(repo):
                      or "questions")
     if not os.path.isdir(d):
         return []
-    out = []
-    for n in sorted(os.listdir(d)):
-        if not n.endswith(".md"):
-            continue
-        try:
-            text = open(os.path.join(d, n), encoding="utf-8",
-                        errors="replace").read()
-        except OSError:
-            continue
-        status = ""
-        for ln in text.splitlines():
-            if ln.strip().lower().startswith("**status:**"):
-                status = ln.split(":", 1)[1].strip().lower()
-                break
-        if status != "resolved":
-            out.append(n)
-    return out[:MAX_LISTED]
+    names = [n for n in sorted(os.listdir(d)) if n.endswith(".md")]
+    return [n for n in names if _question_status(_read_question(d, n))
+            != "resolved"][:MAX_LISTED]
+
+
+def _read_question(d, name):
+    """读一条悬案；读不到 ⇒ 空串（当成「未结案」—— 读不到不该被算成已结案）。"""
+    try:
+        with open(os.path.join(d, name), encoding="utf-8",
+                  errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
 
 
 def section(repo):

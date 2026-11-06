@@ -534,6 +534,22 @@ def _is_delegated(why):
     return getattr(why, "code", None) == "gate.never_falsifiable_delegated"
 
 
+def _run_safely(label, fn):
+    """执行断言体。返回 `(通过?, 失败行或 None)`。**异常不许冒出去**。
+
+    `SystemExit` 单独catch：自证用例里 `raises(...)` 这类断言会主动抛，
+    那是被测行为，不是自证失败；但它若真的漏到这一层，说明用例写错了。
+    """
+    import i18n  # noqa: PLC0415
+    try:
+        return bool(fn()), None
+    except SystemExit as e:
+        return False, i18n.M("gate.case_unexpected_systemexit",
+                             label=label, error=e)
+    except Exception as e:                      # noqa: BLE001
+        return False, i18n.M("gate.case_raised", label=label, error=e)
+
+
 def _case_verdict(label, fn):
     """跑一条用例。返回 `(通过?, 委托?, 失败行或 None)`。
 
@@ -544,33 +560,26 @@ def _case_verdict(label, fn):
     内联）。允许它，但要打成 `note |`（机器可读）并在摘要里单列计数 ——
     不许静默当干净（此前返回 None，与「扫过且干净」不可区分，于是提取
     helper 就成了关掉恒真检测的合法手段）。
+
+    ⚠️ **委托仍然要跑**：此前委托分支直接 `return True`，于是委托给 helper
+    的断言**从不执行**，`False` 与 `True` 同形（实测：`_utf8_forced_case`
+    的修复被掏空后它返回 False，selftest 照样报「19 PASS / 0 FAIL」）。
+    「可接受但可见」说的是**恒真检测看不见它的内部**，不是「不用跑」。
+
+    三段（恒真判 / 委托分支 / 普通执行）各是一处：抽掉「执行 + 异常」之后
+    这里只剩分派。
     """
     import i18n  # noqa: PLC0415
     why = never_falsifiable(fn)
     if why and _is_delegated(why):
-        # `⚠️ **委托仍然要跑**。此前这里直接 `return True` —— 于是委托给 helper
-        # 的断言**从不执行**，`False` 与 `True` 同形（实测：`_utf8_forced_case`
-        # 的修复被掏空后它返回 False，selftest 照样报「19 PASS / 0 FAIL」）。
-        # 「可接受但可见」说的是**恒真检测看不见它的内部**，不是「不用跑」。
-        try:
-            return bool(fn()), True, None
-        except SystemExit as e:
-            return False, True, i18n.M("gate.case_unexpected_systemexit",
-                                       label=label, error=e)
-        except Exception as e:                      # noqa: BLE001
-            return False, True, i18n.M("gate.case_raised", label=label,
-                                       error=e)
+        passed, failure = _run_safely(label, fn)
+        return passed, True, failure
     if why:
         # `fail | ` 是自证机器行前缀 —— 发射点字面量，不进语言包
         return False, False, i18n.M("gate.case_unfalsifiable",
                                     label=label, why=why)
-    try:
-        return bool(fn()), False, None
-    except SystemExit as e:
-        return False, False, i18n.M("gate.case_unexpected_systemexit",
-                                    label=label, error=e)
-    except Exception as e:                      # noqa: BLE001
-        return False, False, i18n.M("gate.case_raised", label=label, error=e)
+    passed, failure = _run_safely(label, fn)
+    return passed, False, failure
 
 
 def _print_banner(name, total, bad, delegated):
@@ -593,6 +602,30 @@ def _print_banner(name, total, bad, delegated):
     print(machine().emit_summary(total - bad, bad))
 
 
+def _report_one(label, fn):
+    """跑一条并**当场报出**它的结局。返回 `(通过?, 是否委托, 失败行或 None)`。
+
+    四种结局各有一条输出路径，但「怎么报」与「报不报」必须分开：
+
+      · 委托 + 通过  → `note | … | delegated`
+      · 委托 + 失败  → **`fail | …`**（此前这里是 `continue`，把结果整个丢掉）
+      · 恒真 / 异常  → `fail | <原因>`
+      · 普通         → `PASS | …` 或 `fail | …`
+    """
+    passed, was_delegated, failure = _case_verdict(label, fn)
+    if was_delegated:
+        print(machine().emit("note", "%s | delegated" % label))
+        if not passed:
+            print(machine().emit("fail", label))
+        return passed, True, None
+    if failure is not None:
+        print(machine().emit("fail", failure))
+        return False, False, failure
+    # 通过行是 `PASS | `，失败行是 `fail | ` —— 两种 kind，一张表
+    print(machine().emit("pass" if passed else "fail", label))
+    return passed, False, None
+
+
 def selftest(name, cases):
     """跑三档用例。每个 case = (标签, callable) -> bool。
 
@@ -601,8 +634,8 @@ def selftest(name, cases):
       ② 该报的必须报（反向断言 —— 否则这个检查器可能是装饰）
       ③ 空输入必须报（零值守卫）
 
-    单条用例的判定（`_case_verdict`）与输出（`_print_banner`）各是一个行具名
-    helper：主循环只累计计数。
+    三层各是一个具名 helper（单条判定 `_case_verdict` / 单条输出
+    `_report_one` / 摘要 `_print_banner`）：本函数只累计计数。
     """
     import i18n  # noqa: PLC0415
     if not cases:
@@ -613,27 +646,9 @@ def selftest(name, cases):
                          i18n.M("gate.selftest_empty_cases", name=name)))
     bad = delegated = 0
     for label, fn in cases:
-        passed, was_delegated, failure = _case_verdict(label, fn)
-        if was_delegated:
-            delegated += 1
-            print(machine().emit("note", "%s | delegated" % label))
-            # ⚠️ **`delegated` 只影响「怎么报」，不影响「报不报」**。
-            # 此前这里是 `continue` —— 于是委托断言的结果被整个丢掉，
-            # `False` 与 `True` 在 selftest 面上同形（实测：把
-            # `_utf8_forced_case` 的修复掏空后它返回 False，selftest 照样
-            # 「19 PASS / 0 FAIL」）。
-            if not passed:
-                bad += 1
-                print(machine().emit("fail", label))
-            continue
-        if failure is not None:
-            print(machine().emit("fail", failure))
-            bad += 1
-            continue
-        # 通过行是 `PASS | `，失败行是 `fail | ` —— 两种 kind，一张表
-        print(machine().emit("pass" if passed else "fail", label))
-        if not passed:
-            bad += 1
+        ok, was_delegated, _failure = _report_one(label, fn)
+        delegated += 1 if was_delegated else 0
+        bad += 0 if ok else 1
     _print_banner(name, len(cases), bad, delegated)
     return 1 if bad else 0
 
@@ -644,19 +659,16 @@ def _force_utf8_streams():
     为什么：Windows 上 `sys.stdout.encoding` 默认是 `cp1252`（代码页），
     而这个仓会打印**闸门名与描述**（`GATE = meta("A/B 闸门", …)`）。实测：
 
-        Traceback (most recent call last):
-          File "registry.py", line 622, in _main_gates
         UnicodeEncodeError: 'charmap' codec can't encode characters
                             in position 25-26: character maps to <undefined>
 
-    ——一条 `registry.py --gates` 就能把 CI 的 Windows 腿整片打红，而 Linux
+    —— 一条 `registry.py --gates` 就能把 CI 的 Windows 腿整片打红，而 Linux
     上永远复现不了（UTF-8 是默认）。
 
     ⚠️ 只在**真的支持 reconfigure** 的流上做（`io.StringIO` / 被重定向的
     自定义流没有这个方法），失败就静默跳过 —— 这不是判据，是环境适配。
-
-    ⚠️ 副作用是**全局**的（改的是 `sys.stdout`），所以只在 CLI 入口调：
-    `activate_or_fatal` 恰好是所有入口的必经点（11 处）。
+    副作用是**全局**的（改的是 `sys.stdout`），所以只在 CLI 入口调：
+    `activate_or_fatal` 恰好是所有入口的必经点。
     """
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)

@@ -91,6 +91,24 @@ def count_lines(root, suffix):
 _AUTO_BLOCK = re.compile(r"^\s*<!--\s*(/?AUTO:[A-Z]+)\s*-->\s*$")
 
 
+def _count_file_lines(path):
+    """一个 `.md` 文件里**机器块之外**的行数。读不到 ⇒ 0（宁缺勿假）。"""
+    total = 0
+    in_block = False
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                m = _AUTO_BLOCK.match(line)
+                if m:
+                    in_block = not m.group(1).startswith("/")
+                    continue
+                if not in_block:
+                    total += 1
+    except OSError:
+        return 0                    # 读不到的文件不计数 —— 宁缺勿假
+    return total
+
+
 def count_md_lines(root):
     """`.md` 文件里**机器块之外**的行数（跨平台，纯 Python）。
 
@@ -110,27 +128,14 @@ def count_md_lines(root):
     `<!-- AUTO:FACTS -->` / `<!-- AUTO:GATES -->` 标记」（讲 `--init` 做什么），
     从那行起文件**剩余 22 行全被排除**，而台账里 `md_lines` 一直是少算的
     2663 —— 没有任何一行输出说它错了。这是本仓最恨的形状。
+
+    逐文件的块状态机抽成 `_count_file_lines`：它有自己的「读不到 ⇒ 0」出口。
     """
     total = 0
-    in_block = False
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d != ".git")
-        for name in sorted(filenames):
-            if not name.endswith(".md"):
-                continue
-            try:
-                with open(os.path.join(dirpath, name), encoding="utf-8",
-                          errors="replace") as fh:
-                    in_block = False
-                    for line in fh:
-                        m = _AUTO_BLOCK.match(line)
-                        if m:
-                            in_block = not m.group(1).startswith("/")
-                            continue
-                        if not in_block:
-                            total += 1
-            except OSError:
-                continue                # 读不到的文件不计数 —— 宁缺勿假
+        total += sum(_count_file_lines(os.path.join(dirpath, name))
+                     for name in sorted(filenames) if name.endswith(".md"))
     return total
 
 
