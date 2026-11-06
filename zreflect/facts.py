@@ -160,6 +160,23 @@ def _block_homes(ledger):
 
 
 
+def _read_doc(p, path_rel):
+    """读文档。返回 `(正文, rc)`；rc 非 0 = 已经报过 FATAL。
+
+    ⚠️ **读不了 ≠ 块过期**：非法 UTF-8 / 权限 / 是目录 —— 全是配置事故
+    （FATAL rc=2）。此前这里直接 `open().read()`，一个二进制文件让 Python
+    抛裸 `UnicodeDecodeError` 并以 **1** 退出，而 rc=1 在 `registry --run`
+    里是「判据红」—— 修法完全不同（换文件 vs 修内容）。
+    """
+    try:
+        return open(p, encoding="utf-8").read(), 0
+    except (OSError, UnicodeError) as e:
+        print(machine().emit("fatal", M("facts.doc_unreadable",
+                                        path=path_rel, error=e)),
+              file=sys.stderr)
+        return None, 2
+
+
 def _own_blocks(path_rel, ledger):
     """这个文档**归属**的机器块。返回 `(blocks, rc)`；rc 非 0 = 必须回报。
 
@@ -188,18 +205,12 @@ def _own_blocks(path_rel, ledger):
     return None, 2
 
 
-def write_doc(path_rel, ledger):
-    """把机器块写进文档（就地替换）。没有标记就报错，**不悄悄追加** ——
-    悄悄追加会让「块过期」变成「有两份块」，那是更难查的坏法。"""
-    p = path_rel if os.path.isabs(path_rel) else repo(path_rel)
-    if not os.path.exists(p):
-        print(machine().emit("fatal", M("facts.doc_missing_render", path=p)),
-              file=sys.stderr)
-        return 2
-    blocks, rc = _own_blocks(path_rel, ledger)
-    if rc:
-        return rc
-    text = open(p, encoding="utf-8").read()
+def _replace_blocks(text, blocks, path_rel):
+    """就地把每个块替换成新正文。返回 `(新正文, rc)`。
+
+    块首尾标记必须都在 —— 缺了就是文档被改坏了，**不悄悄追加**：悄悄追加
+    会让「块过期」变成「有两份块」，那是更难查的坏法。
+    """
     new = text
     for begin, end, body in blocks:
         if begin not in new or end not in new:
@@ -207,27 +218,88 @@ def write_doc(path_rel, ledger):
                                   M("facts.markers_missing_render",
                                     path=path_rel, begin=begin, end=end)),
                   file=sys.stderr)
-            return 2
+            return None, 2
         pre, _, rest = new.partition(begin)
         _, _, post = rest.partition(end)
         new = pre + body + post
-    # 写盘前的完整性守卫：替换必须保得住**全部**块的标记。标记字面量若被
-    # 写进正文（哪怕在行内代码里），首现替换会把两块之间的内容整个吞掉、
-    # 让别的块消失 —— 实测踩过：bullet 里写了标记字面量，渲染一次丢掉整个
-    # 事实块。歧义 ⇒ 拒绝写盘，人先修文档（块内 cmd 引用 begin 字面量是
-    # 合法嵌套 —— md_lines 的 awk 判据 —— 故不做替换前的计数断言）。
+    return new, 0
+
+
+def _swallowed_marker_problems(new, blocks, path_rel):
+    """写盘前的完整性守卫：替换必须保得住**全部**块的标记。
+
+    标记字面量若被写进正文（哪怕在行内代码里），首现替换会把两块之间的内容
+    整个吞掉、让别的块消失 —— 实测踩过：bullet 里写了标记字面量，渲染一次
+    丢掉整个事实块。歧义 ⇒ 拒绝写盘，人先修文档（块内 cmd 引用 begin 字面量
+    是合法嵌套 —— `md_lines` 的 awk 判据 —— 故不做替换前的计数断言）。
+    """
+    out = []
     for begin, end, _ in blocks:
         if begin not in new or end not in new:
-            print(machine().emit("fatal",
-                                  M("facts.marker_swallowed_body",
-                                    path=path_rel, begin=begin)),
-                  file=sys.stderr)
-            return 2
-    if new != text:
-        open(p, "w", encoding="utf-8").write(new)
-        print(M("facts.render_written", path=path_rel))
-    else:
+            out.append(M("facts.marker_swallowed_body",
+                         path=path_rel, begin=begin))
+    return out
+
+
+def write_doc(path_rel, ledger):
+    """把机器块写进文档（就地替换）。没有标记就报错，**不悄悄追加**。
+
+    三步各是一个具名 helper（读 / 替换 / 完整性守卫）：它们各自有一组
+    「拒绝写盘」的出口，拼在一起时读者要数 return 才知道哪些已经查过。
+    """
+    p, blocks, text, rc = _prepare_render(path_rel, ledger)
+    if rc:
+        return rc
+    new, rc = _replace_blocks(text, blocks, path_rel)
+    if rc:
+        return rc
+    swallowed = _swallowed_marker_problems(new, blocks, path_rel)
+    if swallowed:
+        for x in swallowed:
+            print(machine().emit("fatal", x), file=sys.stderr)
+        return 2
+    if new == text:
         print(M("facts.render_unchanged", path=path_rel))
+        return 0
+    rc = _write_or_fatal(p, new, path_rel)
+    if rc:
+        return rc
+    print(M("facts.render_written", path=path_rel))
+    return 0
+
+
+def _prepare_render(path_rel, ledger):
+    """三道前置：文档在 / 块归属对 / 文档读得出。返回 `(path, blocks, text, rc)`。
+
+    任一失败都返回非 0 的 rc（已报过 FATAL）—— 「文件在不在 / 归属对不对 /
+    读不读得出」是三种不同的配置事故，各自的错误码不同。
+    """
+    p = path_rel if os.path.isabs(path_rel) else repo(path_rel)
+    if not os.path.exists(p):
+        print(machine().emit("fatal", M("facts.doc_missing_render", path=p)),
+              file=sys.stderr)
+        return p, None, None, 2
+    blocks, rc = _own_blocks(path_rel, ledger)
+    if rc:
+        return p, None, None, rc
+    text, rc = _read_doc(p, path_rel)
+    return p, blocks, text, rc
+
+
+def _write_or_fatal(p, new, path_rel):
+    """写盘。失败是**环境事故**（FATAL rc=2），不是「块过期」（rc=1）。
+
+    此前 `open(...).write(...)` 让它变成裸 traceback + rc=1 —— 调用方会去查
+    块内容，而问题是文件不可写。只读 / 磁盘满 / 权限都属于这一类。
+    """
+    try:
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(new)
+    except OSError as e:
+        print(machine().emit("fatal", M("facts.doc_unwritable",
+                                        path=path_rel, error=e)),
+              file=sys.stderr)
+        return 2
     return 0
 
 
@@ -239,7 +311,9 @@ def check_doc(path_rel, ledger):
     blocks, rc = _own_blocks(path_rel, ledger)
     if rc:
         return rc
-    text = open(p, encoding="utf-8").read()
+    text, rc = _read_doc(p, path_rel)
+    if rc:
+        return rc
     for begin, end, body in blocks:
         if begin not in text or end not in text:
             print(machine().emit("fatal",
@@ -368,7 +442,7 @@ def measure(argv):
         facts.update(doc.facts_of_rules())
 
     out = _out()
-    old = facts_of(load(out)) if os.path.exists(out) else {}
+    old = facts_of(_read_or_exit(out)) if os.path.exists(out) else {}
 
     rc = _guarded_write(argv, old, facts)
     if rc:
@@ -426,6 +500,26 @@ def get_value(ledger, key):
     return True, value_of(f[key])
 
 
+def _read_or_exit(out):
+    """读台账；**坏文件转成 FATAL rc=2**，不冒裸 traceback。
+
+    ⚠️ 这是「配置坏 ≠ 判据红」契约的落点：`ledger.Unreadable` 若冒到顶层，
+    Python 会打印 traceback 并以 **1** 退出 —— 而 `registry --run` 把 rc=1
+    记成「判据红」。实测：一个坏 JSON 会让 `facts.py --check` 打 traceback
+    且 rc=0，调用方以为查过了。
+    """
+    from ledger import Unreadable                        # noqa: PLC0415
+    try:
+        return load(out)
+    except Unreadable as e:
+        cause = e.args[1] if len(e.args) > 1 else e
+        print(machine().emit("fatal", M(
+            "facts.ledger_unreadable",
+            path=os.path.relpath(out, gate.GATE_REPO), error=cause)),
+              file=sys.stderr)
+        raise SystemExit(2) from e
+
+
 def _load_or_empty():
     """读台账；**不存在就给空台账**（`--accept*` 用）。
 
@@ -436,7 +530,7 @@ def _load_or_empty():
     out = _out()
     if not os.path.exists(out):
         return {"schema": 1, "facts": {}}
-    return load(out)
+    return _read_or_exit(out)
 
 
 def _load_or_die():
@@ -455,7 +549,7 @@ def _load_or_die():
                                 path=os.path.relpath(out, gate.GATE_REPO))),
               file=sys.stderr)
         raise SystemExit(2)
-    return load(out)
+    return _read_or_exit(out)
 
 
 def main(argv):
@@ -848,6 +942,19 @@ CASES = [
      lambda: not _is_unknown_cmd("--accept-changes=k1")),
     # **bootstrap 端到端收敛**：`--init` → measure → 两次 render → registry 全绿。
     ("★ facts.fresh_repo_bootstraps_green", lambda: _fresh_bootstraps()),
+    # **坏台账是配置事故，不是判据红**：必须 FATAL rc=2。实测：`{ broken` 的
+    # FACTS.json 让 `--check` 打 traceback 且 rc=0（调用方以为查过了），
+    # 让各闸门 rc=1（在 `registry --run` 里被记成「判据红」——
+    # 用户会去修闸门而不是修数据）。
+    ("★ facts.corrupt_ledger_is_fatal_not_traceback",
+     lambda: _corrupt_ledger_rc() == 2),
+    ("★ ledger.corrupt_load_raises_typed",
+     lambda: _corrupt_load_raises()),
+    # **环境事故一律 FATAL rc=2**：文档非法编码 / 不可写 / 台账坏 ——
+    # 三者的共同点是「不是内容问题」。此前它们都是裸 traceback + rc=1，
+    # 而 rc=1 在 `registry --run` 里被记成「判据红」（修法完全不同）。
+    ("★ facts.unwritable_doc_is_fatal",
+     lambda: _unwritable_doc_rc() == 2),
 ]
 
 
@@ -900,6 +1007,87 @@ def _is_unknown_cmd(first):
             contextlib.redirect_stderr(cap):
         main([first])
     return "unknown_command" in cap.getvalue()
+
+
+def _corrupt_ledger_rc():
+    """坏台账下 `--check` 的 rc（夹具仓，不碰本仓台账）。"""
+    import shutil                                        # noqa: PLC0415
+    import subprocess                                    # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        subprocess.run(["git", "init", "-q", d], check=True, capture_output=True)
+        shutil.copytree(os.path.join(gate.tool_repo(), "zreflect"),
+                        os.path.join(d, "zreflect"))
+        open(os.path.join(d, "FACTS.json"), "w").write("{ broken")
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("REFLECT_")}
+        p = subprocess.run(
+            [sys.executable, os.path.join(d, "zreflect", "facts.py"), "--check"],
+            cwd=d, env=env, capture_output=True, text=True, timeout=120)
+        return p.returncode
+    except Exception:                                    # noqa: BLE001
+        return None
+    finally:
+        shutil.rmtree(d, True)
+
+
+def _unwritable_doc_rc():
+    """只读文档上 `--render-doc` 的 rc（需要真写盘 ⇒ 必须 FATAL 2）。"""
+    import shutil                                        # noqa: PLC0415
+    import stat                                          # noqa: PLC0415
+    import subprocess                                    # noqa: PLC0415
+    import tempfile                                      # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        subprocess.run(["git", "init", "-q", d], check=True, capture_output=True)
+        subprocess.run(["git", "-C", d, "config", "user.email", "a@b"], check=True)
+        subprocess.run(["git", "-C", d, "config", "user.name", "a"], check=True)
+        for sub in ("zreflect", "reflect-hooks"):
+            shutil.copytree(os.path.join(gate.tool_repo(), sub),
+                            os.path.join(d, sub))
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("REFLECT_")}
+        env["GATE_REPO"] = d
+
+        def run(*args):
+            return subprocess.run([sys.executable, *args], cwd=d, env=env,
+                                  capture_output=True, text=True, timeout=180)
+
+        run("zreflect/facts.py", "--init")
+        run("zreflect/facts.py", "--accept-changes")
+        run("zreflect/facts.py", "--render-doc")
+        # 让文档再次需要写盘：改动台账的一个值
+        run("zreflect/facts.py", "--accept", "probe", "9", "echo 9", "s")
+        doc = os.path.join(d, "STATE.md")
+        os.chmod(doc, stat.S_IRUSR)
+        try:
+            return run("zreflect/facts.py", "--render-doc").returncode
+        finally:
+            os.chmod(doc, stat.S_IRUSR | stat.S_IWUSR)
+    except Exception:                                    # noqa: BLE001
+        return None
+    finally:
+        shutil.rmtree(d, True)
+
+
+def _corrupt_load_raises():
+    """`ledger.load` 对坏 JSON 抛 `Unreadable`（不是裸 `JSONDecodeError`）。"""
+    import tempfile                                      # noqa: PLC0415
+    from ledger import Unreadable                        # noqa: PLC0415
+    fd, path = tempfile.mkstemp()
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write("{ broken")
+        try:
+            load(path)
+        except Unreadable:
+            return True
+        except Exception:                                # noqa: BLE001
+            return False
+        return False
+    finally:
+        os.unlink(path)
 
 
 def _fresh_bootstraps():
