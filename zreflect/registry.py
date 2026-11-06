@@ -894,76 +894,88 @@ def _cases_fixture(d):
             "missing": missing, "real_files": real_files}
 
 
-def _cases_discovery(fx):
-    """见 `_cases()`：本组 16 条。"""
-    (ok, plain, real, real_missing, gs, missing,
-     real_files) = (fx["ok"], fx["plain"], fx["real"],
-                    fx["real_missing"], fx["gs"],
-                    fx["missing"], fx["real_files"])
+def _cases_discovery_real(fx):
+    """① 正常不报：真仓的名录与声明面。（8 条）"""
+    ok, real = fx["ok"], fx["real"]
+    gs, missing, real_missing, real_files = (fx["gs"], fx["missing"],
+                                             fx["real_missing"], fx["real_files"])
     return [
-    # ① 正常不报
-    ("registry.ast_declaration_fields",
-     lambda: ok["name"] == "gate_a" and ok["desc"] == "blocks_a"
-     and ok["knobs"] == ("REFLECT_FACTS",)
-     and ok["name_dependent"] is True and ok["runs_at"] == "commit"),
-    ("registry.undeclared_noncheck_is_module",
-     lambda: all(not m.endswith("platform.py") for m in missing)
-     and all(not g["file"].endswith("platform.py") for g in gs)),
-    ("registry.declaration_is_registration",
-     lambda: any(g["file"].endswith("named_other.py") for g in gs)
-     and not any(m.endswith("named_other.py") for m in missing)),
-    ("registry.real_roster_matches_disk",
-     lambda: not real_missing and real_files() <= {g["file"] for g in real}),
-    ("registry.doctor_is_start_of_work",
-     lambda: any(g["file"].endswith("doctor.py") for g in real)
-     and not any(g["file"].endswith("doctor.py")
-                 for g in runnable("commit"))),
-    ("registry.red_need_flagged",
-     lambda: (lambda rn: len(rn) >= 1 and all(
-         any(g["file"].endswith(b) and g["name_dependent"] for g in real)
-         for b in rn))(red_need(real))),
-    ("registry.real_modules_declared",
-     lambda: modules()[1] == [] and len(modules()[0]) >= 8),
-    ("registry.fixture_renames_single_source",
-     lambda: set(FIXTURE_RENAMES) == set(RENAMED_DEFAULTS)
-     and len(FIXTURE_RENAMES) >= 7),
-    # 插件目录**可以不存在**（只拷 `zreflect/` 的部署）：那时没有插件可发现，
-    # 这不是失败。存在就必须发现它 —— 断言按「目录在不在」分两档。
-    ("registry.plugin_discovery", lambda: _plugin_discovery_ok()),
-    # ② 该报的必须报
-    ("★ registry.missing_declaration",
-     lambda: missing == ["zreflect/check_bare.py"]),
-    ("★ registry.name_dependent_wrong",
-     lambda: [p.code for p in problems(
-         [dict(plain, name_dependent=True)], [],
-         mods=["zreflect/x.py"], mods_missing=[], knob_problems=[],
-         undeclared=[])] == ["registry.name_dependent_wrong"]),
-    # 这两条的空名录与「空清单不是通过」同时在场（gs=[] 必然触发零值守卫），
-    # 所以用 `any(code == …)` 而不是整表相等 —— 断言仍精确指向那一条。
-    ("★ registry.selftest_no_entry",
-     lambda: any(p.code == "registry.selftest_no_entry" for p in problems(
-         [], [], mods=["zreflect/x.py"],
-         mods_missing=["zreflect/y.py"],
-         knob_problems=[]))),
-    # CLI 逐行点名也必须能产出（否则它是「写而不跑」的装饰 —— 本仓纪律）。
-    ("★ registry.selftest_no_entry_cli",
-     lambda: [m.code for m in cli_selftest_missing_lines(
-         ["zreflect/y.py"])] == ["registry.selftest_no_entry_cli"]
-     and cli_selftest_missing_lines([]) == []),
-    ("★ registry.undeclared_module",
-     lambda: any(p.code == "registry.undeclared_module" for p in problems(
-         [], [], mods=["zreflect/x.py"], mods_missing=[],
-         knob_problems=[],
-         undeclared=["zreflect/orphan_mod.py"]))),
-    # **聚合方的输出整体走 stdout**，与「单个闸门问题行统一 stderr」不冲突。
-    # 这条钉的是「两端语义分开写明白了」—— 判据是两处措辞都在。
-    ("registry.aggregator_streams_documented",
-     lambda: _streams_documented()),
-    # ③ 空输入必须报
-    ("★ registry.empty_roster",
-     lambda: problems([], [], mods=[], mods_missing=[],
-                      knob_problems=[], undeclared=[]) != []),
+        ("registry.ast_declaration_fields",
+         lambda: ok["name"] == "gate_a" and ok["desc"] == "blocks_a"
+         and ok["knobs"] == ("REFLECT_FACTS",)
+         and ok["name_dependent"] is True and ok["runs_at"] == "commit"),
+        ("registry.undeclared_noncheck_is_module",
+         lambda: all(not m.endswith("platform.py") for m in missing)
+         and all(not g["file"].endswith("platform.py") for g in gs)),
+        ("registry.declaration_is_registration",
+         lambda: any(g["file"].endswith("named_other.py") for g in gs)
+         and not any(m.endswith("named_other.py") for m in missing)),
+        ("registry.real_roster_matches_disk",
+         lambda: not real_missing and real_files() <= {g["file"] for g in real}),
+        ("registry.doctor_is_start_of_work",
+         lambda: any(g["file"].endswith("doctor.py") for g in real)
+         and not any(g["file"].endswith("doctor.py")
+                     for g in runnable("commit"))),
+        ("registry.red_need_flagged",
+         lambda: (lambda rn: len(rn) >= 1 and all(
+             any(g["file"].endswith(b) and g["name_dependent"] for g in real)
+             for b in rn))(red_need(real))),
+        ("registry.real_modules_declared",
+         lambda: modules()[1] == [] and len(modules()[0]) >= 8),
+        ("registry.fixture_renames_single_source",
+         lambda: set(FIXTURE_RENAMES) == set(RENAMED_DEFAULTS)
+         and len(FIXTURE_RENAMES) >= 7),
+        # 插件目录**可以不存在**（只拷 `zreflect/` 的部署）：那时没有插件可发现，
+        # 这不是失败。存在就必须发现它 —— 断言按「目录在不在」分两档。
+        ("registry.plugin_discovery", lambda: _plugin_discovery_ok()),
     ]
+
+
+def _cases_discovery_reports(fx):
+    """② 该报的必须报：名录对账的六种病。（6 条）"""
+    plain, missing = fx["plain"], fx["missing"]
+    return [
+        ("\u2605 registry.missing_declaration",
+         lambda: missing == ["zreflect/check_bare.py"]),
+        ("\u2605 registry.name_dependent_wrong",
+         lambda: [p.code for p in problems(
+             [dict(plain, name_dependent=True)], [],
+             mods=["zreflect/x.py"], mods_missing=[], knob_problems=[],
+             undeclared=[])] == ["registry.name_dependent_wrong"]),
+        # 这两条的空名录与「空清单不是通过」同时在场（gs=[] 必然触发零值守卫），
+        # 所以用 `any(code == …)` 而不是整表相等 —— 断言仍精确指向那一条。
+        ("\u2605 registry.selftest_no_entry",
+         lambda: any(p.code == "registry.selftest_no_entry" for p in problems(
+             [], [], mods=["zreflect/x.py"],
+             mods_missing=["zreflect/y.py"],
+             knob_problems=[]))),
+        # CLI 逐行点名也必须能产出（否则它是「写而不跑」的装饰 —— 本仓纪律）。
+        ("\u2605 registry.selftest_no_entry_cli",
+         lambda: [m.code for m in cli_selftest_missing_lines(
+             ["zreflect/y.py"])] == ["registry.selftest_no_entry_cli"]
+         and cli_selftest_missing_lines([]) == []),
+        ("\u2605 registry.undeclared_module",
+         lambda: any(p.code == "registry.undeclared_module" for p in problems(
+             [], [], mods=["zreflect/x.py"], mods_missing=[],
+             knob_problems=[],
+             undeclared=["zreflect/orphan_mod.py"]))),
+        # **聚合方的输出整体走 stdout**，与「单个闸门问题行统一 stderr」不冲突。
+        # 这条钉的是「两端语义分开写明白了」—— 判据是两处措辞都在。
+        ("registry.aggregator_streams_documented",
+         lambda: _streams_documented()),
+    ]
+
+
+def _cases_discovery(fx):
+    """见 `_cases()`：本组 16 条。
+
+    ① 真仓名录 / ② 名录病各是一个具名组：前者读夹具的真名录、后者造畸形
+    声明 —— 混在一起时读者分不清某条断言用的是哪个输入。
+    """
+    return (_cases_discovery_real(fx) + _cases_discovery_reports(fx)
+            + [("\u2605 registry.empty_roster",
+                lambda: problems([], [], mods=[], mods_missing=[],
+                                 knob_problems=[], undeclared=[]) != [])])
 
 
 def _cases_render(fx):

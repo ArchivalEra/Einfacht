@@ -477,81 +477,85 @@ def set_repo(p):
 """
 
 
-def _cases():
-    # 正常：常量只赋值一次 ⇒ 拷贝安全
-    GOOD = '''
-GATE_REPO = "/repo"
-CONST = [1]
-'''
-    GOOD_USER = '''
-from gate import CONST
-def f():
-    return CONST
-'''
-    # 该报：模块级可变全局被拷贝并真用了
-    BAD_GATE = '''
-GATE_REPO = "/repo"
-def set_repo(p):
-    global GATE_REPO
-    GATE_REPO = p
-'''
-    BAD_USER = '''
-from gate import GATE_REPO
-def f():
-    return GATE_REPO
-'''
-    # 安全写法：import 模块、读属性
-    OK_STYLE = '''
-import gate
-def f():
-    return gate.GATE_REPO
-'''
+def _fixtures():
+    """夹具源码（英文：它们是被校验的**输入**，不是本体输出）。
+
+    ⚠️ 必须**在函数里**构造，不能放模块级常量：闸门扫的正是「模块顶层被赋值的
+    表达式」，模块级夹具会被它自己当成派生快照 —— 实测：提到模块级之后
+    `snapshot.derived_copy(derived='fx["ok_style"]', source='gate')` 自报。
+    判据没错，是夹具放错了层。
+    """
+    return {
+        "good": "GATE_REPO = \"/repo\"\nCONST = [1]\n",
+        "good_user": "from gate import CONST\ndef f():\n    return CONST\n",
+        "bad_gate": ("GATE_REPO = \"/repo\"\ndef set_repo(p):\n"
+                     "    global GATE_REPO\n    GATE_REPO = p\n"),
+        "bad_user": "from gate import GATE_REPO\ndef f():\n    return GATE_REPO\n",
+        "ok_style": "import gate\ndef f():\n    return gate.GATE_REPO\n",
+    }
+
+
+def _cases_value_copy(fx):
+    """① 值拷贝：常量安全 / 属性写法安全 / 可变全局被拷必须报。"""
     return [
-        # ① 正常不报
         ("snapshot.constant_copy_is_fine",
-         lambda: problems(sources={"gate": GOOD,
-                                   "check_x": GOOD_USER}) == []),
+         lambda: problems(sources={"gate": fx["good"],
+                                   "check_x": fx["good_user"]}) == []),
         ("snapshot.attribute_style_is_fine",
-         lambda: problems(sources={"gate": BAD_GATE,
-                                   "check_x": OK_STYLE}) == []),
-        # ② 该报的必须报
-        ("★ snapshot.mutable_copy",
+         lambda: problems(sources={"gate": fx["bad_gate"],
+                                   "check_x": fx["ok_style"]}) == []),
+        ("\u2605 snapshot.mutable_copy",
          lambda: [p.code for p in problems(
-             sources={"gate": BAD_GATE, "check_x": BAD_USER})
+             sources={"gate": fx["bad_gate"], "check_x": fx["bad_user"]})
          ] == ["snapshot.mutable_copy"]),
         # 死导入不报（import 了没用的不算风险）
         ("snapshot.dead_import_not_reported",
-         lambda: problems(sources={"gate": BAD_GATE,
-                                   "check_x": "from gate import GATE_REPO\n"}) == []),
-        # ② 别名模块赋值（`import gate as g; g.GATE_REPO = …`）—— 与
-        #    `gate.GATE_REPO = …` 是同一件事的另一种写法，此前漏报（实测 []）
-        ("★ snapshot.mutable_copy_via_alias",
+         lambda: problems(sources={
+             "gate": fx["bad_gate"],
+             "check_x": "from gate import GATE_REPO\n"}) == []),
+        # 别名模块赋值（`import gate as g; g.GATE_REPO = …`）—— 与
+        # `gate.GATE_REPO = …` 是同一件事的另一种写法，此前漏报（实测 []）
+        ("\u2605 snapshot.mutable_copy_via_alias",
          lambda: [p.code for p in problems(sources={
              "gate": ALIAS_GATE, "usr": ALIAS_USER, "victim": ALIAS_VICTIM})
          ] == ["snapshot.mutable_copy"]),
-        # ② 发现式源模块：**扫描面里的任何 .py** 都可作为源模块，不再只认
-        #    手写名单里的 12 个名字（此前 16 个 check_*.py 全部看不见）
-        ("★ snapshot.source_from_any_module",
+        # 发现式源模块：**扫描面里的任何 .py** 都可作为源模块，不再只认
+        # 手写名单里的 12 个名字（此前 16 个 check_*.py 全部看不见）
+        ("\u2605 snapshot.source_from_any_module",
          lambda: [p.code for p in problems(sources={
              "check_zzz": CHECK_AS_SOURCE, "victim": CHECK_AS_VICTIM})
          ] == ["snapshot.mutable_copy"]),
-        # ② 派生快照：模块顶层把「经薄封装读到可变全局」的表达式存成常量
-        #    （`OUT = repo(NAME)`，repo() 体内读 GATE_REPO ⇒ 冻在 import 那一刻）
-        ("★ snapshot.derived_copy",
+    ]
+
+
+def _cases_derived():
+    """② 派生快照：顶层把「经薄封装读到可变全局」的表达式存成常量。"""
+    return [
+        # `OUT = repo(NAME)`，repo() 体内读 GATE_REPO ⇒ 冻在 import 那一刻
+        ("\u2605 snapshot.derived_copy",
          lambda: [p.code for p in problems(sources={
              "gate": GATE_WITH_REPO,
              "facts": "OUT = repo('L.json')\nprint(OUT)\n"})
          ] == ["snapshot.derived_copy"]),
-        # ② 带类型注解的派生（`OUT: str = repo(...)`）—— 此前只认 `ast.Assign`，
-        #    漏报 AnnAssign（review 实测 `[]`）
-        ("★ snapshot.derived_copy_annotated",
+        # 带类型注解的派生（`OUT: str = repo(...)`）—— 此前只认 `ast.Assign`，
+        # 漏报 AnnAssign（review 实测 `[]`）
+        ("\u2605 snapshot.derived_copy_annotated",
          lambda: [p.code for p in problems(sources={
              "gate": GATE_WITH_REPO,
              "facts": "OUT: str = repo('L.json')\nprint(OUT)\n"})
          ] == ["snapshot.derived_copy"]),
-        # ③ 空输入必须报
-        ("★ snapshot.empty_scan", lambda: problems(sources={}) != []),
     ]
+
+
+def _cases():
+    """三条：值拷贝 / 派生快照 / 空输入。
+
+    ①② 各是一个具名组（夹具源码也提到模块级常量了 —— 80 行函数里那些
+    三引号字符串占了将近三分之一、和断言交错）。
+    """
+    return (_cases_value_copy(_fixtures()) + _cases_derived()
+            + [("\u2605 snapshot.empty_scan",
+                lambda: problems(sources={}) != [])])
 
 
 GATE = meta("模块级快照闸门",
