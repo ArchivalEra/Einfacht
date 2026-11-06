@@ -192,20 +192,33 @@ def readme_names():
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
+def _text_of(name, files=None):
+    """取某个文件的文本。返回 `None` = 没有 / 读不到（**不是空串**）。
+
+    `files` 给了就用它（自证注入假文件系统）；否则从 `gate.GATE_REPO` 读。
+    「没有」与「空文件」在这里合并成 None —— 调用方一律 skip，因为
+    「文件不在名单里」与「文件是空的」在这三个对账器里含义相同（无可比对）。
+    """
+    if files is not None:
+        return files.get(name)
+    p = os.path.join(gate.GATE_REPO, name)
+    if not os.path.exists(p):
+        return None
+    try:
+        with open(p, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
 def readme_problems(files=None):
     """三语 README（REFLECT_READMES 名单）里出现、登记表里没有的 REFLECT_*
     名字（文档侧幻影防御）。`files` 可注入假文件系统（自证用）。"""
     out = []
     for name in readme_names():
-        if files is not None:
-            if name not in files:
-                continue
-            text = files[name]
-        else:
-            p = os.path.join(gate.GATE_REPO, name)
-            if not os.path.exists(p):
-                continue
-            text = open(p, encoding="utf-8", errors="replace").read()
+        text = _text_of(name, files)
+        if text is None:
+            continue
         for tok in sorted(set(_TOKEN_RE.findall(text))):
             if tok not in REGISTRY:
                 out.append(M("knobs.readme_phantom", file=name, token=tok))
@@ -232,16 +245,9 @@ def declared_vs_read_problems(gates, sources=None):
         declared = set(g.get("knobs") or ())
         if not declared:
             continue
-        if sources is not None:
-            text = sources.get(g["file"])
-            if text is None:
-                continue
-        else:
-            try:
-                text = open(os.path.join(gate.GATE_REPO, g["file"]),
-                            encoding="utf-8", errors="replace").read()
-            except OSError:
-                continue
+        text = _text_of(g["file"], sources)
+        if text is None:
+            continue
         read = set(_TOKEN_RE.findall(text))
         ghost = sorted(k for k in declared if k not in read)
         if ghost:
@@ -267,26 +273,27 @@ def registry_vs_readme_problems(tables=None, names=None):
     完的仓，`registry --run commit` 与 `harness` **无法同时绿** —— 那是死结。
     判据不该读环境来决定自己考几轮。
     """
-    row = re.compile(r"\|\s*`(REFLECT_[A-Z0-9_]+)`\s*\|")
     out = []
     for name in (readme_names() if names is None else names):
-        if tables is not None:
-            if name not in tables:
-                continue
-            text = tables[name]
-        else:
-            p = os.path.join(gate.GATE_REPO, name)
-            if not os.path.exists(p):
-                continue
-            text = open(p, encoding="utf-8", errors="replace").read()
-        have = set(row.findall(text))
-        if not have:
-            continue                    # 非配置表形态：不误报
-        missing = sorted(k for k in REGISTRY if k not in have)
+        text = _text_of(name, tables)
+        if text is None:
+            continue
+        missing = _missing_rows(text)
         if missing:
             out.append(M("knobs.readme_missing_rows",
                          file=name, knobs=", ".join(missing)))
     return out
+
+
+_README_ROW = re.compile(r"\|\s*`(REFLECT_[A-Z0-9_]+)`\s*\|")
+
+
+def _missing_rows(text):
+    """配置表里缺了登记表中的哪些旋钮。**空表 ⇒ 空**（非配置表形态，不误报）。"""
+    have = set(_README_ROW.findall(text))
+    if not have:
+        return []
+    return sorted(k for k in REGISTRY if k not in have)
 
 
 # ── 自证：名册自身的形状守卫（登记表坏 = 所有消费方的判据数据坏）──────────────
@@ -678,15 +685,9 @@ def pack_sync_problems(loader=None, discovery=None):
     tables, err = _load_tables(langs, load)
     if err:
         return err
-    # **零包是合法态**（用户要的「本体没有任何语言表达也能用」）：一个包都没
-    # 装 ⇒ 没有「彼此一致」可言，但也不是配置坏 —— 返回空（不报）。
-    # 「设了包却读不到」由 `pack_unreadable` / 激活路径的 `i18n.pack_absent`
-    # 负责，那是另一件事：**没要** vs **要了却没有**。
-    if not tables:
-        return []
-    # 装了但全是空表 ⇒ 那是坏包（声称有目录却没有内容），报。
-    if not any(tables.values()):
-        return [M("knobs.pack_sync_empty", pack_dir=pack_dir())]
+    early = _empty_pack_verdict(tables)
+    if early is not None:
+        return early
     ref_lang = sorted(tables)[0]
     ref = tables[ref_lang]
     out = []
@@ -696,6 +697,23 @@ def pack_sync_problems(loader=None, discovery=None):
         out += _key_set_problems(lang, ref_lang, ref, tables[lang])
         out += _placeholder_problems(lang, ref_lang, ref, tables[lang])
     return out
+
+
+def _empty_pack_verdict(tables):
+    """「零包 / 坏包」的两种结局。返回 `None` = 继续比对。
+
+    **零包是合法态**（用户要的「本体没有任何语言表达也能用」）：一个包都没装
+    ⇒ 没有「彼此一致」可言，但也不是配置坏 —— 返回空（不报）。
+    「设了包却读不到」由 `pack_unreadable` / 激活路径的 `i18n.pack_absent`
+    负责，那是另一件事：**没要** vs **要了却没有**。
+
+    装了但全是空表 ⇒ 那是**坏包**（声称有目录却没有内容），报。
+    """
+    if not tables:
+        return []
+    if not any(tables.values()):
+        return [M("knobs.pack_sync_empty", pack_dir=pack_dir())]
+    return None
 
 
 def _load_tables(langs, load):
