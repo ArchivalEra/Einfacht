@@ -67,8 +67,19 @@ def _run(argv, cwd=None, env=None):
 
 
 def _tail(text, n=3):
-    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
-    return lines[-n:]
+    """失败时要转述的行：**优先** `fail |` / `FATAL:` 行，抓不到才用最后 n 行。
+
+    ⚠️ 此前一律取最后 3 行 —— 而自证的布局是「fail 行在前、摘要行在后」，
+    于是转述出来的永远是「=== 28 PASS / 1 FAIL ===」这种**摘要**，看不到是哪
+    一条用例红的。实测：CI 的 Windows 腿只报 `28 PASS / 1 FAIL`，
+    没有任何办法知道是哪一条 —— 只能整段重跑。
+    """
+    all_lines = [ln for ln in (text or "").splitlines() if ln.strip()]
+    notable = [ln for ln in all_lines
+               if ln.lstrip().startswith(("fail |", "FATAL:"))]
+    if notable:
+        return notable[:n]
+    return all_lines[-n:]
 
 
 def _has_summary(text):
