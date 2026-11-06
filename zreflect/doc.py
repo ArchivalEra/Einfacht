@@ -71,7 +71,10 @@ RULES = (
     Rule("only_measured",
          "数值/行为只认实测；每条事实都必须有一条复跑命令",
          "python3 -c \"import json,sys;"
-         "d=json.load(open('FACTS.json'))['facts'];"
+         # ⚠️ `encoding='utf-8'` 不能省：台账里有中文 note，Windows 默认
+         # cp1252 打开 ⇒ UnicodeDecodeError ⇒ 这条判定在 Windows 上恒红
+         # （实测：CI 的 Windows 腿连续两轮栽在这一行）。
+         "d=json.load(open('FACTS.json', encoding='utf-8'))['facts'];"
          "bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];"
          "print('facts_without_cmd=%d' % len(bad));"
          "sys.exit(1 if bad else 0)\""),
