@@ -190,6 +190,18 @@ def run_cmd(cmd, timeout=None):
         # 报了 19 条 127，而本地永远复现不了）。
         return 127, machine().emit(
             "fatal", "%s [shell=%s argv=%r]" % (e, shell_kind, argv[:2]))
+    # ⚠️ **`p.stdout` 可能是 `None`**：`capture_output=True` 通常保证它是
+    # str，但 Windows 上子进程若因解码失败提前结束，`subprocess` 会把
+    # `stdout` 留成 None —— 于是下游 `stdout.strip()` 抛
+    # `AttributeError: 'NoneType' object has no attribute 'strip'`
+    # （实测：CI 的 Windows 腿就是这么红的，而报错指向 `_judge_ok`，
+    # 离真因三层远）。
+    if p.stdout is None:
+        # 诊断：stdout 为 None 时把 stderr / argv 带进结果，别让下游
+        # 只看到一个 `AttributeError`。
+        return p.returncode, machine().emit(
+            "fatal", "stdout=None rc=%s shell=%s argv=%r stderr=%r"
+            % (p.returncode, shell_kind, argv[:2], (p.stderr or "")[:200]))
     return p.returncode, p.stdout
 
 
