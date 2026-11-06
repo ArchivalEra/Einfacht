@@ -572,8 +572,14 @@ cp -r zreflect reflect-hooks ruff.toml /path/to/your-repo/
 python3 zreflect/facts.py --init
 #    Then SOURCE that env before any hand-run. Without it the gates fall back to
 #    default names, look for docs you never created, and report red — the hint
-#    saying so is `ℹ gate.env_hint` on stderr:
-#       set -a; . ./Einfacht.env; set +a
+#    saying so is `ℹ gate.env_hint` on stderr.
+#
+#    ⚠️ Which one? `--init` puts it at the repo root **unless**
+#    `reflect-hooks/Einfacht.env` already exists — the plugin reads the hooks
+#    dir first, so a second copy would fork your knob set. Source whichever
+#    one you have:
+#       set -a; . ./Einfacht.env; set +a                     # fresh repo
+#       set -a; . ./reflect-hooks/Einfacht.env; set +a       # repo that had one
 # 1. Write your measure(): fill FACTS.json with measured facts (see measure_example in facts.py)
 #    ⚠️ the collector's four principles live in zreflect/collect.py — persistent disk only,
 #    no inputs that change by themselves, say "unavailable" out loud, cache the expensive ones.
