@@ -881,6 +881,48 @@ def _cases(fx=None):
     )
 
 
+def _utf8_forced_case():
+    """Windows 的 cp1252 stdout 必须能被救回来（否则一行中文就能打红 CI）。
+
+    **确定性检查**，不靠「不 flush 就一定抛」这种未定义行为：
+      1. 静态断言：`_force_utf8_streams` 的源码里必须出现 `reconfigure` 与
+         `utf-8` —— 它做的是这件事，不是别的。
+      2. 行为断言：造两个 cp1252 流，一个直接写（必须抛），一个过
+         `_force_utf8_streams()` 后写（必须不抛）。两半都要 ——
+         只测「能写」的话，一个什么都不做的函数也会通过。
+    """
+    import inspect  # noqa: PLC0415
+    import io  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    import gate  # noqa: PLC0415
+    src = inspect.getsource(gate._force_utf8_streams)
+    if "reconfigure" not in src or "utf-8" not in src:
+        return False                    # 静态断言：它得真做那件事
+    sample = "A/B " + chr(0x95F8) + chr(0x95E8)          # 「闸门」
+
+    def _can_encode(stream):
+        try:
+            stream.write(sample + "\n")
+            stream.flush()              # 显式 flush —— 不让错误躲到缓冲里
+            return True
+        except UnicodeEncodeError:
+            return False
+
+    raw = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    if _can_encode(raw):
+        return False                    # cp1252 竟然编得出来 ⇒ 夹具没造对
+
+    fixed = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    old_out, old_err = sys.stdout, sys.stderr
+    sys.stdout = sys.stderr = fixed
+    try:
+        gate._force_utf8_streams()
+        return _can_encode(fixed)
+    finally:
+        sys.stdout, sys.stderr = old_out, old_err
+
+
 def _cases_self_checks():
     """不依赖名录夹具的那 7 条（死接口 / shell 面积 / 中文谓词 / 末尾换行 /
     依赖覆盖 / 自证加固）。"""
@@ -915,6 +957,9 @@ def _cases_self_checks():
         # `gate.selftest` 被两道闸门直接调用 —— 它**执行**所有断言，但自身的
         # 零值守卫（空 cases 必须拒收）此前零断言。测它不算自举：测的是
         # 「0/0 洞会不会被拦住」，不是「断言跑得对不对」。
+        # Windows 的 cp1252 stdout —— 这个仓会打印**中文**的闸门名与描述
+        ("★ registry.utf8_streams_are_forced",
+         lambda: _utf8_forced_case()),
         ("★ registry.selftest_refuses_empty_cases",
          lambda: _selftest_refuses_empty()),
     ]
