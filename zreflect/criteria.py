@@ -268,6 +268,38 @@ def _subprocess_encoding_problems(name, src):
     return out
 
 
+def suite_scope_problems(repo_root=None):
+    """**套件闸门只审套件自己的代码** —— 接进真实项目的可行性守卫。
+
+    为什么值得判据：`check_lint` / `check_i18n` / `check_snapshots` 此前
+    扫**整个仓**。一个真项目接入后 `registry --run commit` 报 149 条 ruff、
+    59 条 i18n、3 条 snapshot —— **全部指向那个项目自己的文件**。用户既修不完，
+    也不理解为什么别人的套件在挑他的代码。
+
+    「套件代码」的判据是**声明**（模块级 `MODULE = …` / `GATE = …`），
+    与 `registry.modules()` / `gates()` 同一口径（发现式，不手写清单）。
+
+    这条判据扫的是：套件目录里**没有声明**的 `.py`（用户放的数据模块）
+    不应被算进套件面；同时套件自己的每个 `.py` **必须**有声明（否则它
+    会静默落到使用方那一侧，闸门就不再审它 —— 那是把闸门关掉的新方法）。
+    """
+    import os  # noqa: PLC0415
+    root = repo_root or gate.GATE_REPO
+    out = []
+    for sub in ("zreflect", "reflect-hooks"):
+        base = os.path.join(root, sub)
+        if not os.path.isdir(base):
+            continue
+        for rel, _src in gate.py_sources(base):
+            name = rel.replace(os.sep, "/")
+            if name.startswith("measure_"):
+                continue                # 使用方的数据模块（README 要求的命名）
+            if not gate.declares_itself(os.path.join(base, rel)):
+                out.append(M("registry.suite_file_without_declaration",
+                             file=sub + "/" + name))
+    return out
+
+
 def _rule_cmd_encoding_problems():
     """**规则 cmd 里的 `open(` 也要查**。
 
@@ -827,6 +859,64 @@ def _unexpected_shell_case():
         shutil.rmtree(d, True)
 
 
+def _undeclared_suite_file_case():
+    """套件目录里一个**没有声明行**的 `.py` ⇒ 必须报。
+
+    为什么：没声明 = 被当成使用方代码 = 三道闸门不再审它。那是**把闸门
+    关掉的新方法**，必须能红。`measure_*.py` 例外（那是使用方的数据模块）。
+    """
+    import os  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        suite = os.path.join(d, "zreflect")
+        os.makedirs(suite)
+        with open(os.path.join(suite, "orphan.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("x = 1\n")
+        found = [str(p) for p in suite_scope_problems(repo_root=d)]
+        if not any("orphan.py" in s for s in found):
+            return False
+        # `measure_*.py` 是使用方的数据模块 ⇒ 不报
+        os.rename(os.path.join(suite, "orphan.py"),
+                  os.path.join(suite, "measure_probe.py"))
+        return suite_scope_problems(repo_root=d) == []
+    finally:
+        shutil.rmtree(d, True)
+
+
+def _scanned_sources_two_ways_case():
+    """`gate.scanned_sources` 的两条口径**各测一次**（`configured` 与否）。
+
+    为什么必须两条都测：这是「闸门审使用方代码」那次修的**唯一**判据。
+    只测一条的话，另一半会静默漂回去 —— 而两种漂法代价相反、都致命：
+
+      · 未配却收了全部 ⇒ 使用方仓里 149 条 ruff / 59 条中文全报给他
+        （套件把自己的纪律强加给别人）；
+      · 配了却只收有声明的 ⇒ `REFLECT_I18N_ROOT=<dir>` 报
+        `scan_empty_dir` FATAL（把手动 opt-in 弄坏）。
+
+    夹具用一个有声明和一个没声明的文件，两种口径各看一次。
+    """
+    import os  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        with open(os.path.join(d, "suite.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("MODULE = 1\n")
+        with open(os.path.join(d, "user.py"), "w", encoding="utf-8") as fh:
+            fh.write("x = 1\n")
+        default = [rel for rel, _src in gate.scanned_sources(d)]
+        opted_in = [rel for rel, _src in gate.scanned_sources(d, configured=True)]
+        return default == ["suite.py"] and sorted(opted_in) == [
+            "suite.py", "user.py"]
+    finally:
+        shutil.rmtree(d, True)
+
+
 def _owner_shell_is_allowed():
     """**使用方仓根**上的 `.sh` 不许被报 —— 那是他们的构建脚本，不是套件的事。
 
@@ -1168,6 +1258,9 @@ def _cases_self_checks():
         # **文本 `open()` 必须显式 encoding**（Windows 默认 cp1252）。
         # 这条判据在 CI 的 Windows 腿上被验证过四次 —— 每次都是不同形式。
         # **`subprocess.run(text=True)` 必须显式 encoding** —— 踩了五次的坑。
+        # **套件文件必须有声明**（没声明的会被当成使用方代码，闸门就不再审它）
+        ("★ registry.suite_file_without_declaration",
+         lambda: _undeclared_suite_file_case()),
         ("★ registry.subprocess_without_encoding_detected",
          lambda: [p.code for p in _subprocess_encoding_problems(
              "x.py", 'import subprocess\n'
@@ -1189,6 +1282,8 @@ def _cases_self_checks():
          lambda: _encoding_problems("x.py", 'open("a", "rb").read()\n') == []),
         ("★ registry.utf8_streams_are_forced",
          lambda: _utf8_forced_case()),
+        ("★ registry.scope_two_ways",
+         lambda: _scanned_sources_two_ways_case()),
         ("★ registry.selftest_refuses_empty_cases",
          lambda: _selftest_refuses_empty()),
     ]

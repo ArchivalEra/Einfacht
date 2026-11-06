@@ -21,7 +21,7 @@
  "knobs.sem.reflect_facts": "das Faktenregister",
  "knobs.sem.reflect_history_secs": "nur anhängbare Historien-Abschnittsnummern (z. B. 5,9,10)",
  "knobs.sem.reflect_i18n": "Sprachpaket-Verzeichnis (Standard ist das mit der Suite gelieferte zreflect/lang)",
- "knobs.sem.reflect_i18n_root": "Quellverzeichnis, das vom Sprachabdeckungs-Tor gescannt wird; leer = dieses Tor ist aus",
+ "knobs.sem.reflect_i18n_root": "zusätzliches Quellverzeichnis für das Sprachabdeckungs-Tor (repo-relativ); leer = nur zreflect/ + reflect-hooks/ des Suites scannen, nie den Code des Nutzers",
  "knobs.sem.reflect_instrument_days": "Schwelle für Konstanz-Erkennung in Tagen; leer = diese Regel ist ausdrücklich aus",
  "knobs.sem.reflect_instruments": "Registerplatz für Messverfahren; leer = diese Regel ist ausdrücklich aus",
  "knobs.sem.reflect_invariants": "deklarative Invarianten-Spezifikation; leer = ausdrücklich aus",
@@ -41,5 +41,6 @@
  "knobs.sem.reflect_stale_days": "Alarm für Messalter in Tagen; leer = diese Regel ist ausdrücklich aus",
  "knobs.sem.reflect_world": "Welt-Deklaration (Liste zu prüfender Dinge); fehlende Datei = aus",
  "knobs.sem.reflect_world_line": "Überschreibung der Welt-Zeile (CI / spezielle Laufmodi)",
- "knobs.usage": "Aufruf: knobs.py [--list|--selftest] (--list = alle REFLECT_*-Schalter: Art / Standard / Bedeutung)"
+ "knobs.usage": "Aufruf: knobs.py [--list|--selftest] (--list = alle REFLECT_*-Schalter: Art / Standard / Bedeutung)",
+ "knobs.sem.reflect_snapshot_root": "Quellverzeichnis für das Snapshot-Tor; leer = nur zreflect/ des Suites scannen (eigenen Code prüfen: Verzeichnisnamen angeben)"
 }

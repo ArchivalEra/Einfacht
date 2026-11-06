@@ -132,6 +132,65 @@ def fatal(msg):
     return 2
 
 
+def declares_itself(path):
+    """这个 `.py` 是不是**套件自己的**文件（模块级 `MODULE =` / `GATE =` 声明）。
+
+    **唯一产地**：「这是套件的一部分还是使用方的代码」这个判断，此前散在
+    各闸门里（`registry.modules()` 用 `MODULE` 认平台模块、`gates()` 用
+    `GATE` 认闸门），而 `check_lint` / `check_i18n` / `check_snapshots`
+    干脆**不判**，于是扫整个仓 —— 把使用方的 `examples/`、`scripts/` 一起
+    当自己的代码审。
+
+    实测代价：一个真项目接入后 `registry --run commit` 报 149 条 ruff、
+    59 条 i18n、3 条 snapshot，**全部指向那个项目自己的文件**。用户修不完
+    也理解不了 —— 那是套件的偏好强加给别人。
+
+    判据：模块体里有 `MODULE = …` 或 `GATE = …` 赋值。本仓 36 个 .py
+    **全部**满足（做判据前验过），所以「只扫这些」不会漏掉套件自己。
+    """
+    import ast  # noqa: PLC0415
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            tree = ast.parse(fh.read())
+    except (OSError, SyntaxError):
+        return False
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if any(isinstance(t, ast.Name) and t.id in ("MODULE", "GATE")
+               for t in node.targets):
+            return True
+    return False
+
+
+def suite_sources(base):
+    """`base` 下**属于套件**的 `.py` 的 `(相对名, 文本)`。
+
+    与 `py_sources` 的区别：只收 `declares_itself()` 为真的文件。用户自己
+    在这个目录里放的 `measure_*.py`（数据模块，没有声明）不算套件代码。
+    """
+    return [(rel, src) for rel, src in py_sources(base)
+            if declares_itself(os.path.join(base, rel))]
+
+
+def scanned_sources(base, configured=False):
+    """一道闸门该收哪些 `.py` —— **两条口径，按「旋钮是否显式配了」分**。
+
+    **唯一产地**：此前 `check_i18n.sources_for` 与 `check_snapshots.collect`
+    各写了一遍同一个三元判断（`py_sources if configured else suite_sources`），
+    两份措辞不同、判据相同 —— 本仓最忌讳的「必须一致的两份」。
+
+      · **未配**（默认面 = 套件自己）⇒ `suite_sources`：只审有声明的文件。
+        接进真实项目时，使用方的 `examples/` / `scripts/` 不是本体 —— 实测
+        一个真项目因此报 149 条 ruff / 59 条中文 / 3 条快照违规，全在它
+        自己的文件里。
+      · **配了**（用户指着说「审这里」）⇒ `py_sources`：全收。收窄会让
+        `REFLECT_I18N_ROOT=<你的目录>` 报 `scan_empty_dir` FATAL（实测），
+        等于把 opt-in 弄坏。
+    """
+    return py_sources(base) if configured else suite_sources(base)
+
+
 def py_sources(base):
     """`base` 目录下所有 `.py` 的 `(文件名, 文本)`；读不了 ⇒ 跳过。
 

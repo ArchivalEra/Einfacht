@@ -109,6 +109,13 @@
       "why": "不会。空 ⇒ 扫套件自己的 `zreflect/` 并报 `snapshot.ok(files=33)`，没有 OFF 行。README 与 knobs 的说明都写反了。",
       "evidence": "python3 zreflect/check_snapshots.py（env 未设时看输出）",
       "fixed_in": "接入体验修复 e9caaec"
+    },
+    {
+      "id": "R-016",
+      "text": "静态闸门扫整个仓（`ruff check .` / 全部 `.py`）",
+      "why": "不是有意为之，是从没判过。接进真实项目时，使用方的 `examples/` / `scripts/` 被当成套件本体来审：实测一个真项目 `registry --run commit` 报 149 条 ruff + 59 条中文 + 3 条快照违规，**全部指向那个项目自己的文件**。套件的纪律只对套件成立，把它强加给使用方等于让人修别人的偏好。",
+      "evidence": "python3 zreflect/criteria.py --selftest（★ registry.scope_two_ways：两种口径各一次）；另见 facts._real_repo_shaped 的 `examples/bad.py` —— 每一轮 bootstrap 都验一次",
+      "fixed_in": "gate.declares_itself / gate.scanned_sources（作用域收窄 + opt-in 保留）"
     }
   ]
 }

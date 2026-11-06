@@ -1326,6 +1326,10 @@ def _real_repo_shaped():
 
       · `build.sh` / `deploy.sh` —— 构建脚本（曾经让整条链路死掉）
       · `src/app.py` —— 它自己的代码
+      · `examples/bad.py` —— **它自己的、按套件标准会红的代码**（裸中文 +
+        未用 import）。这是第二条纪律：「套件只审套件」不是写在注释里的
+        承诺，而是这个夹具每一轮都会验的事 —— 三个闸门任何一次把范围扩回
+        整个仓，这条就当场红（实测接口收窄前它报 149 + 59 条）。
       · 一份**没有机器块**的既有 `README.md` —— `--init` 会 `already exists,
         left alone`，于是 `check_readme_sync` 的单条目路径要能跑
     """
@@ -1349,6 +1353,19 @@ def _real_repo_shaped():
         with open(os.path.join(d, "src", "app.py"), "w",
                   encoding="utf-8") as fh:
             fh.write("def f():\n    return 1\n")
+        # **使用方自己的代码，按套件标准是会红的**：裸中文（check_i18n 的
+        # 第一条判据）+ 未用 import（ruff 的 F401）+ 模块级派生（snapshot）。
+        # 三个闸门只要有一个把范围扩回整个仓，`registry --run commit` 就红。
+        # 「套件只审套件」由此变成每一轮都真跑一次的判据，不是注释。
+        os.makedirs(os.path.join(d, "examples"))
+        # ⚠️ 夹具源码里的中文必须**码点构造** —— 本文件自己就在 check_i18n
+        # 的扫描面里，直接写中文字面量会被它判成「本体说人话」（实测：写完
+        # 第一版后 `i18n_cover.bare_text` 当场红在 facts.py:1363）。
+        bad_body = ("import os\n\n\ndef f():\n    print(%r)\n"
+                    % "".join(chr(c) for c in (0x8FD9, 0x6761, 0x4E2D, 0x6587)))
+        with open(os.path.join(d, "examples", "bad.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(bad_body)
         with open(os.path.join(d, "README.md"), "w", encoding="utf-8") as fh:
             fh.write("# my project\n\nNo machine block here.\n")
         base = {k: v for k, v in os.environ.items()

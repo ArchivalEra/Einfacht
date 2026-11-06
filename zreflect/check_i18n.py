@@ -378,9 +378,17 @@ def _fixture_literal_problems(name, tree):
             and cjk(node.value) and id(node) not in exempt]
 
 
-def collect_from(d, root):
-    """见 `gate.py_sources`：实现只有一处。`root` 只为兼容签名保留（不再被读）。"""
-    return gate.py_sources(d)
+def sources_for(d, configured=False):
+    """收哪些 `.py` —— 见 `gate.scanned_sources`（两条口径的唯一产地）。
+
+    ⚠️ 这里曾经自己写了一遍那个三元判断，`check_snapshots.collect` 又写了
+    一遍 —— 同一判据两份。现在只转调。
+    """
+    return gate.scanned_sources(d, configured)
+
+
+def collect_from(d, root, configured=False):
+    return sources_for(d, configured)
 
 
 def run(argv=None):
@@ -403,7 +411,7 @@ def run(argv=None):
         else:
             d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", root)
             d = os.path.abspath(d)
-        found = collect_from(d, root)
+        found = collect_from(d, root, configured=bool(configured))
         if not found and configured:
             return fatal(M("i18n_cover.scan_empty_dir", root=root))
         paths.extend(found)

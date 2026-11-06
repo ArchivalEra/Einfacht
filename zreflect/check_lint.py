@@ -48,9 +48,41 @@ from i18n import M  # noqa: E402
 CONFIG = "ruff.toml"
 
 
-def ruff_argv():
-    """跑 ruff 的 argv（`sys.executable -m ruff`，跨平台且与 pip 装的那个一致）。"""
-    return [sys.executable, "-m", "ruff", "check", "--output-format=concise", "."]
+def suite_files(repo_root=None):
+    """**套件自己的** `.py` 路径（`declares_itself()` 为真的那些）。
+
+    ⚠️ 此前跑 `ruff check .` —— **整个仓**。接进真实项目时，使用方的
+    `examples/` / `scripts/` 会被当本体来审：实测一个真项目接入后
+    `registry --run commit` 报 **149 条** ruff，全部指向它自己的文件。
+    用户既修不完，也不理解为什么别人的套件在挑他的代码。
+
+    「套件代码」的判据是**声明**（`MODULE = …` / `GATE = …`），不是目录名 ——
+    发现式，与 `registry.modules()` / `gates()` 同一口径。
+    """
+    root = repo_root or gate.GATE_REPO
+    out = []
+    for sub in ("zreflect", "reflect-hooks"):
+        base = os.path.join(root, sub)
+        if not os.path.isdir(base):
+            continue
+        for rel, _src in gate.py_sources(base):
+            p = os.path.join(base, rel)
+            if gate.declares_itself(p):
+                out.append(os.path.join(sub, rel).replace(os.sep, "/"))
+    return sorted(out)
+
+
+def ruff_argv(files=None):
+    """跑 ruff 的 argv（`sys.executable -m ruff`，跨平台且与 pip 装的那个一致）。
+
+    `files` 给了就只查那些；不给 ⇒ **套件自己的文件**（不是整个仓）。
+    """
+    targets = list(files) if files is not None else suite_files()
+    if not targets:
+        return [sys.executable, "-m", "ruff", "check",
+                "--output-format=concise", "."]
+    return [sys.executable, "-m", "ruff", "check", "--output-format=concise",
+            *targets]
 
 
 def _has_located_finding(out):

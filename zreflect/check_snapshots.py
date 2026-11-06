@@ -440,9 +440,9 @@ def problems(paths=None, sources=None):
     return _derived_copy_problems(ix) + _mutable_copy_problems(ix)
 
 
-def collect(root):
-    """见 `gate.py_sources`：实现只有一处。"""
-    return gate.py_sources(root)
+def collect(root, configured=False):
+    """收哪些 `.py` —— 见 `gate.scanned_sources`（两条口径的唯一产地）。"""
+    return gate.scanned_sources(root, configured)
 
 
 def run(argv=None):
@@ -458,7 +458,7 @@ def run(argv=None):
     if not os.path.isdir(root):
         # 旋钮指向不存在的目录 ⇒ 配置坏（不是「没启用」）
         return fatal(M("snapshot.scan_empty_dir", root=root))
-    paths = collect(root)
+    paths = collect(root, configured=bool(configured))
     if not paths:
         return fatal(M("snapshot.scan_empty_dir", root=root))
     return finish(M("snapshot.title"), problems(paths),

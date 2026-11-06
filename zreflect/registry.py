@@ -402,6 +402,7 @@ def problems(gs, missing, mods=None, mods_missing=None,
     out += criteria.shell_surface_problems()
     out += criteria.encoding_surface_problems()
     out += criteria.subprocess_encoding_problems()
+    out += criteria.suite_scope_problems()
     # ⚠️ 注入模式（`mods=` 给了）下**不扫死接口**：那条判据看的是真目录，
     # 注入模式验的是「名录判据本身」，两者混在一张清单里会让断言被真仓状态
     # 连坐（实测：`unknown_phase` 的断言多出一条 `dead_interface`）。
