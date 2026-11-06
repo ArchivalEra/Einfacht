@@ -70,8 +70,34 @@ def _shell_argv(cmd):
         return [bash, "-o", "pipefail", "-c", _python_of(cmd)], "bash"
     if os.name != "nt" and os.path.exists("/bin/sh"):
         return ["/bin/sh", "-c", _python_of(cmd)], "sh"
-    # Windows（或极端精简的 POSIX）：用系统 shell
-    return [os.environ.get("COMSPEC", "cmd.exe"), "/c", _python_of(cmd)], "cmd"
+    # Windows：**不经 shell**，由 `_windows_argv` 拆成参数表。
+    #
+    # ⚠️ 走 `cmd.exe /c` 会掉进引号地狱：`sys.executable` 常在
+    # `C:\Program Files\...`（含空格），cmd 会把外层引号剥掉再重新切分
+    # ⇒ **127 找不到命令**。实测：CI 的 Windows 腿 19 条 replay 全红在这里。
+    #
+    # ⚠️ 也不用 `shlex.split`：`posix=False` **保留引号**（带引号的路径原样
+    # 传给 CreateProcess ⇒ 找不到文件）；`posix=True` 会把 `C:\Program Files`
+    # 的反斜杠当转义符吃掉。两者都错。见 `_windows_argv`。
+    return None, "no-shell"
+
+
+_QUOTED = re.compile(r'"([^"]*)"|(\S+)')
+
+
+def _windows_argv(cmd):
+    """把一条 `cmd` 拆成参数表（Windows，不经 shell）。
+
+    规则：**双引号内原样保留**（含空格与反斜杠），引号外按空白切。
+    这是 Windows `CommandLineToArgvW` 的近似 —— 对「解释器 + 脚本 + 几个参数」
+    这个形状足够，而且不碰反斜杠。
+
+    **不支持** shell 语法（`|` / `&&` / 重定向）。本仓台账里的 `cmd` 全是
+    单命令；使用方若要管道，得让那台机器装 bash（`_shell_argv` 会优先选它，
+    而那条路径有 `pipefail`）。
+    """
+    return [m.group(1) if m.group(1) is not None else m.group(2)
+            for m in _QUOTED.finditer(cmd)]
 
 
 # 台账里的 `cmd` 一律用 `python3`（惯用写法，Linux/macOS 上就是它）。
@@ -117,6 +143,8 @@ def run_cmd(cmd, timeout=None):
     """
     t = default_timeout() if timeout is None else timeout
     argv, shell_kind = _shell_argv(cmd)
+    if argv is None:
+        argv = _windows_argv(_python_of(cmd))
     # ⚠️ **环守卫的跨进程那一半**：把深度传给子进程。一条 cmd 可以是另一个
     # 闸门（复用），而那个闸门可能又触发复跑 —— 没有这个变量，环会无限
     # spawn 直到 OOM（实测）。深度上限由复跑器判（`_MAX_DEPTH`）。
@@ -188,6 +216,14 @@ def _cases():
          lambda: _python_of("python3x foo") == "python3x foo"),
         ("\u2605 runner.python3_midstring_untouched",
          lambda: _python_of("echo 'python3 x'") == "echo 'python3 x'"),
+        # **Windows 档不能带引号给 CreateProcess**：带引号的路径会被当成
+        # 字面文件名（找不到），而 `shlex.split(posix=False)` 正好保留引号。
+        # 实测：CI 的 Windows 腿 19 条 replay 全红在这一处。
+        ("★ runner.windows_argv_strips_quotes",
+         lambda: _windows_argv('"C:\\Program Files\\Py\\python.exe" x.py')
+         == ["C:\\Program Files\\Py\\python.exe", "x.py"]),
+        ("★ runner.windows_argv_keeps_backslashes",
+         lambda: _windows_argv("a\\b c") == ["a\\b", "c"]),
         # ③ 空输入必须报（对 runner 而言，「空」是空输出/空命令的形状）
         ("★ runner.quote_empty_is_visible",
          lambda: quote("") == "''"),
