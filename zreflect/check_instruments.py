@@ -40,7 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
 from gate import repo                            # noqa: E402
 from i18n import M                                # noqa: E402
-from ledger import facts_of, load                         # noqa: E402
+from ledger import facts_of, load_or_fatal                         # noqa: E402
 
 INSTRUMENTS_RAW = os.environ.get("REFLECT_INSTRUMENTS", "").strip()
 DAYS_RAW = os.environ.get("REFLECT_INSTRUMENT_DAYS", "").strip()
@@ -148,7 +148,7 @@ def run(argv=None):
     methods, rc = _load_methods(name)
     if rc:
         return rc
-    probs = problems(load(led_path), methods=methods, days=days)
+    probs = problems(load_or_fatal(led_path), methods=methods, days=days)
     return finish(M("instruments.title"), probs, _ok_line(name, methods, days))
 
 

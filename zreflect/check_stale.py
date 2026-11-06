@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M                                        # noqa: E402
-from ledger import age_days, facts_of, load, value_of     # noqa: E402
+from ledger import age_days, facts_of, load_or_fatal, value_of     # noqa: E402
 from living import DATED_RECORD, living_lines  # noqa: E402
 
 DOCS = tuple(d for d in os.environ.get(
@@ -203,7 +203,7 @@ def run(argv):
     facts_name = os.environ.get("REFLECT_FACTS", "FACTS.json")
     if not os.path.exists(repo(facts_name)):
         return fatal(M("stale.ledger_missing", name=facts_name))
-    probs = problems(load(repo(facts_name)), docs)
+    probs = problems(load_or_fatal(repo(facts_name)), docs)
     if not probs:
         if not RETIRED:
             print(M("stale.retired_rule_off"), file=sys.stderr)

@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M                                       # noqa: E402
-from ledger import load                                  # noqa: E402
+from ledger import load_or_fatal                                  # noqa: E402
 from living import HIST_MARK, living_lines               # noqa: E402
 
 REQUIRED = ("id", "text", "why", "evidence", "fixed_in")
@@ -85,7 +85,7 @@ def run(argv):
     rc = guard_nonempty("check_retractions", docs, M("retractions.scanned_docs"))
     if rc:
         return rc
-    led = load(rp)
+    led = load_or_fatal(rp)
     probs = problems(led, docs)
     n = len(led.get("retractions") or [])
     return finish(M("retractions.title"), probs,

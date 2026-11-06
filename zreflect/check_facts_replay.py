@@ -58,7 +58,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
 from i18n import M, bind, load_pack, Catalog
 from knobs import a_pack_lang                      # noqa: E402
-from ledger import facts_of, load, value_of              # noqa: E402
+from ledger import facts_of, load_or_fatal, value_of              # noqa: E402
 from runner import default_timeout, quote, run_cmd       # noqa: E402
 
 
@@ -252,7 +252,7 @@ def run(argv):
     p = repo(name)
     if not os.path.exists(p):
         return fatal(M("replay.ledger_missing", name=name))
-    r = replay_all(load(p))
+    r = replay_all(load_or_fatal(p))
     tail = str(M("replay.ok_skipped", count=r["skipped"])) if r["skipped"] else ""
     wtail = str(M("replay.ok_witnessed", count=r["witnessed"])) if r["witnessed"] else ""
     ctail = str(M("replay.ok_calibrated", count=r["calibrated"]) if r["calibrated"] else "")

@@ -18,11 +18,26 @@ from i18n import M
 
 
 
+class Unreadable(RuntimeError):
+    """台账文件在、但读不了（坏 JSON / 权限 / 编码）。
+
+    **与「没有台账」是两件事**：后者是新仓的正常形态（`missing_ok=True`
+    时返回空表），前者是配置事故 —— 必须走到 FATAL rc=2，绝不能冒成
+    裸 traceback（那会逃出本仓的 rc 契约，而 rc=0 的 traceback 更坏：
+    调用方以为成功）。
+    """
+
+
 def load(path, missing_ok=False):
     """读 JSON。`missing_ok=True` 时**缺文件返回空表** ——
-    给"新仓库第一次跑"用：那时台账还不存在，而 `facts.py` 的两道守卫
-    （掉条 / 改口）必须能处理"没有上一版"这件事。**默认仍是硬错误**：
-    调用方要显式说自己接受缺失，免得把"路径写错了"静默当成"还没有台账"。"""
+    给「新仓库第一次跑」用：那时台账还不存在，而 `facts.py` 的两道守卫
+    （掉条 / 改口）必须能处理「没有上一版」这件事。**默认仍是硬错误**：
+    调用方要显式说自己接受缺失，免得把「路径写错了」静默当成「还没有台账」。
+
+    ⚠️ 坏 JSON / 权限 / 编码一律抛 `Unreadable`（不是裸 `JSONDecodeError`）：
+    调用方据此转成 FATAL rc=2。此前一律冒到顶 —— 实测 `facts.py --check`
+    对一个坏台账打印 traceback 且 **rc=0**，调用方以为查过了。
+    """
     try:
         with open(path, encoding="utf-8") as fh:
             return json.load(fh)
@@ -30,6 +45,31 @@ def load(path, missing_ok=False):
         if missing_ok:
             return {}
         raise
+    except (OSError, UnicodeError, ValueError) as e:
+        raise Unreadable(path, e) from e
+
+
+def load_or_fatal(path, name=None):
+    """读台账；**坏文件 → FATAL rc=2**（`SystemExit(2)`）。
+
+    闸门用它取代裸 `load()`：坏台账是**配置事故**，必须走 FATAL 档，
+    不能冒成 traceback（Python 会以 1 退出，而 rc=1 在 `registry --run` 里
+    是「判据红」—— 修法完全不同：改配置 vs 修问题）。
+
+    实测：一个 `{ broken` 的 FACTS.json 让 `check_facts.py` 打 traceback 并
+    以 1 退出，用户会去修闸门。
+    """
+    import sys                                           # noqa: PLC0415
+    from gate import machine                             # noqa: PLC0415
+    from i18n import M                                   # noqa: PLC0415
+    try:
+        return load(path)
+    except Unreadable as e:
+        cause = e.args[1] if len(e.args) > 1 else e
+        print(machine().emit("fatal", M("ledger.unreadable_gate",
+                                        name=name or path, error=cause)),
+              file=sys.stderr)
+        raise SystemExit(2) from e
 
 
 def facts_of(ledger):
