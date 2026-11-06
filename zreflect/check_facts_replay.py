@@ -315,62 +315,88 @@ def _cases_fixture():
             "pack_lang": pack_lang}
 
 
-def _cases_replay(fx):
-    """见 `_cases()`：本组 11 条。"""
-    _hint_has, params = fx["hint_has"], fx["params"]
-    codes, pack_lang = fx["codes"], fx["pack_lang"]
+def _cases_replay_ok(fx):
+    """① 正常不报：尾换行 / 前后空白被 strip / 显式跳过。"""
     multi = fx["multi"]
     return [
-    # ① 正常不报
-    ("replay.ok_trailing_newline",
-     lambda: replay_all(LED, runner=lambda c: (0, "12\n"))["problems"] == []),
-    ("replay.ok_string_value",
-     lambda: replay_all({"facts": {"s": {"value": "v1", "cmd": "c"}}},
-                        runner=lambda c: (0, " v1\n"))["problems"] == []),
-    ("replay.ok_skip_declared",
-     lambda: replay_all(multi, runner=lambda c: (0, "1"))["problems"] == []),
-    # ② 该报的必须报
-    ("★ replay.mismatch_repair_hint",
-     # 真实包里「不符」这条必须仍带修法锚点：`--accept-changes`（ASCII，
-     # 是修法的可判定部分）+ `facts.py`（重测命令）。纯中文语义锚点会把自己
-     # 变成「本体里的自然语言」—— 那正是零语言闸门要消灭的形状。
-     # 零包 ⇒ 没有可渲染的句子，这条语义锚点**不适用**（明说不假装通过）。
-     lambda: codes(LED, lambda c: (0, "13")) == ["replay.mismatch"]
-     and params(LED, lambda c: (0, "13"), "replay.mismatch")[0]["key"] == "n"
-     # 条件判据：**装了包就必须带锚点**；零包（合法态）无句子可验。
-     and (not pack_lang or _hint_has(LED, lambda c: (0, "13"),
-                                     "accept-changes", "facts.py"))),
-    ("★ replay.mismatch_full_line",
-     lambda: codes(LED, lambda c: (0, "count=12 total")) == ["replay.mismatch"]),
-    ("★ replay.command_failed",
-     lambda: codes(LED, lambda c: (1, ""))
-     == ["replay.command_failed", "replay.none_ran"]
-     and params(LED, lambda c: (1, ""), "replay.command_failed")[0]["return_code"] == 1),
-    ("★ replay.timeout_cold_start_hint",
-     # 冷启动提示的语义锚点：`REFLECT_REPLAY_TIMEOUT` 旋钮名（ASCII）必须
-     # 仍在模板里 —— 删掉冷启动提示句（它原先就带着这个旋钮名）⇒ 这条红。
-     lambda: codes(LED, lambda c: (None, "")) == ["replay.timeout", "replay.none_ran"]
-     and (not pack_lang or _hint_has(LED, lambda c: (None, ""),
-                                     "REFLECT_REPLAY_TIMEOUT"))),
-    ("★ replay.no_cmd",
-     lambda: codes({"facts": {"n": {"value": 1, "source": "s"}}},
-                   lambda c: (0, "1")) == ["replay.no_cmd"]),
-    # ③ 空输入必须报
-    ("★ replay.empty_ledger",
-     lambda: codes({"facts": {}}, lambda c: (0, "")) == ["replay.empty_ledger"]),
-    ("★ replay.none_ran",
-     lambda: codes({"facts": {"a": {"value": 1, "cmd": "x"},
-                              "b": {"value": 2, "cmd": "y"}}},
-                   lambda c: (1, "")) == ["replay.command_failed",
-                                          "replay.command_failed",
-                                          "replay.none_ran"]
-     and params({"facts": {"a": {"value": 1, "cmd": "x"},
-                           "b": {"value": 2, "cmd": "y"}}},
-                lambda c: (1, ""), "replay.none_ran")[0]["attempts"] == 2),
-    ("★ replay.all_skipped",
-     lambda: codes({"facts": {"a": {"value": 1, "cmd": "x", "replay": False}}},
-                   lambda c: (0, "1")) == ["replay.all_skipped"]),
+        ("replay.ok_trailing_newline",
+         lambda: replay_all(LED, runner=lambda c: (0, "12\n"))["problems"] == []),
+        ("replay.ok_string_value",
+         lambda: replay_all({"facts": {"s": {"value": "v1", "cmd": "c"}}},
+                            runner=lambda c: (0, " v1\n"))["problems"] == []),
+        ("replay.ok_skip_declared",
+         lambda: replay_all(multi, runner=lambda c: (0, "1"))["problems"] == []),
     ]
+
+
+def _cases_replay_failures(fx):
+    """② 该报的必须报：不符 / 命令死 / 超时 / 缺 cmd。
+
+    两条「修法锚点」（`replay.mismatch_repair_hint` / `timeout_cold_start_hint`）
+    是**条件判据**：装了语言包就必须带 ASCII 锚点（`--accept-changes` /
+    `REFLECT_REPLAY_TIMEOUT`），零包是合法态、无句子可验 —— 明说不假装通过。
+    """
+    _hint_has, params = fx["hint_has"], fx["params"]
+    codes, pack_lang = fx["codes"], fx["pack_lang"]
+    return [
+        ("\u2605 replay.mismatch_repair_hint",
+         # 真实包里「不符」这条必须仍带修法锚点：`--accept-changes`（ASCII，
+         # 是修法的可判定部分）+ `facts.py`（重测命令）。纯中文语义锚点会把自己
+         # 变成「本体里的自然语言」—— 那正是零语言闸门要消灭的形状。
+         lambda: codes(LED, lambda c: (0, "13")) == ["replay.mismatch"]
+         and params(LED, lambda c: (0, "13"), "replay.mismatch")[0]["key"] == "n"
+         and (not pack_lang or _hint_has(LED, lambda c: (0, "13"),
+                                         "accept-changes", "facts.py"))),
+        ("\u2605 replay.mismatch_full_line",
+         lambda: codes(LED, lambda c: (0, "count=12 total"))
+         == ["replay.mismatch"]),
+        ("\u2605 replay.command_failed",
+         lambda: codes(LED, lambda c: (1, ""))
+         == ["replay.command_failed", "replay.none_ran"]
+         and params(LED, lambda c: (1, ""),
+                    "replay.command_failed")[0]["return_code"] == 1),
+        ("\u2605 replay.timeout_cold_start_hint",
+         # 冷启动提示的语义锚点：`REFLECT_REPLAY_TIMEOUT` 旋钮名（ASCII）必须
+         # 仍在模板里 —— 删掉冷启动提示句（它原先就带着这个旋钮名）⇒ 这条红。
+         lambda: codes(LED, lambda c: (None, ""))
+         == ["replay.timeout", "replay.none_ran"]
+         and (not pack_lang or _hint_has(LED, lambda c: (None, ""),
+                                         "REFLECT_REPLAY_TIMEOUT"))),
+        ("\u2605 replay.no_cmd",
+         lambda: codes({"facts": {"n": {"value": 1, "source": "s"}}},
+                       lambda c: (0, "1")) == ["replay.no_cmd"]),
+    ]
+
+
+def _cases_replay_empty(fx):
+    """③ 空输入必须报：空台账 / 一条都没跑成 / 全部跳过。"""
+    codes, params = fx["codes"], fx["params"]
+    two = {"facts": {"a": {"value": 1, "cmd": "x"},
+                     "b": {"value": 2, "cmd": "y"}}}
+    return [
+        ("\u2605 replay.empty_ledger",
+         lambda: codes({"facts": {}}, lambda c: (0, "")) == ["replay.empty_ledger"]),
+        ("\u2605 replay.none_ran",
+         lambda: codes(two, lambda c: (1, ""))
+         == ["replay.command_failed", "replay.command_failed",
+             "replay.none_ran"]
+         and params(two, lambda c: (1, ""),
+                    "replay.none_ran")[0]["attempts"] == 2),
+        ("\u2605 replay.all_skipped",
+         lambda: codes({"facts": {"a": {"value": 1, "cmd": "x",
+                                        "replay": False}}},
+                       lambda c: (0, "1")) == ["replay.all_skipped"]),
+    ]
+
+
+def _cases_replay(fx):
+    """见 `_cases()`：本组 11 条。
+
+    三组（正常 / 该报 / 空输入）：11 条扁平清单里，那两条**条件判据**
+    （装包才验锚点）混在其中，读者不容易看出它们为什么带 `not pack_lang`。
+    """
+    return (_cases_replay_ok(fx) + _cases_replay_failures(fx)
+            + _cases_replay_empty(fx))
 
 
 def _cases_witness(fx):
