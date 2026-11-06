@@ -548,7 +548,18 @@ def _case_verdict(label, fn):
     import i18n  # noqa: PLC0415
     why = never_falsifiable(fn)
     if why and _is_delegated(why):
-        return True, True, None
+        # `⚠️ **委托仍然要跑**。此前这里直接 `return True` —— 于是委托给 helper
+        # 的断言**从不执行**，`False` 与 `True` 同形（实测：`_utf8_forced_case`
+        # 的修复被掏空后它返回 False，selftest 照样报「19 PASS / 0 FAIL」）。
+        # 「可接受但可见」说的是**恒真检测看不见它的内部**，不是「不用跑」。
+        try:
+            return bool(fn()), True, None
+        except SystemExit as e:
+            return False, True, i18n.M("gate.case_unexpected_systemexit",
+                                       label=label, error=e)
+        except Exception as e:                      # noqa: BLE001
+            return False, True, i18n.M("gate.case_raised", label=label,
+                                       error=e)
     if why:
         # `fail | ` 是自证机器行前缀 —— 发射点字面量，不进语言包
         return False, False, i18n.M("gate.case_unfalsifiable",
@@ -606,6 +617,14 @@ def selftest(name, cases):
         if was_delegated:
             delegated += 1
             print(machine().emit("note", "%s | delegated" % label))
+            # ⚠️ **`delegated` 只影响「怎么报」，不影响「报不报」**。
+            # 此前这里是 `continue` —— 于是委托断言的结果被整个丢掉，
+            # `False` 与 `True` 在 selftest 面上同形（实测：把
+            # `_utf8_forced_case` 的修复掏空后它返回 False，selftest 照样
+            # 「19 PASS / 0 FAIL」）。
+            if not passed:
+                bad += 1
+                print(machine().emit("fail", label))
             continue
         if failure is not None:
             print(machine().emit("fail", failure))
@@ -617,6 +636,36 @@ def selftest(name, cases):
             bad += 1
     _print_banner(name, len(cases), bad, delegated)
     return 1 if bad else 0
+
+
+def _force_utf8_streams():
+    """把 stdout/stderr 强制成 UTF-8（**Windows 上是必须的**）。
+
+    为什么：Windows 上 `sys.stdout.encoding` 默认是 `cp1252`（代码页），
+    而这个仓会打印**闸门名与描述**（`GATE = meta("A/B 闸门", …)`）。实测：
+
+        Traceback (most recent call last):
+          File "registry.py", line 622, in _main_gates
+        UnicodeEncodeError: 'charmap' codec can't encode characters
+                            in position 25-26: character maps to <undefined>
+
+    ——一条 `registry.py --gates` 就能把 CI 的 Windows 腿整片打红，而 Linux
+    上永远复现不了（UTF-8 是默认）。
+
+    ⚠️ 只在**真的支持 reconfigure** 的流上做（`io.StringIO` / 被重定向的
+    自定义流没有这个方法），失败就静默跳过 —— 这不是判据，是环境适配。
+
+    ⚠️ 副作用是**全局**的（改的是 `sys.stdout`），所以只在 CLI 入口调：
+    `activate_or_fatal` 恰好是所有入口的必经点（11 处）。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            continue                # 已经关了 / 不支持 —— 不猜
 
 
 def activate_or_fatal(lang=None):
@@ -639,6 +688,8 @@ def activate_or_fatal(lang=None):
     直接裸 traceback 退 1）。
     """
     import i18n  # noqa: PLC0415
+
+    _force_utf8_streams()
     try:
         i18n.activate(lang)
     except Exception as e:                               # noqa: BLE001
