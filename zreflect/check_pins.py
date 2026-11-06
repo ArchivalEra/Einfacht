@@ -197,7 +197,7 @@ def _fixture():
     atexit.register(shutil.rmtree, d, True)
     os.makedirs(os.path.join(d, "wt"))
     subprocess.run(["git", "init", "-q", os.path.join(d, "wt")], check=True)
-    open(os.path.join(d, "wt", "f"), "w").write("x")
+    open(os.path.join(d, "wt", "f"), "w", encoding="utf-8").write("x")
     subprocess.run(["git", "-C", os.path.join(d, "wt"), "add", "f"], check=True)
     subprocess.run(["git", "-C", os.path.join(d, "wt"), "-c", "user.name=t", "-c",
                     "user.email=t@t", "commit", "-qm", "base"], check=True)

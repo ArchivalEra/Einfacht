@@ -1007,7 +1007,7 @@ def _tmp_doc(content, name="doc.md"):
     d = tempfile.mkdtemp()
     atexit.register(shutil.rmtree, d, True)
     p = os.path.join(d, name)
-    open(p, "w").write(content)
+    open(p, "w", encoding="utf-8").write(content)
     return p
 
 
@@ -1123,7 +1123,7 @@ def _corrupt_ledger_rc():
         subprocess.run(["git", "init", "-q", d], check=True, capture_output=True)
         shutil.copytree(os.path.join(gate.tool_repo(), "zreflect"),
                         os.path.join(d, "zreflect"))
-        open(os.path.join(d, "FACTS.json"), "w").write("{ broken")
+        open(os.path.join(d, "FACTS.json"), "w", encoding="utf-8").write("{ broken")
         env = {k: v for k, v in os.environ.items()
                if not k.startswith("REFLECT_")}
         p = subprocess.run(

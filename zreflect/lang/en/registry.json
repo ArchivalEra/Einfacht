@@ -12,6 +12,7 @@
  "registry.off_reason_too_short": "`%(file)s`'s `off_reason` is too short (%(reason)r) — an exemption must say why, same discipline as `PINNED:`",
  "registry.off_reason_without_off": "`%(file)s` declares `off_reason` but never calls `off()` — the reason is unwritten back (a lie)",
  "registry.off_without_reason": "`%(file)s` can call `off()` but declares no `off_reason` in `meta()` — a reasonless off is indistinguishable from 'this repo does not use this mechanism'",
+ "registry.open_without_encoding": "text `open()` without `encoding=` (`%(file)s:%(lineno)d`, mode=%(mode)s) — Windows defaults to cp1252; UTF-8 files raise UnicodeDecodeError",
  "registry.path_rule_split": "`%(file)s`'s `%(function)s()` computes the tool directory itself (`dirname(abspath(__file__))`) — that value must have exactly one producer (`gate.zdir()`), otherwise changing one place splits it",
  "registry.phase_error": "  ERROR %(file)s (executor-level breakage: rc<0 killed by signal, or >2 an unagreed code)",
  "registry.phase_fatal": "  FATAL %(file)s (config/environment broken — not a check failure; different fix)",

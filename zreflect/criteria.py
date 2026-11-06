@@ -175,6 +175,57 @@ def _consumed(fn, mod, own_text, corpus):
                for name, text in corpus)
 
 
+def encoding_surface_problems(repo_root=None):
+    """**文本 `open()` 必须显式 `encoding=`** —— 跨平台可读性的守卫。
+
+    为什么值得判据：Windows 的默认编码是 cp1252（代码页），而本仓的文件
+    全是 UTF-8。本轮 CI 的 Windows 腿被这一条绊住**四次**，每次形式不同：
+
+      · `registry --gates` 打印中文闸门名 → `UnicodeEncodeError`
+      · `subprocess.run(text=True)` 解码子进程输出 → 读线程崩，`stdout=None`
+      · 台账 `cmd` 里的 `open('FACTS.json')` → `UnicodeDecodeError`
+      · 各处 `open(..., "w")` 写中文夹具
+
+    判据（AST）：文本模式（无 `b`）的 `open()` 必须带 `encoding=` 关键字。
+    二进制模式豁免（`rb` / `wb` 不做编码转换）。
+
+    诚实边界：它只看**字面量调用**。`pathlib.Path.read_text()` 之类不在面内
+    （本仓不用）；动态构造的调用也看不见。
+    """
+    import os  # noqa: PLC0415
+    root = repo_root or gate.GATE_REPO
+    out = []
+    for name, src in gate.py_sources(os.path.join(root, "zreflect")):
+        out += _encoding_problems("zreflect/" + name, src)
+    for name, src in gate.py_sources(os.path.join(root, "reflect-hooks")):
+        out += _encoding_problems("reflect-hooks/" + name, src)
+    return out
+
+
+def _encoding_problems(name, src):
+    """一个文件的文本 `open()` 缺 `encoding` 的地方。"""
+    import ast  # noqa: PLC0415
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return []
+    out = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name) and node.func.id == "open"):
+            continue
+        if any(k.arg == "encoding" for k in node.keywords):
+            continue
+        mode = "r"
+        if len(node.args) > 1 and isinstance(node.args[1], ast.Constant):
+            mode = str(node.args[1].value)
+        if "b" in mode:
+            continue                        # 二进制：不做编码转换
+        out.append(M("registry.open_without_encoding",
+                     file=name, lineno=node.lineno, mode=mode))
+    return out
+
+
 def shell_surface_problems(repo_root=None):
     """`.sh` 只许出现在 `ALLOWED_SHELL` 里 —— 全 Python 化的**守卫**。
 
@@ -631,11 +682,11 @@ def _unexpected_shell_case():
     import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
-        open(os.path.join(d, "probe.sh"), "w").write("# probe\n")
+        open(os.path.join(d, "probe.sh"), "w", encoding="utf-8").write("# probe\n")
         if not shell_surface_problems(repo_root=d):
             return False
         # 登记过的名字（路径相对根）不该报
-        open(os.path.join(d, "gates-selftest.sh"), "w").write("# ok\n")
+        open(os.path.join(d, "gates-selftest.sh"), "w", encoding="utf-8").write("# ok\n")
         got = [str(p) for p in shell_surface_problems(repo_root=d)]
         return len(got) == 1 and "probe.sh" in got[0]
     finally:
@@ -661,10 +712,10 @@ def _trailing_newline_case():
     import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
-        open(os.path.join(d, "bad.py"), "w").write("x = 1")
+        open(os.path.join(d, "bad.py"), "w", encoding="utf-8").write("x = 1")
         if not trailing_newline_problems(zdir=d):
             return False
-        open(os.path.join(d, "bad.py"), "w").write("x = 1\n")
+        open(os.path.join(d, "bad.py"), "w", encoding="utf-8").write("x = 1\n")
         return trailing_newline_problems(zdir=d) == []
     finally:
         shutil.rmtree(d, True)
@@ -958,6 +1009,17 @@ def _cases_self_checks():
         # 零值守卫（空 cases 必须拒收）此前零断言。测它不算自举：测的是
         # 「0/0 洞会不会被拦住」，不是「断言跑得对不对」。
         # Windows 的 cp1252 stdout —— 这个仓会打印**中文**的闸门名与描述
+        # **文本 `open()` 必须显式 encoding**（Windows 默认 cp1252）。
+        # 这条判据在 CI 的 Windows 腿上被验证过四次 —— 每次都是不同形式。
+        ("★ registry.open_without_encoding_detected",
+         lambda: [p.code for p in _encoding_problems(
+             "x.py", 'open("a", "w").write("x")\n')]
+         == ["registry.open_without_encoding"]),
+        ("registry.open_with_encoding_is_clean",
+         lambda: _encoding_problems(
+             "x.py", 'open("a", encoding="utf-8").write("x")\n') == []),
+        ("registry.binary_open_is_exempt",
+         lambda: _encoding_problems("x.py", 'open("a", "rb").read()\n') == []),
         ("★ registry.utf8_streams_are_forced",
          lambda: _utf8_forced_case()),
         ("★ registry.selftest_refuses_empty_cases",

@@ -12,6 +12,7 @@
  "registry.off_reason_too_short": "`%(file)s` 的 `off_reason` 太短（%(reason)r）—— 豁免必须说明为什么，同 `PINNED:` 的纪律",
  "registry.off_reason_without_off": "`%(file)s` 声明了 `off_reason` 但源码从不调 `off()` —— 理由白写了（谎）",
  "registry.off_without_reason": "`%(file)s` 会调 `off()` 却没在 `meta()` 里声明 `off_reason` —— 没有理由的 off 与「本仓不用这套机制」不可区分",
+ "registry.open_without_encoding": "文本 `open()` 缺 `encoding=`（`%(file)s:%(lineno)d`，mode=%(mode)s）—— Windows 默认 cp1252，UTF-8 文件会抛 UnicodeDecodeError",
  "registry.path_rule_split": "`%(file)s` 的 `%(function)s()` 自己算「工具目录」（`dirname(abspath(__file__))`）—— 该值只能有一个产地（`gate.zdir()`），否则改一处就会分裂",
  "registry.phase_error": "  ERROR %(file)s（执行器层面坏了：rc<0 被信号杀，或 >2 未约定的码）",
  "registry.phase_fatal": "  FATAL %(file)s（配置/环境坏 —— 不是检查失败，修法不同）",

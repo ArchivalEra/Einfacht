@@ -160,7 +160,7 @@ def _cases():
     def wf(rel, obj):
         p = os.path.join(d, rel)
         os.makedirs(os.path.dirname(p), exist_ok=True)
-        json.dump(obj, open(p, "w"))
+        json.dump(obj, open(p, "w", encoding="utf-8"))
         return rel
     spec = {"pairs": [
         {"name": "allocator A/B", "a": "a.json", "b": "b.json", "key": "declared",

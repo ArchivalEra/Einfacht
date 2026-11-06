@@ -386,6 +386,7 @@ def problems(gs, missing, mods=None, mods_missing=None,
     out += criteria.off_reason_problems(gs)
     out += criteria.trailing_newline_problems()
     out += criteria.shell_surface_problems()
+    out += criteria.encoding_surface_problems()
     # ⚠️ 注入模式（`mods=` 给了）下**不扫死接口**：那条判据看的是真目录，
     # 注入模式验的是「名录判据本身」，两者混在一张清单里会让断言被真仓状态
     # 连坐（实测：`unknown_phase` 的断言多出一条 `dead_interface`）。
@@ -868,18 +869,18 @@ def _cases_fixture(d):
     """造一份假名录。`d` 来自 `_cases()`（它负责 mkdtemp 与清理）。"""
     # 夹具的声明数据用**ASCII 名**：它们是被 ast 提取的输入（进 AUTO:GATES
     # 机器块），不是本体输出 —— 中文夹具会被零语言闸门收编。
-    open(os.path.join(d, "check_ok.py"), "w").write(
+    open(os.path.join(d, "check_ok.py"), "w", encoding="utf-8").write(
         'GATE = gate.meta("gate_a", "blocks_a", knobs=("REFLECT_FACTS",),'
         ' name_dependent=True)\n')
-    open(os.path.join(d, "check_plain.py"), "w").write(
+    open(os.path.join(d, "check_plain.py"), "w", encoding="utf-8").write(
         'GATE = gate.meta("gate_b", "blocks_b", knobs=("REFLECT_WORLD",))\n')
-    open(os.path.join(d, "check_bare.py"), "w").write("X = 1\n")
-    open(os.path.join(d, "named_other.py"), "w").write(
+    open(os.path.join(d, "check_bare.py"), "w", encoding="utf-8").write("X = 1\n")
+    open(os.path.join(d, "named_other.py"), "w", encoding="utf-8").write(
         'GATE = gate.meta("gate_c", "declared means registered", knobs=())\n')
-    open(os.path.join(d, "doc_gate.py"), "w").write(
+    open(os.path.join(d, "doc_gate.py"), "w", encoding="utf-8").write(
         'GATE = gate.meta("gate_d", "start-of-work phase", knobs=(),'
         ' runs_at="start-of-work")\n')
-    open(os.path.join(d, "platform.py"), "w").write("Y = 2\n")   # 无声明 = 平台模块
+    open(os.path.join(d, "platform.py"), "w", encoding="utf-8").write("Y = 2\n")   # 无声明 = 平台模块
     gs, missing = gates(d)
     ok = [g for g in gs if g["file"].endswith("check_ok.py")][0]
     plain = [g for g in gs if g["file"].endswith("check_plain.py")][0]
