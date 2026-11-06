@@ -1131,6 +1131,9 @@ CASES = [
      lambda: not _is_unknown_cmd("--accept-changes=k1")),
     # **bootstrap 端到端收敛**：`--init` → measure → 两次 render → registry 全绿。
     ("★ facts.fresh_repo_bootstraps_green", lambda: _fresh_bootstraps()),
+    # **真项目形状**：带 build.sh / src / 既有 README 的仓也要能走完。
+    # 曾经「仓里任何 .sh ⇒ 整条链路 FATAL」，这是它的回归守卫。
+    ("★ facts.real_repo_shaped_bootstraps", lambda: _real_repo_shaped()),
     # **坏台账是配置事故，不是判据红**：必须 FATAL rc=2。实测：`{ broken` 的
     # FACTS.json 让 `--check` 打 traceback 且 rc=0（调用方以为查过了），
     # 让各闸门 rc=1（在 `registry --run` 里被记成「判据红」——
@@ -1307,6 +1310,67 @@ def _bootstrap_steps():
           "PRINCIPLES.md"], True),
         ([sys.executable, "zreflect/registry.py", "--run", "commit"], True),
     ]
+
+
+def _real_repo_shaped():
+    """**真项目形状**的仓能走完 bootstrap：带 `.sh` + `src/` + 既有 README。
+
+    这一条是「接进真实项目」验收换来的：此前 `shell_surface_problems()` 扫整个
+    `GATE_REPO`，于是**任何有 `build.sh` 的仓**都 `--render-doc` FATAL，
+    `--check` FATAL，pre-commit 红，且没有旋钮能放行 —— 「全 Python 化」是
+    本仓对自己的纪律，不是对所有使用方的要求。
+
+    夹具刻意放这三样（都是真项目最常见的形状）：
+
+      · `build.sh` / `deploy.sh` —— 构建脚本（曾经让整条链路死掉）
+      · `src/app.py` —— 它自己的代码
+      · 一份**没有机器块**的既有 `README.md` —— `--init` 会 `already exists,
+        left alone`，于是 `check_readme_sync` 的单条目路径要能跑
+    """
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        subprocess.run(["git", "init", "-q", d], check=True,
+                       capture_output=True)
+        for sub in ("zreflect", "reflect-hooks"):
+            shutil.copytree(os.path.join(gate.tool_repo(), sub),
+                            os.path.join(d, sub))
+        ruff_conf = os.path.join(gate.tool_repo(), "ruff.toml")
+        if os.path.isfile(ruff_conf):
+            shutil.copy(ruff_conf, d)
+        for name in ("build.sh", "deploy.sh"):
+            with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
+                fh.write("#!/bin/sh\necho %s\n" % name)
+        os.makedirs(os.path.join(d, "src"))
+        with open(os.path.join(d, "src", "app.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("def f():\n    return 1\n")
+        with open(os.path.join(d, "README.md"), "w", encoding="utf-8") as fh:
+            fh.write("# my project\n\nNo machine block here.\n")
+        base = {k: v for k, v in os.environ.items()
+                if not k.startswith("REFLECT_") and k != "GATE_REPO"}
+        subprocess.run([sys.executable, "zreflect/facts.py", "--init"],
+                       cwd=d, env=base, capture_output=True, text=True,
+                       timeout=180)
+        for argv in ([sys.executable, "zreflect/facts.py", "--accept-changes"],
+                     [sys.executable, "zreflect/facts.py", "--render-doc"],
+                     [sys.executable, "zreflect/facts.py", "--render-doc",
+                      "PRINCIPLES.md"]):
+            p = subprocess.run(argv, cwd=d, env=_env_from_envfile(d, base),
+                               capture_output=True, text=True, timeout=180)
+            if p.returncode != 0:
+                return False
+        p = subprocess.run([sys.executable, "zreflect/registry.py",
+                            "--run", "commit"],
+                           cwd=d, env=_env_from_envfile(d, base),
+                           capture_output=True, text=True, timeout=180)
+        return p.returncode == 0
+    except Exception:                                    # noqa: BLE001
+        return False
+    finally:
+        shutil.rmtree(d, True)
 
 
 def _fresh_bootstraps():
