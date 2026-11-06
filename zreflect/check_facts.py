@@ -82,10 +82,7 @@ _SHAPE_PATTERNS = (
 
 def _shape_exempt(token):
     """这个数字**出现的位置**是否属于形状白名单（版本/标识符/日期/路径…）。"""
-    for pat in _SHAPE_PATTERNS:
-        if re.fullmatch(pat, token):
-            return True
-    return False
+    return any(re.fullmatch(pat, token) for pat in _SHAPE_PATTERNS)
 
 
 _SHA_NEAR = re.compile(r"sha|hash|校验|指纹|commit", re.I)

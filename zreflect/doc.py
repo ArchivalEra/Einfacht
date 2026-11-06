@@ -306,9 +306,9 @@ def _every_cmd_references_a_real_file():
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     for r in RULES:
         for tok in r.cmd.split():
-            if tok.endswith(".py") or tok.endswith(".sh"):
-                if not os.path.exists(os.path.join(base, tok)):
-                    return False
+            is_script = tok.endswith(".py") or tok.endswith(".sh")
+            if is_script and not os.path.exists(os.path.join(base, tok)):
+                return False
     return True
 
 
@@ -340,7 +340,8 @@ def _cases():
         ("★ doc.missing_text_is_rejected",
          lambda: not all(r.text.strip() for r in [Rule("x", "  ", "cmd")])),
         ("★ doc.duplicate_id_is_rejected",
-         lambda: not (len({r.id for r in [Rule("x", "a", "c"), Rule("x", "b", "d")]}) == 2)),
+         lambda: len({r.id for r in [Rule("x", "a", "c"),
+                                     Rule("x", "b", "d")]}) == 1),
         ("★ doc.bad_id_shape_is_rejected",
          lambda: not all(__import__("re").fullmatch(r"[a-z][a-z0-9_]*", i)
                          for i in ["Bad-Id"])),

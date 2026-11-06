@@ -53,7 +53,7 @@ line-length = 100
 target-version = "py313"
 
 [lint]
-select = ["C901", "F", "E9", "B"]
+select = ["C901", "F", "E9", "B", "SIM", "RET"]
 ignore = [
     "ARG005",   # 自证夹具的 runner 签名（见上）
     "S603",     # 自己的工具链
@@ -61,6 +61,9 @@ ignore = [
     "SIM115",   # 部分 open() 需要把句柄传出去
     "S103",     # chmod 0o755 给生成的 hook wrapper 加执行位
     "S310",     # doctor 只探本机 http 端口
+    # SIM 的这几条在这个仓会误伤「有意分步」的写法：
+    "SIM105",   # try/except/pass ⇒ contextlib.suppress：本仓的 except 常带注释说明**为什么**吞
+    "SIM108",   # 三元表达式：`if` 分支里常有多行注释，压成一行就丢了
 ]
 
 [lint.per-file-ignores]

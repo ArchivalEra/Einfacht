@@ -278,9 +278,8 @@ def _module_level_assigns_all(tree):
     """
     nodes = []
     for node in tree.body:
-        if isinstance(node, ast.Assign):
-            nodes.append(node)
-        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+        if isinstance(node, ast.Assign) or (
+                isinstance(node, ast.AnnAssign) and node.value is not None):
             nodes.append(node)
         elif isinstance(node, ast.ClassDef):
             nodes.extend(n for n in node.body
