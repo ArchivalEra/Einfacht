@@ -199,6 +199,55 @@ def encoding_surface_problems(repo_root=None):
         out += _encoding_problems("zreflect/" + name, src)
     for name, src in gate.py_sources(os.path.join(root, "reflect-hooks")):
         out += _encoding_problems("reflect-hooks/" + name, src)
+    out += _rule_cmd_encoding_problems()
+    return out
+
+
+def _matching_paren(text, open_idx):
+    """`text[open_idx] == "("` 时返回配对的 `)` 下标；配不平 ⇒ None。"""
+    depth = 0
+    for i in range(open_idx, len(text)):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+    return None
+
+
+def _rule_cmd_encoding_problems():
+    """**规则 cmd 里的 `open(` 也要查**。
+
+    ⚠️ 这一段是漏检补丁：`doc.RULES` 的 `cmd` 是**字符串字面量**，不是真的
+    `open()` 调用 —— AST 扫描（`_encoding_problems`）看不见它。而它会被
+    `check_facts_replay` **逐字执行**，于是同一个 Windows 编码问题从
+    「代码里的 open」漏到了「台账里的 cmd」（实测：CI 的 Windows 腿连续
+    两轮都栽在 `principle.only_measured` 那条 cmd 上，而 encoding 判据当时
+    报 0 违规 —— **判据自己的盲区**）。
+    """
+    import re  # noqa: PLC0415
+    out = []
+    try:
+        import doc  # noqa: PLC0415
+    except Exception:                                    # noqa: BLE001
+        return out
+    for rule in getattr(doc, "RULES", ()):
+        cmd = getattr(rule, "cmd", "") or ""
+        # ⚠️ 不能用 `open\([^)]*\)`：参数里常有 `os.path.join(a, b)`，内层
+        # `)` 会让正则提前截断，于是**看不到后面的 `encoding=`** ——
+        # 实测：`host_agnostic` 那条明明带了 encoding，却被误报。
+        # 改成「从 `open(` 起，配平括号取到对应的 `)`」。
+        for idx in (m.start() for m in re.finditer(r"\bopen\(", cmd)):
+            end = _matching_paren(cmd, idx + 4)
+            if end is None:
+                continue
+            call = cmd[idx:end + 1]
+            if "encoding" in call or "'rb'" in call or '"rb"' in call:
+                continue
+            out.append(M("registry.open_without_encoding",
+                         file="zreflect/doc.py (rule %s)" % rule.id,
+                         lineno=0, mode="cmd"))
     return out
 
 

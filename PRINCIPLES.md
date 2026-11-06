@@ -53,7 +53,7 @@
 | `no_retired_names` | 退役名不许以现状出现；sha 出处与测龄可查 | `python3 zreflect/check_stale.py` |
 | `number_once` | 数字只生产一次：文档引用写 [[键名]]，不手抄（双向拦） | `python3 zreflect/check_facts.py` |
 | `off_is_visible` | off 与「跑过且通过」必须可区分；会 off 的闸门必须声明理由 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry, criteria;gs=registry.gates()[0];p=criteria.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)"` |
-| `only_measured` | 数值/行为只认实测；每条事实都必须有一条复跑命令 | `python3 -c "import json,sys;d=json.load(open('FACTS.json'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
+| `only_measured` | 数值/行为只认实测；每条事实都必须有一条复跑命令 | `python3 -c "import json,sys;d=json.load(open('FACTS.json', encoding='utf-8'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
 | `open_questions_settle` | 未结案的悬案必须挂一个能跑的结算件 | `python3 zreflect/check_questions.py` |
 | `selfcert_harness` | 每个闸门都要有 --selftest 入口（写而不跑 = 装饰） | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)"` |
 | `snapshot_hygiene` | 跨模块 import 的可变全局是值拷贝（陈旧快照）：改读属性 | `python3 zreflect/check_snapshots.py` |
