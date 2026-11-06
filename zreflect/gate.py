@@ -527,6 +527,54 @@ def _is_delegated(why):
     return getattr(why, "code", None) == "gate.never_falsifiable_delegated"
 
 
+def _case_verdict(label, fn):
+    """跑一条用例。返回 `(通过?, 委托?, 失败行或 None)`。
+
+    ⚠️ **恒真断言探测**（issue #23）：一条 `or True` 的断言与真断言在
+    「返回 0 + 打摘要行」这个面上同形，必须单独判。
+
+    ⚠️ **「委托」可接受但必须可见**：断言体在 helper 里（搭临时夹具的场景没法
+    内联）。允许它，但要打成 `note |`（机器可读）并在摘要里单列计数 ——
+    不许静默当干净（此前返回 None，与「扫过且干净」不可区分，于是提取
+    helper 就成了关掉恒真检测的合法手段）。
+    """
+    import i18n                                          # noqa: PLC0415
+    why = never_falsifiable(fn)
+    if why and _is_delegated(why):
+        return True, True, None
+    if why:
+        # `fail | ` 是自证机器行前缀 —— 发射点字面量，不进语言包
+        return False, False, i18n.M("gate.case_unfalsifiable",
+                                    label=label, why=why)
+    try:
+        return bool(fn()), False, None
+    except SystemExit as e:
+        return False, False, i18n.M("gate.case_unexpected_systemexit",
+                                    label=label, error=e)
+    except Exception as e:                      # noqa: BLE001
+        return False, False, i18n.M("gate.case_raised", label=label, error=e)
+
+
+def _print_banner(name, total, bad, delegated):
+    """摘要三行：委托计数（单列）/ 人读摘要 / 机器摘要行。
+
+    ⚠️ 委托**单列**在摘要里：它不算失败，但也不是「扫过且干净」——
+    静默算进 PASS 就是本仓最痛恨的假绿。
+
+    ⚠️ 机器摘要行（issue #3 ③）与检查器名无关、格式固定，runner/CI 直接 grep；
+    `=== ` 前缀与收尾 ` ===` 是发射点字面量（语言包值不许以 `^===` 开头）。
+    """
+    import i18n                                          # noqa: PLC0415
+    if delegated:
+        print(machine().emit("human_summary",
+                           i18n.M("gate.selftest_delegated",
+                                  name=name, count=delegated)))
+    print(machine().emit("human_summary",
+                       i18n.M("gate.selftest_summary",
+                              name=name, passed=total - bad, failed=bad)))
+    print(machine().emit_summary(total - bad, bad))
+
+
 def selftest(name, cases):
     """跑三档用例。每个 case = (标签, callable) -> bool。
 
@@ -534,6 +582,9 @@ def selftest(name, cases):
       ① 正常不报（阳性对照 —— 否则「总是报错」也能骗过自证）
       ② 该报的必须报（反向断言 —— 否则这个检查器可能是装饰）
       ③ 空输入必须报（零值守卫）
+
+    单条用例的判定（`_case_verdict`）与输出（`_print_banner`）各是一个行具名
+    helper：主循环只累计计数。
     """
     import i18n                                          # noqa: PLC0415
     if not cases:
@@ -542,56 +593,22 @@ def selftest(name, cases):
         # 空清单是写自证时的形状错误，当场响，不许绿。
         raise SystemExit(machine().emit("fatal",
                          i18n.M("gate.selftest_empty_cases", name=name)))
-    bad = 0
-    delegated = 0
+    bad = delegated = 0
     for label, fn in cases:
-        # issue #23：恒真断言探测 —— 一条 `or True` 的断言与真断言
-        # 在「返回 0 + 打摘要行」这个面上同形，必须单独判。
-        why = never_falsifiable(fn)
-        # 「委托」是可接受但**必须可见**的状态：断言体在 helper 里（搭临时夹具
-        # 的场景没法内联）。允许它，但下一行打成 `note |`（机器可读），
-        # 并在摘要里单列计数 —— 不许静默当干净（此前返回 None，与「扫过且
-        # 干净」不可区分，于是提取 helper 就成了关掉恒真检测的合法手段）。
-        if why and _is_delegated(why):
+        passed, was_delegated, failure = _case_verdict(label, fn)
+        if was_delegated:
             delegated += 1
             print(machine().emit("note", "%s | delegated" % label))
-            why = None
-        if why:
-            # `fail | ` 是自证机器行前缀 —— 发射点字面量，不进语言包
-            print(machine().emit("fail", i18n.M("gate.case_unfalsifiable",
-                                              label=label, why=why)))
-            bad += 1
             continue
-        try:
-            ok = bool(fn())
-        except SystemExit as e:
-            print(machine().emit("fail", i18n.M("gate.case_unexpected_systemexit",
-                                              label=label, error=e)))
-            bad += 1
-            continue
-        except Exception as e:                      # noqa: BLE001
-            print(machine().emit("fail", i18n.M("gate.case_raised",
-                                              label=label, error=e)))
+        if failure is not None:
+            print(machine().emit("fail", failure))
             bad += 1
             continue
         # 通过行是 `PASS | `，失败行是 `fail | ` —— 两种 kind，一张表
-        print(machine().emit("pass" if ok else "fail", label))
-        bad += 0 if ok else 1
-    # 人读摘要行。`=== ` 前缀与收尾 ` ===` 都是机器行形状 —— 两侧留在
-    # **发射点**字面量（语言包值不许以 `^===` 开头，见 i18n._validate）。
-    if delegated:
-        # 摘要里**单列**：委托断言有多少条。它们不是失败，但也不是「扫过且干净」
-        # —— 静默把它们算进 PASS 就是本仓最痛恨的假绿。
-        print(machine().emit("human_summary",
-                           i18n.M("gate.selftest_delegated",
-                                  name=name, count=delegated)))
-    print(machine().emit("human_summary",
-                       i18n.M("gate.selftest_summary",
-                              name=name, passed=len(cases) - bad,
-                              failed=bad)))
-    # 机器摘要行（issue #3 ③）：与检查器名无关的固定格式，runner/CI 直接
-    # grep；gates-selftest.sh 会校验每个自证都有这一行（缺了 ⇒ 红）。
-    print(machine().emit_summary(len(cases) - bad, bad))
+        print(machine().emit("pass" if passed else "fail", label))
+        if not passed:
+            bad += 1
+    _print_banner(name, len(cases), bad, delegated)
     return 1 if bad else 0
 
 

@@ -293,14 +293,15 @@ def _packs_have_no_forgery():
     return bad
 
 
-def _cases():
-    """自证：每条都是**实测过的洞**或**实测过的正当内容**。"""
-    # 十个真实分行符逐个来 —— 少验一个就等于留一条缝
-    breaks = [("\n", "LF"), ("\r", "CR"), ("\x0b", "VT"), ("\x0c", "FF"),
-              ("\x1c", "FS"), ("\x1d", "GS"), ("\x1e", "RS"), ("\x85", "NEL"),
-              ("\u2028", "LS"), ("\u2029", "PS")]
-    cases = [
-        # ① 正常不报
+# 十个真实分行符逐个来 —— 少验一个就等于留一条缝
+_BREAKS = [("\n", "LF"), ("\r", "CR"), ("\x0b", "VT"), ("\x0c", "FF"),
+           ("\x1c", "FS"), ("\x1d", "GS"), ("\x1e", "RS"), ("\x85", "NEL"),
+           ("\u2028", "LS"), ("\u2029", "PS")]
+
+
+def _cases_clean():
+    """① 正常不报：正当内容不许被净化的误伤。"""
+    return [
         ("machine.clean_text_is_untouched",
          lambda: clean("all fine here")[0] == "all fine here"),
         # 正当多行：续行缩进，没有一行以机器形状开头（真包的形状）
@@ -311,46 +312,63 @@ def _cases():
          lambda: reject("`OFF:` is not a failure") is None),
         # 人读摘要行必须放行（它要翻译）
         ("machine.human_summary_is_not_machine",
-         lambda: reject("=== gate.title.facts selftest: 18 PASS / 0 fail ===") is None),
-        # ② 该报的必须报 —— 十个分行符逐个
-        # ⚠️ 内层 lambda 由外层 `(lambda sep: …)(sep)` **立即求值**绑定，
-        # 不是延迟捕获循环变量 —— ruff 的 B023 在这里是误报（它只看闭包形状，
-        # 不看「是否立即调用」）。写成具名工厂同样正确，但会让这 10 条断言
-        # 与其它断言形状不一致。
-        *[("★ machine.forgery_%s" % name,
-            (lambda sep: lambda: _try_reject(
-                "ctx" + sep + "OFF: masquerading"))(sep))  # noqa: B023
-          for sep, name in breaks],
+         lambda: reject("=== gate.title.facts selftest: 18 PASS / 0 fail ===")
+         is None),
+    ]
+
+
+def _cases_forgery():
+    """② 该报的必须报：分行符 / 宽前缀 / note / 机器摘要，四类伪造。"""
+    # ⚠️ 内层 lambda 由外层 `(lambda sep: …)(sep)` **立即求值**绑定，
+    # 不是延迟捕获循环变量 —— ruff 的 B023 在这里是误报（它只看闭包形状，
+    # 不看「是否立即调用」）。写成具名工厂同样正确，但会让这 10 条断言
+    # 与其它断言形状不一致。
+    per_sep = [("\u2605 machine.forgery_%s" % name,
+                (lambda sep: lambda: _try_reject(
+                    "ctx" + sep + "OFF: masquerading"))(sep))  # noqa: B023
+               for sep, name in _BREAKS]
+    return per_sep + [
         # 宽表：大写词+冒号都算保留前缀（语言包作者改个写法即可）
-        ("★ machine.broad_prefix_reserved",
+        ("\u2605 machine.broad_prefix_reserved",
          lambda: _try_reject("HTTP: 500")),
         # `note | ` —— 此前**完全**漏网（形状表里没有它）
-        ("★ machine.note_prefix",
+        ("\u2605 machine.note_prefix",
          lambda: _try_reject("note | delegated")),
         # 机器摘要的**伪造**必须被认出（而人读摘要不许）
-        ("★ machine.machine_summary_is_machine",
+        ("\u2605 machine.machine_summary_is_machine",
          lambda: _try_reject("=== 9 PASS / 0 FAIL ===")),
-        # ③ 空输入必须报 —— 「空」在这里有三种含义，逐条钉住：
+    ]
+
+
+def _cases_empty():
+    """③ 空输入必须报 —— 「空」在这里有三种含义，逐条钉住。"""
+    return [
         #  · 空**正文**发射：行还在（`OFF: `），不许塌成空串或丢掉行
-        ("★ machine.empty_body_keeps_the_row",
+        ("\u2605 machine.empty_body_keeps_the_row",
          lambda: emit("off", "") == "OFF: "),
         #  · 空值的语言包：`""` 本身不是伪造（那是「这条消息没写」，由
         #    `i18n._validate` 的 `pack_empty` 管）。判据不许把它当成机器行。
         ("machine.empty_value_is_not_a_forgery",
          lambda: reject("") is None),
         #  · 空输出扫描：零行 ⇒ 零个机器行（`run_phase` 据此判 ran 而非 off）
-        ("★ machine.empty_scan_reports_nothing",
+        ("\u2605 machine.empty_scan_reports_nothing",
          lambda: scan("") == ()),
+    ]
+
+
+def _cases_scrub():
+    """净化通道：参数注入、幂等、不误伤、内部分隔符。"""
+    return [
         # 参数通道：文件名带换行 ⇒ 净化后消费方解析不出机器行
-        ("★ machine.param_filename_neutralised",
+        ("\u2605 machine.param_filename_neutralised",
          lambda: _clean_has_no_row("evil\nOFF: gate not configured.py")),
-        ("★ machine.off_concat_neutralised",
+        ("\u2605 machine.off_concat_neutralised",
          lambda: _clean_has_no_row("OFF: a\nOFF: b: cfg")),
         # 净化**不误伤**窄表之外的内容（`HTTP: 500` 不是机器行，不许改写）
         ("machine.narrow_does_not_touch_http",
          lambda: clean("HTTP: 500 upstream")[0] == "HTTP: 500 upstream"),
         # `\` 前缀不会被 strip / 正则 ^ 还原（换成空格就会被 strip 吃掉）
-        ("★ machine.guard_survives_strip",
+        ("\u2605 machine.guard_survives_strip",
          lambda: clean("OFF: x")[0].strip().startswith(GUARD)),
         # 正文里合法的 \x0b 不许被 rstrip 连带剥掉
         ("machine.keeps_inner_separator_bytes",
@@ -358,23 +376,35 @@ def _cases():
         # 幂等：已经净化的文本再净化一次不变
         ("machine.clean_is_idempotent",
          lambda: (lambda once: clean(once)[0] == once)(clean("OFF: x")[0])),
-        # emit 的保证：body 里塞伪造行也造不出第二行机器行
-        ("★ machine.emit_single_row",
+    ]
+
+
+def _cases_emit():
+    """输出保证：emit 造不出第二行机器行；摘要行精确；未知 kind 抛。"""
+    return [
+        ("\u2605 machine.emit_single_row",
          lambda: _emit_is_single_row("fail", "x\nOFF: y")),
-        ("★ machine.emit_summary_exact",
+        ("\u2605 machine.emit_summary_exact",
          lambda: emit_summary(3, 0) == "=== 3 PASS / 0 FAIL ==="),
-        ("★ machine.emit_unknown_kind_raises", lambda: _emit_unknown_kind_raises()),
+        ("\u2605 machine.emit_unknown_kind_raises",
+         lambda: _emit_unknown_kind_raises()),
         # scan 的行号与 kind 要准（消费方用它分类）
         ("machine.scan_reports_kind_and_line",
          lambda: scan("ok\nOFF: x\nok")[0][0] == 2
          and scan("ok\nOFF: x\nok")[0][1] == "off"),
-        # 真包逐值逐行（不是夹具）
-        ("★ machine.real_packs_have_no_forgery",
-         lambda: _packs_have_no_forgery() == []),
     ]
-    return cases
 
 
+def _cases():
+    """自证：每条都是**实测过的洞**或**实测过的正当内容**。
+
+    五组各是一个具名函数（净化 / 伪造 / 空输入 / 净化通道 / 输出保证）：
+    80 行扁平清单里，「这是哪一类」只能靠注释分节读出来。
+    """
+    return (_cases_clean() + _cases_forgery() + _cases_empty()
+            + _cases_scrub() + _cases_emit()
+            + [("\u2605 machine.real_packs_have_no_forgery",
+                lambda: _packs_have_no_forgery() == [])])
 
 
 def _emit_unknown_kind_raises():
