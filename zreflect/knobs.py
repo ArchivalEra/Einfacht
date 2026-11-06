@@ -822,66 +822,91 @@ def _cases_scan(fx):
     ]
 
 
-def _cases_readme(fx):
-    """见 `_cases()`：本组 8 条。"""
+_README_TRIO = {"README.md": "x", "README.zh.md": "x", "README.de.md": "x"}
+
+
+def _cases_readme_nominations():
+    """README 里出现未登记的旋钮名（幻影防御）—— 该报 + 正常不报。"""
     return [
-    ("knobs.readme_nominations_registered",
-     lambda: readme_problems(files={
-         "README.md": "uses REFLECT_FACTS and REFLECT_DOC.",
-         "README.zh.md": "x", "README.de.md": "x"}) == []),
-    ("knobs.real_readmes_clean", lambda: readme_problems() == []),
-    ("★ knobs.readme_phantom",
-     lambda: any(x.code == "knobs.readme_phantom" for x in readme_problems(files={
-         "README.md": "see " + "REFLECT_" + "GHOSTY" + ".",
-         "README.zh.md": "x", "README.de.md": "x"}))),
-    # ⚠️ 这两条此前**零用例**：`declared_vs_read_problems` 与
-    # `registry_vs_readme_problems` 从落地起从未被证明会红（AGENTS 规则 4）。
-    # `declared_vs_read_problems` 连注入缝都没有（直读 gate.GATE_REPO），
-    # 所以先补缝（sources=）、再补这两个反证。
-    ("★ knobs.declared_not_read",
-     # 声明了某个旋钮，但源码里根本不出现它 ⇒ 必须报，
-     # 且**点名那个旋钮**（否则报个空壳也算通过）。
-     # ⚠️ 断言**不许**提取成 helper：`never_falsifiable` 只扫 lambda 的 AST，
-     # 委托给一个函数就让它瞎掉 —— 此前那样做过，helper 改成 `return True`
-     # 后 26 PASS / 0 FAIL 全绿（实测）。宁可写长一行，也不关掉检测器。
-     lambda: [p.code for p in declared_vs_read_problems(
-         [{"file": "check_x.py",
-           "knobs": ("REFLECT_FACTS",)}],
-         sources={"check_x.py": "X = 1\n"})
-     ] == ["knobs.declared_not_read"]
-     and [p.params for p in declared_vs_read_problems(
-         [{"file": "check_x.py",
-           "knobs": ("REFLECT_FACTS",)}],
-         sources={"check_x.py": "X = 1\n"})
-     ] == [{"file": "check_x.py", "knobs": "REFLECT_FACTS"}]),
-    ("knobs.declared_and_read_is_clean",
-     # 声明了、也确实读了 ⇒ 不许报（阳性对照，否则「总是报」也能骗过自证）
-     lambda: declared_vs_read_problems(
-         [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
-         sources={"check_x.py":
-                  'X = os.environ.get("REFLECT_FACTS")\n'}) == []),
-    ("★ knobs.readme_missing_rows",
-     # 登记表里有、README 配置表里缺 ⇒ 必须报（方向与 readme_phantom 相反）。
-     # ⚠️ 断言**钉死 code**，不是只判 `!= []`：此前那样任何错误 code 都能
-     # 让这条通过（实测：换成一个 `readme_phantom` 冒充，用例照样绿）。
-     lambda: [p.code for p in registry_vs_readme_problems(
-         tables={name: "| `REFLECT_FACTS` | x |\n" for name in
-                 ("README.md", "README.zh.md", "README.de.md")},
-         # 名单**钉死**：判据不该读 `REFLECT_READMES` 来决定自己考几轮。
-         names=("README.md", "README.zh.md", "README.de.md"))
-     ] == ["knobs.readme_missing_rows"] * 3),
-    # ③ **空输入**档（AGENTS 规则 4 的第三类）：两个对账器此前只有
-    # 「不报」与「该报」两档，空输入返回 `[]` —— 与「干净」不可区分。
-    # 这里把空输入**明说为不适用**（不是假装通过）：没有可比的两侧时
-    # 返回空是对的，但必须有一条用例把它钉住，否则「实现坏了」也会返回空。
-    ("knobs.declared_vs_read_empty_in_scope",
-     # 没有任何声明 ⇒ 无可比对；返回空是对的（且与「声明了却读不到」区分开）
-     lambda: declared_vs_read_problems([{"file": "x.py", "knobs": ()}],
-                                      sources={}) == []),
-    ("knobs.registry_vs_readme_empty_tables",
-     # 一张表都没有 ⇒ 无可比对；返回空是对的
-     lambda: registry_vs_readme_problems(tables={}) == []),
+        ("knobs.readme_nominations_registered",
+         lambda: readme_problems(files={
+             "README.md": "uses REFLECT_FACTS and REFLECT_DOC.",
+             "README.zh.md": "x", "README.de.md": "x"}) == []),
+        ("knobs.real_readmes_clean", lambda: readme_problems() == []),
+        ("\u2605 knobs.readme_phantom",
+         lambda: any(x.code == "knobs.readme_phantom"
+                     for x in readme_problems(files=dict(
+                         _README_TRIO,
+                         **{"README.md": "see " + "REFLECT_" + "GHOSTY" + "."})))),
     ]
+
+
+def _cases_readme_declared_read():
+    """声明↔实读对账 —— 从落地起从未被证明会红（AGENTS 规则 4）。
+
+    ⚠️ 断言**不许**提取成 helper：`never_falsifiable` 只扫 lambda 的 AST，
+    委托给一个函数就让它瞎掉 —— 此前那样做过，helper 改成 `return True`
+    后 26 PASS / 0 FAIL 全绿（实测）。宁可写长一行，也不关掉检测器。
+    """
+    return [
+        ("\u2605 knobs.declared_not_read",
+         # 声明了某个旋钮，但源码里根本不出现它 ⇒ 必须报，且**点名那个旋钮**
+         lambda: [p.code for p in declared_vs_read_problems(
+             [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
+             sources={"check_x.py": "X = 1\n"})
+         ] == ["knobs.declared_not_read"]
+         and [p.params for p in declared_vs_read_problems(
+             [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
+             sources={"check_x.py": "X = 1\n"})
+         ] == [{"file": "check_x.py", "knobs": "REFLECT_FACTS"}]),
+        # 声明了、也确实读了 ⇒ 不许报（阳性对照，否则「总是报」也能骗过自证）
+        ("knobs.declared_and_read_is_clean",
+         lambda: declared_vs_read_problems(
+             [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
+             sources={"check_x.py":
+                      'X = os.environ.get("REFLECT_FACTS")\n'}) == []),
+    ]
+
+
+def _cases_readme_rows():
+    """README 配置表缺行 —— 方向与幻影相反。"""
+    return [
+        ("\u2605 knobs.readme_missing_rows",
+         # ⚠️ 断言**钉死 code**，不是只判 `!= []`：此前那样任何错误 code 都能
+         # 让这条通过（实测：换成一个 `readme_phantom` 冒充，用例照样绿）。
+         lambda: [p.code for p in registry_vs_readme_problems(
+             tables={name: "| `REFLECT_FACTS` | x |\n"
+                     for name in _README_TRIO},
+             # 名单**钉死**：判据不该读 `REFLECT_READMES` 来决定自己考几轮。
+             names=tuple(_README_TRIO))
+         ] == ["knobs.readme_missing_rows"] * 3),
+    ]
+
+
+def _cases_readme_empty():
+    """③ 空输入档（AGENTS 规则 4 的第三类）。
+
+    两个对账器此前只有「不报」与「该报」两档，空输入返回 `[]` —— 与「干净」
+    不可区分。这里把空输入**明说为不适用**（不是假装通过）：没有可比的两侧时
+    返回空是对的，但必须有一条用例把它钉住，否则「实现坏了」也会返回空。
+    """
+    return [
+        ("knobs.declared_vs_read_empty_in_scope",
+         lambda: declared_vs_read_problems([{"file": "x.py", "knobs": ()}],
+                                           sources={}) == []),
+        ("knobs.registry_vs_readme_empty_tables",
+         lambda: registry_vs_readme_problems(tables={}) == []),
+    ]
+
+
+def _cases_readme(fx):
+    """见 `_cases()`：本组 8 条。
+
+    四组（幻影 / 声明↔实读 / 缺行 / 空输入）：四个对账器方向各不相同，
+    混在一张清单里时「这条考的是哪个方向」只能靠注释认。
+    """
+    return (_cases_readme_nominations() + _cases_readme_declared_read()
+            + _cases_readme_rows() + _cases_readme_empty())
 
 
 def _cases_semantics(fx):
