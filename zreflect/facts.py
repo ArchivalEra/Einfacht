@@ -1195,12 +1195,49 @@ def _corrupt_load_raises():
         os.unlink(path)
 
 
+def _env_from_envfile(d, base_env):
+    """把 `Einfacht.env` 解析成环境变量（**跨平台，不经 shell**）。
+
+    ⚠️ 此前用 `shell=True` + `set -a; . ./Einfacht.env; set +a;` ——
+    那是 **POSIX sh 语法**。Windows 的 shell 是 cmd.exe，它不认；于是 env
+    没被加载 ⇒ 闸门回落默认文档名单 ⇒ `doc_has_no_home`
+    （实测：CI 的 Windows 腿 `facts` 自证 13 PASS / 1 FAIL）。
+    """
+    out = dict(base_env)
+    path = os.path.join(d, "Einfacht.env")
+    if not os.path.isfile(path):
+        return out
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line.startswith("export "):
+                continue
+            key, _, value = line[len("export "):].partition("=")
+            if key.strip():
+                out[key.strip()] = value.strip()
+    return out
+
+
+def _bootstrap_steps():
+    """`--init` 之后要跑的步骤（`(argv, 是否带 env)`）。"""
+    return [
+        ([sys.executable, "zreflect/facts.py", "--accept-changes"], True),
+        ([sys.executable, "zreflect/facts.py", "--render-doc"], True),
+        ([sys.executable, "zreflect/facts.py", "--render-doc",
+          "PRINCIPLES.md"], True),
+        ([sys.executable, "zreflect/registry.py", "--run", "commit"], True),
+    ]
+
+
 def _fresh_bootstraps():
     """全新仓：`--init` → measure → 两次 render → `registry --run commit` 全绿。
 
     **端到端**：spawn 子进程。正因为这样它抓得到那三处「单独看都合理、
     合起来让 bootstrap 走不通」的缺陷 —— env 让 harness 自打红、
     md_lines 把 GATES+RULES 块也数进去、`--accept-changes` 被当成未知命令。
+
+    三段（准备夹具 / 解析 env / 逐步跑）各是一个 helper：拼在一起时
+    12 复杂度，而它自己的 `check_lint` 会当场判红（实测）。
     """
     import shutil  # noqa: PLC0415
     import subprocess  # noqa: PLC0415
@@ -1212,33 +1249,21 @@ def _fresh_bootstraps():
         for sub in ("zreflect", "reflect-hooks"):
             shutil.copytree(os.path.join(gate.tool_repo(), sub),
                             os.path.join(d, sub))
-        # `ruff.toml` 是可选判据（`check_lint` 缺它就明说未启用）：
-        # 源仓没有它（例如套件被拷成 `zreflect/` + `reflect-hooks/` 两棵子树）
-        # 时不该让夹具失败 —— 那考的是「bootstrap 能不能收敛」，不是「有没有装 lint」。
         ruff_conf = os.path.join(gate.tool_repo(), "ruff.toml")
         if os.path.isfile(ruff_conf):
             shutil.copy(ruff_conf, d)
         # ⚠️ 必须连 `GATE_REPO` 一起清：`harness` 跑自证时把它设成**本仓**，
-        # 而这里的夹具是另一个仓 —— 留着它，子进程会回头检查本仓，
-        # 报出与夹具无关的 `facts.doc_has_no_home`（实测：外仓里 `facts`
-        # 自证 10 PASS / 1 FAIL，红的原因是本仓的文档名单）。
-        env = {k: v for k, v in os.environ.items()
-               if not k.startswith("REFLECT_") and k != "GATE_REPO"}
-
-        def run(argv, with_env=False):
-            prefix = "set -a; . ./Einfacht.env; set +a; " if with_env else ""
-            return subprocess.run(prefix + " ".join(argv), shell=True, cwd=d,
-                                  env=env, capture_output=True, text=True,
-                                  timeout=180)
-
-        run([sys.executable, "zreflect/facts.py", "--init"])
-        for argv, with_env in (
-                ([sys.executable, "zreflect/facts.py", "--accept-changes"], True),
-                ([sys.executable, "zreflect/facts.py", "--render-doc"], True),
-                ([sys.executable, "zreflect/facts.py", "--render-doc",
-                  "PRINCIPLES.md"], True),
-                ([sys.executable, "zreflect/registry.py", "--run", "commit"], True)):
-            if run(argv, with_env).returncode != 0:
+        # 而这里的夹具是另一个仓 —— 留着它，子进程会回头检查本仓。
+        base = {k: v for k, v in os.environ.items()
+                if not k.startswith("REFLECT_") and k != "GATE_REPO"}
+        subprocess.run([sys.executable, "zreflect/facts.py", "--init"],
+                       cwd=d, env=base, capture_output=True, text=True,
+                       timeout=180)
+        for argv, with_env in _bootstrap_steps():
+            env = _env_from_envfile(d, base) if with_env else base
+            p = subprocess.run(argv, cwd=d, env=env, capture_output=True,
+                               text=True, timeout=180)
+            if p.returncode != 0:
                 return False
         return True
     except Exception:                                    # noqa: BLE001
