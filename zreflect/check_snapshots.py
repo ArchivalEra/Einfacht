@@ -447,7 +447,14 @@ def collect(root):
 
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    root = os.environ.get(KNOB, "").strip() or DEFAULT_ROOT
+    # ⚠️ **`REFLECT_SNAPSHOT_ROOT` 为空 ⇒ 扫套件自己的 `zreflect/`**，
+    # 不是「未启用」。（README 曾把这条说反了：「empty ⇒ that gate says out
+    # loud it is off」—— 实测为空时它照跑并对套件报 `snapshot.ok`。）
+    # 为什么这样设计：这道闸门守的是「跨模块 import 的可变全局」，套件自己
+    # 就是最大的受害者（`gate.GATE_REPO` 被多道自证改写），所以默认面是它。
+    # 要扫**你的代码**就显式设 `REFLECT_SNAPSHOT_ROOT=<目录>`。
+    configured = os.environ.get(KNOB, "").strip()
+    root = configured or DEFAULT_ROOT
     if not os.path.isdir(root):
         # 旋钮指向不存在的目录 ⇒ 配置坏（不是「没启用」）
         return fatal(M("snapshot.scan_empty_dir", root=root))

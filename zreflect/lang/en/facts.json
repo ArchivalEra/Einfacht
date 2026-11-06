@@ -19,6 +19,7 @@
  "facts.empty_ledger": "ledger is empty — empty is not a pass (zero-value guard): check whether measure_example() is broken",
  "facts.get_needs_key": "--get needs a key name: --get KEY",
  "facts.init_created": "created %(name)s",
+ "facts.init_env_exists_in_hooks": "`reflect-hooks/Einfacht.env` already exists ⇒ not creating a second one at the repo root (the plugin reads the hooks dir first; two copies would let the hooks read A while you source B)",
  "facts.init_kept": "already exists, left alone: %(name)s",
  "facts.init_next": "next: python3 zreflect/facts.py (measure) → --render-doc <your state doc>",
  "facts.ledger_missing": "fact ledger (%(name)s) is missing. Run python3 zreflect/facts.py to measure first.",

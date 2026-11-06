@@ -19,6 +19,7 @@
  "facts.empty_ledger": "台账为空 —— 空不是通过（零值守卫）：先查 measure_example() 是不是坏了",
  "facts.get_needs_key": "--get 需要一个键名：--get KEY",
  "facts.init_created": "已创建 %(name)s",
+ "facts.init_env_exists_in_hooks": "`reflect-hooks/Einfacht.env` 已存在 ⇒ 不再造仓根那一份（插件优先读钩子目录；两份同时存在会让「钩子读 A、你 source B」分叉）",
  "facts.init_kept": "已存在，未覆盖 %(name)s",
  "facts.init_next": "下一步：python3 zreflect/facts.py（量一遍）→ --render-doc <你的状态文档>",
  "facts.ledger_missing": "缺事实台账（%(name)s）。先跑 python3 zreflect/facts.py 量一遍。",

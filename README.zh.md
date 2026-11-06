@@ -457,7 +457,9 @@ issue #3 ③）—— runner / CI 不论检查器叫什么都能 grep 同一个�
 ## 用法
 
 ```bash
-cp -r zreflect reflect-hooks /path/to/your-repo/
+# 把套件拷进来。`ruff.toml` 也是套件的一部分 —— 没有它 `check_lint` 会
+# 明说未启用，你就失去那道静态检查闸门。
+cp -r zreflect reflect-hooks ruff.toml /path/to/your-repo/
 # 0. 全新仓必须先 bootstrap —— 否则它期望的那份文档根本不存在。
 #    --init 建 state / PRINCIPLES / AGENTS / README / retractions / questions，
 #    并按实际生成的文档写一份 Einfacht.env。它从不覆盖已有文件。
@@ -500,11 +502,41 @@ python3 reflect-hooks/install.py --chain      # 或：链式装进 .git/hooks（
 #     pre-commit 同时跑两份、名单不同跑了几个月）。重叠才是病，两份文件不是。
 # 3. 手动复验（也是 hooks 会跑的那几条）
 python3 zreflect/harness.py                    # 每个闸门先证明自己会红
-for g in zreflect/check_*.py; do python3 "$g" || exit 1; done   # 发现式名录 —— README 也不手写闸门清单
+python3 zreflect/registry.py --run commit       # 执行面的唯一入口 —— 不要 glob check_*.py
 ```
+
+### 写你自己的 `measure()`
 
 `facts.py` 里的 `measure_example()` 是**占位实现**（量的是本仓自己的文件数），
 换掉它 —— 系统只提供机制，你的输入只有你知道怎么量。
+
+**放哪。** 把模块放进 `zreflect/`，旋钮填裸模块名：
+
+```bash
+# Einfacht.env
+export REFLECT_MEASURE_MODULE=measure_myproject
+```
+
+```python
+# zreflect/measure_myproject.py
+from ledger import fact
+
+def measure():
+    return {
+        "tests_total": fact(
+            run_and_count_tests(),          # 值
+            "python -m pytest --collect-only -q | tail -1",  # 复跑命令
+            "repo",                          # 出处
+        ),
+    }
+```
+
+模块 import 不了是 **FATAL**（`rc=2`，不写盘）—— **不**回落到占位实现。
+这是有意的：静默回落会让你以为那些数字是你的项目，实际是套件自己的。
+
+**契约是 `fact(value, cmd, source)`，没有更松的写法。** 裸值（`{"k": 12}`）在**写盘之前**
+就被拒，消息里给出正确形状。`cmd` 必须**只打印值本身**（复跑闸门逐字比 `stdout.strip()`），
+而且必须真能跑 —— 否则那条「事实」就是带数字的散文。
 
 消费方（CI job、其它语言的测试）一律走 `--get KEY` 读台账 ——
 **不要自己解析 `FACTS.json`**：手写 parser 的经典坑是 substring 找
@@ -595,7 +627,7 @@ git 钩子那一侧（`reflect-hooks/`）不一样，是**套件自己拥有**�
 | `REFLECT_NO_PRINCIPLES` | 空 | 设 `1` ⇒ 本仓**不**把 `PRINCIPLES.md` 里的原则登记进台账，判定命令不每提交复跑。这是显式出口 —— 别靠删文件来表达「不遵守」 |
 | `REFLECT_LANG` | 空 | 输出语言包名。自带 `zh`（中文）、`en`（英语）、`de`（德语）；往 `zreflect/lang/` 里放一份包，任何别的语言名也认。**空 = null 包：本体不发任何自然语言**，只输出 `code(param=value)`（issue #26）。注释串（`OFF:` / `FATAL:` / `=== N PASS / M FAIL ===`）永不翻译 —— 它们是发射点的字面量 |
 | `REFLECT_I18N` | 空 | 语言包目录。**空 ⇒ 用套件自带的那份**（工具旁的 `zreflect/lang`），跨仓跑也能找到。设了 ⇒ 绝对路径，或**相对被检查仓根**的路径。两种形状都认且合并：`<lang>.json`（单文件）或 `<lang>/*.json`（按闸门命名空间分文件 —— 合并，后者覆盖） |
-| `REFLECT_SNAPSHOT_ROOT` | 空 | 模块级快照闸门扫描的源码目录。它抓 `from <本地模块> import 大写全局名` —— 那个全局若被别人重新赋值，值拷贝会停在 import 那一刻变成陈旧快照。空 ⇒ 该闸门明说未启用 |
+| `REFLECT_SNAPSHOT_ROOT` | 空 | 模块级快照闸门扫描的源码目录。它抓 `from <本地模块> import 大写全局` —— 那个全局若被别人重新赋值，值拷贝会停在 import 那一刻变成陈旧快照。**空 ⇒ 扫套件自己的 `zreflect/`**（套件自己就是这个 bug 的最大受害者：`gate.GATE_REPO` 被多道自证改写）。要扫**你的代码**就设它 |
 | `REFLECT_I18N_ROOT` | 空 | 覆盖闸门扫描的源码目录（本体零语言检查）。**空 ⇒ 扫套件自己的 `zreflect/` + `reflect-hooks/`** —— 这道闸门从不 off，因为它守的规则就是关于本体的。要扫**你自己的代码**就设它：会**递归**遍历（`src/` 布局可以） |
 | `REFLECT_ENV_HINT` | 空（开） | `off` ⇒ 关闭**裸跑提示**。凡是旋钮来自 `Einfacht.env` 的闸门，在「手工裸跑且一个旋钮都没设」时会提示 *try running it with `Einfacht.env`*，并给出确切的 `set -a; . …; set +a` 一行。它是**提示不是判据**：不改 rc、不碰 stdout；没有载体的仓保持安静（那里裸跑是正常用法） |
 | `REFLECT_RETRACTIONS` | `retractions.json` | 翻案台账（翻案闸门扫 `REFLECT_DOCS` 文档里的重现行） |
