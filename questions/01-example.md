@@ -5,7 +5,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Settling:** zreflect/facts.py —— rc=0 ⇒ 两道守卫的断言全过，本单可结案；rc≠0 ⇒ 有断言失效，先修守卫
 
@@ -32,6 +32,13 @@ cp /tmp/facts.bak FACTS.json
 
 **Type:** task
 
-- [ ] 跑上面两条，记录 rc
-- [ ] 手工注入假值，确认守卫报错且**文件没被改**
-- [ ] 结论回填，`Status:` 改 `resolved`，**别删这个文件**
+- [x] 跑上面两条，记录 rc：`--selftest` rc=0、`harness --selftest` rc=0
+- [x] 手工注入假值（`py_files=999`），确认守卫报错且**文件没被改**：实测 `rc=2`，输出 `FATAL: guard.changed_row(after='35', before='999', key='py_files')` + `guard.refuse_changed_advice`，注入的 999 仍在盘上 ⇒ 拒绝了写盘；还原后 md5 与注入前一致（a0bd2202…）
+- [x] 结论回填，`Status:` 改 `resolved`，**别删这个文件**
+
+## 结论
+
+两道守卫真的会拦，而且拦在写盘**之前**：报的是「旧值 → 新值」而不是笼统的
+「不一致」，盘上的文件保持注入时的样子（没有被一次盲写覆盖成测量值）。
+这正是它们与 `--check` 的分工 —— `--check` 只说「文档与台账对不上」，
+守卫说的是「有人要悄悄改掉一行已发布的值」，并且拒绝动手。
