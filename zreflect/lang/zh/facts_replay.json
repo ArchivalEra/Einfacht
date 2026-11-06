@@ -4,7 +4,7 @@
  "replay.calibrate_command_failed": "`%(key)s` 仪器校准**命令报错**（rc=%(return_code)s）：`%(command)s` —— 校准命令本身死了（校准要便宜、无害、只读）",
  "replay.calibrate_mismatch": "`%(key)s` 仪器校准不符：calibrate=%(actual)s vs 期望=%(expected)s —— 仪器失真（命令成功、值稳定、复跑永远通过，而它量的可能根本不是想量的；先用已知含 X 的样本证明仪器看得见 X，再计数）",
  "replay.calibrate_timeout": "`%(key)s` 仪器校准**超时**（%(seconds).0fs）：`%(command)s` —— 校准该便宜，挂贵的校准等于没挂",
- "replay.command_failed": "`%(key)s` 复跑**命令报错**（rc=%(return_code)s）：`%(command)s` —— 坏 cmd 印在活状态文档里，就是每行都绿着的假断言",
+ "replay.command_failed": "`%(key)s` 复跑**命令报错**（rc=%(return_code)s）：`%(command)s` —— 输出：%(detail)s",
  "replay.empty_ledger": "台账为空 —— 空不是通过（零值守卫）：先查 measure() 是不是坏了",
  "replay.ledger_missing": "缺事实台账（%(name)s）。先跑 python3 zreflect/facts.py 量一遍。",
  "replay.mismatch": "`%(key)s` 复跑输出与台账不符：stdout=%(actual)s vs 台账=%(expected)s —— 修法是**重测**：python3 zreflect/facts.py，改口逐条 `--accept-changes=k1,k2` 放行；重测后仍不符，才是 cmd 违反裸值契约（stdout 只能打值本身）",

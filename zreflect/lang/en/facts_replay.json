@@ -4,7 +4,7 @@
  "replay.calibrate_command_failed": "`%(key)s` instrument calibration **command failed** (rc=%(return_code)s): `%(command)s` — the calibration command itself is dead (a calibration must be cheap, harmless, read-only)",
  "replay.calibrate_mismatch": "`%(key)s` instrument calibration mismatch: calibrate=%(actual)s vs expected=%(expected)s — the instrument is distorted (command succeeds, value is stable, replay always \"passes\", yet it may not be measuring what you think; first prove the instrument can see X using a known sample that contains X, then count)",
  "replay.calibrate_timeout": "`%(key)s` instrument calibration **timed out** (%(seconds).0fs): `%(command)s` — a calibration must be cheap; an expensive calibration is no calibration at all",
- "replay.command_failed": "`%(key)s` replay **command failed** (rc=%(return_code)s): `%(command)s` — a dead cmd printed into a living-state document is a fake assertion with a green line on every row",
+ "replay.command_failed": "`%(key)s` replay **command failed** (rc=%(return_code)s): `%(command)s` — output: %(detail)s",
  "replay.empty_ledger": "ledger is empty — empty is not a pass (zero-value guard): check whether measure() is broken",
  "replay.ledger_missing": "fact ledger (%(name)s) is missing. Run python3 zreflect/facts.py to measure first.",
  "replay.mismatch": "`%(key)s` replay output does not match the ledger: stdout=%(actual)s vs ledger=%(expected)s — the fix is to **re-measure**: python3 zreflect/facts.py, then accept the change per-key with `--accept-changes=k1,k2`; if it still mismatches after re-measuring, then the cmd violates the bare-value contract (stdout may only print the value itself)",
