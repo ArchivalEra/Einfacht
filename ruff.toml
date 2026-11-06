@@ -53,7 +53,8 @@ line-length = 100
 target-version = "py313"
 
 [lint]
-select = ["C901", "F", "E9", "B", "SIM", "RET"]
+select = ["C901", "F", "E9", "B", "SIM", "RET",
+          "I", "ISC", "PIE", "C4", "TRY", "EM", "N"]
 ignore = [
     "ARG005",   # 自证夹具的 runner 签名（见上）
     "S603",     # 自己的工具链
@@ -64,6 +65,20 @@ ignore = [
     # SIM 的这几条在这个仓会误伤「有意分步」的写法：
     "SIM105",   # try/except/pass ⇒ contextlib.suppress：本仓的 except 常带注释说明**为什么**吞
     "SIM108",   # 三元表达式：`if` 分支里常有多行注释，压成一行就丢了
+    # EM101 / N 的三条：本仓的**结构化异常**设计（`MissingPack(code, **params)`
+    # 是 code + 参数，str() 走语言包渲染）与「异常消息写成散文」的规则相反。
+    "EM101",    # raise 处用字符串字面量 —— 本仓的 code 字面量正是设计
+    "EM102",    # f-string in exception
+    "N818",     # 异常名要带 Error 后缀 —— `MissingPack` / `PacksUnreadable` / `Unreadable`
+                # 是有意的名字，不是疏漏
+    "N802",     # 函数名要小写 —— `M()` 是消息构造器，`M` 本身就是它的语义
+    # TRY 的两条与本仓的方向冲突：
+    "TRY300",   # 「把 try 里的 return 移到 else」——那是**增加一层嵌套**，
+                # 与本仓降到 8 的复杂度阈值方向相反；且 `return` 在 try 里
+                # 是 Python 的常规写法，`else` 反而让读者多跳一次。
+    "TRY003",   # 「异常消息不要在 raise 处给」——本仓的 `MissingPack(code, **params)`
+                # 是**结构化异常**（code + 参数），不是散文消息；它的 str()
+                # 走语言包渲染。要求把消息搬进异常类会毁掉这条设计。
 ]
 
 [lint.per-file-ignores]

@@ -36,10 +36,17 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
-from gate import repo                                     # noqa: E402
-import gate                                               # noqa: E402
-from i18n import M                                        # noqa: E402
+import gate  # noqa: E402
+from gate import (  # noqa: E402
+    fatal,
+    finish,
+    load_spec,
+    main_selftest_or,
+    meta,
+    off,
+    repo,  # noqa: E402
+)
+from i18n import M  # noqa: E402
 
 DEFAULT_SPEC = "upstream-lock.json"
 
@@ -132,9 +139,9 @@ def main(argv):
 
 
 def _cases():
-    import atexit                                        # noqa: PLC0415
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import atexit  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     atexit.register(shutil.rmtree, d, True)
     payload = b"UPSTREAM-FIXTURE"

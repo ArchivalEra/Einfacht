@@ -9,6 +9,7 @@
  "facts.block_mismatch": "文档里的块与台账不一致 ⇒ 跑 `python3 zreflect/facts.py --render-doc`",
  "facts.block_stale": "%(path)s 的 %(begin)s 块与现算不一致 ⇒ 跑 --render-doc",
  "facts.copied_value": "正文第 %(line)d 行出现裸数字 %(value)s（属于 `%(key)s`）⇒ 改写成 [[%(key)s]]",
+ "facts.count_usage": "用法：`--count -files .py` / `--count -lines .py` / `--count -md`（各自打印一个整数）",
  "facts.doc_has_no_home": "文档 `%(path)s` 不在机器块归属表里（已知：%(known)s）—— 没有块可校验不是「没有块过期」",
  "facts.doc_missing": "文档不存在：%(path)s —— 找不到文件不许算通过（零值守卫）",
  "facts.doc_missing_check": "文档 %(path)s 不存在（--check 不能因为找不到文件就算通过）",

@@ -38,8 +38,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOOL_REPO = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(TOOL_REPO, "zreflect"))
 
-from gate import activate_or_fatal, meta                         # noqa: E402
-from i18n import M                                               # noqa: E402
+from gate import activate_or_fatal, meta  # noqa: E402
+from i18n import M  # noqa: E402
 
 GATE = os.path.join(HERE, "gate.py")
 PHASE_OF = {"pre-commit": "commit", "pre-push": "push"}
@@ -184,7 +184,8 @@ def main(argv):
 # ── 自证 ──────────────────────────────────────────────────────────────────────
 
 def _cases():
-    import tempfile, shutil                                  # noqa: PLC0415
+    import shutil
+    import tempfile  # noqa: PLC0415
 
     def mk():
         d = tempfile.mkdtemp()
@@ -217,8 +218,8 @@ def _run_cli(argv, quiet=False):
     harness 取「最后一行当摘要」时拿到的是它们（实测，与 gate.py 同一个病）。
     """
     if quiet:
-        import contextlib                                 # noqa: PLC0415
-        import io                                         # noqa: PLC0415
+        import contextlib  # noqa: PLC0415
+        import io  # noqa: PLC0415
         with contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(io.StringIO()):
             return main(argv)
@@ -269,7 +270,7 @@ def _uninstall_case(mk, shutil):
 def _missing_hooks_case(mk, shutil):
     d = mk()
     try:
-        import shutil as _sh                               # noqa: PLC0415
+        import shutil as _sh  # noqa: PLC0415
         _sh.rmtree(os.path.join(d, ".git", "hooks"), True)
         rc, _lines = install_chain(d)
         return rc == 2
@@ -281,7 +282,7 @@ def _selftest_entry():
     rc = activate_or_fatal()
     if rc:
         return rc
-    from gate import selftest                                # noqa: PLC0415
+    from gate import selftest  # noqa: PLC0415
     return selftest(M("gate.title.install"), _cases())
 
 

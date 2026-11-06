@@ -62,7 +62,7 @@ from __future__ import annotations
 import os
 import subprocess
 
-from i18n import M                                       # noqa: E402
+from i18n import M  # noqa: E402
 
 # 每一类最多列几条。**预算是接口**：改大它，`SECTION_MAX` 与
 # `next.section_budget_holds` 会同时要求重新算账（那正是想要的）。
@@ -238,7 +238,7 @@ def _format(last, pending):
 
 def main(argv=None):
     """`python3 zreflect/next.py [repo]` → 打印整段（人工核对用，不供钩子拼装）。"""
-    import sys                                           # noqa: PLC0415
+    import sys  # noqa: PLC0415
     repo = (argv or sys.argv[1:] or ["."])[0]
     sys.stdout.write("\n".join(section(os.path.abspath(repo))) + "\n")
     return 0
@@ -277,7 +277,9 @@ def _cases():
 
 
 def _real_git_case():
-    import tempfile, shutil, subprocess                   # noqa: PLC0415
+    import shutil
+    import subprocess
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         subprocess.run(["git", "init", "-q", d], check=True)
@@ -306,7 +308,8 @@ def _missing_repo_loud():
 
 
 def _section_deterministic():
-    import tempfile, shutil                               # noqa: PLC0415
+    import shutil
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         return section(d) == section(d)
@@ -319,7 +322,7 @@ def _empty_pending_explicit():
 
     按 code 判（null 包下渲染成 `next.pending_none`，不是句子）。
     """
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     with i18n.bind(i18n.NULL):
         block = "\n".join(_format(["only last"], []))
     return "next.pending_none" in block
@@ -343,7 +346,7 @@ def _log_command_shape_ok():
     从源码里读那条命令的参数（不执行 git）—— 判据是形状的，所以夹具无关、
     真仓状态无关。
     """
-    import inspect                                       # noqa: PLC0415
+    import inspect  # noqa: PLC0415
     src = inspect.getsource(unpublished_commits)
     # 找 `_git(repo, "log", ...)` 那一行
     for line in src.splitlines():
@@ -357,7 +360,9 @@ def _log_command_shape_ok():
 
 def _section_budget_holds():
     """提交多 + 悬案多 + 工作区脏 ⇒ 待办在场且整段 ≤ `SECTION_MAX`。"""
-    import tempfile, shutil, subprocess                   # noqa: PLC0415
+    import shutil
+    import subprocess
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         subprocess.run(["git", "init", "-q", d], check=True,
@@ -380,7 +385,7 @@ def _section_budget_holds():
         open(os.path.join(d, "dirty"), "w").write("d")     # 未跟踪 → 待办
         lines = section(d)
         text = "\n".join(lines)
-        import i18n                                      # noqa: PLC0415
+        import i18n  # noqa: PLC0415
         with i18n.bind(i18n.NULL):
             has_pending = "next.pending_header" in text
             has_dirty = "next.tree_dirty" in text
@@ -392,9 +397,10 @@ def _section_budget_holds():
 
 
 def _selftest():
-    import sys                                           # noqa: PLC0415
-    from gate import main_selftest_or                    # noqa: PLC0415
-    from i18n import M                                   # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    from gate import main_selftest_or  # noqa: PLC0415
+    from i18n import M  # noqa: PLC0415
     return main_selftest_or(sys.argv[1:], M("gate.title.next"), _cases,
                             lambda a: 0)
 
@@ -403,11 +409,11 @@ if __name__ == "__main__":
     import sys
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     if "--selftest" in sys.argv:
-        import next as _mod                              # noqa: PLC0415
+        import next as _mod  # noqa: PLC0415
         sys.exit(_mod._selftest())
     sys.exit(main())
 
-from gate import module_meta                             # noqa: E402
+from gate import module_meta  # noqa: E402
 
 MODULE = module_meta(
     "接着上一轮",

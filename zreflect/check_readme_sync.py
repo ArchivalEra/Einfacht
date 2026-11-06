@@ -30,9 +30,14 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import finish, main_selftest_or, meta, repo  # noqa: E402
-from gate import machine                                  # noqa: E402
-from i18n import M                                     # noqa: E402
+from gate import (  # noqa: E402
+    finish,
+    machine,  # noqa: E402
+    main_selftest_or,
+    meta,
+    repo,
+)
+from i18n import M  # noqa: E402
 
 READMES = "README.md,README.zh.md,README.de.md"
 
@@ -141,7 +146,7 @@ LANGS = ("README.md", "README.zh.md", "README.de.md")
 
 
 def _trio():
-    return {n: "x [%s](%s) [%s](%s) [%s](%s) x" % (LANGS * 2) for n in LANGS}
+    return dict.fromkeys(LANGS, "x [%s](%s) [%s](%s) [%s](%s) x" % (LANGS * 2))
 
 
 def _cases_structure():

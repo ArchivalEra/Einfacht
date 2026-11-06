@@ -12,10 +12,12 @@
 import json
 import time
 from datetime import datetime, timedelta, timezone
-from gate import module_meta
-from gate import machine                                  # noqa: E402
-from i18n import M
 
+from gate import (
+    machine,  # noqa: E402
+    module_meta,
+)
+from i18n import M
 
 
 class Unreadable(RuntimeError):
@@ -59,9 +61,10 @@ def load_or_fatal(path, name=None):
     实测：一个 `{ broken` 的 FACTS.json 让 `check_facts.py` 打 traceback 并
     以 1 退出，用户会去修闸门。
     """
-    import sys                                           # noqa: PLC0415
-    from gate import machine                             # noqa: PLC0415
-    from i18n import M                                   # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    from gate import machine  # noqa: PLC0415
+    from i18n import M  # noqa: PLC0415
     try:
         return load(path)
     except Unreadable as e:
@@ -221,7 +224,7 @@ def age_days(entry):
 # ── 自证（三档：正常不报 / 该报的必须报 / 空输入必须报）──────────────────────────
 def _cases_guards():
     """① 掉条 / 改口守卫：正常不报 + 该报的必须报 + 空起步合法。"""
-    from gate import raises                              # noqa: PLC0415
+    from gate import raises  # noqa: PLC0415
     return [
         ("ledger.dropped_clean",
          lambda: dropped_keys({"a": 1}, {"a": 1, "c": 3}) == []),
@@ -282,7 +285,7 @@ def _cases_measurement():
 
 def _cases_probes():
     """③ 见证 / ④ 仪器校准（issue #5 / #6 ①）：成对字段，单给一个必须抛。"""
-    from gate import raises                              # noqa: PLC0415
+    from gate import raises  # noqa: PLC0415
     return [
         ("ledger.witness_fields",
          lambda: fact(1, "c", "s", witness="w", witness_expect="e")
@@ -312,7 +315,7 @@ def _cases():
 
 
 def _selftest():
-    from gate import activate_or_fatal, selftest          # noqa: PLC0415
+    from gate import activate_or_fatal, selftest  # noqa: PLC0415
     # 激活**先于**自证：包设了却不在 ⇒ FATAL rc 2（此前这条入口从不激活，
     # 于是 REFLECT_LANG=de 下一个不存在的包被静默接受）。
     rc = activate_or_fatal()
@@ -325,6 +328,6 @@ MODULE = module_meta("事实台账数据层", "读写 + 两道守卫的纯函数
 
 
 if __name__ == "__main__":
-    import sys                                        # noqa: PLC0415
+    import sys  # noqa: PLC0415
     sys.path.insert(0, __import__("os").path.dirname(__import__("os").path.abspath(__file__)))
     sys.exit(_selftest())

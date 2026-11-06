@@ -34,13 +34,12 @@ import ast
 import os
 import re
 
-import gate                                                  # noqa: E402
+import gate  # noqa: E402
 
 # 一个「看起来像文件名」的记号（`off_reason` 里提到 `foo.json` 这类）。
 # 从 `registry.py` 搬来时一起带过来 —— 它是 `off_reason_problems` 的判据数据。
 _FILE_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.[A-Za-z0-9]+")
-from i18n import M                                           # noqa: E402
-
+from i18n import M  # noqa: E402
 
 MUST_REASON_MIN = 8      # off 理由的最短字数（同 `PINNED:` 的纪律）
 
@@ -121,8 +120,8 @@ def _public_functions(zdir):
     返回 `(cand, own_text)`：`cand` = {函数名: 定义它的模块文件名}，
     `own_text` = {模块文件名: 全文}（同文件引用计数要用）。
     """
-    import ast                                           # noqa: PLC0415
-    import os                                            # noqa: PLC0415
+    import ast  # noqa: PLC0415
+    import os  # noqa: PLC0415
     d = zdir if zdir is not None else gate.zdir()
     cand, own_text = {}, {}
     for n in sorted(os.listdir(d)):
@@ -148,7 +147,7 @@ def _repo_corpus(zdir):
     （Python 不保证两个相等字符串是同一对象）—— 实测：植入一个零消费函数
     判据仍然报 clean。按名字排除才可靠。
     """
-    import os                                            # noqa: PLC0415
+    import os  # noqa: PLC0415
     d = zdir if zdir is not None else gate.zdir()
     root = os.path.dirname(d)
     corpus = []
@@ -184,7 +183,7 @@ def shell_surface_problems(repo_root=None):
     Python 之后，若不设守卫，下次又会有人「顺手写个 .sh」—— 然后同样的事故
     重演。白名单是**有界的**：每个例外都必须写在这里，且必须有理由。
     """
-    import os                                            # noqa: PLC0415
+    import os  # noqa: PLC0415
     root = repo_root or gate.GATE_REPO
     out = []
     for dirpath, _dirnames, filenames in os.walk(root):
@@ -211,7 +210,7 @@ def trailing_newline_problems(zdir=None):
     修的是根：文件该有末尾换行（POSIX 文本定义，也是 diff 工具的前提）。
     判据报出来，人补一行即可。
     """
-    import os                                            # noqa: PLC0415
+    import os  # noqa: PLC0415
     base = zdir or gate.zdir()
     out = []
     try:
@@ -326,8 +325,8 @@ def reason_bases_agree(hook=False):
 
     `hook` 可注入（自证用假实现）。默认跑真代码。
     """
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     probe = hook or _reason_files
     d = tempfile.mkdtemp()
     try:
@@ -593,7 +592,9 @@ def dependency_coverage_problems(zdir=None, sources=None):
 
 def _dead_interface_case():
     """造一个零消费的公开函数 ⇒ 必须报；给它加个外部引用 ⇒ 不报。"""
-    import tempfile, shutil, os                        # noqa: PLC0415
+    import os
+    import shutil
+    import tempfile  # noqa: PLC0415
     root = tempfile.mkdtemp()
     try:
         d = os.path.join(root, "zreflect")
@@ -613,7 +614,9 @@ def _dead_interface_case():
 
 def _unexpected_shell_case():
     """造一个未登记的 .sh ⇒ 必须报；登记过的 ⇒ 不报。"""
-    import tempfile, shutil, os                        # noqa: PLC0415
+    import os
+    import shutil
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         open(os.path.join(d, "probe.sh"), "w").write("# probe\n")
@@ -630,7 +633,7 @@ def _unexpected_shell_case():
 
 def _han_predicate_case():
     """`i18n.han()` 认中文、不认 ASCII、不认码点构造之外的近亲。"""
-    from i18n import han                                 # noqa: PLC0415
+    from i18n import han  # noqa: PLC0415
     # 夹具里的中文用码点构造（本仓纪律：字面量会进扫描面）
     return (han(chr(0x4E2D)) and han("a" + chr(0x6587) + "b")
             and not han("plain ascii")
@@ -641,7 +644,9 @@ def _han_predicate_case():
 
 def _trailing_newline_case():
     """造一个缺末尾换行的文件 ⇒ 必须报；补上 ⇒ 不报。"""
-    import tempfile, shutil, os                        # noqa: PLC0415
+    import os
+    import shutil
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         open(os.path.join(d, "bad.py"), "w").write("x = 1")
@@ -660,7 +665,7 @@ def _selftest_false_states_it():
     三个都查（`collect.py` / `living.py` / `gate.py`）—— 发现式：从 `modules()`
     取所有 `selftest=False` 的，不写名单。
     """
-    from registry import modules                        # noqa: PLC0415
+    from registry import modules  # noqa: PLC0415
     mods, _und = modules()
     checked = 0
     for m in mods:
@@ -717,8 +722,8 @@ def _off_reason_stale_ok():
     用临时目录做仓根（不碰真仓），并给源码让 `off()` 调用成立，
     以隔离出**只由「理由失效」**触发的那一条。
     """
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         with open(os.path.join(d, "ab.json"), "w", encoding="utf-8") as fh:
@@ -743,8 +748,8 @@ def _off_reason_stale_ok():
 
 def _stale_in_hooks_dir():
     """载体在 `reflect-hooks/`（不是仓根）时，stale 判据必须照样报。"""
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         hooks = os.path.join(d, "reflect-hooks")
@@ -849,8 +854,10 @@ def _cases(fx=None):
     那两组要用名录夹具）；独立跑 `--selftest` 时从 `registry` 现造一份。
     """
     if fx is None:
-        from registry import _cases_fixture                  # noqa: PLC0415
-        import tempfile, atexit                              # noqa: PLC0415
+        import atexit
+        import tempfile  # noqa: PLC0415
+
+        from registry import _cases_fixture  # noqa: PLC0415
         d = tempfile.mkdtemp()
         atexit.register(__import__("shutil").rmtree, d, True)
         fx = _cases_fixture(d)
@@ -902,13 +909,14 @@ def _cases_self_checks():
 
 
 def _selftest():
-    import sys                                           # noqa: PLC0415
-    from gate import main_selftest_or                    # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    from gate import main_selftest_or  # noqa: PLC0415
     return main_selftest_or(sys.argv[1:], M("gate.title.criteria"),
                             _cases, lambda a: 0)
 
 
-from gate import module_meta                                 # noqa: E402
+from gate import module_meta  # noqa: E402
 
 MODULE = module_meta(
     "名录判据",
@@ -918,8 +926,8 @@ MODULE = module_meta(
 
 
 if __name__ == "__main__":
-    import os                                            # noqa: PLC0415
-    import sys                                           # noqa: PLC0415
+    import os  # noqa: PLC0415
+    import sys  # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import criteria as _mod                              # noqa: PLC0415
+    import criteria as _mod  # noqa: PLC0415
     sys.exit(_mod._selftest())

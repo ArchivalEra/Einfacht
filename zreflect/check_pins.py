@@ -41,10 +41,17 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
-from gate import repo                                     # noqa: E402
-import gate                                               # noqa: E402
-from i18n import M                                        # noqa: E402
+import gate  # noqa: E402
+from gate import (  # noqa: E402
+    fatal,
+    finish,
+    load_spec,
+    main_selftest_or,
+    meta,
+    off,
+    repo,  # noqa: E402
+)
+from i18n import M  # noqa: E402
 
 DEFAULT_SPEC = "pins.json"
 
@@ -183,9 +190,9 @@ def _fixture():
     ⚠️ 早先这段（八个 spec 字面量 + 建仓）直接写在 `_cases()` 里，和断言
     交错 —— 70 行里前一半是夹具。分开之后「哪种规格考哪条判据」一眼可见。
     """
-    import atexit                                        # noqa: PLC0415
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import atexit  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     atexit.register(shutil.rmtree, d, True)
     os.makedirs(os.path.join(d, "wt"))

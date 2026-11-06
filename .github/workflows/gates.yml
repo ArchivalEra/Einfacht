@@ -1,57 +1,77 @@
-# 事实新鲜度与全部闸门的正面 CI 落点（issue #4 ②）：
-# reflect-hooks/pre-commit / pre-push 只装在跑过 install.py 的机器上，
-# 且可被 git push --no-verify 跳过 —— 只在自己方便时生效的闸门
-# = 本仓最擅长的那种"从未跑过的闸门"。这里正面执行与本地 hook
-# 同一条判据：facts --check（机器块 ↔ 台账）+ 发现式名录里的
-# 全部闸门（check_facts_replay 含在内 ⇒ 台账每条 cmd 在 CI 里
-# 真的被逐字执行）。闸门数目以发现式名录为准 —— 这里不写数字，
-# 手写数字一定会漂。
+# 事实新鲜度与全部闸门的正面 CI 落点（issue #4 ②）。
+#
+# reflect-hooks/pre-commit / pre-push 只装在跑过 install.py 的机器上，且可被
+# `git push --no-verify` 跳过 —— 只在自己方便时生效的闸门 = 本仓最擅长的那种
+# 「从未跑过的闸门」。这里正面执行与本地 hook 同一条判据。
+#
+# 四档静态检查的**分界**（别混）：
+#
+#   事实   机器块 ↔ 台账 + 发现式名录里的全部闸门（`registry --run commit`）
+#   ruff   判据在 `ruff.toml`（唯一产地）。13 个规则族，含复杂度阈值 8。
+#   mypy   **只对已注解的代码**成立 —— 本仓 706 个函数里 0 个有返回类型注解，
+#          所以它今天守的是「已注解的东西有没有写错」这一点点，加上
+#          「函数签名自洽」这一类。这条边界**不假装**全仓类型安全 ——
+#          这条边界写在 `ruff.toml` 旁边与下面的 mypy 步骤注释里。
+#   自证   harness.py（每个闸门先证明自己会红）。
+#
+# ⚠️ 平台矩阵只跑 Linux + Windows：Windows 上没有 `sh`，能验出「全 Python 化」
+# 是否真的成立（本仓的 `gates-selftest.sh` 兼容薄壳在 Windows 上会 127）。
+# macOS 不跑 —— 它与 Linux 的差异不涉及本仓用到的任何东西。
 name: gates
 
 on:
   push: {}
+  pull_request: {}
 
 jobs:
   gates:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false        # 一个平台红了不该掩盖另一个平台的结果
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.13"]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      # 钉小版本 + check-latest（uTLS-Gone issue #4 的实战经验）：
-      # runner 镜像缓存会滞后安全发布 —— 只写大版本（如 "3"）默认 check-latest: false，
-      # 实测解析到旧镜像里打包的 patch；写大版本 ≠ 拿到修复版。显式钉小版本并强制
-      # 解析最新 patch，让「CI 运行时」与「安全公告」对齐（issue #19 部署链真值漂移
-      # 的一个具体实例：CI 配置是运行时版本的唯一产地，必须是被闸门看见的事实）。
+      # 钉小版本 + check-latest（uTLS-Gone issue #4 的实战经验）：runner 镜像缓存
+      # 会滞后安全发布 —— 只写大版本默认 check-latest: false，实测解析到旧镜像里
+      # 打包的 patch；写大版本 ≠ 拿到修复版。
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python }}
           check-latest: true
+
+      # ── 第一档：事实与台账（最便宜、最常红，放最前）──
       - name: 事实块与台账一致 + 发现式名录的全部闸门全绿
         run: |
           # 名录对账（缺声明 / 孤儿 / 旗标错 / 写而不跑的自证 / 幻影旋钮）
-          python3 zreflect/registry.py --gates >/dev/null
-          python3 zreflect/registry.py --selftest-modules >/dev/null
-          # 不给文档名 ⇒ 查全部有机器块的文档（STATE + PRINCIPLES）：
-          # 「唯二必须丈量的东西」少查一份，那份的「不要手改」就是空话。
-          python3 zreflect/facts.py --check
-          # 执行面唯一产地（C1）：跑 runs_at="commit" 的闸门，聚合 ran/off/failed
-          # （off 不是通过 —— 输出里单列）。别再 glob check_*.py。
-          python3 zreflect/registry.py --run commit
-      # ⚠️ 这一步是 R-004 的判据。`gitroll-dispositions.json` 的 `_summary`
-      # 曾声称「All checks passed」而实测 159 errors —— 因为**没有任何闸门
-      # 跑过它**。静态机器检查不接进执行面，就会安静地烂一年。
-      # 本地同一判据：`python3 zreflect/check_lint.py`（缺 ruff 时明说未启用，退 0）。
+          python zreflect/registry.py --gates >/dev/null
+          python zreflect/registry.py --selftest-modules >/dev/null
+          # 不给文档名 ⇒ 查全部有机器块的文档（STATE + PRINCIPLES）
+          python zreflect/facts.py --check
+          # 执行面唯一产地（C1）：runs_at="commit" 的闸门，聚合 ran/off/failed
+          python zreflect/registry.py --run commit
+
+      # ── 第二档：ruff（判据在 ruff.toml，唯一产地）──
+      # 这一步是 R-004 的判据。`gitroll-dispositions.json` 的 `_summary` 曾声称
+      # 「All checks passed」而实测 159 errors —— 因为没有任何闸门跑过它。
+      # 静态检查不接进执行面，就会安静地烂一年。
       - name: 静态机器检查（ruff，判据在 ruff.toml）
         run: |
-          python3 -m pip install --quiet 'ruff==0.17.3'
-          # 判据只有一处产地（`ruff.toml`）—— 别在这行写选择集，
-          # 那会变成第二个会漂的产地（R-004 的成因就是命令写在文档里
-          # 而没人执行它）。
-          python3 -m ruff check .
+          python -m pip install --quiet 'ruff==0.17.3'
+          # 别在这行写选择集 —— 那会变成第二个会漂的产地。
+          python -m ruff check .
 
+      # ── 第三档：mypy（边界见文件头）──
+      - name: 类型检查（mypy）
+        run: |
+          python -m pip install --quiet 'mypy==1.13.0'
+          # 单行：Windows 上 `run:` 默认走 PowerShell，`^` 不是它的续行符
+          python -m mypy zreflect/ reflect-hooks/ --ignore-missing-imports --explicit-package-bases --no-error-summary
+
+      # ── 第四档：全量自证（最贵，放最后）──
       - name: 全量自证（闸门 + 插件 + 平台模块 + 跨仓可配置性 + 端到端零语言）
         run: |
-          # 唯一入口：zreflect/harness.py（原文是 gates-selftest.sh 那 287 行 shell，
-          # 已全 Python 化 —— 跨平台，且它的文案走语言包，不再绕过零语言制度）。
-          # 它自己会跑：每个闸门先证明能红 / 插件 / 平台模块 / 换名夹具 /
-          # 未装语言包时零中文。
-          python3 zreflect/harness.py
+          # 唯一入口：zreflect/harness.py（原文是 gates-selftest.sh 那 287 行
+          # shell，已全 Python 化 —— 跨平台，且它的文案走语言包）。
+          python zreflect/harness.py

@@ -20,6 +20,7 @@ append-only 的历史章节里，数字是"当时如此"，拿来跟今天的产
      宽松识别的出口，等于给假断言发了通行证。
 """
 import re
+
 from gate import module_meta
 
 # 行内历史标记（与翻案台账的更正标记同一份词表 —— 词表只生产一次）。
@@ -108,16 +109,17 @@ def _cases():
 
 
 def _selftest():
-    import sys                                           # noqa: PLC0415
-    from gate import main_selftest_or                    # noqa: PLC0415
-    from i18n import M                                   # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    from gate import main_selftest_or  # noqa: PLC0415
+    from i18n import M  # noqa: PLC0415
     return main_selftest_or(sys.argv[1:], M("gate.title.living"),
                             _cases, lambda a: 0)
 
 
 if __name__ == "__main__":
-    import os                                            # noqa: PLC0415
-    import sys                                           # noqa: PLC0415
+    import os  # noqa: PLC0415
+    import sys  # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import living as _mod                                # noqa: PLC0415
+    import living as _mod  # noqa: PLC0415
     sys.exit(_mod._selftest())

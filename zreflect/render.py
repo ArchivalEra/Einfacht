@@ -9,8 +9,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import module_meta                             # noqa: E402
-from i18n import M                                        # noqa: E402
+from gate import module_meta  # noqa: E402
+from i18n import M  # noqa: E402
 
 BLOCK_BEGIN = "<!-- AUTO:FACTS -->"
 BLOCK_END = "<!-- /AUTO:FACTS -->"
@@ -20,8 +20,8 @@ BLOCK_END = "<!-- /AUTO:FACTS -->"
 # 「同一提交在不同环境结果不同」（不收敛）。check_i18n 扫 `PINNED:` 标记，
 # **不认名字**（名字承重 = 名录会漂）。
 PREAMBLE = [
-    "> 本区块由 `zreflect/facts.py --render-doc` 从 `FACTS.json` 渲染，**不要手改**"
-    "（pre-commit 会重算并 `git add`）。",
+    ("> 本区块由 `zreflect/facts.py --render-doc` 从 `FACTS.json` 渲染，**不要手改**"
+    "（pre-commit 会重算并 `git add`）。"),
     "> 正文里的「测出来的数字」只在这里生产：要引用就写 `[[键名]]`，不要手抄数字。",
 ]
 
@@ -37,7 +37,7 @@ def render_block(ledger):
 
     PINNED: AUTO 机器块固定语言（见 PREAMBLE 上的说明）。
     """
-    from ledger import facts_of                          # noqa: PLC0415
+    from ledger import facts_of  # noqa: PLC0415
 
     f = facts_of(ledger)
     lines = [BLOCK_BEGIN] + list(PREAMBLE) + [""]
@@ -145,10 +145,10 @@ def _cases():
 
 
 def _selftest():
-    import os                                            # noqa: PLC0415
-    import sys                                           # noqa: PLC0415
+    import os  # noqa: PLC0415
+    import sys  # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from gate import activate_or_fatal, selftest         # noqa: PLC0415
+    from gate import activate_or_fatal, selftest  # noqa: PLC0415
     # 激活**先于**自证：包设了却不在 ⇒ FATAL rc 2（此前这条入口从不激活，
     # `REFLECT_LANG=de render.py --selftest` 对不存在的包静默 rc=0）。
     rc = activate_or_fatal()
@@ -161,7 +161,7 @@ MODULE = module_meta("机器块渲染", "数字的唯一产地（纯函数）", 
 
 
 if __name__ == "__main__":
-    import os                                            # noqa: PLC0415
-    import sys                                           # noqa: PLC0415
+    import os  # noqa: PLC0415
+    import sys  # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     sys.exit(_selftest())

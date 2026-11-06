@@ -9,6 +9,7 @@
  "facts.block_mismatch": "the block in the document does not match the ledger ⇒ run `python3 zreflect/facts.py --render-doc`",
  "facts.block_stale": "the %(begin)s block of %(path)s does not match a fresh render ⇒ run --render-doc",
  "facts.copied_value": "line %(line)d has a bare number %(value)s (belongs to `%(key)s`) ⇒ rewrite it as [[%(key)s]]",
+ "facts.count_usage": "usage: `--count -files .py` / `--count -lines .py` / `--count -md` (each prints one integer)",
  "facts.doc_has_no_home": "document `%(path)s` is not in the machine-block home table (known: %(known)s) — 'nothing to check' is not 'nothing is stale'",
  "facts.doc_missing": "document does not exist: %(path)s — a missing file must not count as a pass (zero-value guard)",
  "facts.doc_missing_check": "document %(path)s does not exist (--check must not pass just because the file is missing)",

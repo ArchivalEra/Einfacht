@@ -42,10 +42,10 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import gate                                               # noqa: E402
-import machine                                            # noqa: E402
+import gate  # noqa: E402
+import machine  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
-from i18n import M                                        # noqa: E402
+from i18n import M  # noqa: E402
 
 # 未配旋钮时扫**这些**目录 —— 套件自己的全部 Python。
 #
@@ -64,8 +64,7 @@ KNOB = "REFLECT_I18N_ROOT"
 # CJK 统一表意文字的码点区间（U+4E00–U+9FFF）。**用码点常量而不是字面字符**：
 # 写成 `"一"`/`"鿿"` 会让本闸门扫到自己的源码（那两个就是区间端点）——
 # 实测踩到（报了两条「一」「鿿」的假违规）。
-from i18n import CJK_LO, han                       # noqa: E402
-
+from i18n import CJK_LO, han  # noqa: E402
 
 PINNED_MARK = "PINNED:"
 
@@ -437,7 +436,7 @@ def _null_output_has_no_cjk():
     ⚠️ 注意它**不能**证明「模板里没有中文」：null 包根本不查表。后者由
     `_packs_match_their_language()` 管（装包渲染 + 按语言判 CJK）。
     """
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     try:
         table = i18n.load_pack("en")
     except Exception:                                    # noqa: BLE001
@@ -463,7 +462,7 @@ def _packs_match_their_language():
 
     零值守卫：至少验到一个非 zh 的包。
     """
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     checked = 0
     for lang in ("en", "de"):
         try:
@@ -596,18 +595,18 @@ def _cases_code_literal():
     return [
         ("★ i18n_cover.computed_code_is_rejected",
          lambda: [p.code for p in problems(
-             [("c.py", "from i18n import M\n"
+             [("c.py", ("from i18n import M\n"
                        "def f(x):\n"
-                       "    return M(\"probe.a\" if x else \"probe.b\")\n")])
+                       "    return M(\"probe.a\" if x else \"probe.b\")\n"))])
          ] == ["i18n_cover.code_not_literal"]),
         ("i18n_cover.literal_code_is_fine",
-         lambda: problems([("c.py", "from i18n import M\n"
+         lambda: problems([("c.py", ("from i18n import M\n"
                                      "def f():\n"
-                                     "    return M(\"probe.a\")\n")]) == []),
+                                     "    return M(\"probe.a\")\n"))]) == []),
         ("i18n_cover.forwarded_code_is_fine",
-         lambda: problems([("c.py", "from i18n import M\n"
+         lambda: problems([("c.py", ("from i18n import M\n"
                                      "def _say(code, **kw):\n"
-                                     "    return M(code, **kw)\n")]) == []),
+                                     "    return M(code, **kw)\n"))]) == []),
     ]
 
 

@@ -37,10 +37,17 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
-from gate import repo                            # noqa: E402
-from i18n import M                                # noqa: E402
-from ledger import facts_of, load_or_fatal                         # noqa: E402
+from gate import (  # noqa: E402
+    fatal,
+    finish,
+    load_spec,
+    main_selftest_or,
+    meta,
+    off,
+    repo,  # noqa: E402
+)
+from i18n import M  # noqa: E402
+from ledger import facts_of, load_or_fatal  # noqa: E402
 
 INSTRUMENTS_RAW = os.environ.get("REFLECT_INSTRUMENTS", "").strip()
 DAYS_RAW = os.environ.get("REFLECT_INSTRUMENT_DAYS", "").strip()

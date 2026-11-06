@@ -34,9 +34,10 @@ import os
 import re
 import sys
 
-import gate                                            # noqa: E402
-from gate import module_meta                          # noqa: E402
-from i18n import M, bind, load_pack, pack_dir, NULL, Catalog      # noqa: E402
+import gate  # noqa: E402
+from gate import module_meta  # noqa: E402
+from i18n import NULL, Catalog, M, bind, load_pack, pack_dir  # noqa: E402
+
 
 class _Semantic(str):
     """旋钮的一行语义（`REGISTRY` 第三项）：**延迟渲染**的用户可见文本。
@@ -155,7 +156,7 @@ _TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_])REFLECT_[A-Z0-9_]+")
 
 def _py_sources(base):
     """见 `gate.py_sources`：实现只有一处（此处只保留本模块的名字）。"""
-    import gate                                          # noqa: PLC0415
+    import gate  # noqa: PLC0415
     return gate.py_sources(base)
 
 
@@ -362,9 +363,9 @@ def _discovery_sees_planted_lang():
     `a_pack_lang()`；一旦真仓装了 `de`（sorted() 使 `de` 成为基准），
     种下的半残包会**覆盖**基准包 ⇒ 这条自证在装了德语后假红（实测）。
     """
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
-    import json                                          # noqa: PLC0415
+    import json  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     # 基准包用**第一个已装的**，不写死 zh：只装一个包（产品主场景）时，
     # 写死 zh 会让这条自证假红（实测 en-only ⇒ 16 PASS / 1 FAIL）。
     base = a_pack_lang()
@@ -410,7 +411,7 @@ def _looks_like_pack(path):
     语言包的特征：键是 `x.y` 形的 code，值是字符串（通常含 `%(…)` 占位符）。
     不是语言包的 json（配置 / 笔记 / 元数据）不该被当成一种语言。
     """
-    import json                                          # noqa: PLC0415
+    import json  # noqa: PLC0415
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
@@ -472,7 +473,7 @@ def dead_default_problems(py_dir=None):
     判据（AST）：模块级 `DEFAULT_X = …` 若在该文件里**没有任何 Load 引用**
     ⇒ 报。只扫 `check_*.py` + 平台模块（即 `zreflect/*.py`）。
     """
-    import ast                                           # noqa: PLC0415
+    import ast  # noqa: PLC0415
     d = py_dir if py_dir is not None else gate.zdir()
     out = []
     try:
@@ -498,8 +499,8 @@ def dead_default_problems(py_dir=None):
 
 def _dead_default_ok():
     """定义了 `DEFAULT_X` 却从不 Load ⇒ 必须报；用了就不报。"""
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         dead = ("DEFAULT_X = 'v'\n"
@@ -552,7 +553,7 @@ def used_codes(py_dir=None):
     示例当真消息（实测踩到假阳性）。
     `_SELFTEST_CODE_PREFIXES` 里的前缀是自证专用 code（同样不发给用户）。
     """
-    import ast                                           # noqa: PLC0415
+    import ast  # noqa: PLC0415
     d = py_dir if py_dir is not None else gate.zdir()
     out = set()
     for _n, src in _py_sources(d):
@@ -584,8 +585,8 @@ def argparse_strip(src, docs):
 
 def _unreadable_dir_is_loud():
     """包目录读不了 ⇒ 必须报 `pack_unreadable`，不许当「零包」（合法态）。"""
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     if os.geteuid() == 0:
         return True        # root 无视权限位，这条测不出来（明说不适用）
     d = tempfile.mkdtemp()
@@ -874,8 +875,7 @@ def _cases_readme_rows():
          # ⚠️ 断言**钉死 code**，不是只判 `!= []`：此前那样任何错误 code 都能
          # 让这条通过（实测：换成一个 `readme_phantom` 冒充，用例照样绿）。
          lambda: [p.code for p in registry_vs_readme_problems(
-             tables={name: "| `REFLECT_FACTS` | x |\n"
-                     for name in _README_TRIO},
+             tables=dict.fromkeys(_README_TRIO, "| `REFLECT_FACTS` | x |\n"),
              # 名单**钉死**：判据不该读 `REFLECT_READMES` 来决定自己考几轮。
              names=tuple(_README_TRIO))
          ] == ["knobs.readme_missing_rows"] * 3),
@@ -1038,9 +1038,9 @@ def _cases_registry(fx):
 
 def _cases():
     """拼装四组夹具断言。**只拼装** —— 判据在各分组函数里。"""
-    import atexit                                        # noqa: PLC0415
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import atexit  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     atexit.register(shutil.rmtree, d, True)
     fx = _cases_fixture(d)
@@ -1057,7 +1057,7 @@ MODULE = module_meta("旋钮登记", "REFLECT_* 的唯一名册 + 名册自洽�
 
 if __name__ == "__main__":
     sys.path.insert(0, __file__.rsplit("/", 1)[0])
-    from gate import main_selftest_or                    # noqa: PLC0415
+    from gate import main_selftest_or  # noqa: PLC0415
 
     def _run(argv):
         # `--list`：用户查旋钮语义的**官方出口**（AGENTS.md 路由到这里）。
