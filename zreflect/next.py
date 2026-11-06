@@ -77,7 +77,8 @@ def _git(repo, *args):
     """跑一条 git 命令；失败返回 None（**不编空值** —— 见 collect.py 原则 3）。"""
     try:
         p = subprocess.run(["git", "-C", repo, *args],
-                           capture_output=True, text=True, timeout=10)
+                           capture_output=True, text=True, timeout=10,
+                           encoding="utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError):
         return None
     if p.returncode != 0:

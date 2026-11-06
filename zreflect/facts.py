@@ -1211,7 +1211,8 @@ def _corrupt_ledger_rc():
                if not k.startswith("REFLECT_")}
         p = subprocess.run(
             [sys.executable, os.path.join(d, "zreflect", "facts.py"), "--check"],
-            cwd=d, env=env, capture_output=True, text=True, timeout=120)
+            cwd=d, env=env, capture_output=True, text=True, timeout=120,
+                           encoding="utf-8", errors="replace")
         return p.returncode
     except Exception:                                    # noqa: BLE001
         return None
@@ -1239,7 +1240,8 @@ def _unwritable_doc_rc():
 
         def run(*args):
             return subprocess.run([sys.executable, *args], cwd=d, env=env,
-                                  capture_output=True, text=True, timeout=180)
+                                  capture_output=True, text=True, timeout=180,
+                           encoding="utf-8", errors="replace")
 
         run("zreflect/facts.py", "--init")
         run("zreflect/facts.py", "--accept-changes")
@@ -1353,19 +1355,22 @@ def _real_repo_shaped():
                 if not k.startswith("REFLECT_") and k != "GATE_REPO"}
         subprocess.run([sys.executable, "zreflect/facts.py", "--init"],
                        cwd=d, env=base, capture_output=True, text=True,
-                       timeout=180)
+                       timeout=180,
+                           encoding="utf-8", errors="replace")
         for argv in ([sys.executable, "zreflect/facts.py", "--accept-changes"],
                      [sys.executable, "zreflect/facts.py", "--render-doc"],
                      [sys.executable, "zreflect/facts.py", "--render-doc",
                       "PRINCIPLES.md"]):
             p = subprocess.run(argv, cwd=d, env=_env_from_envfile(d, base),
-                               capture_output=True, text=True, timeout=180)
+                               capture_output=True, text=True, timeout=180,
+                           encoding="utf-8", errors="replace")
             if p.returncode != 0:
                 return False
         p = subprocess.run([sys.executable, "zreflect/registry.py",
                             "--run", "commit"],
                            cwd=d, env=_env_from_envfile(d, base),
-                           capture_output=True, text=True, timeout=180)
+                           capture_output=True, text=True, timeout=180,
+                           encoding="utf-8", errors="replace")
         return p.returncode == 0
     except Exception:                                    # noqa: BLE001
         return False
@@ -1402,11 +1407,13 @@ def _fresh_bootstraps():
                 if not k.startswith("REFLECT_") and k != "GATE_REPO"}
         subprocess.run([sys.executable, "zreflect/facts.py", "--init"],
                        cwd=d, env=base, capture_output=True, text=True,
-                       timeout=180)
+                       timeout=180,
+                           encoding="utf-8", errors="replace")
         for argv, with_env in _bootstrap_steps():
             env = _env_from_envfile(d, base) if with_env else base
             p = subprocess.run(argv, cwd=d, env=env, capture_output=True,
-                               text=True, timeout=180)
+                               text=True, timeout=180,
+                           encoding="utf-8", errors="replace")
             if p.returncode != 0:
                 return False
         return True

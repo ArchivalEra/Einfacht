@@ -48,7 +48,8 @@ PHASE_OF = {"pre-commit": "commit", "pre-push": "push"}
 def _git(repo, *args):
     try:
         p = subprocess.run(["git", "-C", repo, *args],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError):
         return None, ""
     return p.returncode, (p.stdout or "") + (p.stderr or "")

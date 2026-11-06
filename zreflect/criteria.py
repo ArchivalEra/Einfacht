@@ -216,6 +216,58 @@ def _matching_paren(text, open_idx):
     return None
 
 
+def subprocess_encoding_problems(repo_root=None):
+    """**`subprocess.run(text=True)` 必须显式 `encoding=`** —— 跨平台守卫。
+
+    为什么值得判据：这是本仓**踩了五次**的同一个坑，每次形式不同：
+
+      1. `registry --gates` 打印中文 → `UnicodeEncodeError`
+      2. `runner.run_cmd` 解码子进程输出 → **读线程崩**，`stdout=None`
+      3. 台账 `cmd` 里的 `open()` → `UnicodeDecodeError`
+      4. 各处 `open(..., "w")` 写中文夹具
+      5. `harness._run` 解码闸门自证输出 → 摘要行「消失」
+         （CI 的 Windows 腿报「缺机器摘要行」，而摘要在本地明明存在）
+
+    `text=True` 用 `locale.getpreferredencoding()` 解码，Windows 默认 cp1252；
+    子进程一旦输出非 cp1252 字节，`subprocess` 的**读线程**（主线程之外）
+    抛 `UnicodeDecodeError`，主线程拿到 `stdout=None` —— 症状离真因很远。
+
+    判据（AST）：`subprocess.run(...)` 带 `text=True` 时必须也带 `encoding=`。
+    """
+    import os  # noqa: PLC0415
+    root = repo_root or gate.GATE_REPO
+    out = []
+    for sub in ("zreflect", "reflect-hooks"):
+        base = os.path.join(root, sub)
+        if not os.path.isdir(base):
+            continue
+        for name, src in gate.py_sources(base):
+            out += _subprocess_encoding_problems(sub + "/" + name, src)
+    return out
+
+
+def _subprocess_encoding_problems(name, src):
+    """一个文件里 `subprocess.run(text=True)` 缺 `encoding` 的地方。"""
+    import ast  # noqa: PLC0415
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return []
+    out = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "run"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "subprocess"):
+            continue
+        kw = {k.arg for k in node.keywords}
+        if "text" in kw and "encoding" not in kw:
+            out.append(M("registry.subprocess_without_encoding",
+                         file=name, lineno=node.lineno))
+    return out
+
+
 def _rule_cmd_encoding_problems():
     """**规则 cmd 里的 `open(` 也要查**。
 
@@ -1115,6 +1167,17 @@ def _cases_self_checks():
         # Windows 的 cp1252 stdout —— 这个仓会打印**中文**的闸门名与描述
         # **文本 `open()` 必须显式 encoding**（Windows 默认 cp1252）。
         # 这条判据在 CI 的 Windows 腿上被验证过四次 —— 每次都是不同形式。
+        # **`subprocess.run(text=True)` 必须显式 encoding** —— 踩了五次的坑。
+        ("★ registry.subprocess_without_encoding_detected",
+         lambda: [p.code for p in _subprocess_encoding_problems(
+             "x.py", 'import subprocess\n'
+                     'subprocess.run(["x"], text=True)\n')]
+         == ["registry.subprocess_without_encoding"]),
+        ("registry.subprocess_with_encoding_is_clean",
+         lambda: _subprocess_encoding_problems(
+             "x.py", 'import subprocess\n'
+                     'subprocess.run(["x"], text=True,\n'
+                     '               encoding="utf-8")\n') == []),
         ("★ registry.open_without_encoding_detected",
          lambda: [p.code for p in _encoding_problems(
              "x.py", 'open("a", "w").write("x")\n')]

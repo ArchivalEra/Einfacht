@@ -63,7 +63,8 @@ def resolve_spec(argv, knob=""):
 
 def _run(cmd):
     try:
-        p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+        p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60,
+                           encoding="utf-8", errors="replace")
         return p.returncode, p.stdout.strip()
     except (OSError, subprocess.TimeoutExpired) as e:
         return -1, str(e)
@@ -203,7 +204,8 @@ def _fixture():
                     "user.email=t@t", "commit", "-qm", "base"], check=True)
     head = subprocess.run(
         ["git", "-C", os.path.join(d, "wt"), "rev-parse", "HEAD"],
-        capture_output=True, text=True).stdout.strip()
+        capture_output=True, text=True,
+                           encoding="utf-8", errors="replace").stdout.strip()
     # worktree 用**绝对路径**（引擎按仓库根/abs 解析；夹具树在临时目录）
     wt = os.path.join(d, "wt")
     stamp = "echo octave wasm/11.3.0 %s 0"
