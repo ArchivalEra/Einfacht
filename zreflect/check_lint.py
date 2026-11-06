@@ -97,7 +97,8 @@ def run(argv=None):
             return off(M("lint.off", module="ruff"))
     try:
         p = subprocess.run(ruff_argv(), cwd=gate.GATE_REPO,
-                           capture_output=True, text=True, timeout=300)
+                           capture_output=True, text=True, timeout=300,
+                           encoding="utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError) as e:
         return fatal(M("lint.tool_broken", error=e))
     out = (p.stdout or "") + (p.stderr or "")
@@ -117,7 +118,8 @@ def subprocess_ruff_probe():
     """`ruff` 不在 PATH 时，试试 `python -m ruff`（pip 装在解释器里的那种）。"""
     try:
         p = subprocess.run([sys.executable, "-m", "ruff", "--version"],
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, timeout=60,
+                           encoding="utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError):
         return 1, ""
     return p.returncode, (p.stdout or "") + (p.stderr or "")

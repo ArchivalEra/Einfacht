@@ -122,7 +122,8 @@ def _docker_probe(check, timeout):
         r = subprocess.run(
             ["docker", "inspect", "--format", "{{.State.Running}}",
              check["container"]],
-            capture_output=True, text=True, timeout=timeout)
+            capture_output=True, text=True, timeout=timeout,
+                           encoding="utf-8", errors="replace")
     except (OSError, subprocess.TimeoutExpired) as e:
         return False, M("doctor.docker_inspect_failed", error=e)
     return _docker_verdict(r.stdout)

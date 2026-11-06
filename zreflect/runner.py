@@ -203,7 +203,8 @@ def run_cmd(cmd, timeout=None):
         # 里只有一行 `Exception in thread Thread-N (_readerthread)`。
         # 实测：CI 的 Windows 腿连续两轮都栽在这一层。
         p = subprocess.run(argv, cwd=gate.GATE_REPO, capture_output=True, text=True,
-                           errors="replace", timeout=t, env=env)
+                           errors="replace", timeout=t, env=env,
+                           encoding="utf-8")
     except subprocess.TimeoutExpired:
         return None, ""
     except OSError as e:                # 连 shell 起不来 —— 报成失败，不许算通过

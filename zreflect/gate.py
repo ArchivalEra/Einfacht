@@ -743,7 +743,8 @@ def default_runner(f, repo_root=None):
     """
     import subprocess  # noqa: PLC0415
     p = subprocess.run([sys.executable, f], capture_output=True, text=True,
-                       cwd=repo_root or GATE_REPO)
+                       cwd=repo_root or GATE_REPO,
+                           encoding="utf-8", errors="replace")
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 

@@ -55,7 +55,8 @@ def _sh(cmd, stdin=None, env=None):
     """跑一条命令，返回 `(rc, 合并输出)`。"""
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, input=stdin,
-                           env=env)
+                           env=env,
+                           encoding="utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError) as e:
         return 127, "gate: %r" % (e,)
     return p.returncode, (p.stdout or "") + (p.stderr or "")

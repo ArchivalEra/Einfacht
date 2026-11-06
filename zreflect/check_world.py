@@ -113,7 +113,8 @@ def current_branch():
         r = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True, text=True, timeout=5,
-            cwd=repo())
+            cwd=repo(),
+                           encoding="utf-8", errors="replace")
     except (OSError, subprocess.TimeoutExpired):
         return ""
     return r.stdout.strip() if r.returncode == 0 else ""

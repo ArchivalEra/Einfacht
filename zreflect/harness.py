@@ -60,7 +60,8 @@ def _run(argv, cwd=None, env=None):
     """跑一条命令，返回 `(rc, 合并输出)`。rc 用**真实返回码**，不走管道。"""
     try:
         p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
-                           env=env, timeout=600)
+                           env=env, timeout=600,
+                           encoding="utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError) as e:
         return 127, "harness: %r" % (e,)
     return p.returncode, (p.stdout or "") + (p.stderr or "")
