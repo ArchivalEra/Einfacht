@@ -1,5 +1,7 @@
 {
  "gate.title.install": "Hook-Installer",
+ "install.chain_blocked_by_hookspath": "**Installation abgelehnt**: dieses Repo hat bereits `core.hooksPath=%(value)s` — sobald git das gesetzt hat, schaut es nie in `.git/hooks`, ein hier geschriebener Wrapper liefe also nie.",
+ "install.chain_blocked_fix": "eines von beiden: `python3 reflect-hooks/install.py --uninstall` ausführen (alte Verkabelung entfernen), dann `--chain`; oder die alte Verkabelung behalten (sie führt die Tore ebenfalls aus) und `--chain` weglassen.",
  "install.chain_done": "verketteter Wrapper installiert. rückgängig: python3 reflect-hooks/install.py --uninstall",
  "install.chain_hint": "fertige Anbindung: python3 reflect-hooks/install.py --chain",
  "install.chain_removed": "verketteter Wrapper entfernt: %(name)s",

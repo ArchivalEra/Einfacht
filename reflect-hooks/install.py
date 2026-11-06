@@ -75,10 +75,25 @@ def _wrapper_body(name, phase):
 
 
 def install_chain(repo):
-    """装链式 wrapper。返回 (rc, lines)。"""
+    """装链式 wrapper。返回 (rc, lines)。
+
+    ⚠️ **先查 `core.hooksPath`**：git 一旦设了它，就**完全不看 `.git/hooks`**。
+    此时在这里写 wrapper 是**写了也不会被执行** —— 装完之后 `git commit`
+    看起来一切正常，`installed chain` 也打印了，而钩子一次都没跑。
+    实测：一个仓已有 `core.hooksPath=reflect-hooks`（旧的 `--legacy` 装法），
+    `--chain` 返回 0 且零警告，`.git/hooks/pre-commit` 里的 wrapper 是死的。
+
+    这是本仓立身要消灭的「部署了 ≠ 在跑」—— 所以**当场报，不装**。
+    """
     hooks = os.path.join(repo, ".git", "hooks")
     if not os.path.isdir(hooks):
         return 2, [str(M("install.no_hooks_dir", path=hooks))]
+    rc, current = _git(repo, "config", "core.hooksPath")
+    if rc == 0 and (current or "").strip():
+        # 已有一个 core.hooksPath ⇒ `.git/hooks` 被 git 忽略。装 chain 是空转。
+        return 2, [str(M("install.chain_blocked_by_hookspath",
+                         value=current.strip())),
+                   str(M("install.chain_blocked_fix"))]
     lines = []
     for name, phase in PHASE_OF.items():
         target = os.path.join(hooks, name)
@@ -204,6 +219,10 @@ def _cases():
         ("★ install.chain_keeps_existing", lambda: _chain_case(mk, shutil)),
         # uninstall 真的恢复原有钩子
         ("★ install.uninstall_restores", lambda: _uninstall_case(mk, shutil)),
+        # **已有 core.hooksPath ⇒ 拒绝装 chain**（装了也不会跑）。
+        # 这是「部署了 ≠ 在跑」家族 —— 本仓立身要消灭的那一类。
+        ("★ install.chain_refused_when_hookspath_set",
+         lambda: _chain_blocked_case(mk, shutil)),
         # ③ 空输入必须报：仓里没有 .git/hooks
         ("★ install.missing_hooks_dir_is_2",
          lambda: _missing_hooks_case(mk, shutil)),
@@ -248,6 +267,21 @@ def _chain_case(mk, shutil):
         prev = pre + ".einfacht-prev"
         body = open(pre, encoding="utf-8").read()
         return rc == 0 and os.path.isfile(prev) and "gate.py" in body
+    finally:
+        shutil.rmtree(d, True)
+
+
+def _chain_blocked_case(mk, shutil):
+    """已有 `core.hooksPath` 时，`--chain` 必须 rc=2 **且不写 wrapper**。"""
+    d = mk()
+    try:
+        _git(d, "config", "core.hooksPath", "reflect-hooks")
+        rc, _lines = install_chain(d)
+        wrapper = os.path.join(d, ".git", "hooks", "pre-commit")
+        wrote = os.path.isfile(wrapper) and "gate.py" in (
+            open(wrapper, encoding="utf-8").read() if os.path.isfile(wrapper)
+            else "")
+        return rc == 2 and not wrote
     finally:
         shutil.rmtree(d, True)
 

@@ -444,11 +444,21 @@ def _measure():
         try:
             _m = __import__(mod_name)
             fn = getattr(_m, "measure")   # noqa: B009 — 模块是变量，属性名固定是契约
-            if os.path.abspath(gate.GATE_REPO) == os.path.abspath(REPO_REAL):
-                return fn()
         except Exception as e:                            # noqa: BLE001
-            print("⚠ %s" % M("facts.measure_module_unusable",
-                             module=mod_name, error=repr(e)), file=sys.stderr)
+            # ⚠️ **配了却用不了 ⇒ FATAL**，不许回落到占位实现。
+            #
+            # 此前只打一句 `⚠ …unusable` 然后照跑 `measure_example()` ——
+            # 于是用户**会以为量的是自己的仓**，而台账里写的是套件自身的规模
+            # （实测：模块放在仓根而不是 `zreflect/` 里 ⇒ ModuleNotFoundError
+            # ⇒ 静默回落；`STATE.md` 的 `py_lines` 是 15765，用户项目只有 67 行）。
+            # 「配了却没生效」与「没配」是两件事：前者是配置事故，必须响。
+            print(machine().emit("fatal", M(
+                "facts.measure_module_unusable", module=mod_name,
+                error=repr(e), hint=M("facts.measure_module_where"))),
+                file=sys.stderr)
+            raise SystemExit(2) from e
+        if os.path.abspath(gate.GATE_REPO) == os.path.abspath(REPO_REAL):
+            return fn()
     else:
         # ⚠️ 警告**不分仓**：此前只在「GATE_REPO 就是套件自己的仓」时打，
         # 于是**所有下游仓**（正是最需要这条提示的地方）静默拿到一份
@@ -529,6 +539,17 @@ def measure(argv):
         facts.update(doc.facts_of_rules())
 
     out = _out()
+    # ⚠️ **形状守卫必须在写盘之前**：`measure()` 是用户写的代码，返回裸值
+    # （`{"deploys": 12}`）是最自然的写法。此前那种输入会**先把坏台账写进去、
+    # 再在打印时崩 traceback**：
+    #
+    #     wrote FACTS.json (15 facts)          ← 已经写盘
+    #     TypeError: 'int' object is not subscriptable
+    #
+    # 于是台账里留下一个没有 `value` 字段的条目，而用户只看到一行 traceback。
+    rc = _shape_guard(facts)
+    if rc:
+        return rc
     old = facts_of(_read_or_exit(out)) if os.path.exists(out) else {}
 
     rc = _guarded_write(argv, old, facts)
@@ -544,6 +565,31 @@ def measure(argv):
     for k, v in sorted(facts.items()):
         print("  %-20s %s（%s）" % (k, v["value"], _age_human(v)))
     return 0
+
+
+def _shape_guard(facts):
+    """`measure()` 的返回值形状：每条都必须是 `ledger.fact()` 的形状。
+
+    合规：`{"key": {"value": ..., "cmd": ..., "source": ...}}`。
+    不合规（最常见）：`{"key": 12}` 裸值。
+
+    ⚠️ **在写盘之前查**。此前坏形状会先写进去再在打印时崩 traceback，
+    台账里留下无 `value` 的条目，而报错只有一行 `TypeError`。
+    这是「写了一半 + 无字段名 + 无指引」—— 最不该出现的形状。
+
+    合法来源有三个：`ledger.fact()`（正常）、旧台账里已有的 dict（`--accept*`
+    的重写路径）、`facts_of(ledger)` 合并出来的 dict。它们都带 `value` 键
+    （或本身就是 `{"value": …}` 的同类形状），所以判据是「有 `value` 键」。
+    """
+    bad = sorted(k for k, v in (facts or {}).items()
+                 if not (isinstance(v, dict) and "value" in v))
+    if not bad:
+        return 0
+    print(machine().emit("fatal", M(
+        "facts.measure_bad_shape", count=len(bad),
+        keys=", ".join(bad[:6]), hint=M("facts.measure_shape_hint"))),
+        file=sys.stderr)
+    return 2
 
 
 def _guarded_write(argv, old, facts):

@@ -1,5 +1,7 @@
 {
  "gate.title.install": "钩子安装器",
+ "install.chain_blocked_by_hookspath": "**装不了**：这个仓已经有 `core.hooksPath=%(value)s` —— git 一旦设了它就完全不看 `.git/hooks`，在这里写 wrapper 是**写了也不会跑**。",
+ "install.chain_blocked_fix": "两条路选一条：`python3 reflect-hooks/install.py --uninstall` 撤掉旧装法再 `--chain`；或保留旧装法（它同样会跑闸门），不要用 `--chain`。",
  "install.chain_done": "装了链式 wrapper。撤销：python3 reflect-hooks/install.py --uninstall",
  "install.chain_hint": "要现成的接入：python3 reflect-hooks/install.py --chain",
  "install.chain_removed": "已移除链式 wrapper：%(name)s",
