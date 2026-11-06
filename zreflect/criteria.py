@@ -187,7 +187,14 @@ def shell_surface_problems(repo_root=None):
     root = repo_root or gate.GATE_REPO
     out = []
     for dirpath, _dirnames, filenames in os.walk(root):
-        if "/.git" in dirpath or "/node_modules" in dirpath:
+        # ⚠️ **不能写 `"/.git" in dirpath`**：Windows 的分隔符是 `\`，
+        # 那个判断永不成立 ⇒ `.git/hooks/` 里的十几个 sample `.sh` 全被当成
+        # 「未登记的 shell」——CI 的 Windows 腿就是这么红的（实测
+        # `registry.unexpected_shell(file='reflect-hooks/einfacht-env.sh')`
+        # 之外还报了一堆 `.git/hooks/*.sample`）。
+        # 用 `Path.parts` 判目录名，与分隔符无关。
+        parts = dirpath.replace(os.sep, "/").split("/")
+        if ".git" in parts or "node_modules" in parts:
             continue
         for n in filenames:
             if not n.endswith(".sh"):
