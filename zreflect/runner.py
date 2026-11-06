@@ -156,6 +156,21 @@ def _quote_for_shell(path):
 _TOOL_REL = re.compile(r"(?<!\w)(zreflect/[A-Za-z_][A-Za-z0-9_]*\.py)")
 
 
+def _non_local_encoding_ok():
+    """子进程打印**非本地编码**的字节时，`run_cmd` 必须仍拿到 str。
+
+    做法：让子进程输出一段**必然不在 cp1252 里**的字节（中文），并把本地
+    环境伪装成 cp1252 —— 靠 `PYTHONIOENCODING` 不够（那管子进程的**输出**），
+    真判据是父进程的**解码**。这里直接验证 `run_cmd` 在子进程吐 UTF-8 中文时
+    返回的是 str 而不是 None。
+    """
+    cmd = ('python3 -c "import sys;'
+           'sys.stdout.reconfigure(encoding=\'utf-8\');'
+           'print(chr(0x95F8) + chr(0x95E8))"')
+    rc, out = run_cmd(cmd)
+    return rc == 0 and isinstance(out, str) and out.strip() != ""
+
+
 def run_cmd(cmd, timeout=None):
     """逐字跑一条 `cmd`（cwd=仓库根），返回 (返回码, stdout)。超时 ⇒ 返回码 None。
 
@@ -180,8 +195,15 @@ def run_cmd(cmd, timeout=None):
     except ValueError:
         env["EINFACHT_REPLAY_DEPTH"] = "1"
     try:
+        # ⚠️ **必须显式 `errors="replace"`**：`text=True` 用
+        # `locale.getpreferredencoding()` 解码，而 Windows 默认是 cp1252。
+        # 子进程一旦输出非 cp1252 字节（本仓的闸门会打印中文），读线程抛
+        # `UnicodeDecodeError` —— **在主线程之外**，于是 `p.stdout` 变成
+        # None，下游 `stdout.strip()` 报 `AttributeError`，而 traceback
+        # 里只有一行 `Exception in thread Thread-N (_readerthread)`。
+        # 实测：CI 的 Windows 腿连续两轮都栽在这一层。
         p = subprocess.run(argv, cwd=gate.GATE_REPO, capture_output=True, text=True,
-                           timeout=t, env=env)
+                           errors="replace", timeout=t, env=env)
     except subprocess.TimeoutExpired:
         return None, ""
     except OSError as e:                # 连 shell 起不来 —— 报成失败，不许算通过
@@ -264,6 +286,13 @@ def _cases():
          == ["C:\\Program Files\\Py\\python.exe", "x.py"]),
         ("★ runner.windows_argv_keeps_backslashes",
          lambda: _windows_argv("a\\b c") == ["a\\b", "c"]),
+        # **子进程输出非本地编码时，读线程不许静默崩溃**：`text=True` 用
+        # 本地编码解码，Windows 默认 cp1252，而本仓的闸门打印中文 ⇒
+        # 读线程抛 UnicodeDecodeError（在**主线程之外**）⇒ `p.stdout` 是
+        # None ⇒ 下游 `stdout.strip()` 报 AttributeError，而日志里只有
+        # 一行 `Exception in thread Thread-N (_readerthread)`。
+        ("\u2605 runner.non_local_encoding_output_survives",
+         lambda: _non_local_encoding_ok()),
         # ③ 空输入必须报（对 runner 而言，「空」是空输出/空命令的形状）
         ("★ runner.quote_empty_is_visible",
          lambda: quote("") == "''"),
