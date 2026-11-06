@@ -161,7 +161,11 @@ def run_cmd(cmd, timeout=None):
     except subprocess.TimeoutExpired:
         return None, ""
     except OSError as e:                # 连 shell 起不来 —— 报成失败，不许算通过
-        return 127, machine().emit("fatal", e)
+        # 诊断：把**实际 argv** 带进错误里。127 的原因只可能是「第一个元素
+        # 不是可执行文件」——不说清 argv 就只能猜（实测：CI 的 Windows 腿
+        # 报了 19 条 127，而本地永远复现不了）。
+        return 127, machine().emit(
+            "fatal", "%s [shell=%s argv=%r]" % (e, shell_kind, argv[:2]))
     return p.returncode, p.stdout
 
 
