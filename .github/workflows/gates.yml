@@ -45,8 +45,11 @@ jobs:
       - name: 事实块与台账一致 + 发现式名录的全部闸门全绿
         run: |
           # 名录对账（缺声明 / 孤儿 / 旗标错 / 写而不跑的自证 / 幻影旋钮）
-          python zreflect/registry.py --gates >/dev/null
-          python zreflect/registry.py --selftest-modules >/dev/null
+          # ⚠️ 这里**不许** `>/dev/null`：Windows 的 PowerShell 把它当路径
+          # （`Could not find a part of the path 'D:\dev\null'`），
+          # 实测 CI 的 Windows 腿就是这么红的。输出本来就不长，留着。
+          python zreflect/registry.py --gates
+          python zreflect/registry.py --selftest-modules
           # 不给文档名 ⇒ 查全部有机器块的文档（STATE + PRINCIPLES）
           python zreflect/facts.py --check
           # 执行面唯一产地（C1）：runs_at="commit" 的闸门，聚合 ran/off/failed

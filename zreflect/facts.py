@@ -674,7 +674,7 @@ def main(argv):
 # 命令名 → handler。**表在文件末尾填**（handler 定义在其中），所以这里是空的；
 # `_command_table()` 只是让「读表」这件事有个名字，且把「为什么是表不是 if 链」
 # 的说明放在读它的地方。
-_COMMANDS = {}
+_COMMANDS: dict = {}
 
 
 def _usage():
