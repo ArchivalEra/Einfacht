@@ -81,8 +81,10 @@ def _replay_one(k, raw_entry, run, seconds, out, stats):
         out.append(M("replay.timeout", key=k, seconds=seconds, command=cmd))
         return
     if rc != 0:
+        # `stdout` 此时已被 `run_cmd` 拼上了 stderr（见其注释）——
+        # 报进消息里，否则「命令跑挂了」只能靠猜。
         out.append(M("replay.command_failed", key=k, return_code=rc,
-                     command=cmd))
+                     command=cmd, detail=quote(stdout.strip()[:200])))
         return
     stats["ran"] += 1
     _judge_ok(k, entry, cmd, stdout, out, stats)

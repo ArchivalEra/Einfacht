@@ -218,6 +218,13 @@ def run_cmd(cmd, timeout=None):
     # `AttributeError: 'NoneType' object has no attribute 'strip'`
     # （实测：CI 的 Windows 腿就是这么红的，而报错指向 `_judge_ok`，
     # 离真因三层远）。
+    if p.returncode != 0 and p.stderr:
+        # ⚠️ **失败时必须把 stderr 带出来**：`run_cmd` 此前只返回 stdout，
+        # 于是「命令跑挂了」与「命令正确地报告了问题」分不开 —— 两者都是
+        # 一个 rc≠0 加一段空 stdout。实测：CI 的 Windows 腿报
+        # `command_failed(rc=1)` 而**看不到任何原因**，只能靠猜。
+        # 拼进 stdout 是安全的：调用方只在 rc==0 时比 stdout 与值。
+        return p.returncode, (p.stdout or "") + p.stderr
     if p.stdout is None:
         # 诊断：stdout 为 None 时把 stderr / argv 带进结果，别让下游
         # 只看到一个 `AttributeError`。
