@@ -63,12 +63,17 @@ jobs:
           python -m ruff check .
 
       # ── 第三档：mypy（边界见文件头）──
-      - name: 类型检查（mypy）
+      - name: 类型检查（mypy，仅 zreflect/）
+        # ⚠️ **只查 zreflect/，不查 reflect-hooks/**：后者有同名 `gate.py`，
+        # mypy 按名字解析会找到自己那份而不是 `zreflect/gate.py` —— 那是
+        # 「同名模块」的结构性冲突，不是配置问题。
+        # ⚠️ 用**文件清单**而不是目录 + MYPYPATH：目录方式下 mypy 会把同目录
+        # 文件按「包 / 平级」双解析 ⇒ `Source file found twice`（实测）。
+        # ⚠️ `MYPYPATH=x cmd` 是 sh 语法，PowerShell 不认 —— 所以用 python
+        # 设环境变量再调，这是唯一不依赖 shell 方言的写法。
         run: |
           python -m pip install --quiet 'mypy==1.13.0'
-          # 单行：Windows 上 `run:` 默认走 PowerShell，`^` 不是它的续行符
-          python -m mypy zreflect/ reflect-hooks/ --ignore-missing-imports --explicit-package-bases --no-error-summary
-
+          python -c "import glob,os,subprocess,sys; os.environ['MYPYPATH']='zreflect'; sys.exit(subprocess.run([sys.executable,'-m','mypy']+sorted(glob.glob('zreflect/*.py'))+['--ignore-missing-imports','--no-error-summary']).returncode)"
       # ── 第四档：全量自证（最贵，放最后）──
       - name: 全量自证（闸门 + 插件 + 平台模块 + 跨仓可配置性 + 端到端零语言）
         run: |
