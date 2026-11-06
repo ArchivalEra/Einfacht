@@ -163,7 +163,13 @@ def py_sources(base):
             if not n.endswith(".py"):
                 continue
             p = os.path.join(dirpath, n)
-            rel = os.path.relpath(p, base)
+            # ⚠️ **统一成正斜杠**：这个 `rel` 会被三处当**文件名**比较
+            # （`check_i18n` 的 `name == "i18n.py"`、`criteria` 的
+            # `name == "gate.py"`、`knobs` 的幻影扫描）。Windows 上
+            # `relpath` 给 `zreflect\i18n.py` ⇒ 那些相等判断永不成立，
+            # 于是「文件级豁免」在 Windows 上整体失效（实测：CI 的
+            # Windows 腿把它算成未登记 shell 的同一类问题）。
+            rel = os.path.relpath(p, base).replace(os.sep, "/")
             try:
                 with open(p, encoding="utf-8", errors="replace") as fh:
                     out.append((rel, fh.read()))

@@ -200,8 +200,13 @@ def shell_surface_problems(repo_root=None):
             if not n.endswith(".sh"):
                 continue
             rel = os.path.relpath(os.path.join(dirpath, n), root)
-            if rel not in ALLOWED_SHELL:
-                out.append(M("registry.unexpected_shell", file=rel))
+            # ⚠️ **`relpath` 在 Windows 上给反斜杠**，而 `ALLOWED_SHELL` 里写的
+            # 是 `/` —— 不归一化的话，白名单里的每一项都"不在名单里"，
+            # 于是正经的 `reflect-hooks/einfacht-env.sh` 被报成违规
+            # （实测：CI 的 Windows 腿报 `unexpected_shell(file='reflect-hooks\\einfacht-env.sh')`）。
+            norm = rel.replace(os.sep, "/")
+            if norm not in ALLOWED_SHELL:
+                out.append(M("registry.unexpected_shell", file=norm))
     return out
 
 
