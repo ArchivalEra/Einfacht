@@ -22,6 +22,7 @@
  "registry.selftest_no_entry": "以下模块声明了 selftest=True 却没有 --selftest 入口 —— 写而不跑的自证 = 装饰：%(files)s",
  "registry.selftest_no_entry_cli": "  ❌ %(file)s 写了自证却没有 --selftest 入口（写而不跑 = 装饰）",
  "registry.subprocess_without_encoding": "`subprocess.run(text=True)` 缺 `encoding=`（`%(file)s:%(lineno)d`）—— Windows 默认 cp1252，读线程会崩、stdout 变 None",
+ "registry.suite_file_without_declaration": "套件文件 `%(file)s` 没有声明行（模块级 `MODULE = …` 或 `GATE = …`）—— 没声明的文件会被当成使用方代码，闸门不再审它",
  "registry.undeclared_module": "以下 .py 既非闸门（无 GATE 声明）也非已声明的平台模块（无 MODULE = module_meta(…)）—— 平台模块必须声明自己，哪怕 selftest=False（正面说「我不用自证」）：%(files)s",
  "registry.unexpected_shell": "套件里出现未登记的 shell 文件 `%(file)s` —— 全 Python 化：shell 是例外，每个都必须在 `zreflect/criteria.py` 的 `ALLOWED_SHELL` 里（并写理由）。**使用方自己的 .sh 不受这条约束**",
  "registry.unknown_phase": "`%(file)s` 的 runs_at=%(runs_at)r 不是已知相位（%(phases)s）—— 频率是声明字段，写错值会让执行面漏掉它",

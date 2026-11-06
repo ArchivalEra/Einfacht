@@ -21,7 +21,7 @@
  "knobs.sem.reflect_facts": "事实台账",
  "knobs.sem.reflect_history_secs": "append-only 历史章节编号（如 5,9,10）",
  "knobs.sem.reflect_i18n": "语言包目录（默认随套件分发的 zreflect/lang）",
- "knobs.sem.reflect_i18n_root": "语言覆盖闸门扫描的源码目录；空 = 该闸门未启用",
+ "knobs.sem.reflect_i18n_root": "语言覆盖闸门额外扫描的源码目录（相对仓库根）；空 = 只扫套件自己的 zreflect/ + reflect-hooks/，不审使用方的代码",
  "knobs.sem.reflect_instrument_days": "恒常检测阈值天；空 = 该规则明说未启用",
  "knobs.sem.reflect_instruments": "量法登记位；空 = 该规则明说未启用",
  "knobs.sem.reflect_invariants": "声明式不变量规格；空 = 明说未启用",
@@ -41,5 +41,6 @@
  "knobs.sem.reflect_stale_days": "测龄报警天数；空 = 该规则明说未启用",
  "knobs.sem.reflect_world": "world 声明（验证对象清单）；缺文件 = 未启用",
  "knobs.sem.reflect_world_line": "world 线覆盖（CI / 特殊跑法）",
- "knobs.usage": "用法：knobs.py [--list|--selftest]（--list = 列出全部 REFLECT_* 旋钮：种类 / 默认值 / 语义）"
+ "knobs.usage": "用法：knobs.py [--list|--selftest]（--list = 列出全部 REFLECT_* 旋钮：种类 / 默认值 / 语义）",
+ "knobs.sem.reflect_snapshot_root": "快照闸门扫描的源码目录；空 = 只扫套件自己的 zreflect/（要审你的代码就填你的目录名）"
 }
