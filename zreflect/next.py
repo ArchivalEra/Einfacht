@@ -287,7 +287,7 @@ def _real_git_case():
                        check=True, capture_output=True)
         subprocess.run(["git", "-C", d, "config", "user.name", "a"],
                        check=True, capture_output=True)
-        open(os.path.join(d, "x"), "w").write("x")
+        open(os.path.join(d, "x"), "w", encoding="utf-8").write("x")
         subprocess.run(["git", "-C", d, "add", "x"], check=True)
         subprocess.run(["git", "-C", d, "commit", "-qm", "c"], check=True,
                        capture_output=True)
@@ -372,7 +372,7 @@ def _section_budget_holds():
         subprocess.run(["git", "-C", d, "config", "user.name", "a"],
                        check=True, capture_output=True)
         for i in range(MAX_LISTED + 3):
-            open(os.path.join(d, "x"), "w").write(str(i))
+            open(os.path.join(d, "x"), "w", encoding="utf-8").write(str(i))
             subprocess.run(["git", "-C", d, "add", "x"], check=True,
                            capture_output=True)
             subprocess.run(["git", "-C", d, "commit", "-qm", "c%d" % i],
@@ -380,9 +380,9 @@ def _section_budget_holds():
         q = os.path.join(d, "questions")
         os.makedirs(q, exist_ok=True)
         for i in range(MAX_LISTED + 2):
-            open(os.path.join(q, "%02d-q.md" % i), "w").write(
+            open(os.path.join(q, "%02d-q.md" % i), "w", encoding="utf-8").write(
                 "# q\n\n**Status:** open\n")
-        open(os.path.join(d, "dirty"), "w").write("d")     # 未跟踪 → 待办
+        open(os.path.join(d, "dirty"), "w", encoding="utf-8").write("d")     # 未跟踪 → 待办
         lines = section(d)
         text = "\n".join(lines)
         import i18n  # noqa: PLC0415

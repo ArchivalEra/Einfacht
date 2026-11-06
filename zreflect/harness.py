@@ -222,21 +222,21 @@ def _configurable_fixture(repo, tmp, registry):
     fx_facts = fr.get("FACTS.json", "LEDGER.json")
     fx_doc = fr.get("STATE.md", "NOTES.md")
 
-    open(os.path.join(tmp, "a.py"), "w").write("x = 1\n")
+    open(os.path.join(tmp, "a.py"), "w", encoding="utf-8").write("x = 1\n")
     # 机器块标记要**先手工放一次**（找不到块 ≠ 块是对的）。
-    open(os.path.join(tmp, fx_doc), "w").write(
+    open(os.path.join(tmp, fx_doc), "w", encoding="utf-8").write(
         "# T\n\nrefs [[py_files]] [[md_files]].\n\n"
         "<!-- AUTO:FACTS -->\n<!-- /AUTO:FACTS -->\n"
         "<!-- AUTO:GATES -->\n<!-- /AUTO:GATES -->\n")
-    open(os.path.join(tmp, "AGENTS.md"), "w").write(
+    open(os.path.join(tmp, "AGENTS.md"), "w", encoding="utf-8").write(
         "# AGENTS\n\nsee `zreflect/doc.py` (`doc.RULES`); state: `%s`.\n\n"
         "```bash\npython3 zreflect/registry.py --run commit\n```\n" % fx_doc)
-    open(os.path.join(tmp, "RETRACT.json"), "w").write('{"schema":1,"retractions":[]}\n')
+    open(os.path.join(tmp, "RETRACT.json"), "w", encoding="utf-8").write('{"schema":1,"retractions":[]}\n')
     os.makedirs(os.path.join(tmp, "cases"), exist_ok=True)
-    open(os.path.join(tmp, "cases", "02-y.md"), "w").write(
+    open(os.path.join(tmp, "cases", "02-y.md"), "w", encoding="utf-8").write(
         "# e2\n\n**Status:** ready-for-agent\n\n**Settling:** `python3 a.py` —— rc=0 A; rc=7 B\n")
     for f in ("R1", "R2", "R3"):
-        open(os.path.join(tmp, f + ".md"), "w").write(
+        open(os.path.join(tmp, f + ".md"), "w", encoding="utf-8").write(
             "# %s\n\n[R1](R1.md) [R2](R2.md) [R3](R3.md)\n" % f)
 
     env = dict(os.environ)

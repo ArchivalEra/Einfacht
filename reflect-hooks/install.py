@@ -242,7 +242,7 @@ def _chain_case(mk, shutil):
     try:
         hooks = os.path.join(d, ".git", "hooks")
         pre = os.path.join(hooks, "pre-commit")
-        open(pre, "w").write("#!/bin/sh\necho mine\n")
+        open(pre, "w", encoding="utf-8").write("#!/bin/sh\necho mine\n")
         _chmod_x(pre)
         rc, _lines = install_chain(d)
         prev = pre + ".einfacht-prev"
@@ -257,7 +257,7 @@ def _uninstall_case(mk, shutil):
     try:
         hooks = os.path.join(d, ".git", "hooks")
         pre = os.path.join(hooks, "pre-commit")
-        open(pre, "w").write("#!/bin/sh\necho mine\n")
+        open(pre, "w", encoding="utf-8").write("#!/bin/sh\necho mine\n")
         _chmod_x(pre)
         install_chain(d)
         uninstall(d)

@@ -789,14 +789,14 @@ def _semantics_are_codes_under(cm):
 
 def _cases_fixture(d):
     """造夹具（假源码目录 + 幻影记号）。`d` 来自 `_cases()`。"""
-    open(os.path.join(d, "good.py"), "w").write(
+    open(os.path.join(d, "good.py"), "w", encoding="utf-8").write(
         'X = os.environ.get("REFLECT_FACTS")\n')
     # 幻影记号用拼接构造：本文件在扫描面内（zreflect/*.py），字面量写出来
     # 会被自己的 scan_surface_problems() 收编（本仓老坑）。
     # 夹具（假源码 / 假 README）的正文用**英文** —— 它们是被扫描的输入，
     # 不是本体输出（同 facts.py 体例：中文夹具会被零语言闸门当消息）。
     phantom = "REFLECT_" + "GHOSTX"
-    open(os.path.join(d, "phantom.py"), "w").write(
+    open(os.path.join(d, "phantom.py"), "w", encoding="utf-8").write(
         '# a comment mentions the nonexistent knob ' + phantom + '\n')
     return {"d": d, "phantom": phantom}
 
