@@ -17,21 +17,24 @@
 没日志就把那条事实**留空**，而不是写 0 —— 0 是一个数字，会被人当结果引用。
 """
 import os
-import subprocess
+import re
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import gate                                            # noqa: E402
-
-from gate import module_meta, main_selftest_or, repo  # noqa: E402
-from gate import machine                                  # noqa: E402
-from i18n import M                                        # noqa: E402
+import gate  # noqa: E402
+import guard  # noqa: E402
+import registry  # noqa: E402
+from gate import (  # noqa: E402
+    machine,  # noqa: E402
+    main_selftest_or,
+    module_meta,
+    repo,
+)
+from i18n import M  # noqa: E402
 from ledger import age_days, fact, facts_of, load, value_of  # noqa: E402
 from render import BLOCK_BEGIN, BLOCK_END, render_block  # noqa: E402
-import guard                                             # noqa: E402
-import registry                                          # noqa: E402
 
 REPO_REAL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
@@ -46,11 +49,91 @@ def _out():
 # 此前这里有个 `DOC = os.environ.get(...)` 的 import 时快照，与
 # `doc.state_name()` 构成**两个产地**（snapshot 闸门抓的那种形状）。
 def _doc():
-    import doc                                           # noqa: PLC0415
+    import doc  # noqa: PLC0415
     return doc.state_name()
 
 
 # ══ 你的部分 ══════════════════════════════════════════════════════════════════
+_COUNT_CMD = "python3 zreflect/facts.py --count"
+
+
+def count_files(root, suffix):
+    """`root` 下以 `suffix` 结尾的文件数（跳过 `.git`）。"""
+    n = 0
+    for _dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d != ".git")
+        n += sum(1 for f in filenames if f.endswith(suffix))
+    return n
+
+
+def count_lines(root, suffix):
+    """`root` 下以 `suffix` 结尾的文件的**总行数**（跳过 `.git`）。
+
+    与 `count_files` 分开而不是一个带模式的函数：两者的「数什么」不同
+    （一个是文件，一个是行），混在一起会让 `cmd` 多一个参数、也就多一处
+    可能写错的地方。
+    """
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d != ".git")
+        for name in sorted(filenames):
+            if not name.endswith(suffix):
+                continue
+            try:
+                with open(os.path.join(dirpath, name), encoding="utf-8",
+                          errors="replace") as fh:
+                    total += sum(1 for _ in fh)
+            except OSError:
+                continue                # 数不出来的文件不计数 —— 宁缺勿假
+    return total
+
+
+_AUTO_BLOCK = re.compile(r"^\s*<!--\s*(/?AUTO:[A-Z]+)\s*-->\s*$")
+
+
+def count_md_lines(root):
+    """`.md` 文件里**机器块之外**的行数（跨平台，纯 Python）。
+
+    这是 `md_lines` 的**唯一实现** —— 此前它是一条 `find | awk | wc` 的
+    shell 管道：
+      · Windows 上没有 `find` / `awk` / `wc`（CI 的 Windows 腿会红）；
+      · 而且 shell 的引号 / 转义在不同平台上有各自方言。
+    现在计数逻辑住在这里，`cmd` 只剩「调这一行」，仍然可逐字复跑。
+
+    排除**全部**机器块（不只 FACTS）：`AUTO:GATES` 与 `AUTO:RULES` 也是渲染
+    产出的，漏掉它们 ⇒ 渲染一次行数就 +47，`check_facts_replay` 永久红，
+    而修法看起来是「再量一遍」—— 再量只会把新值写进台账，下次渲染又变。
+
+    ⚠️ **标记必须独占一行才算块边界**（`^...$`）。此前的 awk 版
+    （`/<!-- AUTO:[A-Z]+ -->/{b=1; next}`）把**正文里提到标记**也当成块开始 ——
+    实测代价：`AGENTS.md` 有一行写着「`STATE.md` 里预先放好
+    `<!-- AUTO:FACTS -->` / `<!-- AUTO:GATES -->` 标记」（讲 `--init` 做什么），
+    从那行起文件**剩余 22 行全被排除**，而台账里 `md_lines` 一直是少算的
+    2663 —— 没有任何一行输出说它错了。这是本仓最恨的形状。
+    """
+    total = 0
+    in_block = False
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d != ".git")
+        for name in sorted(filenames):
+            if not name.endswith(".md"):
+                continue
+            try:
+                with open(os.path.join(dirpath, name), encoding="utf-8",
+                          errors="replace") as fh:
+                    in_block = False
+                    for line in fh:
+                        m = _AUTO_BLOCK.match(line)
+                        if m:
+                            in_block = not m.group(1).startswith("/")
+                            continue
+                        if not in_block:
+                            total += 1
+            except OSError:
+                continue                # 读不到的文件不计数 —— 宁缺勿假
+    return total
+
+
 def measure_example():
     """**占位实现 —— 换掉它。** 系统只提供机制，你的输入只有你知道怎么量。
 
@@ -75,13 +158,17 @@ def measure_example():
                     pass                      # 数不出来的文件不计数 —— 宁缺勿假
             elif f.endswith(".md"):
                 n_md += 1
-    facts["py_files"] = fact(n_py, "find . -name '*.py' -not -path './.git/*' | wc -l",
-                             "repo", M("facts.note.example_fact"))
-    facts["md_files"] = fact(n_md, "find . -name '*.md' -not -path './.git/*' | wc -l", "repo")
+    # `cmd` 一律走 `facts.py --count ...`（纯 Python）而不是 `find | wc`：
+    # Windows 上没有 `find` / `wc`，而且 shell 引号方言各平台不同。
+    # 示例的复跑命令也必须是跨平台的 —— 它是**给使用方抄的样板**。
+    py_files_cmd = "%s -files .py" % _COUNT_CMD
+    md_files_cmd = "%s -files .md" % _COUNT_CMD
+    facts["py_files"] = fact(n_py, py_files_cmd, "repo",
+                             M("facts.note.example_fact"))
+    facts["md_files"] = fact(n_md, md_files_cmd, "repo")
     # 这条刻意大于 BARE_MIN（check_facts 的裸数字阈值 = 100），好在 STATE.md 里
     # 演示「手抄这个数字会被闸门拦下」。太小的数字遍地都是，查了全是噪音 ⇒ 不查。
-    facts["py_lines"] = fact(lines_py, "find . -name '*.py' -not -path './.git/*' "
-                             "-exec cat {} + | wc -l", "repo",
+    facts["py_lines"] = fact(lines_py, "%s -lines .py" % _COUNT_CMD, "repo",
                              M("facts.note.bare_number_demo"))
     # ⑥ 块排除模式（issue #4 ⑥）：md_lines 数**块以外**的行 —— 机器块
     # 就渲染在这些文档里，数进去 ⇒ 渲染一遍值就过期 ⇒ 复跑恒定失败
@@ -94,20 +181,15 @@ def measure_example():
     # 38 → 59），`check_facts_replay` 永久红，而修法看起来是「再量一遍」——
     # 再量只会把 59 写进台账，下次渲染又变。
     # 状态机版：见到任一 `<!-- AUTO:* -->` 进块、见到对应收尾出块。
-    md_lines_cmd = ("find . -name '*.md' -not -path './.git/*'"
-                    " -exec awk 'FNR==1{b=0}"
-                    " /<!-- AUTO:[A-Z]+ -->/{b=1; next}"
-                    " /<!-- \\/AUTO:[A-Z]+ -->/{b=0; next}"
-                    " !b' {} + | wc -l")
+    # `cmd` 只剩「调这一行」：计数逻辑在 `count_md_lines()`（纯 Python）。
+    # 此前是 `find | awk | wc` 管道 —— Windows 上没有那三个命令。
+    md_lines_cmd = '%s -md' % _COUNT_CMD
+    md_lines = count_md_lines(gate.GATE_REPO)
     # cwd=GATE_REPO：计数（os.walk(GATE_REPO)）与复跑（闸门在仓库根
     # 逐字执行 cmd）都锚定 GATE_REPO —— 不传 cwd 时，在夹具里量到的是
     # 调用方仓库的行数，换名自证会红（跨仓库可配置性自证抓到的回归）。
-    facts["md_lines"] = fact(
-        int(subprocess.run(md_lines_cmd, shell=True, capture_output=True,
-                             text=True, check=True,
-                             cwd=gate.GATE_REPO).stdout.strip()),
-        md_lines_cmd, "repo",
-        M("facts.note.excludes_machine_block"))
+    facts["md_lines"] = fact(md_lines, md_lines_cmd, "repo",
+                              M("facts.note.excludes_machine_block"))
 
     # 例：**量不到就不写**。把 UPSTREAM_VERSION 设上才有这条事实。
     v = os.environ.get("UPSTREAM_VERSION", "").strip()
@@ -121,13 +203,13 @@ def measure_example():
 def _has_principles_doc():
     """这个仓接受本套件的原则吗？—— **声明**在 `doc.accepts_principles()`，
     这里只转发（判断只在那一处）。"""
-    import doc                                           # noqa: PLC0415
+    import doc  # noqa: PLC0415
     return doc.accepts_principles()
 
 
 def _doc_names():
     """有机器块的文档名（按 `_block_homes` 的归属派生，不手写名单）。"""
-    import doc                                           # noqa: PLC0415
+    import doc  # noqa: PLC0415
     return (_doc(), doc.PRINCIPLES)
 
 
@@ -149,7 +231,7 @@ def _block_homes(ledger):
     probs = registry.problems(gs, missing)
     if probs:
         return None, M("facts.registry_mismatch", entries="\n  · ".join(probs))
-    import doc                                           # noqa: PLC0415
+    import doc  # noqa: PLC0415
     return [
         (_doc(), [(BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
                (registry.GATES_BEGIN, registry.GATES_END,
@@ -406,8 +488,8 @@ def _carry_first_seen(facts, old):
 
 def _write_ledger_doc(out, facts):
     """把台账写盘。返回 `(rc, 错误消息或 None)`。"""
-    import json                                         # noqa: PLC0415
-    import time                                         # noqa: PLC0415
+    import json  # noqa: PLC0415
+    import time  # noqa: PLC0415
     doc = {"schema": 1, "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
            "_why": M("facts.ledger_why"),
            "facts": facts}
@@ -437,7 +519,7 @@ def measure(argv):
     # 文档，把本仓的原则复制进它的台账 ⇒ 每条命令都在外仓语境下跑，全红
     # （实测）。「这个仓要不要遵守这些原则」由**那份文档存在与否**决定 ——
     # 与 `_block_homes` 用的是同一个声明（块 ← 文档），不是第二套判断。
-    import doc                                           # noqa: PLC0415
+    import doc  # noqa: PLC0415
     if _has_principles_doc():
         facts.update(doc.facts_of_rules())
 
@@ -508,7 +590,7 @@ def _read_or_exit(out):
     记成「判据红」。实测：一个坏 JSON 会让 `facts.py --check` 打 traceback
     且 rc=0，调用方以为查过了。
     """
-    from ledger import Unreadable                        # noqa: PLC0415
+    from ledger import Unreadable  # noqa: PLC0415
     try:
         return load(out)
     except Unreadable as e:
@@ -657,8 +739,8 @@ def cmd_get(argv):
 
 def _init_skeleton(root, state):
     """要生成的骨架文档：`{文件名: 正文}`。**纯数据**，不碰盘。"""
-    import doc                                       # noqa: PLC0415
-    import registry as _reg                          # noqa: PLC0415
+    import doc  # noqa: PLC0415
+    import registry as _reg  # noqa: PLC0415
     return {
         state: (
             "# " + state + "\n\n"
@@ -707,10 +789,10 @@ def _create_missing(root, files):
 def _init_principles_into_ledger():
     """原则也要进台账 —— 否则 `PRINCIPLES.md` 的 `[[RULES:…]]` 引用在
     新仓里全是坏引用（实测：`facts.missing_key_cite(line=3)`）。"""
-    import doc                                       # noqa: PLC0415
+    import doc  # noqa: PLC0415
     if not doc.accepts_principles():
         return
-    import json as _json                             # noqa: PLC0415
+    import json as _json  # noqa: PLC0415
     out = _out()
     facts = dict(facts_of(_load_or_empty()))
     facts.update(doc.facts_of_rules())
@@ -747,7 +829,7 @@ def _init_env_file(root, state):
     """**按实际生成的文档**写一份 `Einfacht.env`：默认旋钮假设你已经
     有六份文档（STATE/AGENTS/PRINCIPLES/README×3），而新仓只有刚生成的那几份。
     不写这一份 ⇒ 每个闸门都报「找不到 README.zh.md」。"""
-    import doc                                       # noqa: PLC0415
+    import doc  # noqa: PLC0415
     env_path = os.path.join(root, "Einfacht.env")
     if os.path.exists(env_path):
         return
@@ -758,6 +840,27 @@ def _init_env_file(root, state):
         fh.write("export REFLECT_DOCS=%s\n" % docs)
         fh.write("export REFLECT_READMES=README.md\n")
     print(str(M("facts.init_created", name="Einfacht.env")))
+
+
+def cmd_count(argv):
+    """`--count-files SUF` / `--count-lines SUF` / `--count-md`：台账的复跑命令。
+
+    独立成子命令而不是内联在 `measure()` 里：台账的 `cmd` 必须能**逐字复跑**
+    （`check_facts_replay`），而 `measure()` 会写盘 —— 复跑者不该触发一次写。
+
+    全部是**纯 Python**：`find | wc` 在 Windows 上不存在，而 `cmd` 是给
+    使用方抄的样板 —— 样板本身必须跨平台。
+    """
+    rest = argv[1:]
+    if rest == ["-md"]:
+        print(count_md_lines(gate.GATE_REPO))
+        return 0
+    if len(rest) == 2 and rest[0] in ("-files", "-lines"):
+        fn = count_files if rest[0] == "-files" else count_lines
+        print(fn(gate.GATE_REPO, rest[1]))
+        return 0
+    print(M("facts.count_usage"), file=sys.stderr)
+    return 2
 
 
 def cmd_init(argv):
@@ -775,7 +878,7 @@ def cmd_init(argv):
     四件产物各是一个具名 helper（骨架 / 原则进台账 / 悬案目录 / env 文件）：
     拼在一个函数里时是 103 行、四段互不相关的副作用。
     """
-    import doc                                       # noqa: PLC0415
+    import doc  # noqa: PLC0415
     root = gate.GATE_REPO
     state = doc.state_name()
     created, kept = _create_missing(root, _init_skeleton(root, state))
@@ -807,7 +910,7 @@ def cmd_accept_principles(argv):
     # `python3 zreflect/facts.py --render-doc`（不带文件名，AGENTS.md 的
     # 首要命令之一）在走到这里之前就抛 `UnboundLocalError`。实测：
     # `ruff --select=F823` 早就报过，只是没有闸门跑它。
-    import doc as doc_mod                           # noqa: PLC0415
+    import doc as doc_mod  # noqa: PLC0415
     led = _load_or_empty()
     new = facts_of(led)
     new.update(doc_mod.facts_of_rules())
@@ -881,8 +984,8 @@ def _write_ledger(led, facts, argv, accept_all=False):
     if fatal_w:
         print(machine().emit("fatal", fatal_w), file=sys.stderr)
         return 2
-    import json                                          # noqa: PLC0415
-    import time                                          # noqa: PLC0415
+    import json  # noqa: PLC0415
+    import time  # noqa: PLC0415
     doc = {"schema": 1,
            "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
            "_why": M("facts.ledger_why"),
@@ -898,9 +1001,9 @@ def _write_ledger(led, facts, argv, accept_all=False):
 def _tmp_doc(content, name="doc.md"):
     """自证用的临时文档（tempfile + atexit 清理 —— 此前写固定的 /tmp
     路径，非 pid 唯一，并行跑两份自证会互相踩）。"""
-    import atexit                                        # noqa: PLC0415
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import atexit  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     atexit.register(shutil.rmtree, d, True)
     p = os.path.join(d, name)
@@ -969,21 +1072,22 @@ _COMMANDS.update({
     "--accept-principles": cmd_accept_principles,
     "--accept": cmd_accept,
     "show": cmd_show,
+    "--count": cmd_count,
 })
 
 
 def _unknown_cmd_rc():
     """未知命令的 rc（`--definitely-not-a-command`）。"""
-    import contextlib                                   # noqa: PLC0415
-    import io                                           # noqa: PLC0415
+    import contextlib  # noqa: PLC0415
+    import io  # noqa: PLC0415
     with contextlib.redirect_stdout(io.StringIO()), \
             contextlib.redirect_stderr(io.StringIO()):
         return main(["--definitely-not-a-command"])
 
 
 def _help_rc():
-    import contextlib                                   # noqa: PLC0415
-    import io                                           # noqa: PLC0415
+    import contextlib  # noqa: PLC0415
+    import io  # noqa: PLC0415
     with contextlib.redirect_stdout(io.StringIO()), \
             contextlib.redirect_stderr(io.StringIO()):
         return main(["--help"])
@@ -1000,8 +1104,8 @@ def _is_unknown_cmd(first):
     measure 本身可能因为写盘守卫返回 2（那是另一件事），按 rc 判会把
     「被误判成未知命令」与「写盘被拒」混为一谈。
     """
-    import contextlib                                   # noqa: PLC0415
-    import io                                           # noqa: PLC0415
+    import contextlib  # noqa: PLC0415
+    import io  # noqa: PLC0415
     cap = io.StringIO()
     with contextlib.redirect_stdout(io.StringIO()), \
             contextlib.redirect_stderr(cap):
@@ -1011,9 +1115,9 @@ def _is_unknown_cmd(first):
 
 def _corrupt_ledger_rc():
     """坏台账下 `--check` 的 rc（夹具仓，不碰本仓台账）。"""
-    import shutil                                        # noqa: PLC0415
-    import subprocess                                    # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         subprocess.run(["git", "init", "-q", d], check=True, capture_output=True)
@@ -1034,10 +1138,10 @@ def _corrupt_ledger_rc():
 
 def _unwritable_doc_rc():
     """只读文档上 `--render-doc` 的 rc（需要真写盘 ⇒ 必须 FATAL 2）。"""
-    import shutil                                        # noqa: PLC0415
-    import stat                                          # noqa: PLC0415
-    import subprocess                                    # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import stat  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         subprocess.run(["git", "init", "-q", d], check=True, capture_output=True)
@@ -1073,8 +1177,9 @@ def _unwritable_doc_rc():
 
 def _corrupt_load_raises():
     """`ledger.load` 对坏 JSON 抛 `Unreadable`（不是裸 `JSONDecodeError`）。"""
-    import tempfile                                      # noqa: PLC0415
-    from ledger import Unreadable                        # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+
+    from ledger import Unreadable  # noqa: PLC0415
     fd, path = tempfile.mkstemp()
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -1097,9 +1202,9 @@ def _fresh_bootstraps():
     合起来让 bootstrap 走不通」的缺陷 —— env 让 harness 自打红、
     md_lines 把 GATES+RULES 块也数进去、`--accept-changes` 被当成未知命令。
     """
-    import shutil                                        # noqa: PLC0415
-    import subprocess                                    # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         subprocess.run(["git", "init", "-q", d], check=True,

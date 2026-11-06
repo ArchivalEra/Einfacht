@@ -185,10 +185,10 @@ def render_rules(rows=None):
     """
     rows = RULES if rows is None else rows
     lines = [RULES_BEGIN,
-             "> 本区块由 `zreflect/facts.py --render-doc` 从 `zreflect/doc.py` 的 "
-             "`RULES` 表渲染，**不要手改**。",
-             "> 每行的判定命令都在 `FACTS.json` 里，每次提交被逐字执行"
-             "（`check_facts_replay`）。",
+             ("> 本区块由 `zreflect/facts.py --render-doc` 从 `zreflect/doc.py` 的 "
+             "`RULES` 表渲染，**不要手改**。"),
+             ("> 每行的判定命令都在 `FACTS.json` 里，每次提交被逐字执行"
+             "（`check_facts_replay`）。"),
              "",
              "| id | 原则 | 判定命令 |",
              "|---|---|---|"]
@@ -215,17 +215,17 @@ STATE = "STATE.md"
 # 出口是显式的，所以「不想遵守」是一个可以说出来的决定，不是靠删文件。
 def accepts_principles(repo_root=None):
     """这个仓要不要把 `RULES` 登记进台账（= 每提交逐条复跑）？"""
-    import os                                            # noqa: PLC0415
+    import os  # noqa: PLC0415
     if os.environ.get("REFLECT_NO_PRINCIPLES", "").strip() in ("1", "true", "yes"):
         return False
-    import gate                                          # noqa: PLC0415
+    import gate  # noqa: PLC0415
     base = repo_root or gate.GATE_REPO
     return os.path.exists(os.path.join(base, PRINCIPLES))
 
 
 def state_name():
     """「现在」那一份的文件名：`REFLECT_DOC` 优先（与 `facts.py` 同一个旋钮）。"""
-    import os                                            # noqa: PLC0415
+    import os  # noqa: PLC0415
     return os.environ.get("REFLECT_DOC", "").strip() or STATE
 
 
@@ -243,7 +243,7 @@ def facts_of_rules():
     复跑路径（`check_facts_replay`）。`kind="principle"` 让复跑器知道这条
     按 **rc** 判，不按裸值判。
     """
-    import ledger                                        # noqa: PLC0415
+    import ledger  # noqa: PLC0415
     out = {}
     for r in RULES:
         out["principle." + r.id] = ledger.fact(
@@ -268,7 +268,7 @@ def _cmd_shape_problems(rows=None):
 
     这不是完备的检查（没有沙箱），它只挡**已知的三种**坏形状。
     """
-    import re                                            # noqa: PLC0415
+    import re  # noqa: PLC0415
     out = []
     for r in (RULES if rows is None else rows):
         cmd = r.cmd.strip()
@@ -288,7 +288,7 @@ def _ids_unique():
 
 
 def _ids_well_formed():
-    import re                                            # noqa: PLC0415
+    import re  # noqa: PLC0415
     return all(re.fullmatch(r"[a-z][a-z0-9_]*", r.id) for r in RULES)
 
 
@@ -302,11 +302,11 @@ def _every_cmd_references_a_real_file():
     ⚠️ 只查**存在**，不查它跑得通 —— 跑得通是 `check_facts_replay` 的事
     （每提交逐字执行）。这里是**便宜的**预检，挡住改名后留下的死命令。
     """
-    import os                                            # noqa: PLC0415
+    import os  # noqa: PLC0415
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     for r in RULES:
         for tok in r.cmd.split():
-            is_script = tok.endswith(".py") or tok.endswith(".sh")
+            is_script = tok.endswith((".py", ".sh"))
             if is_script and not os.path.exists(os.path.join(base, tok)):
                 return False
     return True
@@ -356,11 +356,11 @@ def _cases():
 
 
 def _cmd_targets_exist(rows):
-    import os                                            # noqa: PLC0415
+    import os  # noqa: PLC0415
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     for r in rows:
         for tok in r.cmd.split():
-            if (tok.endswith(".py") or tok.endswith(".sh")) and \
+            if (tok.endswith((".py", ".sh"))) and \
                not os.path.exists(os.path.join(base, tok)):
                 return False
     return True
@@ -384,14 +384,15 @@ def _is_empty_guard_green(rows):
 
 
 def _selftest():
-    import sys                                           # noqa: PLC0415
-    from gate import main_selftest_or                    # noqa: PLC0415
-    from i18n import M                                   # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    from gate import main_selftest_or  # noqa: PLC0415
+    from i18n import M  # noqa: PLC0415
     return main_selftest_or(sys.argv[1:], M("gate.title.doc"), _cases,
                             lambda a: 0)
 
 
-from gate import module_meta                             # noqa: E402
+from gate import module_meta  # noqa: E402
 
 MODULE = module_meta(
     "原则登记表",
@@ -399,8 +400,8 @@ MODULE = module_meta(
     selftest=True)
 
 if __name__ == "__main__":
-    import sys                                           # noqa: PLC0415
-    import os                                            # noqa: PLC0415
+    import os  # noqa: PLC0415
+    import sys  # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import doc as _mod                                   # noqa: PLC0415
+    import doc as _mod  # noqa: PLC0415
     sys.exit(_mod._selftest())

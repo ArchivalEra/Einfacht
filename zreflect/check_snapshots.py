@@ -53,9 +53,9 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import gate                                               # noqa: E402
+import gate  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta  # noqa: E402
-from i18n import M                                        # noqa: E402
+from i18n import M  # noqa: E402
 
 # ⚠️ 默认值**不是空**：本闸门守的正是本仓自己的代码（`zreflect/*.py`），
 # 所以它对任何 Einfacht 落地的仓库都该默认生效。此前默认空 ⇒ 旋钮没人配 ⇒

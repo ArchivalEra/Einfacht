@@ -36,11 +36,11 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import criteria                                      # noqa: E402
-import gate                                            # noqa: E402
-from gate import module_meta, fatal, repo, main_selftest_or  # noqa: E402
-from i18n import M                                        # noqa: E402
-from knobs import REGISTRY                                # noqa: E402
+import criteria  # noqa: E402
+import gate  # noqa: E402
+from gate import fatal, main_selftest_or, module_meta, repo  # noqa: E402
+from i18n import M  # noqa: E402
+from knobs import REGISTRY  # noqa: E402
 
 # PINNED: AUTO 机器块固定语言（同 render.PREAMBLE 的理由）。
 GATES_BEGIN = "<!-- AUTO:GATES -->"
@@ -345,7 +345,7 @@ def _knob_problems(knob_problems, gs):
     Einfacht.env ⇒ 从未执行（实测踩到）。名册的家在这里收口。
     """
     if knob_problems is None:
-        import knobs                                     # noqa: PLC0415
+        import knobs  # noqa: PLC0415
         knob_problems = (knobs.scan_surface_problems()
                          + knobs.readme_problems()
                          # C4 对账：声明↔实读、REGISTRY↔README 表、zh↔en 包
@@ -462,7 +462,7 @@ def plugins(hooks_dir=None):
     except OSError:
         names = []
     for n in names:
-        if not (n.endswith(".sh") or n.endswith(".py")):
+        if not (n.endswith((".sh", ".py"))):
             continue
         try:
             text = open(os.path.join(d, n), encoding="utf-8",
@@ -486,10 +486,10 @@ def render_gates(gs):
     实测过：不 PINNED 就会不收敛。
     """
     lines = [GATES_BEGIN,
-             "> 本区块由 `zreflect/facts.py --render-doc` 从发现式名录"
-             "（zreflect/registry.py 的声明行）渲染，**不要手改**。",
-             "> 执行面（hooks / CI）读 `registry --run <相位>` —— 相位是声明字段"
-             "（`runs_at`），不是文件名。",
+             ("> 本区块由 `zreflect/facts.py --render-doc` 从发现式名录"
+             "（zreflect/registry.py 的声明行）渲染，**不要手改**。"),
+             ("> 执行面（hooks / CI）读 `registry --run <相位>` —— 相位是声明字段"
+             "（`runs_at`），不是文件名。"),
              "",
              # ⚠️ 「可未启用的理由」是**声明**（静态），不是**运行时状态**。
              # 运行时 off 要看 `registry --run <相位>` —— 把它渲染进本块会让
@@ -548,7 +548,7 @@ def _main_run(argv):
     hooks / CI 只调这一行 —— glob 退役，谓词只有 gates() 一处。
     """
     phase = _arg_after(argv, "--run")
-    from gate import run_phase                          # noqa: PLC0415
+    from gate import run_phase  # noqa: PLC0415
     gs = runnable(phase)
     if not gs:
         return fatal(M("registry.empty_phase", phase=phase))
@@ -686,7 +686,7 @@ def main(argv):
 
 def _phase_tiers_ok():
     """`run_phase` 必须把 ran / off / failed / fatal 四档分清楚。"""
-    from gate import run_phase                          # noqa: PLC0415
+    from gate import run_phase  # noqa: PLC0415
     script = {"fatal.py": (2, "FATAL: cfg"),
               "fail.py": (1, "gate.problems_header"),
               "off.py": (0, "OFF: x"),
@@ -710,10 +710,11 @@ def _captures_stderr():
     实测对旧实现返回 BLIND（旧实现同样把 rc=2 归 fatal，差别在 out 里有没有
     stderr 的内容）。
     """
-    from gate import default_runner                     # noqa: PLC0415
-    import os                                           # noqa: PLC0415
-    import shutil                                       # noqa: PLC0415
-    import tempfile                                     # noqa: PLC0415
+    import os  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+
+    from gate import default_runner  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         p = os.path.join(d, "boom.py")
@@ -755,7 +756,7 @@ def _render_off_reason_dash():
 
 def _streams_documented():
     """两处措辞必须在源码里（gate.py 限定单个闸门 / 本文件说明聚合方走 stdout）。"""
-    import gate                                          # noqa: PLC0415
+    import gate  # noqa: PLC0415
     try:
         g = open(gate.__file__, encoding="utf-8").read()
         r = open(os.path.abspath(__file__), encoding="utf-8")
@@ -778,7 +779,7 @@ def _streams_documented():
 
 def _plugin_discovery_ok():
     """插件发现：目录在 ⇒ 必须发现 env 插件；目录不在 ⇒ 空名单也算对。"""
-    import os                                            # noqa: PLC0415
+    import os  # noqa: PLC0415
     d = repo("reflect-hooks")
     found = plugins()
     if not os.path.isdir(d):
@@ -797,7 +798,7 @@ def _nf_catches(which):
       · `self_compare` —— `x == x`
       · `real`         —— 真断言（必须返回 None）
     """
-    from gate import never_falsifiable                   # noqa: PLC0415
+    from gate import never_falsifiable  # noqa: PLC0415
     y = 1                                                # 供 self_compare 用
     shapes = {
         "or_true": lambda: (1 == 1) or True,
@@ -814,7 +815,7 @@ def _nf_no_source():
     这条钉的是边界③：`never_falsifiable` 依赖 `ast` 定位**真文件**；
     读不到就明说不猜，而不是当成「恒真」或「干净」。
     """
-    from gate import never_falsifiable                   # noqa: PLC0415
+    from gate import never_falsifiable  # noqa: PLC0415
     # 用 `compile` + `exec` 造一个**没有 co_filename** 的函数，而不是 `eval`：
     # 语义完全相同（工具要的就是「读不到源码」这个边界），但静态安全扫描
     # 不必为一个测试夹具的 `eval` 开豁免（`S307`）。夹具里的 eval 与产品里
@@ -1043,7 +1044,8 @@ def _env_hint_case(which):
     此前那两条断言是 `A is None or B is not None` —— 恒真（实测）。现在是
     真的三档：无载体 ⇒ None；有载体+无旋钮 ⇒ **非 None**；有载体+`off` ⇒ None。
     """
-    import tempfile, shutil                                # noqa: PLC0415
+    import shutil
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     saved = gate.GATE_REPO
     saved_off = os.environ.pop("REFLECT_ENV_HINT", None)
@@ -1056,8 +1058,8 @@ def _env_hint_case(which):
             # `off` 的静默发生在**打印层**（`_maybe_hint`），不在 `env_hint`
             # —— `env_hint()` 仍会算出那句话，只是没人打印它。测打印层。
             os.environ["REFLECT_ENV_HINT"] = "off"
-            import io                                     # noqa: PLC0415
-            import contextlib                             # noqa: PLC0415
+            import contextlib  # noqa: PLC0415
+            import io  # noqa: PLC0415
             buf = io.StringIO()
             with contextlib.redirect_stderr(buf):
                 gate._maybe_hint()
@@ -1135,9 +1137,9 @@ def _cases_gate_hosted(fx):
 
 def _cases():
     """拼装六组夹具断言。**只拼装** —— 判据在各分组函数里。"""
-    import atexit                                        # noqa: PLC0415
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import atexit  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     atexit.register(shutil.rmtree, d, True)
     fx = _cases_fixture(d)

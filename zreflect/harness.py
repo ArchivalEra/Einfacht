@@ -45,7 +45,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from i18n import M                                           # noqa: E402
+from i18n import M  # noqa: E402
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -72,7 +72,7 @@ def _tail(text, n=3):
 
 
 def _has_summary(text):
-    import machine                                       # noqa: PLC0415
+    import machine  # noqa: PLC0415
     return any(machine.is_summary(ln) for ln in (text or "").splitlines())
 
 
@@ -205,7 +205,7 @@ def run_modules(repo):
 
 def run_configurable(repo):
     """跨仓可配置性：夹具仓换掉全部名字仍全绿；默认名下指定的闸门必须红。"""
-    import registry                                          # noqa: PLC0415
+    import registry  # noqa: PLC0415
     tmp = tempfile.mkdtemp()
     try:
         return _configurable_impl(repo, tmp, registry)
@@ -334,7 +334,7 @@ def _configurable_impl(repo, tmp, registry):
 #
 # 它的模板由 `check_i18n` 的 `null_pack_output_has_no_cjk` 覆盖（那条**只喂
 # 固定参数**，不碰 git 状态）—— 所以它没有离开判据面，只是换了正确的测法。
-ZERO_LANG_PROBES = (
+ZERO_LANG_PROBES: tuple = (
     ("zreflect/gate.py", []),
     # ⚠️ 探针清掉全部 `REFLECT_*`（判的就是「没要语言包」那条路径），所以
     # 只能选**既不吃配置、也不产 PINNED 文本**的入口。两处实测教训：
@@ -363,7 +363,7 @@ def run_zero_language(repo):
 
     ⚠️ 环境里**必须**没有 `REFLECT_LANG` —— 判的就是「没要语言包」那条路径。
     """
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     lines = []
     bad = 0
     env = {k: v for k, v in os.environ.items()
@@ -483,17 +483,17 @@ def _cases():
 
 
 def _summary_shape_ok():
-    import machine                                       # noqa: PLC0415
+    import machine  # noqa: PLC0415
     return machine.is_summary("=== 3 PASS / 0 FAIL ===") and \
         not machine.is_summary("=== 3 PASS / 0 fail ===")
 
 
 def _selftest():
-    from gate import selftest                                # noqa: PLC0415
+    from gate import selftest  # noqa: PLC0415
     return selftest(M("gate.title.harness"), _cases())
 
 
-from gate import module_meta                                # noqa: E402
+from gate import module_meta  # noqa: E402
 
 MODULE = module_meta(
     "闸门自证 harness",
@@ -501,6 +501,6 @@ MODULE = module_meta(
     selftest=True)
 
 if __name__ == "__main__":
-    from gate import activate_or_fatal                       # noqa: PLC0415
+    from gate import activate_or_fatal  # noqa: PLC0415
     rc = activate_or_fatal()
     sys.exit(rc or main(sys.argv[1:]))

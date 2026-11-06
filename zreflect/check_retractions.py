@@ -14,9 +14,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
-from i18n import M                                       # noqa: E402
-from ledger import load_or_fatal                                  # noqa: E402
-from living import HIST_MARK, living_lines               # noqa: E402
+from i18n import M  # noqa: E402
+from ledger import load_or_fatal  # noqa: E402
+from living import HIST_MARK, living_lines  # noqa: E402
 
 REQUIRED = ("id", "text", "why", "evidence", "fixed_in")
 # 默认 = 本仓自用名单（三语 README 后共五份活状态文档；换仓改 REFLECT_DOCS，不改代码）

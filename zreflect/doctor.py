@@ -68,7 +68,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import fatal, load_spec, main_selftest_or, meta, off, repo  # noqa: E402
-from i18n import M                                        # noqa: E402
+from i18n import M  # noqa: E402
 
 DEFAULT_SPEC = "doctor.json"
 DEFAULT_TIMEOUT = 2.0
@@ -273,9 +273,12 @@ def _timeout_problem():
     if not raw:
         return None
     try:
-        if float(raw) <= 0:
-            raise ValueError
+        value = float(raw)
     except ValueError:
+        return M("doctor.bad_timeout", value=raw)
+    # 显式判范围，不用 `raise ValueError` 造控制流（`float()` 已处理「不是数字」，
+    # 这里只是「是数字但不是正数」—— 一个独立的失败原因，不该借异常的通道）
+    if value <= 0:
         return M("doctor.bad_timeout", value=raw)
     return None
 

@@ -44,8 +44,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOOL_REPO = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(TOOL_REPO, "zreflect"))
 
-from gate import activate_or_fatal, meta          # noqa: E402
-from i18n import M                                               # noqa: E402
+from gate import activate_or_fatal, meta  # noqa: E402
+from i18n import M  # noqa: E402
 
 ZERO_SHA = "0" * 40
 PHASES = ("commit", "push")
@@ -128,7 +128,7 @@ def _new_content_refs(repo, refs):
 
 def _push_readmes_together(repo, refs):
     """pre-push 第三条：这批推送必须把三语 README 同批更新。返回 (ok, lines)。"""
-    import tempfile                                          # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     lines = []
     refs_with_content = _new_content_refs(repo, refs)
     if not refs_with_content:
@@ -218,8 +218,8 @@ def run(phase, repo, stdin_rows=None):
 # ── 自证 ──────────────────────────────────────────────────────────────────────
 
 def _cases():
-    import tempfile                                          # noqa: PLC0415
-    import shutil                                            # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
 
     def mk_repo(with_zreflect):
         d = tempfile.mkdtemp()
@@ -260,7 +260,7 @@ def _no_zreflect_case(mk_repo, shutil):
 
 def _summary_shape_ok():
     """判据在 `machine.is_summary()`（唯一产地，不再各写一份正则）。"""
-    import machine                                           # noqa: PLC0415
+    import machine  # noqa: PLC0415
     return machine.is_summary("=== 3 PASS / 0 FAIL ===") and \
         not machine.is_summary("=== 3 PASS / 0 fail ===")
 
@@ -321,7 +321,7 @@ def _main(argv):
         rc = activate_or_fatal()
         if rc:
             return rc
-        from gate import selftest                             # noqa: PLC0415
+        from gate import selftest  # noqa: PLC0415
         return selftest(M("gate.title.hookgate"), _cases())
     rc = activate_or_fatal()
     if rc:

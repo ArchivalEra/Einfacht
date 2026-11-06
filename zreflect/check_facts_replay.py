@@ -56,10 +56,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
-from i18n import M, bind, load_pack, Catalog
-from knobs import a_pack_lang                      # noqa: E402
-from ledger import facts_of, load_or_fatal, value_of              # noqa: E402
-from runner import default_timeout, quote, run_cmd       # noqa: E402
+from i18n import Catalog, M, bind, load_pack
+from knobs import a_pack_lang  # noqa: E402
+from ledger import facts_of, load_or_fatal, value_of  # noqa: E402
+from runner import default_timeout, quote, run_cmd  # noqa: E402
 
 
 def _replay_one(k, raw_entry, run, seconds, out, stats):
@@ -106,7 +106,7 @@ def _judge_ok(k, entry, cmd, stdout, out, stats):
         if not got:
             out.append(M("replay.principle_said_nothing", key=k, command=cmd))
             return
-        import machine                                    # noqa: PLC0415
+        import machine  # noqa: PLC0415
         if any(kind == "off" for _i, kind, _ln in machine.scan(got)):
             out.append(M("replay.principle_is_off", key=k,
                          command=cmd, detail=quote(got[:120])))

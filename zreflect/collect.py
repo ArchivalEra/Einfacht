@@ -47,10 +47,12 @@
 """
 import re
 
-from gate import module_meta, repo                                    # noqa: F401  (re-export 便利)
-from gate import machine                                  # noqa: E402
-from i18n import M                                        # noqa: E402
-
+from gate import (  # noqa: F401  (re-export 便利)
+    machine,  # noqa: E402
+    module_meta,
+    repo,
+)
+from i18n import M  # noqa: E402
 
 
 def unavailable(what, why):
@@ -136,16 +138,17 @@ def _cases():
 
 
 def _selftest():
-    import sys                                           # noqa: PLC0415
-    from gate import main_selftest_or                    # noqa: PLC0415
-    from i18n import M                                   # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    from gate import main_selftest_or  # noqa: PLC0415
+    from i18n import M  # noqa: PLC0415
     return main_selftest_or(sys.argv[1:], M("gate.title.collect"),
                             _cases, lambda a: 0)
 
 
 if __name__ == "__main__":
-    import os                                            # noqa: PLC0415
-    import sys                                           # noqa: PLC0415
+    import os  # noqa: PLC0415
+    import sys  # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import collect as _mod                               # noqa: PLC0415
+    import collect as _mod  # noqa: PLC0415
     sys.exit(_mod._selftest())

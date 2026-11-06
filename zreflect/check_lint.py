@@ -41,9 +41,9 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import gate                                              # noqa: E402
+import gate  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, off  # noqa: E402
-from i18n import M                                       # noqa: E402
+from i18n import M  # noqa: E402
 
 CONFIG = "ruff.toml"
 

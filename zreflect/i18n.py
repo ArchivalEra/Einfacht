@@ -47,17 +47,18 @@ import os
 from types import MappingProxyType
 
 # `machine` 只依赖标准库 ⇒ 无环。装载期判据与渲染期净化都从它来。
-import machine                                           # noqa: E402
+import machine  # noqa: E402
+
 
 # ⚠️ **懒取**：本模块被 `gate` 懒导入，模块级反向 `import gate` 会成环。
 # 值本身由 `gate.zdir()` / `gate.tool_repo()` 唯一生产 —— 不在这里再算一遍。
 def _tool_dir():
-    import gate                                          # noqa: PLC0415
+    import gate  # noqa: PLC0415
     return gate.zdir()
 
 
 def _tool_repo_dir():
-    import gate                                          # noqa: PLC0415
+    import gate  # noqa: PLC0415
     return gate.tool_repo()
 # 未设 `REFLECT_I18N` 时用的**内建包目录**（相对工具仓根）。
 BUILTIN_PACKS = "zreflect/lang"
@@ -284,7 +285,7 @@ def pack_dir():
     if os.path.isabs(raw):
         return raw
     # 懒导入：本模块被 `gate` 懒导入，模块级反向 import 会成环。
-    import gate                                          # noqa: PLC0415
+    import gate  # noqa: PLC0415
     return os.path.join(gate.GATE_REPO, raw)
 
 
@@ -295,7 +296,7 @@ def _load_shards(base, lang):
     code 退回裸 code 而 **rc 仍 0** —— 「半装看起来像装好了」（实测）。
     现在坏分片 / 非对象一律抛 `MissingPack`。
     """
-    import json                                          # noqa: PLC0415
+    import json  # noqa: PLC0415
     d = os.path.join(base, lang)
     if not os.path.isdir(d):
         return {}
@@ -318,7 +319,7 @@ def _load_shards(base, lang):
 
 def _load_single(base, lang):
     """`<lang>.json` 单文件（小仓 / 样板）。坏文件同样抛 `MissingPack`。"""
-    import json                                          # noqa: PLC0415
+    import json  # noqa: PLC0415
     single = os.path.join(base, "%s.json" % lang)
     if not os.path.exists(single):
         return {}
@@ -642,8 +643,8 @@ def _null_consistent():
 
 def _broken_pack_raises():
     """坏分片必须抛 `MissingPack`，不许静默跳过（临时目录，用完即删）。"""
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         os.makedirs(os.path.join(d, "xx"))
@@ -669,7 +670,7 @@ def _broken_pack_raises():
 
 def _pack_dir_rules_ok():
     """`pack_dir()` 的三条口径逐条验（每条都是踩过的坑，别只验一条）。"""
-    import gate                                          # noqa: PLC0415
+    import gate  # noqa: PLC0415
     prev = os.environ.get("REFLECT_I18N")
     try:
         env = os.environ
@@ -699,8 +700,9 @@ def _pack_dir_rules_ok():
 
 
 def _selftest():
-    import sys                                           # noqa: PLC0415
-    from gate import main_selftest_or                    # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    from gate import main_selftest_or  # noqa: PLC0415
 
     def _run(argv):
         # 走 M()：`REFLECT_LANG=en` 下这条也必须说英语。
@@ -710,17 +712,17 @@ def _selftest():
                             M("gate.title.i18n"), _cases, _run)
 
 
-from gate import module_meta                             # noqa: E402
+from gate import module_meta  # noqa: E402
 
 MODULE = module_meta("i18n", "本体零语言 + 语言包可选（Catalog/M/bind/acquire）",
                      selftest=True)
 
 if __name__ == "__main__":
-    import sys                                           # noqa: PLC0415
+    import sys  # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     # ⚠️ 不能直接 `sys.exit(_selftest())`：本文件作为**脚本**运行时，这份代码是
     # `__main__`，而 `gate.activate_or_fatal` 里 `import i18n` 加载的是**另一个
     # 模块对象**（同名模块副本）。`_DEFAULT` 是模块级状态 ⇒ 激活设在副本上、
     # 渲染读 `__main__` 的 ⇒ 永远 null 包。委派给模块副本，两边就是同一个对象。
-    import i18n as _mod                                  # noqa: PLC0415
+    import i18n as _mod  # noqa: PLC0415
     sys.exit(_mod._selftest())

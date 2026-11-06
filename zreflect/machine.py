@@ -279,7 +279,7 @@ def _emit_is_single_row(kind, body):
 
 def _packs_have_no_forgery():
     """**真包**逐值逐行过一遍宽表（不是夹具）—— 修复前这里对 `"x\\nOFF: y"` 是绿的。"""
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     bad = []
     for lang in ("zh", "en", "de"):
         try:
@@ -416,11 +416,12 @@ def _emit_unknown_kind_raises():
 
 
 def _selftest():
-    import sys                                           # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
     # ⚠️ 悬在**函数内**：`gate` 顶层导入本模块（机器行协议的消费方要用它），
     # 模块级 `from gate import ...` 会成环。与 `i18n.py` 同一个理由。
-    from gate import main_selftest_or                    # noqa: PLC0415
-    from i18n import M                                   # noqa: PLC0415
+    from gate import main_selftest_or  # noqa: PLC0415
+    from i18n import M  # noqa: PLC0415
 
     def _run(argv):
         # 本模块没有 CLI：它是纯函数库。跑成普通程序 ⇒ 明说怎么自证。
@@ -434,7 +435,7 @@ def _selftest():
 # `registry.modules()` 是 ast 解析，不执行代码；写成 `MODULE = _declare()` 或
 # 放进 `if` 分支都收不到（实测：registry.real_modules_declared 当场红）。
 # 成环问题用**懒导入**解决（见上方 `_selftest` 的注释），不是靠改写声明形状。
-from gate import module_meta                             # noqa: E402
+from gate import module_meta  # noqa: E402
 
 MODULE = module_meta(
     "机器行协议",
@@ -443,9 +444,9 @@ MODULE = module_meta(
     selftest=True)
 
 if __name__ == "__main__":
-    import sys                                           # noqa: PLC0415
-    import os                                            # noqa: PLC0415
+    import os  # noqa: PLC0415
+    import sys  # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import machine as _mod                               # noqa: PLC0415
+    import machine as _mod  # noqa: PLC0415
     sys.exit(_mod._selftest())
 

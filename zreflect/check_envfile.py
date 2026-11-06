@@ -50,10 +50,10 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import knobs  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
-import knobs                                              # noqa: E402
-from knobs import REGISTRY                         # noqa: E402
-from i18n import M                                 # noqa: E402
+from i18n import M  # noqa: E402
+from knobs import REGISTRY  # noqa: E402
 
 ENV_FILE = (os.environ.get("REFLECT_ENV_FILE", "Einfacht.env")
             .strip() or "Einfacht.env")
@@ -94,8 +94,8 @@ def _known_knobs_scans_repo():
     判据考的是**行为**：在一个夹具仓里放一个幻影旋钮，`known_knobs()` 必须
     看得见它。工具的 zreflect 里没有那个记号 ⇒ 若默认目录漂到工具那边，这条红。
     """
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         os.makedirs(os.path.join(d, "zreflect"))
@@ -106,7 +106,7 @@ def _known_knobs_scans_repo():
         # ⚠️ `gate.repo()` 读的是**模块级 `GATE_REPO`**（import 时快照），
         # 改 `os.environ` 对它无效（实测：改环境变量后 known_knobs 仍扫真仓）。
         # 必须直接改模块属性。
-        import gate                                      # noqa: PLC0415
+        import gate  # noqa: PLC0415
         prev = gate.GATE_REPO
         gate.GATE_REPO = d
         try:

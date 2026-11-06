@@ -35,8 +35,8 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
-from i18n import M                                        # noqa: E402
-from ledger import age_days, facts_of, load_or_fatal, value_of     # noqa: E402
+from i18n import M  # noqa: E402
+from ledger import age_days, facts_of, load_or_fatal, value_of  # noqa: E402
 from living import DATED_RECORD, living_lines  # noqa: E402
 
 DOCS = tuple(d for d in os.environ.get(

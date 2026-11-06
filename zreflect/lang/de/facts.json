@@ -9,6 +9,7 @@
  "facts.block_mismatch": "der Block im Dokument passt nicht zum Register ⇒ führe `python3 zreflect/facts.py --render-doc` aus",
  "facts.block_stale": "der %(begin)s Block von %(path)s passt nicht zu einem frischen Render ⇒ führe --render-doc aus",
  "facts.copied_value": "Zeile %(line)d enthält eine nackte Zahl %(value)s (gehört zu `%(key)s`) ⇒ schreibe sie als [[%(key)s]]",
+ "facts.count_usage": "Aufruf: `--count -files .py` / `--count -lines .py` / `--count -md` (jeweils eine ganze Zahl)",
  "facts.doc_has_no_home": "Dokument `%(path)s` steht nicht in der Zustandstabelle der Maschinenblöcke (bekannt: %(known)s) — 'nichts zu prüfen' ist nicht 'nichts ist veraltet'",
  "facts.doc_missing": "Dokument existiert nicht: %(path)s — eine fehlende Datei darf nicht als Bestehen zählen (Nullwert-Wächter)",
  "facts.doc_missing_check": "Dokument %(path)s existiert nicht (--check darf nicht bestehen, nur weil die Datei fehlt)",

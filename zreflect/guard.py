@@ -38,7 +38,7 @@ from ledger import changed_keys, dropped_keys, short_value
 
 def _gitignored(path):
     """路径是否被 .gitignore 覆盖；非 git 仓库 / git 不在 ⇒ None（无法判断，不猜）。"""
-    import subprocess                                    # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
     try:
         r = subprocess.run(["git", "-C", gate.GATE_REPO, "check-ignore", "-q", path],
                            capture_output=True)
@@ -283,10 +283,10 @@ MODULE = module_meta("台账写盘守卫", "掉条 / 改口 / 逐条接受（决
 
 
 if __name__ == "__main__":
-    import os                                            # noqa: PLC0415
-    import sys                                           # noqa: PLC0415
+    import os  # noqa: PLC0415
+    import sys  # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from gate import module_meta, main_selftest_or                    # noqa: PLC0415
+    from gate import main_selftest_or, module_meta  # noqa: PLC0415
 
     def _run(argv):
         print(M("guard.module_banner"), file=sys.stderr)

@@ -27,12 +27,12 @@
 
 自证期间纯函数保持安静（print 归 run()/顶层，issue #1 ③）。
 """
-import json
 import ast
+import json
 import os
 import sys
 
-_AST_CACHE = {}
+_AST_CACHE: dict = {}   # key: 文件路径 → 解析好的 AST（或 None）
 
 # 被检查的仓库根：默认是本包的上一级，可用 GATE_REPO 覆盖（测试夹具靠它）。
 GATE_REPO = os.environ.get("GATE_REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -73,7 +73,7 @@ def machine():
     这与 `i18n.py` 的懒导入同一个理由 —— 环只能靠「谁先谁后」打破，不能靠
     在循环里各取一部分。
     """
-    import machine                                       # noqa: PLC0415
+    import machine  # noqa: PLC0415
     return machine
 
 
@@ -85,7 +85,7 @@ def require_nonempty(name, seq, what=None):
 
     `what` = 被收集物的称呼（默认走语言包 `gate.input_label`）。
     """
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     if what is None:
         what = i18n.M("gate.input_label")
     items = list(seq)
@@ -147,7 +147,7 @@ def py_sources(base):
     ⚠️ `base` 必须显式传：上游默认目录不一样（工具仓的 `zreflect` vs
     被检查仓的 `zreflect`），给默认会把这差别藏起来（实测）。
     """
-    import os                                            # noqa: PLC0415
+    import os  # noqa: PLC0415
     out = []
     if not os.path.isdir(base):
         return out
@@ -197,7 +197,7 @@ def load_spec(path):
 
     返回错误而不是 raise：调用方要把旋钮名 / 路径放进自己的 FATAL 措辞。
     """
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     try:
         with open(path, encoding="utf-8") as fh:
             return json.load(fh), None
@@ -207,7 +207,7 @@ def load_spec(path):
 
 def finish(name, problems, ok):
     """问题循环 + OK 行 —— rc 契约（1 = 发现问题 / 0 = 绿）的唯一产地。"""
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     if problems:
         print(i18n.M("gate.problems_header",
                      name=name, count=len(problems)), file=sys.stderr)
@@ -256,7 +256,7 @@ def gate_knobs(module=None):
 
     让 `env_hint()` 不必每个入口手写旋钮名 —— 声明已经有一份（单一产地）。
     """
-    import sys as _sys                                   # noqa: PLC0415
+    import sys as _sys  # noqa: PLC0415
     mod = module if module is not None else _sys.modules.get("__main__")
     decl = getattr(mod, "GATE", None)
     if isinstance(decl, dict):
@@ -293,7 +293,7 @@ def env_hint(consumed=(), module=None):
     if any(os.environ.get(k, "").strip() for k in consumed):
         return None                      # 至少设了一个旋钮 ⇒ 认为是有意配置
     rel = os.path.relpath(carrier, GATE_REPO)
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     return i18n.M("gate.env_hint", file=rel)
 
 
@@ -351,8 +351,8 @@ def raises(fn):
 
 def _ast_for(fname):
     """整文件 AST（按文件名缓存）。读不到 / 解析不了 ⇒ False（缓存负结果）。"""
-    import ast as _ast                                   # noqa: PLC0415
-    import linecache                                     # noqa: PLC0415
+    import ast as _ast  # noqa: PLC0415
+    import linecache  # noqa: PLC0415
     tree = _AST_CACHE.get((fname,))
     if tree is not None:
         return tree
@@ -376,7 +376,7 @@ def _lambda_nodes(tree, lineno):
     因此返回同行全部候选；调用方对**每一条**都扫一遍，任一条恒真即报 ——
     「同行内任一条断言恒真」本来就该被抓，多报不算误伤。
     """
-    import ast as _ast                                   # noqa: PLC0415
+    import ast as _ast  # noqa: PLC0415
     nodes = [n for n in _ast.walk(tree)
              if isinstance(n, _ast.Lambda) and n.lineno == lineno]
     return sorted(nodes, key=lambda n: n.col_offset)
@@ -384,7 +384,7 @@ def _lambda_nodes(tree, lineno):
 
 def _const_truthy(node):
     """这个常量节点恒为真吗（`or True` / `or 1` 的右操作数形状）。"""
-    import ast as _ast                                   # noqa: PLC0415
+    import ast as _ast  # noqa: PLC0415
     if not isinstance(node, _ast.Constant) or node.value is None:
         return False
     return node.value is not False and bool(node.value) is True
@@ -392,7 +392,7 @@ def _const_truthy(node):
 
 def _const_falsy(node):
     """这个常量节点恒为假吗（`and False` / `and 0` 的右操作数形状）。"""
-    import ast as _ast                                   # noqa: PLC0415
+    import ast as _ast  # noqa: PLC0415
     if not isinstance(node, _ast.Constant) or node.value is None:
         return False
     return node.value is False or node.value == 0
@@ -400,8 +400,9 @@ def _const_falsy(node):
 
 def _short_circuit_reason(node):
     """这个 AST 节点构成恒真短路吗 ⇒ 原因消息；否则 None。"""
-    import ast as _ast                                   # noqa: PLC0415
-    import i18n                                          # noqa: PLC0415
+    import ast as _ast  # noqa: PLC0415
+
+    import i18n  # noqa: PLC0415
     if isinstance(node, _ast.BoolOp):
         if isinstance(node.op, _ast.Or) and any(
                 _const_truthy(o) for o in node.values):
@@ -451,7 +452,7 @@ def _delegation_reason(nodes):
     26 PASS / 0 FAIL 全绿）。现在把它**明说成未审计** —— 与「读不到就明说」
     同一条纪律。
     """
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     for node in nodes:
         if isinstance(node.body, ast.Call):
             f = node.body.func
@@ -538,7 +539,7 @@ def _case_verdict(label, fn):
     不许静默当干净（此前返回 None，与「扫过且干净」不可区分，于是提取
     helper 就成了关掉恒真检测的合法手段）。
     """
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     why = never_falsifiable(fn)
     if why and _is_delegated(why):
         return True, True, None
@@ -564,7 +565,7 @@ def _print_banner(name, total, bad, delegated):
     ⚠️ 机器摘要行（issue #3 ③）与检查器名无关、格式固定，runner/CI 直接 grep；
     `=== ` 前缀与收尾 ` ===` 是发射点字面量（语言包值不许以 `^===` 开头）。
     """
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     if delegated:
         print(machine().emit("human_summary",
                            i18n.M("gate.selftest_delegated",
@@ -586,7 +587,7 @@ def selftest(name, cases):
     单条用例的判定（`_case_verdict`）与输出（`_print_banner`）各是一个行具名
     helper：主循环只累计计数。
     """
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     if not cases:
         # 0/0 洞（本文件开头记载的第三种事故）：空用例清单的自证什么都没查，
         # 却打印「0 PASS / 0 FAIL」绿着退场 —— runner 的 grep 照样认它。
@@ -631,7 +632,7 @@ def activate_or_fatal(lang=None):
     activate+FATAL（此前 registry 抄了一份，gate 自己那份干脆没有 FATAL，
     直接裸 traceback 退 1）。
     """
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     try:
         i18n.activate(lang)
     except Exception as e:                               # noqa: BLE001
@@ -671,7 +672,7 @@ def default_runner(f, repo_root=None):
     ⇒ 聚合方拿到 (2, "")，既不知道哪个文件坏了也不知道为什么
     （实测：`REFLECT_SNAPSHOT_ROOT=/nonexistent` ⇒ stdout=''）。
     """
-    import subprocess                                    # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
     p = subprocess.run([sys.executable, f], capture_output=True, text=True,
                        cwd=repo_root or GATE_REPO)
     return p.returncode, (p.stdout or "") + (p.stderr or "")
@@ -762,7 +763,7 @@ MODULE = module_meta(
 
 
 if __name__ == "__main__":
-    import i18n                                          # noqa: PLC0415
+    import i18n  # noqa: PLC0415
     # 此前这里裸 `i18n.activate()`：包不在 ⇒ MissingPack **traceback rc=1**，
     # 而不是 rc 契约的 FATAL rc=2（实测踩到）。走同一个激活入口。
     rc = activate_or_fatal()

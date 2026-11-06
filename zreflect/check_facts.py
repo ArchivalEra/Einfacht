@@ -16,10 +16,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
-from i18n import M, load_pack                             # noqa: E402
-from knobs import a_pack_lang                      # noqa: E402
-from ledger import facts_of, load_or_fatal, value_of              # noqa: E402
-from living import DATED_RECORD   # noqa: E402
+from i18n import M, load_pack  # noqa: E402
+from knobs import a_pack_lang  # noqa: E402
+from ledger import facts_of, load_or_fatal, value_of  # noqa: E402
+from living import DATED_RECORD  # noqa: E402
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
 
 # 正文引用数字的写法：`[[键名]]`。刻意选一个不可能是自然语言的形状 ——
@@ -221,7 +221,7 @@ def _docs_to_scan(argv):
     raw = os.environ.get("REFLECT_DOCS", "").strip()
     if raw:
         return [x.strip() for x in raw.split(",") if x.strip()]
-    import knobs                                         # noqa: PLC0415
+    import knobs  # noqa: PLC0415
     return [x.strip() for x in knobs.REGISTRY["REFLECT_DOCS"][1].split(",")
             if x.strip()]
 
@@ -303,7 +303,7 @@ def _cases_fixture():
 
     def pack_placeholders(code):
         """该包里某条 code 的占位名集合（缺条目 ⇒ 空集，断言当场红）。"""
-        import re                                        # noqa: PLC0415
+        import re  # noqa: PLC0415
         return set(re.findall(r"%\((\w+)\)", real_pack.get(code, "")))
 
     return {'good': good, 'numberless': numberless, 'fifty': fifty, 'codes': codes, 'pack_lang': pack_lang, 'real_pack': real_pack, 'pack_placeholders': pack_placeholders}
