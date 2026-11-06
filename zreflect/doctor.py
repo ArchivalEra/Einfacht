@@ -267,26 +267,51 @@ def _spec_path():
     return p if os.path.exists(p) else None
 
 
-def run(argv=None):
-    argv = list(sys.argv[1:] if argv is None else argv)
-    raw_timeout = os.environ.get("REFLECT_DOCTOR_TIMEOUT", "").strip()
-    if raw_timeout:
-        try:
-            if float(raw_timeout) <= 0:
-                raise ValueError
-        except ValueError:
-            return fatal(M("doctor.bad_timeout", value=raw_timeout))
+def _timeout_problem():
+    """`REFLECT_DOCTOR_TIMEOUT` 必须是正数。返回问题或 None。"""
+    raw = os.environ.get("REFLECT_DOCTOR_TIMEOUT", "").strip()
+    if not raw:
+        return None
+    try:
+        if float(raw) <= 0:
+            raise ValueError
+    except ValueError:
+        return M("doctor.bad_timeout", value=raw)
+    return None
+
+
+def _load_checks():
+    """装载规格并取 `checks`。返回 `(checks, done_rc)`。
+
+    `done_rc is not None` ⇒ 调用方**应当直接返回**它（可能是 0，`off` 就是 0）。
+    `None` ⇒ 继续往下判。
+
+    ⚠️ 这里不能用「rc 非 0」当「已处理」的信号：`off()` 的 rc 是 **0**
+    （off 不是失败）。早先写成 `if rc: return rc` 时，`off` 之后照常往下跑
+    `spec_problems(None)`，于是「未启用」变成 `doctor.empty_spec` + rc=2
+    （实测：跨仓夹具里 doctor 每次红）。
+    """
     p = _spec_path()
     if p is None:
-        return off(M("doctor.off", name=DEFAULT_SPEC,
-                     path=os.path.join("zreflect", DEFAULT_SPEC)
-                     + ".example"))
+        return None, off(M("doctor.off", name=DEFAULT_SPEC,
+                           path=os.path.join("zreflect", DEFAULT_SPEC)
+                           + ".example"))
     if not os.path.exists(p):
-        return fatal(M("doctor.spec_missing"))
+        return None, fatal(M("doctor.spec_missing"))
     spec, err = load_spec(p)
     if err:
-        return fatal(err)
-    checks = spec.get("checks") if isinstance(spec, dict) else None
+        return None, fatal(err)
+    return (spec.get("checks") if isinstance(spec, dict) else None), None
+
+
+def run(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    bad = _timeout_problem()
+    if bad:
+        return fatal(bad)
+    checks, done_rc = _load_checks()
+    if done_rc is not None:
+        return done_rc
     probs = spec_problems(checks)
     if probs:
         print(M("doctor.spec_problems", count=len(probs)), file=sys.stderr)

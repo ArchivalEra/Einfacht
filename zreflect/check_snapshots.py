@@ -268,6 +268,34 @@ def _reaches(node, readers, graph):
     return False
 
 
+def _module_level_assigns_all(tree):
+    """模块顶层的所有赋值节点（含类体里的属性赋值）。
+
+    三种形状都认（此前只认 `ast.Assign`，漏报另外两种 —— review 实测）：
+      · `OUT = repo(...)`              普通赋值
+      · `OUT: str = repo(...)`         带类型注解（AnnAssign）
+      · `class C: OUT = repo(...)`     类属性（同样在 import 时求值）
+    """
+    nodes = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            nodes.append(node)
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            nodes.append(node)
+        elif isinstance(node, ast.ClassDef):
+            nodes.extend(n for n in node.body
+                         if isinstance(n, ast.Assign)
+                         or (isinstance(n, ast.AnnAssign)
+                             and n.value is not None))
+    return nodes
+
+
+def _target_names(node):
+    """赋值节点的目标名（`Assign` 有 `.targets`，`AnnAssign` 只有 `.target`）。"""
+    return [t.id for t in (getattr(node, "targets", None) or [node.target])
+            if isinstance(t, ast.Name)]
+
+
 def _module_level_derivations(tree, src_mod, name, readers=(), graph=None):
     """模块顶层有没有 `OTHER = <表达式里含 src_mod.name>`？那是**同一类快照**。
 
@@ -278,32 +306,14 @@ def _module_level_derivations(tree, src_mod, name, readers=(), graph=None):
     只抓第一种会漏掉第二种 —— 而那正是本仓实际存在的一处（`facts.py:35`，
     实测：改 `gate.GATE_REPO` 后 `facts.OUT` 仍是旧路径）。
     """
+    marker = "%s.%s" % (src_mod, name)
     hits = []
-    # 三种形状都认（此前只认 `ast.Assign`，漏报另外两种 —— review 实测）：
-    #   · `OUT = repo(...)`              普通赋值
-    #   · `OUT: str = repo(...)`         带类型注解（AnnAssign）
-    #   · `class C: OUT = repo(...)`     类属性（同样在 import 时求值）
-    nodes = []
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            nodes.append(node)
-        elif isinstance(node, ast.AnnAssign) and node.value is not None:
-            nodes.append(node)
-        elif isinstance(node, ast.ClassDef):
-            nodes.extend(n for n in node.body
-                         if isinstance(n, ast.Assign)
-                         or (isinstance(n, ast.AnnAssign) and n.value is not None))
-    for node in nodes:
-        hit = ("%s.%s" % (src_mod, name)) in ast.unparse(node.value)
-        # 或者：表达式「直接或经本地函数」触达源模块里会读 name 的函数（repo 等）
-        if not hit and readers:
-            hit = _reaches(node.value, readers, graph)
+    for node in _module_level_assigns_all(tree):
+        text = ast.unparse(node.value)
+        hit = marker in text or (bool(readers)
+                                 and _reaches(node.value, readers, graph))
         if hit:
-            # Assign 有 `.targets`，AnnAssign 只有 `.target`
-            targets = getattr(node, "targets", None) or [node.target]
-            for t in targets:
-                if isinstance(t, ast.Name):
-                    hits.append(t.id)
+            hits += _target_names(node)
     return hits
 
 

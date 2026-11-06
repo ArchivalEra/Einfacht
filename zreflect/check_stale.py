@@ -185,12 +185,18 @@ def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
             + _retired_name_problems(docs, hist, retired))
 
 
-def run(argv):
+def _load_docs(names):
+    """读活状态文档。**读不到的**不进 `docs`（由 `guard_nonempty` 判空）。"""
     docs = {}
-    for name in DOCS:
+    for name in names:
         p = repo(name)
         if os.path.exists(p):
             docs[name] = open(p, encoding="utf-8", errors="replace").read()
+    return docs
+
+
+def run(argv):
+    docs = _load_docs(DOCS)
     rc = guard_nonempty("check_stale", docs, M("stale.scanned_docs"))
     if rc:
         return rc

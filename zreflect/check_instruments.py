@@ -118,6 +118,19 @@ def problems(ledger, methods=None, days=None):
     return out
 
 
+def _load_methods(name):
+    """读量法登记位（`REFLECT_INSTRUMENTS` 指向的 JSON）。返回 `(methods, rc)`。"""
+    if not name:
+        return [], 0
+    reg_path = repo(name)
+    if not os.path.exists(reg_path):
+        return [], fatal(M("instruments.registry_missing", name=name))
+    reg, err = load_spec(reg_path)
+    if err:
+        return [], fatal(M("instruments.spec_broken", name=name, error=err))
+    return reg.get("methods") or [], 0
+
+
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     name = INSTRUMENTS_RAW
@@ -132,25 +145,23 @@ def run(argv=None):
     led_path = repo(os.environ.get("REFLECT_FACTS", "FACTS.json"))
     if not os.path.exists(led_path):
         return fatal(M("instruments.ledger_missing", path=led_path))
-    methods = []
-    if name:
-        reg_path = repo(name)
-        if not os.path.exists(reg_path):
-            return fatal(M("instruments.registry_missing", name=name))
-        reg, err = load_spec(reg_path)
-        if err:
-            return fatal(M("instruments.spec_broken", name=name, error=err))
-        methods = reg.get("methods") or []
+    methods, rc = _load_methods(name)
+    if rc:
+        return rc
     probs = problems(load(led_path), methods=methods, days=days)
+    return finish(M("instruments.title"), probs, _ok_line(name, methods, days))
+
+
+def _ok_line(name, methods, days):
+    """通过行里要说清**开了哪几档**（否则「绿」不区分「全开」与「一档都没开」）。"""
     parts = []
     if days is not None:
         parts.append(M("instruments.part_days", threshold=days))
     if name:
         parts.append(M("instruments.part_methods", name=name,
                        count=len(methods)))
-    return finish(M("instruments.title"), probs,
-                  M("instruments.ok", modes=" + ".join(parts)
-                    or M("instruments.part_none")))
+    return M("instruments.ok",
+             modes=" + ".join(parts) or M("instruments.part_none"))
 
 
 def _cases():

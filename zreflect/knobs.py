@@ -290,6 +290,36 @@ def registry_vs_readme_problems(tables=None, names=None):
 
 # ── 自证：名册自身的形状守卫（登记表坏 = 所有消费方的判据数据坏）──────────────
 
+def _load_semantic_tables(langs):
+    """装载每个已装包。坏包 / 空 ⇒ `{}`（语义完整性无从证明，不许绿）。"""
+    tables = {}
+    for lang in langs:
+        try:
+            tables[lang] = load_pack(lang)
+        except Exception:                                # noqa: BLE001
+            return {}
+    # 零值守卫：一个包都没装 ⇒ 不是「完整」，是没装
+    if not tables or not any(tables.values()):
+        return {}
+    return tables
+
+
+def _all_packs_have_codes(tables, codes):
+    """① 每个包都必须含**全部**语义 code（条目掉了 ⇒ 那边用户看到裸 code）。"""
+    return all(all(c in table for c in codes)
+               for table in tables.values())
+
+
+def _all_packs_render_text(tables):
+    """每个包里都真渲染出句子（不是回落成 code）。"""
+    for lang in sorted(tables):
+        with bind(Catalog.load(lang, {lang: tables[lang]})):
+            if any(str(w) == w.code for _k, _d, w in REGISTRY.values()
+                   if isinstance(w, _Semantic)):
+                return False
+    return True
+
+
 def _semantic_packs_intact(langs=None):
     """**每个已装的语言包**都必须含全部旋钮语义，占位符名与基准侧一致，
     且在它自己的包下真渲染出句子（不是回落的裸 code）。
@@ -301,37 +331,26 @@ def _semantic_packs_intact(langs=None):
     ⚠️ 此前硬写 `zh` / `en` 两个：下游仓只装一个包（**正是产品的主场景**：
     「从一堆包里挑一个」）时这条自证直接红（实测：只有 zh 的包目录
     ⇒ 16 PASS / 1 FAIL），产品没问题，是判据过窄。
+
+    四段各是一个具名 helper（装载 / 码集 / 占位符 / 渲染）：四个「不许绿」
+    的出口挤在中间时，读者要数 return 才敢说「哪几条已经查过」。
     """
     langs = installed_langs() if langs is None else list(langs)
     codes = [w.code for _k, _d, w in REGISTRY.values()
              if isinstance(w, _Semantic)]
     if not codes:
         return False                        # 语义全没了 = 名册坏，不许绿
-    tables = {}
-    for lang in langs:
-        try:
-            tables[lang] = load_pack(lang)
-        except Exception:                                # noqa: BLE001
-            return False            # 坏包 ⇒ 语义完整性无从证明，不许绿
-    # 零值守卫：一个包都没装 ⇒ 不是「完整」，是没装
-    if not tables or not any(tables.values()):
+    tables = _load_semantic_tables(langs)
+    if not tables:
         return False
-    # ① 每个包都必须含**全部**语义 code（条目掉了 ⇒ 那边用户看到裸 code）。
-    for lang in sorted(tables):
-        if any(c not in tables[lang] for c in codes):
-            return False
+    if not _all_packs_have_codes(tables, codes):
+        return False
     # ② 占位符名一致性**走同一个对账器**（与 `pack_sync_problems` 同一份判据：
     # 两处各写一遍循环，规则就会漂 —— C4）。
     if pack_sync_problems(discovery=lambda: sorted(tables),
                           loader=lambda l: tables[l]):
         return False
-    # 每个包里都真渲染出句子（不是回落成 code）
-    for lang in sorted(tables):
-        with bind(Catalog.load(lang, {lang: tables[lang]})):
-            if any(str(w) == w.code for _k, _d, w in REGISTRY.values()
-                   if isinstance(w, _Semantic)):
-                return False
-    return True
+    return _all_packs_render_text(tables)
 
 
 def _discovery_sees_planted_lang():
