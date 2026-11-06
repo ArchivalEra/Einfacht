@@ -587,7 +587,13 @@ def _unreadable_dir_is_loud():
     """包目录读不了 ⇒ 必须报 `pack_unreadable`，不许当「零包」（合法态）。"""
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
-    if os.geteuid() == 0:
+    if os.name == "nt":
+        # ⚠️ **Windows 上 `chmod 0` 不阻止读**：`os.chmod` 在那里只切只读位，
+        # 而 `listdir` 照样能进。于是「造一个读不了的目录」这个夹具在
+        # Windows 上根本造不出来 —— 这条测不出东西（明说不适用，不是静默通过）。
+        # 实测：CI 的 Windows 腿 `knobs` 自证 28 PASS / 1 FAIL，红的就是这条。
+        return True
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
         return True        # root 无视权限位，这条测不出来（明说不适用）
     d = tempfile.mkdtemp()
     try:
