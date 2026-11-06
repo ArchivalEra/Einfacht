@@ -88,6 +88,27 @@
       "why": "不对。`/<!-- AUTO:[A-Z]+ -->/` 把**正文里提到标记**也当成块开始 —— `AGENTS.md` 有一行写着「`STATE.md` 里预先放好 `<!-- AUTO:FACTS -->` 标记」，从那行起剩余 23 行全被排除。台账长期少算 23（2663 vs 2686），无人发现。",
       "evidence": "python3 zreflect/facts.py --count -md",
       "fixed_in": "CI 落地（60014a6..80014a6 系列）"
+    },
+    {
+      "id": "R-013",
+      "text": "这个套件可以直接接进任何真实项目",
+      "why": "不能。子代理拿 Static-Contract（65 py / 76 md）照英文 README 接入，5 个致命阻塞：① 仓里任何 .sh 就让 render/check/pre-commit 全 FATAL（判据扫了整个 GATE_REPO，而「全 Python 化」是本仓对自己的纪律）② 报错指向不存在的 registry.ALLOWED_SHELL ③ REFLECT_MEASURE_MODULE 配了却不可用时静默回落占位实现并写盘 ④ measure() 返回裸值先写盘再崩 traceback ⑤ --chain 在已有 core.hooksPath 时静默空转",
+      "evidence": "子代理验收报告；修复后 commit 97341e7",
+      "fixed_in": "接入体验修复 e9caaec"
+    },
+    {
+      "id": "R-014",
+      "text": "`facts.py --selftest` 不碰真实仓",
+      "why": "会碰。自证用例直接调 `main([\"--accept-changes=k1\"])`，那会真的跑 measure 并写盘 —— 调用方的 FACTS.json 被改写（实测 md5 变），随后 `--check` 立刻红，而 README 写着 \"selftests … never touch the real repo\"。",
+      "evidence": "md5sum FACTS.json → --selftest → md5sum（修复后不变）",
+      "fixed_in": "接入体验修复 e9caaec"
+    },
+    {
+      "id": "R-015",
+      "text": "`REFLECT_SNAPSHOT_ROOT` 为空时那道闸门明说未启用",
+      "why": "不会。空 ⇒ 扫套件自己的 `zreflect/` 并报 `snapshot.ok(files=33)`，没有 OFF 行。README 与 knobs 的说明都写反了。",
+      "evidence": "python3 zreflect/check_snapshots.py（env 未设时看输出）",
+      "fixed_in": "接入体验修复 e9caaec"
     }
   ]
 }
