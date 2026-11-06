@@ -276,35 +276,55 @@ def _encoding_problems(name, src):
 
 
 def shell_surface_problems(repo_root=None):
-    """`.sh` 只许出现在 `ALLOWED_SHELL` 里 —— 全 Python 化的**守卫**。
+    """**套件自己**的 `.sh` 只许出现在 `ALLOWED_SHELL` 里 —— 全 Python 化的守卫。
 
     为什么值得判据：本轮之前有 4 个 shell（662 行、67 处 `echo` 中文），它们
     整份绕过了零语言制度（`check_i18n` 是 AST 扫描器，只认 `.py`）。把它们搬进
     Python 之后，若不设守卫，下次又会有人「顺手写个 .sh」—— 然后同样的事故
     重演。白名单是**有界的**：每个例外都必须写在这里，且必须有理由。
+
+    ⚠️ **只扫套件目录（`zreflect/` + `reflect-hooks/`），不扫使用方的仓。**
+    这条曾是把这个套件接进真实项目时**最致命**的阻塞（实测：一个只有
+    `build.sh` 的空仓，`--render-doc` 就 FATAL，`--check` 就 FATAL，
+    pre-commit 就红，而**没有任何旋钮能放行**）：
+
+        FATAL: registry reconciliation failed, refusing to render:
+          · unregistered shell file `build.sh` — full-Python goal …
+
+    「全 Python 化」是**本仓对自己的纪律**，不是对所有使用方的要求 ——
+    要求别人的仓不许有 `deploy.sh` 是把内部偏好强加给用户。判据的扫描面
+    必须与它守的东西同域。
     """
     import os  # noqa: PLC0415
     root = repo_root or gate.GATE_REPO
     out = []
-    for dirpath, _dirnames, filenames in os.walk(root):
+    for sub in ("zreflect", "reflect-hooks"):
+        base = os.path.join(root, sub)
+        if not os.path.isdir(base):
+            continue
+        out += _shell_files_of(base, sub)
+    return out
+
+
+def _shell_files_of(base, prefix):
+    """`base` 下的 `.sh` 里**不在白名单**的那些。"""
+    import os  # noqa: PLC0415
+    out = []
+    for dirpath, _dirnames, filenames in os.walk(base):
         # ⚠️ **不能写 `"/.git" in dirpath`**：Windows 的分隔符是 `\`，
         # 那个判断永不成立 ⇒ `.git/hooks/` 里的十几个 sample `.sh` 全被当成
-        # 「未登记的 shell」——CI 的 Windows 腿就是这么红的（实测
-        # `registry.unexpected_shell(file='reflect-hooks/einfacht-env.sh')`
-        # 之外还报了一堆 `.git/hooks/*.sample`）。
-        # 用 `Path.parts` 判目录名，与分隔符无关。
+        # 「未登记的 shell」（实测：CI 的 Windows 腿就是这么红的）。
         parts = dirpath.replace(os.sep, "/").split("/")
         if ".git" in parts or "node_modules" in parts:
             continue
         for n in filenames:
             if not n.endswith(".sh"):
                 continue
-            rel = os.path.relpath(os.path.join(dirpath, n), root)
+            rel = os.path.relpath(os.path.join(dirpath, n), base)
             # ⚠️ **`relpath` 在 Windows 上给反斜杠**，而 `ALLOWED_SHELL` 里写的
-            # 是 `/` —— 不归一化的话，白名单里的每一项都"不在名单里"，
-            # 于是正经的 `reflect-hooks/einfacht-env.sh` 被报成违规
+            # 是 `/` —— 不归一化的话，白名单里的每一项都「不在名单里」
             # （实测：CI 的 Windows 腿报 `unexpected_shell(file='reflect-hooks\\einfacht-env.sh')`）。
-            norm = rel.replace(os.sep, "/")
+            norm = (prefix + "/" + rel).replace(os.sep, "/")
             if norm not in ALLOWED_SHELL:
                 out.append(M("registry.unexpected_shell", file=norm))
     return out
@@ -725,22 +745,54 @@ def _dead_interface_case():
 
 
 def _unexpected_shell_case():
-    """造一个未登记的 .sh ⇒ 必须报；登记过的 ⇒ 不报。"""
-    import os
-    import shutil
+    """**套件目录**里的未登记 `.sh` ⇒ 必须报。
+
+    ⚠️ 判据的扫描面是 `zreflect/` + `reflect-hooks/`（套件自己），**不是
+    使用方的仓** —— 「全 Python 化」是本仓对自己的纪律。所以夹具也必须
+    造在套件子目录里；在使用方根上造 `.sh` 是**不该报**的（见
+    `_owner_shell_is_allowed`）。
+    """
+    import os  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
-        open(os.path.join(d, "probe.sh"), "w", encoding="utf-8").write("# probe\n")
+        suite = os.path.join(d, "zreflect")
+        os.makedirs(suite)
+        with open(os.path.join(suite, "probe.sh"), "w", encoding="utf-8") as fh:
+            fh.write("# probe\n")
         if not shell_surface_problems(repo_root=d):
             return False
-        # 登记过的名字（路径相对根）不该报
-        open(os.path.join(d, "gates-selftest.sh"), "w", encoding="utf-8").write("# ok\n")
+        # 登记过的名字（`reflect-hooks/einfacht-env.sh`）不该报
+        hooks = os.path.join(d, "reflect-hooks")
+        os.makedirs(hooks)
+        with open(os.path.join(hooks, "einfacht-env.sh"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("# ok\n")
         got = [str(p) for p in shell_surface_problems(repo_root=d)]
         return len(got) == 1 and "probe.sh" in got[0]
     finally:
         shutil.rmtree(d, True)
 
+
+def _owner_shell_is_allowed():
+    """**使用方仓根**上的 `.sh` 不许被报 —— 那是他们的构建脚本，不是套件的事。
+
+    这条是「接进真实项目」时最致命那个阻塞的回归守卫：此前判据扫整个
+    `GATE_REPO`，于是任何有 `build.sh` / `deploy.sh` 的仓都 `--render-doc`
+    FATAL，且没有旋钮能放行。
+    """
+    import os  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        for name in ("build.sh", "deploy.sh"):
+            with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
+                fh.write("#!/bin/sh\n")
+        return shell_surface_problems(repo_root=d) == []
+    finally:
+        shutil.rmtree(d, True)
 
 
 def _han_predicate_case():
@@ -1040,6 +1092,9 @@ def _cases_self_checks():
         # 全 Python 化的守卫：未登记的 .sh ⇒ 必须报（造一个假的证明它有牙）
         ("★ registry.unexpected_shell_detected",
          lambda: _unexpected_shell_case()),
+        # **使用方仓根的 .sh 不报**（接进真实项目的死路，已修）
+        ("★ registry.owner_shell_is_allowed",
+         lambda: _owner_shell_is_allowed()),
         # `i18n.han()`：零语言制度的判据（`check_i18n` 与 `harness` 都消费它）。
         # 它是「有没有中文」的**唯一产地** —— 判错了两道判据一起失效。
         ("★ registry.han_predicate",

@@ -1,5 +1,7 @@
 {
  "gate.title.install": "hook installer",
+ "install.chain_blocked_by_hookspath": "**refusing to install**: this repo already has `core.hooksPath=%(value)s` — once git has that, it never looks at `.git/hooks`, so a wrapper written here would never run.",
+ "install.chain_blocked_fix": "pick one: run `python3 reflect-hooks/install.py --uninstall` to drop the old wiring, then `--chain`; or keep the old wiring (it runs the gates too) and do not use `--chain`.",
  "install.chain_done": "chained wrapper installed. undo: python3 reflect-hooks/install.py --uninstall",
  "install.chain_hint": "for a ready-made hookup: python3 reflect-hooks/install.py --chain",
  "install.chain_removed": "removed chained wrapper: %(name)s",
