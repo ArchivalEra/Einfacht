@@ -114,6 +114,20 @@ def modules(zdir=None):
     for n in names:
         if not n.endswith(".py") or n == "__init__.py":
             continue
+        # ⚠️ **`measure_*.py` 是使用方的数据模块，不是平台模块。**
+        #
+        # 这条豁免是「接进真实项目」验收逼出来的：照 README 的
+        # 「Writing your measure()」把模块放 `zreflect/measure_myproject.py`，
+        # `--render-doc` 当场 FATAL：
+        #
+        #     · these .py files are neither gates … nor declared platform
+        #       modules: zreflect/measure_myproject.py
+        #
+        # 用户无从知道要给自己的数据模块写 `MODULE = module_meta(...)`——
+        # 那是**本仓对自己代码**的纪律（「该有自证却没写」无人问），
+        # 不该强加给使用方的数据文件。
+        if n.startswith("measure_"):
+            continue
         rel = "zreflect/" + n
         if _declaration(os.path.join(d, n), rel, attr="MODULE", func="module_meta"):
             declared.append(_declaration(os.path.join(d, n), rel,

@@ -467,7 +467,10 @@ python3 zreflect/facts.py --init
 #    然后在任何手工运行之前 **source 它**。不 source，闸门就回落默认名、
 #    去找你从没建过的文档、报红 —— 说明这一点的那行提示是 stderr 上的
 #    `ℹ gate.env_hint`：
-#       set -a; . ./Einfacht.env; set +a
+#       set -a; . ./Einfacht.env; set +a                     # 新仓
+#       set -a; . ./reflect-hooks/Einfacht.env; set +a       # 已有那份的仓
+#    ⚠️ `--init` 把 env 放在仓根 —— **除非** `reflect-hooks/Einfacht.env`
+#    已经存在（插件先读钩子目录，第二份只会让你的旋钮集分叉）。
 # 1. 写你的 measure()：把"测出来的事实"填进 FACTS.json（参考 facts.py 的 measure_example）
 #    ⚠️ 采集器四条原则见 zreflect/collect.py —— 只读持久盘、不引入会自己变的输入、
 #    读不到就明说、贵的测量做缓存。

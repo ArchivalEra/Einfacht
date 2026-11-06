@@ -625,7 +625,11 @@ python3 zreflect/facts.py --init
 #    Dann vor jedem Handlauf **sourcen**. Ohne das fallen die Gates auf Standardnamen
 #    zurück, suchen Docs, die du nie angelegt hast, und melden rot — der Hinweis
 #    darauf ist `ℹ gate.env_hint` auf stderr:
-#       set -a; . ./Einfacht.env; set +a
+#       set -a; . ./Einfacht.env; set +a                     # frisches Repo
+#       set -a; . ./reflect-hooks/Einfacht.env; set +a       # Repo mit vorhandener Datei
+#    ⚠️ `--init` legt sie in die Repo-Wurzel — **außer**
+#    `reflect-hooks/Einfacht.env` existiert schon (das Plugin liest zuerst das
+#    Hooks-Verzeichnis; eine zweite Kopie würde deinen Schalter-Satz spalten).
 # 1. Dein measure() schreiben: FACTS.json mit gemessenen Fakten füllen (siehe measure_example in facts.py)
 #    ⚠️ die vier Collector-Prinzipien stehen in zreflect/collect.py — nur persistentes Disk,
 #    keine selbständernden Eingänge, „unavailable" laut sagen, das Teure cachen.

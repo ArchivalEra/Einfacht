@@ -405,13 +405,18 @@ def _section_budget_holds():
             open(os.path.join(q, "%02d-q.md" % i), "w", encoding="utf-8").write(
                 "# q\n\n**Status:** open\n")
         open(os.path.join(d, "dirty"), "w", encoding="utf-8").write("d")     # 未跟踪 → 待办
-        lines = section(d)
-        text = "\n".join(lines)
         import i18n  # noqa: PLC0415
+        # ⚠️ **在 null 包里重新渲染**，不是拿当前语言包的输出做字符串匹配。
+        # 此前 `text` 是 `section(d)` 用**当前包**渲染的，然后在
+        # `bind(NULL)` 里查 `"next.pending_header" in text` —— 装了任何语言包
+        # （en/zh/de）时那句永远不成立，用例恒红；零包时恰好绿。
+        # 实测：CI 之后 `next --selftest` 在 REFLECT_LANG=en 下 6 PASS / 1 FAIL。
         with i18n.bind(i18n.NULL):
+            lines = section(d)
+            text = "\n".join(lines)
             has_pending = "next.pending_header" in text
             has_dirty = "next.tree_dirty" in text
-        return has_pending and has_dirty and len(lines) <= SECTION_MAX
+            return has_pending and has_dirty and len(lines) <= SECTION_MAX
     except Exception:                                    # noqa: BLE001
         return False
     finally:
