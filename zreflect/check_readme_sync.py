@@ -144,68 +144,81 @@ def _trio():
     return {n: "x [%s](%s) [%s](%s) [%s](%s) x" % (LANGS * 2) for n in LANGS}
 
 
-def _cases():
+def _cases_structure():
+    """① 结构判据：互链（trio）/ 存在 / 非空（单条目）。"""
     return [
-        # ① 正常不报
         ("readme.trio_linked",
          lambda: problems_structure(_trio(), LANGS) == []),
-        ("readme.push_all_present",
-         lambda: problems_push(set(LANGS) | {"code.py"}, LANGS) == []),
         # ① 正常不报（单条目：互链判据退化，issue #8）
         ("readme.single_no_self_reference",
          lambda: problems_structure({"maintaince.md": "# rules\n\nno links here."},
                                     ("maintaince.md",)) == []),
-        ("readme.single_push_contains_it",
-         lambda: problems_push({"maintaince.md", "a.py"}, ("maintaince.md",)) == []),
-        # ② 该报的必须报
-        ("★ readme.file_missing",
+        ("\u2605 readme.file_missing",
          lambda: [p.code for p in problems_structure(
              {k: v for k, v in _trio().items() if k != "README.de.md"}, LANGS)]
          == ["readme.file_missing"]),
-        ("★ readme.switcher_incomplete",
+        ("\u2605 readme.switcher_incomplete",
          lambda: [p.code for p in problems_structure(
              dict(_trio(), **{"README.md": "only [README.md](README.md) and "
-                                  "[README.zh.md](README.zh.md)"}), LANGS)]
-         == ["readme.switcher_incomplete"]),
-        ("★ readme.file_empty",
+                                            "[README.zh.md](README.zh.md)"}),
+             LANGS)] == ["readme.switcher_incomplete"]),
+        ("\u2605 readme.file_empty",
          lambda: "readme.file_empty" in [p.code for p in problems_structure(
              dict(_trio(), **{"README.zh.md": "   \n"}), LANGS)]),
-        ("★ readme.not_in_push",
+        # 单条目：存在 / 非空不退化（issue #8）
+        ("\u2605 readme.single_file_missing",
+         lambda: [p.code for p in problems_structure({}, ("maintaince.md",))]
+         == ["readme.file_missing"]),
+        ("\u2605 readme.single_file_empty",
+         lambda: "readme.file_empty" in [p.code for p in problems_structure(
+             {"maintaince.md": "  \n"}, ("maintaince.md",))]),
+        # ③ 空输入必须报
+        ("\u2605 readme.names_empty_structure",
+         lambda: [p.code for p in problems_structure(_trio(), ())]
+         == ["readme.names_empty_structure"]),
+    ]
+
+
+def _cases_push():
+    """② 推送集判据：trio 条件式 / 单条目无条件。"""
+    return [
+        ("readme.push_all_present",
+         lambda: problems_push(set(LANGS) | {"code.py"}, LANGS) == []),
+        ("readme.single_push_contains_it",
+         lambda: problems_push({"maintaince.md", "a.py"}, ("maintaince.md",))
+         == []),
+        ("\u2605 readme.not_in_push",
          lambda: [p.code for p in problems_push(
              {"README.md", "README.zh.md", "zreflect/facts.py"}, LANGS)]
          == ["readme.not_in_push"]),
-        # ② 该报的必须报（单条目：存在 / 非空 / 同批 三判据都不退化，issue #8）
-        ("★ readme.single_file_missing",
-         lambda: [p.code for p in problems_structure({}, ("maintaince.md",))]
-         == ["readme.file_missing"]),
-        ("★ readme.single_file_empty",
-         lambda: "readme.file_empty" in [p.code for p in problems_structure(
-             {"maintaince.md": "  \n"}, ("maintaince.md",))]),
-        ("★ readme.single_not_in_push",
+        # 单条目：同批判据不退化（issue #8）
+        ("\u2605 readme.single_not_in_push",
          lambda: [p.code for p in problems_push({"other.md"}, ("maintaince.md",))]
          == ["readme.not_in_push"]),
         # **多条目条件式**：一份 README 都没碰 ⇒ 不适用（纯代码提交不该被拦）。
         # 这是 CI 上 `0cef263`（只改 i18n.py + 台账）被判红的那一类 ——
         # 文档说的是条件判据（「改任何一份 ⇒ 三份全含」），不是无条件。
         ("readme.multi_untouched_is_not_in_scope",
-         lambda: problems_push({"zreflect/x.py"}, ("README.md", "README.zh.md"))
-         == []),
+         lambda: problems_push({"zreflect/x.py"},
+                               ("README.md", "README.zh.md")) == []),
         # 但**碰了一份就必须三份全含**（否则改成条件式就等于放水了）
-        ("★ readme.multi_partial_still_fires",
+        ("\u2605 readme.multi_partial_still_fires",
          lambda: [p.code for p in problems_push(
              {"README.md", "zreflect/x.py"}, ("README.md", "README.zh.md"))
          ] == ["readme.not_in_push"]),
         # ③ 空输入必须报
-        ("★ readme.names_empty_structure",
-         lambda: [p.code for p in problems_structure(_trio(), ())]
-         == ["readme.names_empty_structure"]),
-        ("★ readme.names_empty_push",
+        ("\u2605 readme.names_empty_push",
          lambda: [p.code for p in problems_push({"README.md"}, ())]
          == ["readme.names_empty_push"]),
-        ("★ readme.changed_empty",
+        ("\u2605 readme.changed_empty",
          lambda: [p.code for p in problems_push(set(), LANGS)]
          == ["readme.changed_empty"]),
     ]
+
+
+def _cases():
+    """两条判据各一组（结构 / 推送集）：它们读不同的输入、管不同的事。"""
+    return _cases_structure() + _cases_push()
 
 
 GATE = meta("三语 README 闸门", "语言版本是同一条断言的三份拷贝：结构互链 + 每次推送同批",

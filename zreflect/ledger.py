@@ -114,14 +114,36 @@ def fact(value, cmd, source, note="", replay=True,
     `measure()` 沿用旧日期、换值时取今天 —— 恒常检测
     （"这条 cmd 是在量，还是恒返回同一个数？"）靠它。
     """
-    for a, b, name in ((witness, witness_expect, "witness"),
-                       (calibrate, calibrate_expect, "calibrate")):
-        if (a is None) != (b is None):
-            raise SystemExit(
-                machine().emit("fatal", M("ledger.shape_incomplete", name=name)))
+    _require_pairs((witness, witness_expect, "witness"),
+                   (calibrate, calibrate_expect, "calibrate"))
     d = {"value": value, "cmd": cmd, "source": source,
          "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
          "first_seen": time.strftime("%Y-%m-%d")}
+    _fill_optional(d, note, replay, witness, witness_expect,
+                   calibrate, calibrate_expect, kind)
+    return d
+
+
+def _require_pairs(*pairs):
+    """成对参数必须**同时给** —— 只给一个是残缺形状，当场报错。
+
+    断言残缺比静默缺失好抓：一个只有 `witness` 没有 `witness_expect` 的条目
+    会让复跑闸门拿 `None` 去比对，报出的是「值不符」而不是「形状缺了」。
+    """
+    for a, b, name in pairs:
+        if (a is None) != (b is None):
+            raise SystemExit(
+                machine().emit("fatal", M("ledger.shape_incomplete", name=name)))
+
+
+def _fill_optional(d, note, replay, witness, witness_expect,
+                   calibrate, calibrate_expect, kind):
+    """把可选字段按「给了才写」填进条目。
+
+    ⚠️ **不给的字段不写空值**：`"replay": True` 与「没有 replay 键」在下游
+    是同一件事，但写进去会让台账多一堆噪声字段（而且 `changed_keys` 要比
+    `value` 之外的键时会误判）。
+    """
     if note:
         d["note"] = note
     if not replay:
@@ -138,7 +160,6 @@ def fact(value, cmd, source, note="", replay=True,
     # 两条契约都活在同一个执行器（`check_facts_replay`），不新增复跑路径。
     if kind != "value":
         d["kind"] = kind
-    return d
 
 
 def age_days(entry):
@@ -158,70 +179,96 @@ def age_days(entry):
 
 
 # ── 自证（三档：正常不报 / 该报的必须报 / 空输入必须报）──────────────────────────
-def _cases():
-    from gate import raises                            # noqa: PLC0415
+def _cases_guards():
+    """① 掉条 / 改口守卫：正常不报 + 该报的必须报 + 空起步合法。"""
+    from gate import raises                              # noqa: PLC0415
     return [
-        # ① 正常不报
-        ("ledger.dropped_clean", lambda: dropped_keys({"a": 1}, {"a": 1, "c": 3}) == []),
+        ("ledger.dropped_clean",
+         lambda: dropped_keys({"a": 1}, {"a": 1, "c": 3}) == []),
         ("ledger.changed_clean",
          lambda: changed_keys({"a": {"value": 1}}, {"a": {"value": 1}}) == []),
         ("ledger.changed_cmd_only",
          lambda: changed_keys({"a": {"value": 1, "cmd": "old"}},
                               {"a": {"value": 1, "cmd": "new"}}) == []),
-        # ② 该报的必须报
-        ("★ ledger.dropped_keys",
+        ("\u2605 ledger.dropped_keys",
          lambda: dropped_keys({"a": 1, "b": 2}, {"a": 1}) == ["b"]),
-        ("★ ledger.changed_keys",
-         lambda: changed_keys({"a": {"value": 1}}, {"a": {"value": 2}}) == [("a", 1, 2)]),
+        ("\u2605 ledger.changed_keys",
+         lambda: changed_keys({"a": {"value": 1}}, {"a": {"value": 2}})
+         == [("a", 1, 2)]),
         # ③ 空输入必须报（这里是「不许报」的对面：空起步是合法的第一次生成）
         ("ledger.first_run_dropped_silent",
          lambda: dropped_keys({}, {"a": 1}) == []),
         ("ledger.first_run_changed_silent",
          lambda: changed_keys({}, {"a": {"value": 1}}) == []),
-        # 附：形状
-        ("ledger.facts_of_both_shapes", lambda: facts_of({"facts": {"a": 1}}) == {"a": 1}
-         and facts_of({"a": 1}) == {"a": 1}),
-        ("ledger.short_value_sha", lambda: short_value("a" * 64) == "a" * 16 + "…"),
         ("ledger.raises_detects",
          lambda: raises(lambda: (_ for _ in ()).throw(SystemExit(2)))),
-        # ② 测龄（issue #3 ②）
+    ]
+
+
+def _cases_shapes():
+    """附：台账形状 —— `facts_of` / `short_value` / `value_of` 三处 interface。"""
+    return [
+        ("ledger.facts_of_both_shapes",
+         lambda: facts_of({"facts": {"a": 1}}) == {"a": 1}
+         and facts_of({"a": 1}) == {"a": 1}),
+        ("ledger.short_value_sha",
+         lambda: short_value("a" * 64) == "a" * 16 + "\u2026"),
+        # 稳态：`value_of` 容忍 dict 与裸值两种形状
+        ("ledger.value_of_both_shapes",
+         lambda: value_of({"value": 3}) == 3 and value_of(7) == 7),
+    ]
+
+
+def _cases_measurement():
+    """② 测龄 + `first_seen`（issue #3 ② / #6 ①）。"""
+    return [
         ("ledger.fact_stamps_measured_at",
          lambda: isinstance(fact(1, "c", "s").get("measured_at"), str)),
         ("ledger.age_days_missing_none", lambda: age_days({"value": 1}) is None),
         ("ledger.age_days_bad_stamp_none",
          lambda: age_days({"measured_at": "not-a-time"}) is None),
         ("ledger.age_days_fresh",
-         lambda: 0 <= age_days({"measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}) < 1),
+         lambda: 0 <= age_days({"measured_at": time.strftime(
+             "%Y-%m-%dT%H:%M:%S%z")}) < 1),
         ("ledger.age_days_about_40",
-         lambda: 39 < age_days({"measured_at": (datetime.now(timezone.utc)
-                                                 - timedelta(days=40)
-                                                 ).strftime("%Y-%m-%dT%H:%M:%S%z")}) < 41),
-        # ③ 见证（issue #5）
-        ("ledger.witness_fields",
-         lambda: fact(1, "c", "s", witness="w", witness_expect="e").get("witness") == "w"
-         and fact(1, "c", "s", witness="w", witness_expect="e").get("witness_expect") == "e"),
-        ("ledger.no_witness_no_field",
-         lambda: "witness" not in fact(1, "c", "s")),
-        ("★ ledger.witness_only",
-         lambda: raises(lambda: fact(1, "c", "s", witness="w"))),
-        ("★ ledger.witness_expect_only",
-         lambda: raises(lambda: fact(1, "c", "s", witness_expect="e"))),
-        # ④ 仪器校准（issue #6 ①）
-        ("ledger.calibrate_fields",
-         lambda: fact(1, "c", "s", calibrate="cal", calibrate_expect="e")
-         .get("calibrate") == "cal"),
-        ("★ ledger.calibrate_only",
-         lambda: raises(lambda: fact(1, "c", "s", calibrate="cal"))),
-        ("★ ledger.calibrate_expect_only",
-         lambda: raises(lambda: fact(1, "c", "s", calibrate_expect="e"))),
-        # 稳态：`value_of` 容忍 dict 与裸值两种形状（它是三处闸门的 interface）
-        ("ledger.value_of_both_shapes",
-         lambda: value_of({"value": 3}) == 3 and value_of(7) == 7),
-        # ⑤ first_seen（issue #6 ① 恒常检测的状态）
+         lambda: 39 < age_days({"measured_at": (
+             datetime.now(timezone.utc) - timedelta(days=40)
+         ).strftime("%Y-%m-%dT%H:%M:%S%z")}) < 41),
         ("ledger.fact_stamps_first_seen",
          lambda: fact(1, "c", "s").get("first_seen")
          == time.strftime("%Y-%m-%d")),
     ]
+
+
+def _cases_probes():
+    """③ 见证 / ④ 仪器校准（issue #5 / #6 ①）：成对字段，单给一个必须抛。"""
+    from gate import raises                              # noqa: PLC0415
+    return [
+        ("ledger.witness_fields",
+         lambda: fact(1, "c", "s", witness="w", witness_expect="e")
+         .get("witness") == "w"
+         and fact(1, "c", "s", witness="w", witness_expect="e")
+         .get("witness_expect") == "e"),
+        ("ledger.no_witness_no_field",
+         lambda: "witness" not in fact(1, "c", "s")),
+        ("\u2605 ledger.witness_only",
+         lambda: raises(lambda: fact(1, "c", "s", witness="w"))),
+        ("\u2605 ledger.witness_expect_only",
+         lambda: raises(lambda: fact(1, "c", "s", witness_expect="e"))),
+        ("ledger.calibrate_fields",
+         lambda: fact(1, "c", "s", calibrate="cal", calibrate_expect="e")
+         .get("calibrate") == "cal"),
+        ("\u2605 ledger.calibrate_only",
+         lambda: raises(lambda: fact(1, "c", "s", calibrate="cal"))),
+        ("\u2605 ledger.calibrate_expect_only",
+         lambda: raises(lambda: fact(1, "c", "s", calibrate_expect="e"))),
+    ]
+
+
+def _cases():
+    """四组：守卫 / 形状 / 测龄 / 探针。它们考的是台账的四个不同面。"""
+    return (_cases_guards() + _cases_shapes()
+            + _cases_measurement() + _cases_probes())
 
 
 def _selftest():

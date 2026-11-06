@@ -907,74 +907,84 @@ def _cases_semantics(fx):
     ]
 
 
-def _cases_sync(fx):
-    """见 `_cases()`：本组 9 条。"""
+def _cases_sync_rules():
+    """差集 / 占位符 / 多键 / 空包 —— 考的是**规则本身**。
+
+    这四组注入 `discovery` 是**有意**的：不该依赖发现通道（那由
+    `pack_sync_sees_every_installed_lang` 单独考）。显式传 `discovery=`
+    是把「我在测规则」写明白 —— 此前用 `langs=` 传同一个东西，看起来像在
+    测发现、其实绕开了它。
+    """
     return [
-# 以下五条考的是**规则本身**（差集 / 占位符 / 空包），注入 discovery
-# 是**有意**的：它们不该依赖发现通道（那由 `pack_sync_sees_every_installed_lang`
-# 单独考）。留着 `discovery=` 显式传，是把「我在测规则」写明白 ——
-# 此前用 `langs=` 传同一个东西，看起来像在测发现，其实绕开了它。
-# 对账器本身必须能红（否则它只是一条恒绿的装饰）
-("★ knobs.pack_missing_keys",
- lambda: [p.code for p in pack_sync_problems(
-     discovery=lambda: ("zh", "en"), loader=lambda l: {
-     "zh": {"a": "x"}, "en": {"a": "x", "b": "y"}}[l])
- ] == ["knobs.pack_missing_keys"]),
-("★ knobs.pack_placeholder_mismatch",
- lambda: [p.code for p in pack_sync_problems(
-     discovery=lambda: ("zh", "en"), loader=lambda l: {
-     "zh": {"a": "x %(k)s"}, "en": {"a": "x %(j)s"}}[l])
- ] == ["knobs.pack_placeholder_mismatch"]),
-# 多键方向也必须能报（此前只测了缺键 —— 「多出来一个键」同样会让
-# 另一侧的用户看到裸 code，是同一个洞的另一面）。
-# 参考侧是 `sorted(...)[0]`（这里 = "en"），所以「zh 多一个键」才走
-# extra_keys；反过来会被报成 en 缺键（同一个洞，两种措辞）。
-("★ knobs.pack_extra_keys",
- lambda: [p.code for p in pack_sync_problems(
-     discovery=lambda: ("zh", "en"), loader=lambda l: {
-     "zh": {"a": "x", "b": "y"}, "en": {"a": "x"}}[l])
- ] == ["knobs.pack_extra_keys"]),
-# 发现式（不写名单）：磁盘上多装一个半残的包也必须被对账器看见。
-# 此前 `langs=("zh","en")` 写死 ⇒ 加一个缺键的 `de/` 时它**完全不看**
-# ——「装了但没对账」正是本仓要消灭的那类静默。
-# 发现式（不写名单）：必须**通过 discovery 通道**验，否则把
-# `installed_langs()` 换回手写 `("zh","en")` 时自证照样绿（实测）
-# —— 断言没覆盖它声称保护的东西（rule 4）。
-("★ knobs.pack_sync_sees_every_installed_lang",
- # 走 **默认 discovery**（不传 `discovery=`）—— 传了就等于替被测
- # 对象把答案递过去（实测：那样即使把 installed_langs 换回手写
- # 名单，这条仍 PASS）。
- lambda: _discovery_sees_planted_lang()),
-# ④ **包完整性**（C4 对账④）：源码用到的 code 必须在每个已装包里。
-# 这条抓的是「两边一起缺」——此前 `pack_sync_problems` 只比差集，
-# 双向共缺会全绿，用户看到裸 code（实测：两包同删 locks.ok ⇒ 全绿）。
-("knobs.coverage_real_repo_clean",
- lambda: pack_coverage_problems() == []),
-# **`discovery=` 必须真的被调用**（此前签名里接受、实现里从不调用：
-# 传假 discovery 进去结果毫无变化）。这条钉的就是「可注入」这个承诺：
-# 注入的 discovery 若没被用，下面的断言会拿到默认（真实）语言列表 ⇒ 空。
-("★ knobs.coverage_honours_discovery",
- lambda: (lambda seen: ([p.code for p in pack_coverage_problems(
-     codes={"a.b"}, discovery=lambda: seen.append(1) or ["zz"],
-     loader=lambda l: {})] == ["knobs.pack_missing_code"] and
-     len(seen) == 1))([])),
-("★ knobs.pack_missing_code",
- lambda: [p.code for p in pack_coverage_problems(
-     codes={"a.b", "c.d"}, discovery=lambda: ("zh", "en"),
-     loader=lambda l: ({"a.b": "x", "c.d": "y"} if l == "en"
-                       else {"a.b": "x"}))
- ] == ["knobs.pack_missing_code"]),
-# **不可读目录 ≠ 没装包**（AGENTS 纪律 7：读不到就明说，绝不编 0）。
-# 此前 `installed_langs()` 在 OSError 时 return []，于是权限坏掉
-# 与「零包」塌缩成同一个假值 ⇒ 对账全绿（实测 chmod 000 ⇒ []）。
-("★ knobs.pack_unreadable_on_oserror",
- lambda: _unreadable_dir_is_loud()),
-# ③ 空输入必须报
-("★ knobs.pack_sync_empty",
- lambda: [p.code for p in pack_sync_problems(
-     discovery=lambda: ("zh", "en"), loader=lambda l: {})]
- == ["knobs.pack_sync_empty"]),
+        ("\u2605 knobs.pack_missing_keys",
+         lambda: [p.code for p in pack_sync_problems(
+             discovery=lambda: ("zh", "en"), loader=lambda l: {
+                 "zh": {"a": "x"}, "en": {"a": "x", "b": "y"}}[l])
+         ] == ["knobs.pack_missing_keys"]),
+        ("\u2605 knobs.pack_placeholder_mismatch",
+         lambda: [p.code for p in pack_sync_problems(
+             discovery=lambda: ("zh", "en"), loader=lambda l: {
+                 "zh": {"a": "x %(k)s"}, "en": {"a": "x %(j)s"}}[l])
+         ] == ["knobs.pack_placeholder_mismatch"]),
+        # 多键方向也必须能报（此前只测了缺键 —— 「多出来一个键」同样会让
+        # 另一侧的用户看到裸 code，是同一个洞的另一面）。
+        # 参考侧是 `sorted(...)[0]`（这里 = "en"），所以「zh 多一个键」才走
+        # extra_keys；反过来会被报成 en 缺键（同一个洞，两种措辞）。
+        ("\u2605 knobs.pack_extra_keys",
+         lambda: [p.code for p in pack_sync_problems(
+             discovery=lambda: ("zh", "en"), loader=lambda l: {
+                 "zh": {"a": "x", "b": "y"}, "en": {"a": "x"}}[l])
+         ] == ["knobs.pack_extra_keys"]),
+        # ③ 空输入必须报
+        ("\u2605 knobs.pack_sync_empty",
+         lambda: [p.code for p in pack_sync_problems(
+             discovery=lambda: ("zh", "en"), loader=lambda l: {})]
+         == ["knobs.pack_sync_empty"]),
     ]
+
+
+def _cases_sync_coverage():
+    """发现式 + 包完整性：这两条**不许**替被测对象把答案递过去。"""
+    return [
+        # 发现式（不写名单）：磁盘上多装一个半残的包也必须被对账器看见。
+        # ⚠️ 走 **默认 discovery**（不传 `discovery=`）—— 传了就等于替被测
+        # 对象把答案递过去（实测：那样即使把 `installed_langs` 换回手写
+        # 名单，这条仍 PASS）。
+        ("\u2605 knobs.pack_sync_sees_every_installed_lang",
+         lambda: _discovery_sees_planted_lang()),
+        # ④ **包完整性**（C4 对账④）：源码用到的 code 必须在每个已装包里。
+        # 这条抓的是「两边一起缺」—— 只比差集时双向共缺会全绿，用户看到裸 code
+        # （实测：两包同删 `locks.ok` ⇒ 全绿）。
+        ("knobs.coverage_real_repo_clean",
+         lambda: pack_coverage_problems() == []),
+        # **`discovery=` 必须真的被调用**（此前签名里接受、实现里从不调用：
+        # 传假 discovery 进去结果毫无变化）。这条钉的是「可注入」这个承诺。
+        ("\u2605 knobs.coverage_honours_discovery",
+         lambda: (lambda seen: ([p.code for p in pack_coverage_problems(
+             codes={"a.b"}, discovery=lambda: seen.append(1) or ["zz"],
+             loader=lambda l: {})] == ["knobs.pack_missing_code"] and
+             len(seen) == 1))([])),
+        ("\u2605 knobs.pack_missing_code",
+         lambda: [p.code for p in pack_coverage_problems(
+             codes={"a.b", "c.d"}, discovery=lambda: ("zh", "en"),
+             loader=lambda l: ({"a.b": "x", "c.d": "y"} if l == "en"
+                               else {"a.b": "x"}))
+         ] == ["knobs.pack_missing_code"]),
+        # **不可读目录 ≠ 没装包**（AGENTS 纪律 7：读不到就明说，绝不编 0）。
+        # 此前 `installed_langs()` 在 OSError 时 return []，于是权限坏掉
+        # 与「零包」塌缩成同一个假值 ⇒ 对账全绿（实测 chmod 000 ⇒ []）。
+        ("\u2605 knobs.pack_unreadable_on_oserror",
+         lambda: _unreadable_dir_is_loud()),
+    ]
+
+
+def _cases_sync(fx):
+    """见 `_cases()`：本组 9 条。
+
+    两组（规则 / 发现与覆盖）：前者注入 discovery 考规则本身，后者**不传**
+    discovery 考「它真的被调用」—— 混在一起时读者分不清某条断言属于哪一类。
+    """
+    return _cases_sync_rules() + _cases_sync_coverage()
 
 
 def _cases_pack(fx):

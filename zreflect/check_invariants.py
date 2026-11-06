@@ -134,75 +134,94 @@ def run(argv=None):
                   M("invariants.ok", count=len(checks)))
 
 
-def _cases():
-    def fake_read(files):
-        def r(path):
-            if path not in files:
-                raise FileNotFoundError(path)
-            return files[path]
-        return r
-    good = fake_read({"a.sh": "ALLOW_TABLE_GROWTH=1\n"
-                               "SFLAGS=(-sMEMORY64=1)"})
+def _fake_read(files):
+    """假文件系统：不给的文件名抛 `FileNotFoundError`（真读路径的 OSError）。"""
+    def r(path):
+        if path not in files:
+            raise FileNotFoundError(path)
+        return files[path]
+    return r
+
+
+def _cases_ok(read):
+    """① 正常不报：片段在 / 不在都符合声明。"""
     return [
-        # ① 正常不报
         ("invariants.must_contain_present",
          lambda: problems([{"path": "a.sh", "why": "w",
-                               "must_contain": ["ALLOW_TABLE_GROWTH=1"]}],
-                             read=good) == []),
+                            "must_contain": ["ALLOW_TABLE_GROWTH=1"]}],
+                         read=read) == []),
         ("invariants.must_not_contain_absent",
          lambda: problems([{"path": "a.sh", "why": "w",
-                               "must_not_contain": ["-flto"]}],
-                             read=good) == []),
+                            "must_not_contain": ["-flto"]}],
+                         read=read) == []),
         ("invariants.both_criteria_met",
          lambda: problems([{"path": "a.sh", "why": "w",
-                               "must_contain": ["ALLOW_TABLE_GROWTH=1"],
-                               "must_not_contain": ["-flto"]}],
-                             read=good) == []),
-        # ② 该报的必须报
-        ("★ invariants.drift_missing",
+                            "must_contain": ["ALLOW_TABLE_GROWTH=1"],
+                            "must_not_contain": ["-flto"]}],
+                         read=read) == []),
+    ]
+
+
+def _cases_content(read):
+    """② 该报的必须报：内容不符 / 读不到。"""
+    return [
+        ("\u2605 invariants.drift_missing",
          lambda: [x.code for x in problems(
              [{"path": "a.sh", "why": "w", "must_contain": ["-flto"]}],
-             read=good)] == ["invariants.drift_missing"]),
-        ("★ invariants.drift_forbidden",
+             read=read)] == ["invariants.drift_missing"]),
+        ("\u2605 invariants.drift_forbidden",
          lambda: [x.code for x in problems(
              [{"path": "a.sh", "why": "w",
                "must_not_contain": ["ALLOW_TABLE_GROWTH=1"]}],
-             read=good)] == ["invariants.drift_forbidden"]),
-        ("★ invariants.unreadable",
+             read=read)] == ["invariants.drift_forbidden"]),
+        ("\u2605 invariants.unreadable",
          lambda: [x.code for x in problems(
              [{"path": "b.sh", "why": "w", "must_contain": ["x"]}],
-             read=good)] == ["invariants.unreadable"]),
-        ("★ invariants.missing_why",
-         # why 缺了**先报**（它不 continue：同一检查项可能还有 DRIFT，两条都报）
+             read=read)] == ["invariants.unreadable"]),
+        # why 缺了**先报**（它不 continue：同一检查项可能还有 DRIFT，两条都报）
+        ("\u2605 invariants.missing_why",
          lambda: [x.code for x in problems(
              [{"path": "a.sh", "must_contain": ["x"]}],
-             read=good)] == ["invariants.missing_why",
+             read=read)] == ["invariants.missing_why",
                              "invariants.drift_missing"]),
-        ("★ invariants.missing_path",
+    ]
+
+
+def _cases_shape(read):
+    """② 该报的必须报：规格形状坏了（五道守）。"""
+    return [
+        ("\u2605 invariants.missing_path",
          lambda: [x.code for x in problems(
              [{"why": "w", "must_contain": ["x"]}],
-             read=good)] == ["invariants.missing_path"]),
-        ("★ invariants.no_criteria",
+             read=read)] == ["invariants.missing_path"]),
+        ("\u2605 invariants.no_criteria",
          lambda: [x.code for x in problems(
              [{"path": "a.sh", "why": "w"}],
-             read=good)] == ["invariants.no_criteria"]),
-        ("★ invariants.not_object",
-         lambda: [x.code for x in problems(["not-a-dict"], read=good)
+             read=read)] == ["invariants.no_criteria"]),
+        ("\u2605 invariants.not_object",
+         lambda: [x.code for x in problems(["not-a-dict"], read=read)
                   ] == ["invariants.not_object"]),
-        ("★ invariants.not_string_list",
+        ("\u2605 invariants.not_string_list",
          # 一条 list、另一条非 list（两侧都非 list 走的是 no_criteria）
          lambda: [x.code for x in problems(
              [{"path": "a.sh", "why": "w", "must_contain": ["x"],
                "must_not_contain": "y"}],
-             read=good)] == ["invariants.not_string_list"]),
-        ("★ invariants.fragment_not_string",
+             read=read)] == ["invariants.not_string_list"]),
+        ("\u2605 invariants.fragment_not_string",
          lambda: [x.code for x in problems(
              [{"path": "a.sh", "why": "w", "must_contain": [1]}],
-             read=good)] == ["invariants.fragment_not_string"]),
-        # ③ 空输入必须报
-        ("★ invariants.empty",
-         lambda: [x.code for x in problems([], read=good)] == ["invariants.empty"]),
+             read=read)] == ["invariants.fragment_not_string"]),
     ]
+
+
+def _cases():
+    read = _fake_read({"a.sh": "ALLOW_TABLE_GROWTH=1\n"
+                              "SFLAGS=(-sMEMORY64=1)"})
+    return (_cases_ok(read) + _cases_content(read) + _cases_shape(read)
+            # ③ 空输入必须报
+            + [("\u2605 invariants.empty",
+                lambda: [x.code for x in problems([], read=read)]
+                == ["invariants.empty"])])
 
 
 GATE = meta("不变量闸门", "声明式不变量：仓库文件必须/不得含某片段（grep 级）",

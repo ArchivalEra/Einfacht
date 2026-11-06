@@ -177,75 +177,92 @@ def main(argv):
                   M("pins.ok", count=len(spec.get("pins") or [])))
 
 
-def _cases():
+def _fixture():
+    """真 git 夹具仓 + 各形态的规格。返回 dict。
+
+    ⚠️ 早先这段（八个 spec 字面量 + 建仓）直接写在 `_cases()` 里，和断言
+    交错 —— 70 行里前一半是夹具。分开之后「哪种规格考哪条判据」一眼可见。
+    """
     import atexit                                        # noqa: PLC0415
     import shutil                                        # noqa: PLC0415
     import tempfile                                      # noqa: PLC0415
     d = tempfile.mkdtemp()
     atexit.register(shutil.rmtree, d, True)
     os.makedirs(os.path.join(d, "wt"))
-
-    def _git(*_a):
-        subprocess.run(["git", "init", "-q", os.path.join(d, "wt")], check=True)
-        open(os.path.join(d, "wt", "f"), "w").write("x")
-        subprocess.run(["git", "-C", os.path.join(d, "wt"), "add", "f"], check=True)
-        subprocess.run(["git", "-C", os.path.join(d, "wt"), "-c", "user.name=t", "-c",
-                        "user.email=t@t", "commit", "-qm", "base"], check=True)
-        return subprocess.run(["git", "-C", os.path.join(d, "wt"), "rev-parse", "HEAD"],
-                              capture_output=True, text=True).stdout.strip()
-    head = _git()
+    subprocess.run(["git", "init", "-q", os.path.join(d, "wt")], check=True)
+    open(os.path.join(d, "wt", "f"), "w").write("x")
+    subprocess.run(["git", "-C", os.path.join(d, "wt"), "add", "f"], check=True)
+    subprocess.run(["git", "-C", os.path.join(d, "wt"), "-c", "user.name=t", "-c",
+                    "user.email=t@t", "commit", "-qm", "base"], check=True)
+    head = subprocess.run(
+        ["git", "-C", os.path.join(d, "wt"), "rev-parse", "HEAD"],
+        capture_output=True, text=True).stdout.strip()
     # worktree 用**绝对路径**（引擎按仓库根/abs 解析；夹具树在临时目录）
     wt = os.path.join(d, "wt")
-    spec = {"pins": [
-        {"name": "octave", "kind": "tree", "worktree": wt,
-         "stamp_read": "echo octave wasm/11.3.0 %s 0" % head},
-        {"name": "emsdk", "kind": "version", "worktree": wt,
-         "version_read": "echo emcc 5.0.7", "expect_version": "5.0.7"}]}
-    bad_spec = {"pins": [{"name": "octave", "kind": "tree", "worktree": wt,
-                          "stamp_read": "echo octave wasm/11.3.0 %s 0" % ("d" * 40)}]}
-    dirty_spec = {"pins": [{"name": "octave", "kind": "tree", "worktree": wt,
-                            "stamp_read": "echo octave wasm/11.3.0 %s 3" % head}]}
-    ver_spec = {"pins": [{"name": "emsdk", "kind": "version", "worktree": wt,
-                          "version_read": "echo emcc 6.0.10", "expect_version": "5.0.7"}]}
-    skip_spec = {"pins": [{"name": "octave", "kind": "tree", "worktree": wt,
-                           "stamp_read": "false"}]}
-    nopin_spec = {"pins": []}
+    stamp = "echo octave wasm/11.3.0 %s 0"
+    return {
+        "d": d,
+        "wt": wt,
+        "ok": {"pins": [
+            {"name": "octave", "kind": "tree", "worktree": wt,
+             "stamp_read": stamp % head},
+            {"name": "emsdk", "kind": "version", "worktree": wt,
+             "version_read": "echo emcc 5.0.7", "expect_version": "5.0.7"}]},
+        "commit_mismatch": {"pins": [{
+            "name": "octave", "kind": "tree", "worktree": wt,
+            "stamp_read": stamp % ("d" * 40)}]},
+        "dirty": {"pins": [{
+            "name": "octave", "kind": "tree", "worktree": wt,
+            "stamp_read": "echo octave wasm/11.3.0 %s 3" % head}]},
+        "version_drift": {"pins": [{
+            "name": "emsdk", "kind": "version", "worktree": wt,
+            "version_read": "echo emcc 6.0.10", "expect_version": "5.0.7"}]},
+        "skip": {"pins": [{"name": "octave", "kind": "tree", "worktree": wt,
+                           "stamp_read": "false"}]},
+        "no_pins": {"pins": []},
+    }
+
+
+def _cases():
+    fx = _fixture()
+    d = fx["d"]
     return [
         ("pins.resolve_spec",
          lambda: resolve_spec(["--spec", "x.json"], "K.json") == ("x.json", True)
          and resolve_spec([], "K.json") == ("K.json", True)
          and resolve_spec([], "") == ("pins.json", False)),
         # ① 正常不报
-        ("pins.ok", lambda: check(spec, run=_run, root=d) == ([], [])),
+        ("pins.ok", lambda: check(fx["ok"], run=_run, root=d) == ([], [])),
         # ② 该报的必须报
-        ("★ pins.commit_mismatch",
-         lambda: [p.code for p in check(bad_spec, run=_run, root=d)[0]]
-         == ["pins.commit_mismatch"]),
-        ("★ pins.dirty",
-         lambda: [p.code for p in check(dirty_spec, run=_run, root=d)[0]]
+        ("\u2605 pins.commit_mismatch",
+         lambda: [p.code for p in check(fx["commit_mismatch"], run=_run,
+                                        root=d)[0]] == ["pins.commit_mismatch"]),
+        ("\u2605 pins.dirty",
+         lambda: [p.code for p in check(fx["dirty"], run=_run, root=d)[0]]
          == ["pins.dirty"]),
-        ("★ pins.version_drift",
-         lambda: [p.code for p in check(ver_spec, run=_run, root=d)[0]]
-         == ["pins.version_drift"]),
-        ("★ pins.stamp_unreadable",
-         lambda: [p.code for p in check(skip_spec, run=_run, root=d)[1]]
+        ("\u2605 pins.version_drift",
+         lambda: [p.code for p in check(fx["version_drift"], run=_run,
+                                        root=d)[0]] == ["pins.version_drift"]),
+        ("\u2605 pins.stamp_unreadable",
+         lambda: [p.code for p in check(fx["skip"], run=_run, root=d)[1]]
          == ["pins.stamp_unreadable"]),
-        ("★ pins.worktree_missing",
+        ("\u2605 pins.worktree_missing",
          lambda: [p.code for p in check(
              {"pins": [{"name": "x", "kind": "tree", "worktree": "nope",
                         "stamp_read": "true"}]}, run=_run, root=d)[0]]
          == ["pins.worktree_missing"]),
-        ("★ pins.pin_missing_field",
+        ("\u2605 pins.pin_missing_field",
          lambda: [p.code for p in check(
              {"pins": [{"name": "x", "kind": "tree", "stamp_read": "true"}]},
              run=_run, root=d)[0]] == ["pins.pin_missing_field"]),
-        ("★ pins.unknown_kind",
+        ("\u2605 pins.unknown_kind",
          lambda: [p.code for p in check(
-             {"pins": [{"name": "x", "kind": "weird", "worktree": wt}]},
+             {"pins": [{"name": "x", "kind": "weird", "worktree": fx["wt"]}]},
              run=_run, root=d)[0]] == ["pins.unknown_kind"]),
         # ③ 空输入必须报
-        ("★ pins.empty",
-         lambda: [p.code for p in check(nopin_spec, root=d)[0]] == ["pins.empty"]),
+        ("\u2605 pins.empty",
+         lambda: [p.code for p in check(fx["no_pins"], root=d)[0]]
+         == ["pins.empty"]),
     ]
 
 
