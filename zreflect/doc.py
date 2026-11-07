@@ -219,7 +219,11 @@ STATE = "STATE.md"
 def accepts_principles(repo_root=None):
     """这个仓要不要把 `RULES` 登记进台账（= 每提交逐条复跑）？"""
     import os  # noqa: PLC0415
-    if os.environ.get("REFLECT_NO_PRINCIPLES", "").strip() in ("1", "true", "yes"):
+
+    import knobs  # noqa: PLC0415
+    # 走 `knobs.flag`（词汇表唯一产地）—— 此前 `.strip() in ("1","true","yes")`
+    # 是**大小写敏感**的一套：实测 `REFLECT_NO_PRINCIPLES=TRUE` 静默不生效。
+    if knobs.flag("REFLECT_NO_PRINCIPLES") is True:
         return False
     import gate  # noqa: PLC0415
     base = repo_root or gate.GATE_REPO
