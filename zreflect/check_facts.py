@@ -117,7 +117,7 @@ def _has_provenance(token, line):
     return bool(CITE_RE.search(line))    # 同行有 [[键名]] ⇒ 视为引用式出处
 
 
-def _unaccounted_numbers(doc_text, facts, bare_min, nlines):
+def _unaccounted_numbers(facts, bare_min, nlines):
     """反向判据（issue #24）：正文里**没有出处**的 ≥阈值数字。
 
     此前只查「台账里的值被手抄了」——一个**从未进过台账**的数字，闸门不知道
@@ -203,7 +203,7 @@ def problems(ledger, doc_text, bare_min=None):
     nlines = _number_lines(doc_text)
     out += _copied_fact_problems(f, nlines, bm)
     # 反向判据（issue #24）：从没进过台账的数字也要有出处。
-    out += _unaccounted_numbers(doc_text, f, bm, nlines)
+    out += _unaccounted_numbers(f, bm, nlines)
     return out
 
 

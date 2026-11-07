@@ -227,9 +227,8 @@ def py_sources(base):
     """`base` 目录下所有 `.py` 的 `(文件名, 文本)`；读不了 ⇒ 跳过。
 
     **唯一产地**：这段 `listdir` + `open(errors="replace")` 曾在**三处**
-    各写一遍 —— `knobs._py_sources`（它自己的 docstring 声称「唯一产地」，
-    但只合并了它那一族的三处，另两份从没动过：`check_snapshots.collect` /
-    `check_i18n.collect_from`，逐字相同）。现在三处都调这里。
+    各写一遍 —— `knobs._py_sources`、`check_snapshots.collect`、
+    `check_i18n` 的收集循环。现在都调这里。
 
     读不了 ⇒ 返回该文件跳过（不是整目录失败）：每个调用方自己判空 ——
     「空」在它们眼里含义不同（幻影扫描当「没有可疑」、`used_codes` 当

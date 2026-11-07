@@ -287,8 +287,14 @@ def _touches_renamed(g):
     """这道闸门消费的旋钮里，有没有默认名被换名自证改名。"""
     for k in g["knobs"]:
         kind, dflt, _ = REGISTRY.get(k, ("", "", ""))
-        vals = ({x.strip() for x in dflt.split(",")} if kind == "list"
-                else {dflt} if dflt else set())
+        # 嵌套三元拆成显式分支（GitRoll #141）—— list 按逗号切、
+        # 有默认值算一个、没有就没有。语义不变。
+        if kind == "list":
+            vals = {x.strip() for x in dflt.split(",")}
+        elif dflt:
+            vals = {dflt}
+        else:
+            vals = set()
         if vals & set(RENAMED_DEFAULTS):
             return True
     return False
@@ -702,8 +708,9 @@ def _phase_tiers_ok():
               "fail.py": (1, "gate.problems_header"),
               "off.py": (0, "OFF: x"),
               "ok.py": (0, "")}
-    res = run_phase("commit", list(script),
-                    runner=lambda f: script[f])
+    # 第一次跑（四档基础形状）的返回体只用来确认不炸 —— GitRoll #104
+    # 「赋值了但从不使用」：显式接 `_`，意图从隐式变明说。
+    _ = run_phase("commit", list(script), runner=lambda f: script[f])
     script["err.py"] = (3, "boom")          # 未约定的码 / 被信号杀
     res = run_phase("commit", list(script), runner=lambda f: script[f])
     return (res["fatal"] == 1 and res["fatal_list"] == ["fatal.py"]

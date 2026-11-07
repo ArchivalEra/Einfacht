@@ -126,5 +126,38 @@
     "note": "复核发现上一版 `note` 里的「All checks passed」是**假的**：同一条命令实测 159 errors（134 F841 / 13 F401 / 4 C901）。原因不是扫描器变了，而是**那条命令从来没有被任何闸门执行过** —— 它只是被人手工跑过一次就写进了结论。现已清零，并且接进了 CI（`.github/workflows/gates.yml` 的 ruff 步），见 `retractions.json` R-004。",
     "machine_check": "python3 -m ruff check --select=C901,F,E9,B --config lint.mccabe.max-complexity=15 .",
     "machine_check_now": "All checks passed"
+  },
+  "_scan2": {
+    "tool": "GitRoll",
+    "scan_id": "3wbi62nMv4RbaFfS7jK1",
+    "date": "2026-11-07",
+    "total": 155,
+    "by_type": {
+      "BUG": 7,
+      "VULNERABILITY": 0,
+      "CODE_SMELL": 148
+    },
+    "report": "https://gitroll.io/result/repo/3wbi62nMv4RbaFfS7jK1",
+    "detail": "ArchivalEra/trash-can@gitroll/2026-11-07/Einfacht.md"
+  },
+  "_summary2": {
+    "audited_at": "2026-11-07",
+    "fixed": [
+      "doc.py:288 死前瞻 (?!\\S*)? —— 实测恒假，删除后 export/set -a/重定向九形状逐 case 等价",
+      "registry.py:291 嵌套三元拆显式分支（#141）",
+      "registry.py:705 未用赋值 res → _（#104）",
+      "9 处认知复杂度 16-21：_run_probes/_doc_nodes/_falsified_method_problems/_shape_problems/_aliases_of/_derived_copy_problems/_sha_assertion_problems/run_plugins/harness.main —— 各拆一个具名 helper（行为零变化，自证全绿）",
+      "collect_from 中间层内联（root 参数从未用）；_fixture 的 repo 参数删；_unaccounted_numbers 的 doc_text 参数删；_functions_reading 的 src_mod 参数删"
+    ],
+    "accepted_with_reason": {
+      "commented out code (13 条)": "全部误报：中文行尾注释（「= 这条红」「没配 = 正常默认」）与夹具字符串字面量被当成被注释掉的代码。正则检索 '#\\s*(def |return |import |\\w+\\(\\))'且排除这些句式后全仓 0 命中 —— 没有真被注释掉的代码。",
+      "unused function parameter fx (9 条)": "自证分组函数的统一签名（_cases_* 各组都接 fx），删了会破坏「加新断言不改签名链」的惯例；doctor/knobs/registry/guard 同一形状。",
+      "always returns the same value (2 BLOCKER)": "卫语句风格误报：cmd_init 只在 created 为空时return 0、其余路径走完四步；每个 return 都在 if/except 分支里。AST 直收 return 字面量不看控制流。",
+      "identical sub-expressions == (3 BUG)": "self_compare 夹具 y == y 是恒真检测器的**测试样本本身**（never_falsifiable 要证它会被抓）—— 误报。",
+      "float equality (1 BUG)": "default_timeout() == 10.0 的 10.0 是字面量构造值（float('not-a-number')回落的常量），非计算结果 —— 误报。",
+      "duplicate literals (~60 条)": "三类：① 自证夹具值（要有意重复才可读）② 消息 code 字符串（code 本身就是字面量 id，提常量 = 第二个产地）③ 文件名（多数已被 knobs.REGISTRY 派生，剩余在夹具里）。",
+      "\\w 简写 (5 条)": "接受：[A-Za-z0-9_] 显式写法是有意的 —— \\w 在 re.UNICODE 下匹配 CJK，本仓零语言判据恰恰要排除 CJK。"
+    },
+    "machine_check": "python3 -m ruff check . && python3 zreflect/registry.py --run commit（本地可复跑的等价判据，不需要 GitRoll 权限）"
   }
 }

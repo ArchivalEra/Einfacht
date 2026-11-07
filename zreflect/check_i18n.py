@@ -134,17 +134,25 @@ def _is_output_call(node):
     return isinstance(f, ast.Name) and f.id in ("print", "off", "fatal", "finish")
 
 
+def _docstring_node_id(node):
+    """一个作用域节点里 docstring 常量的 id（没有 ⇒ None）。"""
+    d = ast.get_docstring(node, clean=False)
+    if not d:
+        return None
+    for n in ast.walk(node):
+        if isinstance(n, ast.Constant) and n.value == d:
+            return id(n)
+    return None
+
+
 def _doc_nodes(tree):
     """docstring 节点（豁免面①：docstring 不是写给用户的话）。"""
     out = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
-            d = ast.get_docstring(node, clean=False)
-            if d:
-                for n in ast.walk(node):
-                    if isinstance(n, ast.Constant) and n.value == d:
-                        out.add(id(n))
-                        break
+            nid = _docstring_node_id(node)
+            if nid is not None:
+                out.add(nid)
     return out
 
 
@@ -387,10 +395,6 @@ def sources_for(d, configured=False):
     return gate.scanned_sources(d, configured)
 
 
-def collect_from(d, root, configured=False):
-    return sources_for(d, configured)
-
-
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     # ⚠️ 默认扫描根**不是空**：本闸门守的正是**套件自己**的代码，所以未配旋钮
@@ -411,7 +415,7 @@ def run(argv=None):
         else:
             d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", root)
             d = os.path.abspath(d)
-        found = collect_from(d, root, configured=bool(configured))
+        found = sources_for(d, configured=bool(configured))
         if not found and configured:
             return fatal(M("i18n_cover.scan_empty_dir", root=root))
         paths.extend(found)

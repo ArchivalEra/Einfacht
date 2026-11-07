@@ -86,14 +86,9 @@ def _module_level_assigns(tree):
 
 def _aliases_of(trees, src_mod):
     """扫描面里 `import <src_mod> as <alias>` 的别名集合（`_reassigned_elsewhere` 用）。"""
-    out = set()
-    for _mod, tree in trees.items():
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for a in node.names:
-                    if a.name == src_mod and a.asname:
-                        out.add(a.asname)
-    return out
+    return {a.asname for tree in trees.values()
+            for node in ast.walk(tree) if isinstance(node, ast.Import)
+            for a in node.names if a.name == src_mod and a.asname}
 
 
 def _import_aliases(trees):
@@ -179,7 +174,7 @@ def _uses_global(tree, name):
     return bool(g) if name is None else name in g
 
 
-def _functions_reading(src_tree, src_mod, name):
+def _functions_reading(src_tree, name):
     """`src_mod` 里**（传递地）**读 `name` 的顶层函数名。
 
     派生快照常经由封装出现：`OUT = repo(LEDGER_NAME)` —— 表达式文本里没有
@@ -352,9 +347,27 @@ def _index(sources):
         "mutable": mutable,
         "loaded": {mod: _loaded_names(tree) for mod, tree in trees.items()},
         "graph": {mod: _call_graph(tree) for mod, tree in trees.items()},
-        "readers": {(m, n): _functions_reading(trees[m], m, n)
+        "readers": {(m, n): _functions_reading(trees[m], n)
                     for (m, n) in mutable},
     }
+
+
+def _derived_hits(ix, mod, tree, src_mod, names):
+    """一个消费模块里，来自 `src_mod` 的可变全局被派生存成常量的名字。"""
+    loaded = ix["loaded"][mod]
+    graph = ix["graph"][mod]
+    hits = []
+    for name in sorted(names):
+        if (src_mod, name) not in ix["mutable"]:
+            continue
+        readers = ix["readers"].get((src_mod, name), set())
+        for derived in _module_level_derivations(tree, src_mod, name,
+                                                 readers, graph):
+            if derived in loaded:
+                hits.append(M("snapshot.derived_copy",
+                              file=mod + ".py", derived=derived,
+                              source=src_mod, imported=name))
+    return hits
 
 
 def _derived_copy_problems(ix):
@@ -362,19 +375,8 @@ def _derived_copy_problems(ix):
     会冻住）。"""
     out = []
     for mod, tree in sorted(ix["trees"].items()):
-        loaded = ix["loaded"][mod]
-        graph = ix["graph"][mod]
         for src_mod, names in sorted(ix["assigned"].items()):
-            for name in sorted(names):
-                if (src_mod, name) not in ix["mutable"]:
-                    continue
-                readers = ix["readers"].get((src_mod, name), set())
-                for derived in _module_level_derivations(tree, src_mod, name,
-                                                         readers, graph):
-                    if derived in loaded:
-                        out.append(M("snapshot.derived_copy",
-                                     file=mod + ".py", derived=derived,
-                                     source=src_mod, imported=name))
+            out += _derived_hits(ix, mod, tree, src_mod, names)
     return out
 
 
