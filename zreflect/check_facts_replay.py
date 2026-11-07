@@ -241,7 +241,9 @@ def replay_all(ledger, runner=None):
 
 
 def run(argv):
-    if os.environ.get("REFLECT_REPLAY", "").strip().lower() == "off":
+    import knobs  # noqa: PLC0415
+    # 走 `knobs.flag`（唯一产地）—— 此前 `.lower() == "off"` 是另一套词汇表。
+    if knobs.flag("REFLECT_REPLAY") is False:
         return off(M("replay.off"))
     seconds = default_timeout()
     raw_timeout = os.environ.get("REFLECT_REPLAY_TIMEOUT", "10")

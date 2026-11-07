@@ -311,13 +311,24 @@ def finish(name, problems, ok):
     return 0
 
 
+def _env_hint_off():
+    """`REFLECT_ENV_HINT` 显式关了吗 —— 走 `knobs.flag`（词汇表唯一产地）。
+
+    ⚠️ 此前这里 `.lower() == "off"`：与 `doc.accepts_principles` 的
+    `("1","true","yes")` 是**两套 flag 词汇表**（后者大小写敏感，实测
+    `TRUE` 不生效）。现在统一从 `knobs.flag` 走。
+    """
+    import knobs  # noqa: PLC0415
+    return knobs.flag("REFLECT_ENV_HINT") is False
+
+
 def _maybe_hint():
     """把 env 提示打到 stderr（**绝不进 stdout** —— 那里有机器契约）。
 
     `REFLECT_ENV_HINT=off` 可整体关闭（本仓「不喜欢提示的仓」的出口；
     提示本身是**人性化**，不是判据）。
     """
-    if os.environ.get("REFLECT_ENV_HINT", "").strip().lower() == "off":
+    if _env_hint_off():
         return
     h = env_hint()
     if h:

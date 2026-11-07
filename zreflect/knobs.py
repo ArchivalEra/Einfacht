@@ -209,6 +209,34 @@ def docs_names():
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
+FLAG_TRUTHY = ("1", "true", "yes", "on")
+FLAG_FALSY = ("0", "false", "no", "off")
+
+
+def flag(name):
+    """读一个 flag 型旋钮，返回三态：`True`（开）/ `False`（关）/ `None`（没配）。
+
+    ⚠️ flag 的**词汇表**此前有两套、大小写处理不同：
+      · `gate._maybe_hint` / `check_facts_replay` 用 `.lower() == "off"`
+        （大小写不敏感，只认 `off`）；
+      · `doc.accepts_principles` 用 `.strip() in ("1", "true", "yes")`
+        （**大小写敏感** —— 实测 `REFLECT_NO_PRINCIPLES=TRUE` 静默不生效，
+        用户以为关掉了原则复跑，其实还在跑）。
+    两套都在 `REGISTRY` 里登记为 `kind="flag"`，却没人定义「flag 是什么」。
+
+    三态而不是两态：`None` = 没配（调用方用自己的默认），与「显式关」是
+    两个决定，调用方常常要区分（off 态必须**明说**，静默 = 假绿）。
+    """
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return None                   # 没配（含设成空串）⇒ 调用方默认
+    if raw in FLAG_TRUTHY:
+        return True
+    if raw in FLAG_FALSY:
+        return False
+    return None                       # 认不出的词 ⇒ 让调用方决定
+
+
 def questions_dir(repo_root=None):
     """悬案目录名（`REFLECT_QUESTIONS`，默认取登记表里的 `questions`）。
 
@@ -1101,7 +1129,41 @@ def _cases_registry(fx):
     # ⚠️ 此前 `check_stale` 与 `check_retractions` 各手抄一份五份的默认值，
     # 而登记表是六份 —— `PRINCIPLES.md` 从来不在它们的扫描面里（实测）。
     ("★ knobs.docs_names_follow_registry", lambda: _docs_names_follows()),
+    # **flag 词汇表**：三态 + 大小写折叠。此前两套词汇表并存（`== "off"` 与
+    # `in ("1","true","yes")`），后者大小写敏感 —— `TRUE` 静默不生效。
+    ("★ knobs.flag_three_states", lambda: _flag_case()),
     ]
+
+
+def _flag_case():
+    """`flag()` 的三态：真 / 假 / 没配，每种至少一个写法（含大小写折叠）。
+
+    ⚠️ `TRUE`（大写）必须算真 —— 那正是 doc 侧那套词汇表的洞。空串与未设
+    都必须是 `None`（= 没配，调用方用自己的默认），不是 False。
+    """
+    import os  # noqa: PLC0415
+    name = "REFLECT_" + "FLAG_PROBE"
+    prev = os.environ.get(name)
+    try:
+        seen = {}
+        for v in ("1", "TRUE", "Yes", "ON"):
+            os.environ[name] = v
+            seen[v] = flag(name)
+        for v in ("0", "FALSE", "No", "OFF"):
+            os.environ[name] = v
+            seen[v] = flag(name)
+        os.environ[name] = ""
+        empty = flag(name)
+        os.environ.pop(name)
+        unset = flag(name)
+        return (all(seen[v] is True for v in ("1", "TRUE", "Yes", "ON"))
+                and all(seen[v] is False for v in ("0", "FALSE", "No", "OFF"))
+                and empty is None and unset is None)
+    finally:
+        if prev is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = prev
 
 
 def _docs_names_follows():
