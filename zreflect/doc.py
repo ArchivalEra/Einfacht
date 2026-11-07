@@ -285,7 +285,11 @@ def _cmd_shape_problems(rows=None):
         if not re.match(r"^(python3|python|sh|bash|env)\s", cmd):
             out.append((r.id, "not_an_interpreter"))
             continue
-        if re.search(r"(^|[;&|]\s*)(export|set\s+-a)|>\s*(?!\S*)?\S", cmd.replace(">/dev/null", "")):
+        # ⚠️ GitRoll 报「lookahead assertion that can never be true」—— 实测
+        # 成立：`(?!\S*)` 里 `\S*` 可匹配空串，否定前瞻对空串永远失败 ⇒ 死前瞻。
+        # 删掉后逐 case 等价（export / set -a / 重定向九个形状全同）—— 死代码。
+        if re.search(r"(^|[;&|]\s*)(export|set\s+-a)|>\s*\S",
+                     cmd.replace(">/dev/null", "")):
             out.append((r.id, "mutates_env"))
     return out
 

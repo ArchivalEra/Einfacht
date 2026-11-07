@@ -194,20 +194,25 @@ def _run_probe(kind, key, entry, run, seconds):
     return None, True
 
 
+def _one_probe(kind, ok_key, key, entry, run, seconds, out, stats):
+    """单条探针：没有这个 kind ⇒ 跳过；有 ⇒ 计一次尝试，跑它并记账。"""
+    if not str(entry.get(kind) or "").strip():
+        return
+    stats[kind + "_attempts"] += 1
+    problem, passed = _run_probe(kind, key, entry, run, seconds)
+    if problem is not None:
+        out.append(problem)
+    if passed:
+        stats[ok_key] += 1
+
+
 def _run_probes(f, run, seconds, out, stats):
     """探针档（#5 见证 / #6 ① 仪器校准）：与 replay 正交 —— 贵事实的来源 /
     仪器每提交真跑，判据同裸值契约。"""
     for kind, ok_key in (("witness", "witnessed"), ("calibrate", "calibrated")):
         for key in sorted(f):
             entry = f[key] if isinstance(f[key], dict) else {"value": f[key]}
-            if not str(entry.get(kind) or "").strip():
-                continue
-            stats[kind + "_attempts"] += 1
-            problem, passed = _run_probe(kind, key, entry, run, seconds)
-            if problem is not None:
-                out.append(problem)
-            if passed:
-                stats[ok_key] += 1
+            _one_probe(kind, ok_key, key, entry, run, seconds, out, stats)
 
 
 def replay_all(ledger, runner=None):

@@ -90,6 +90,17 @@ def _constant_return_problems(f, days):
     return out
 
 
+def _falsified_hits(text, why, fixed, f):
+    """一个被证伪片段在台账里命中的键（命中 = 那条事实还在用坏量法）。"""
+    hits = []
+    for k in sorted(f):
+        entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
+        if text in str(entry.get("cmd") or ""):
+            hits.append(M("instruments.falsified_method", key=k, text=text,
+                          why=why, fixed_in=fixed))
+    return hits
+
+
 def _falsified_method_problems(f, methods):
     """量法登记位：台账里任何 `cmd` 含被证伪片段 ⇒ 报（坏量法不许留在台账里）。"""
     out = []
@@ -100,11 +111,7 @@ def _falsified_method_problems(f, methods):
             out.append(M("instruments.entry_malformed", entry=m))
             continue
         fixed = m.get("fixed_in") or M("instruments.fixed_in_unregistered")
-        for k in sorted(f):
-            entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
-            if text in str(entry.get("cmd") or ""):
-                out.append(M("instruments.falsified_method", key=k, text=text,
-                             why=why, fixed_in=fixed))
+        out += _falsified_hits(text, why, fixed, f)
     return out
 
 

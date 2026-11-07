@@ -69,15 +69,28 @@ def _shape_problems(c):
     if not path:
         return [M("invariants.missing_path", entry=c)], None
     out = [] if why else [M("invariants.missing_why", path=path)]
+    crit = _criteria_problems(path, mc, mnc)
+    if crit is not None:
+        return out + crit, None
+    return out, (path, why, mc or [], mnc or [])
+
+
+def _criteria_problems(path, mc, mnc):
+    """判据字段（must_contain / must_not_contain）的形状校验。
+
+    返回 None = 形状可用；返回清单 = 形状坏（调用方早退）。
+    三个坏形状各是一道守（没有判据 / 不是清单 / 元素不是串），从
+    `_shape_problems` 拆出来 —— 那边剩的是「逐字段收值」，这边是「判据本身」。
+    """
     if not isinstance(mc, list) and not isinstance(mnc, list):
-        return out + [M("invariants.no_criteria", path=path)], None
+        return [M("invariants.no_criteria", path=path)]
     if (mc is not None and not isinstance(mc, list)) or \
             (mnc is not None and not isinstance(mnc, list)):
-        return out + [M("invariants.not_string_list", path=path)], None
+        return [M("invariants.not_string_list", path=path)]
     if any(not isinstance(x, str) for x in (mc or [])) or \
             any(not isinstance(x, str) for x in (mnc or [])):
-        return out + [M("invariants.fragment_not_string", path=path)], None
-    return out, (path, why, mc or [], mnc or [])
+        return [M("invariants.fragment_not_string", path=path)]
+    return None
 
 
 def _content_problems(path, why, mc, mnc, read):

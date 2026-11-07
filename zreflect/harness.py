@@ -153,31 +153,31 @@ def run_plugins(repo):
     lines = []
     bad = 0
     for p in names:
-        f = os.path.join(repo, p)
-        if not os.path.isfile(f):
-            lines.append(str(M("harness.missing_file", file=p)))
-            bad += 1
-            continue
-        cmd = ["sh", f, "--selftest"] if p.endswith(".sh") else \
-              [sys.executable, f, "--selftest"]
-        rc, out = _run(cmd, cwd=repo)
-        if rc != 0:
-            lines.append(str(M("harness.selftest_failed", file=p)))
-            for ln in _tail(out):
-                lines.append("      " + ln)
-            bad += 1
-            continue
-        if not _has_summary(out):
-            lines.append(str(M("harness.no_machine_summary", file=p)))
-            bad += 1
-            continue
-        last = _tail(out, 1)
-        lines.append(str(M("harness.gate_ok", file=p,
-                           summary=last[0] if last else "")))
+        ok, out_lines = _one_plugin(repo, p)
+        lines += out_lines
+        bad += 0 if ok else 1
     if not names:
         lines.append(str(M("harness.no_plugins")))
         return False, lines
     return bad == 0, lines
+
+
+def _one_plugin(repo, p):
+    """跑一个插件的自证，返回 `(通过?, 输出行)`。四种失败各是一档。"""
+    f = os.path.join(repo, p)
+    if not os.path.isfile(f):
+        return False, [str(M("harness.missing_file", file=p))]
+    cmd = ["sh", f, "--selftest"] if p.endswith(".sh") else \
+          [sys.executable, f, "--selftest"]
+    rc, out = _run(cmd, cwd=repo)
+    if rc != 0:
+        return False, ([str(M("harness.selftest_failed", file=p))]
+                       + ["      " + ln for ln in _tail(out)])
+    if not _has_summary(out):
+        return False, [str(M("harness.no_machine_summary", file=p))]
+    last = _tail(out, 1)
+    return True, [str(M("harness.gate_ok", file=p,
+                        summary=last[0] if last else ""))]
 
 
 def run_modules(repo):
@@ -406,46 +406,34 @@ def run_zero_language(repo):
     return bad == 0, lines
 
 
+def _section(heading, runner):
+    """跑一段、打印、返回该段的 rc（0 = 通过）。main 的循环体曾重复五次。"""
+    print(str(M(heading)))
+    ok, *_, lines = runner()
+    for ln in lines:
+        print(ln)
+    return 0 if ok else 1
+
+
 def main(argv):
     repo = HERE
     if "--selftest" in argv:
         return _selftest()
-    rc = 0
-    print(str(M("harness.heading")))
-    ok, n, bad, lines = run_gates(repo)
-    for ln in lines:
-        print(ln)
-    rc = rc or (0 if ok else 1)
-
-    print(str(M("harness.plugins_heading")))
-    ok, lines = run_plugins(repo)
-    for ln in lines:
-        print(ln)
-    rc = rc or (0 if ok else 1)
-
-    print(str(M("harness.modules_heading")))
-    ok, lines = run_modules(repo)
-    for ln in lines:
-        print(ln)
-    rc = rc or (0 if ok else 1)
-
-    print(str(M("harness.configurable_heading")))
-    ok, lines = run_configurable(repo)
-    for ln in lines:
-        print(ln)
-    rc = rc or (0 if ok else 1)
-
+    rc = _section("harness.heading", lambda: run_gates(repo))
+    rc = rc or _section("harness.plugins_heading",
+                        lambda: run_plugins(repo))
+    rc = rc or _section("harness.modules_heading",
+                        lambda: run_modules(repo))
+    rc = rc or _section("harness.configurable_heading",
+                        lambda: run_configurable(repo))
     # 最后一段：**端到端零语言**（未装包时必须零中文）。
-    print(str(M("harness.zero_lang_heading")))
-    ok, lines = run_zero_language(repo)
-    for ln in lines:
-        print(ln)
-    return rc or (0 if ok else 1)
+    return rc or _section("harness.zero_lang_heading",
+                          lambda: run_zero_language(repo))
 
 
 # ── 自证 ──────────────────────────────────────────────────────────────────────
 
-def _fixture(files, listing=None, repo=None):
+def _fixture(files, listing=None):
     """造一个夹具仓，跑 `run_gates`。返回 (ok, n, bad, lines)。"""
     d = tempfile.mkdtemp()
     try:

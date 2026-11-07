@@ -110,20 +110,27 @@ def _sha_assertion_problems(f, docs, hist):
     shas = _sha_facts(f)
     for name, body in sorted(docs.items()):
         for lineno, line, is_living in living_lines(body, hist):
-            if not is_living or not SHA_NEAR.search(line) or _is_sourced(line):
-                continue
-            toks = SHA_TOKEN.findall(line)
-            if not toks:
-                continue
-            if not shas:
-                out.append(M("stale.sha_no_facts", name=name, lineno=lineno))
-                continue
-            for tok in toks:
-                if not any(tok == s or s.startswith(tok) or tok.startswith(s[:len(tok)])
-                           for s in shas):
-                    out.append(M("stale.sha_unsourced", name=name, lineno=lineno,
-                                 actual=tok[:16]))
+            out += _sha_line_problems(name, lineno, line, is_living, shas)
     return out
+
+
+def _sha_line_problems(name, lineno, line, is_living, shas):
+    """一行的 sha 出处判定：不活 / 不挨着 sha / 已有出处 ⇒ 不报。
+
+    台账里一个 sha 都没有时先报「先量进台账」（空不是通过）；有台账
+    但串对不上任何已知 sha（含前缀关系）⇒ 报 unsourced。
+    """
+    if not is_living or not SHA_NEAR.search(line) or _is_sourced(line):
+        return []
+    toks = SHA_TOKEN.findall(line)
+    if not toks:
+        return []
+    if not shas:
+        return [M("stale.sha_no_facts", name=name, lineno=lineno)]
+    return [M("stale.sha_unsourced", name=name, lineno=lineno, actual=tok[:16])
+            for tok in toks
+            if not any(tok == s or s.startswith(tok) or tok.startswith(s[:len(tok)])
+                       for s in shas)]
 
 
 def _stale_age_problems(f, sd):
