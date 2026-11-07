@@ -19,12 +19,14 @@ from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M, load_pack  # noqa: E402
 from knobs import a_pack_lang  # noqa: E402
 from ledger import facts_of, load_or_fatal, value_of  # noqa: E402
-from living import DATED_RECORD  # noqa: E402
-from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
 
 # 正文引用数字的写法：`[[键名]]`。刻意选一个不可能是自然语言的形状 ——
 # 这样「有没有引用」是**可判定的**，不靠正则猜散文。
-CITE_RE = re.compile(r"\[\[([A-Za-z_][A-Za-z0-9_]*)\]\]")
+from living import (
+    CITE_RE,  # noqa: E402
+    DATED_RECORD,  # noqa: E402
+)
+from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
 
 BARE_MIN = 100   # 默认裸数字阈值：小于它的整数不查（1/2/3 遍地都是，查了全是噪音）
 FENCE_RE = re.compile(r"^\s*```")

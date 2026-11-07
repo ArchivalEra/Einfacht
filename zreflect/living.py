@@ -33,6 +33,10 @@ HIST_MARK = re.compile(
 # ⚠️ 故意不认裸 sha：见上面规矩 3。
 DATED_RECORD = re.compile(r"[A-Za-z0-9._-]*-\d{8}|`[0-9a-f]{7,64}`")
 
+# 行内台账引用 `[[键名]]`（带捕获组 —— check_facts 取键、check_stale 只判存在）。
+# ⚠️ 两道闸门曾各写一份（一份带捕获、一份不带），同一判据两份措辞。
+CITE_RE = re.compile(r"\[\[([A-Za-z_][A-Za-z0-9_]*)\]\]")
+
 
 def section_is_living(heading, historical_secs=()):
     """一个 `## ` 标题下的正文是不是活状态。

@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import ast
 import os
-import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -419,12 +418,6 @@ def problems(gs, missing, mods=None, mods_missing=None,
 
 
 
-
-
-
-
-
-_FILE_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.[A-Za-z0-9]+")
 
 
 

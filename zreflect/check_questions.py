@@ -67,12 +67,32 @@ def field(text, name):
     return None
 
 
+def status_of(text):
+    """`Status` 的**归一化值**（小写、首词）—— 判「结没结案」的唯一口径。
+
+    ⚠️ 「结案了吗」这个判断此前有**三种**判法，两种在活代码里：
+      · `_status_problems` 取首词、不折大小写（`Resolved` 被报 bad_status）；
+      · `run()` 比整字段（`**Status:** resolved` 后跟散文 ⇒ 永远「未结案」，
+        实测：本仓 01-example.md 结案后 `questions.ok(open=1)` 仍把它算待办）；
+      · `next._question_status` 又是一份（R-017 那个 `"** resolved"`）。
+
+    同一问题三个答案，闸门自己跟自己对不上。归一化只有这一个产地；
+    `field()` 的**续行语义**（给 Settling 用的）在这里被截断 —— Status 是一个词。
+    """
+    raw = (field(text, "Status") or "").strip().lower()
+    return raw.split()[0] if raw else ""
+
+
+def is_resolved(text):
+    return status_of(text) == "resolved"
+
+
 def _status_problems(name, text):
-    """`Status` 字段：必须存在且是已知取值。"""
-    st = field(text, "Status")
+    """`Status` 字段：必须存在且是已知取值（口径见 `status_of`）。"""
+    st = status_of(text)
     if not st:
         return [M("questions.missing_status", name=name)]
-    if st.split()[0] not in VALID_STATUS:
+    if st not in VALID_STATUS:
         return [M("questions.bad_status", name=name, actual=st,
                   expected=", ".join(VALID_STATUS))]
     return []
@@ -150,7 +170,7 @@ def run(argv):
         # 本闸门零语言化后自己发 M()，rc 契约不变，仍是 2）。
         return fatal(M("questions.guard_empty", count=0))
     probs = problems(files)
-    n_open = sum(1 for t in files.values() if (field(t, "Status") or "") != "resolved")
+    n_open = sum(1 for t in files.values() if not is_resolved(t))
     return finish(M("questions.title"), probs,
                   M("questions.ok", count=len(files), open=n_open))
 

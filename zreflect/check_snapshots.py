@@ -62,8 +62,9 @@ from i18n import M  # noqa: E402
 # 活体 `registry --run commit` 里它永远是 `off`（实测：CI/hook/自证三处都没配）。
 # 「闸门存在、自证绿、但从没跑过」正是本仓立身要消灭的假绿。
 KNOB = "REFLECT_SNAPSHOT_ROOT"
-DEFAULT_ROOT = "zreflect"
-# ⚠️ **不再用手写名单**。此前这里是一串硬编码模块名（`("gate", "knobs", …)`），
+# 默认扫描面不再存这里：未配旋钮 ⇒ 锚 `gate.zdir()`（工具仓自己的
+# zreflect/，cwd 无关）。曾有一个 `DEFAULT_ROOT = "zreflect"` 裸相对名，
+# 判据改锚工具仓后它成了死默认（knobs.dead_default 抓到）—— 删。# ⚠️ **不再用手写名单**。此前这里是一串硬编码模块名（`("gate", "knobs", …)`），
 # 违反 AGENTS「手写名录一定会漂」：全仓 28 个 `zreflect/*.py` 里只有 12 个在册，
 # 另外 16 个（全部 `check_*.py`）作为**被导入源**时判据完全看不到。
 # 现在是**发现式**：扫描面里每个 `.py` 都是候选源模块 —— 名单 = 扫描面本身。
@@ -454,7 +455,12 @@ def run(argv=None):
     # 就是最大的受害者（`gate.GATE_REPO` 被多道自证改写），所以默认面是它。
     # 要扫**你的代码**就显式设 `REFLECT_SNAPSHOT_ROOT=<目录>`。
     configured = os.environ.get(KNOB, "").strip()
-    root = configured or DEFAULT_ROOT
+    # ⚠️ **未配 ⇒ 锚工具仓**（`gate.zdir()`），不是裸相对名 —— 后者取决于
+    # cwd：在仓根跑是对的，在别处跑（harness / 钩子的 cwd 不保证）就
+    # `scan_empty_dir` FATAL（实测：cd /tmp 后 rc=2）。
+    # 显式配了 ⇒ **被检查仓**相对（用户在 env 里写的是相对仓根的名字）。
+    root = gate.zdir() if not configured \
+        else os.path.join(gate.GATE_REPO, configured)
     if not os.path.isdir(root):
         # 旋钮指向不存在的目录 ⇒ 配置坏（不是「没启用」）
         return fatal(M("snapshot.scan_empty_dir", root=root))
@@ -553,6 +559,31 @@ def _cases_derived():
     ]
 
 
+def _default_root_case():
+    """**默认扫描面锚工具仓，与 cwd 无关**。
+
+    ⚠️ 此前未配旋钮时用裸相对名 `zreflect` —— 在仓根跑是对的，cwd 在别处
+    （harness / 钩子的 cwd 不保证）就 `scan_empty_dir` FATAL（实测：cd /tmp
+    后 rc=2）。这条用例**换到临时目录**再跑真闸门，钉住「cwd 不是前提」。
+    """
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    here = os.path.dirname(os.path.abspath(__file__))
+    d = tempfile.mkdtemp()
+    env = {k: v for k, v in os.environ.items() if k != KNOB}
+    try:
+        p = subprocess.run([sys.executable, os.path.join(here, __file__)],
+                           cwd=d, env=env, capture_output=True, text=True,
+                           timeout=120, encoding="utf-8", errors="replace")
+        # ⚠️ 只判 **rc**，不匹配输出措辞：`snapshot.ok(...)` 是 code，装了
+        # 语言包会渲染成自然语言（实测：REFLECT_LANG=en 下这条判据红 ——
+        # 它在拿当前语言包的措辞当判据，第一版就是自己的反例）。
+        return p.returncode == 0
+    finally:
+        import shutil  # noqa: PLC0415
+        shutil.rmtree(d, True)
+
+
 def _cases():
     """三条：值拷贝 / 派生快照 / 空输入。
 
@@ -561,7 +592,9 @@ def _cases():
     """
     return (_cases_value_copy(_fixtures()) + _cases_derived()
             + [("\u2605 snapshot.empty_scan",
-                lambda: problems(sources={}) != [])])
+                lambda: problems(sources={}) != []),
+               ("★ snapshot.default_root_is_cwd_free",
+                lambda: _default_root_case())])
 
 
 GATE = meta("模块级快照闸门",

@@ -201,11 +201,9 @@ def _question_status(text):
     两份判据必有一份错 —— 而 `check_questions` 那份有 196 行自证守着。
     """
     import check_questions  # noqa: PLC0415
-    raw = (check_questions.field(text, "Status") or "").strip().lower()
-    # `field()` 有**续行**语义（给 `Settling:` 那种多行正文用的），而
-    # `Status` 是一个词：`**Status:** resolved` 后面若跟着一段没有下一个
-    # 字段的散文，`field` 会把散文并进来。所以只取第一个词。
-    return raw.split()[0] if raw else ""
+    # 归一化（小写 + 首词）的唯一产地在 check_questions.status_of ——
+    # 这份曾是第三种判法（R-017），现在只转调。
+    return check_questions.status_of(text)
 
 
 def _open_question_names(repo):
