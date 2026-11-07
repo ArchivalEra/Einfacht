@@ -59,7 +59,12 @@ from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
 from i18n import Catalog, M, bind, load_pack
 from knobs import a_pack_lang  # noqa: E402
 from ledger import facts_of, load_or_fatal, value_of  # noqa: E402
-from runner import default_timeout, quote, run_cmd  # noqa: E402
+from runner import (  # noqa: E402
+    default_timeout,
+    quote,
+    run_cmd,
+    timeout_with_status,
+)
 
 
 def _replay_one(k, raw_entry, run, seconds, out, stats):
@@ -245,12 +250,11 @@ def run(argv):
     # 走 `knobs.flag`（唯一产地）—— 此前 `.lower() == "off"` 是另一套词汇表。
     if knobs.flag("REFLECT_REPLAY") is False:
         return off(M("replay.off"))
-    seconds = default_timeout()
-    raw_timeout = os.environ.get("REFLECT_REPLAY_TIMEOUT", "10")
-    try:
-        float(raw_timeout)
-    except ValueError:
-        print("⚠ %s" % M("replay.bad_timeout", value=raw_timeout,
+    # 解析只此一份（runner.timeout_with_status）—— 此前这里自己 float()
+    # 探测一遍，同一个坏值 runner 静默、这里告警（实测：空串两种待遇）。
+    seconds, bad_timeout = timeout_with_status()
+    if bad_timeout is not None:
+        print("⚠ %s" % M("replay.bad_timeout", value=bad_timeout,
                          default=seconds), file=sys.stderr)
     name = os.environ.get("REFLECT_FACTS", "FACTS.json")
     p = repo(name)

@@ -75,7 +75,15 @@ SECTION_MAX = 12
 
 
 def _git(repo, *args):
-    """跑一条 git 命令；失败返回 None（**不编空值** —— 见 collect.py 原则 3）。"""
+    """跑一条 git 命令；失败返回 None（**不编空值** —— 见 collect.py 原则 3）。
+
+    ⚠️ 刻意**不走** `runner.run_cmd`：那是「台账 cmd 逐字复跑」的 seam ——
+    字符串命令经三档 shell（bash pipefail 语义 / sh / Windows argv 拆分），
+    cwd 恒为 `GATE_REPO`。git 调用是**argv 形状**（`-C <repo>`、列表参数，
+    不经 shell，无注入面），cwd 是**参数给的仓**（不是被检查仓），失败
+    形状是 None 不是 (rc, out)。三个契约都不同 —— 收口会把安全的 argv
+    改成 shell 拼接，或把 cwd 语义改错。两份（这里与
+    `check_world.current_branch`）是有意保留的。"""
     try:
         p = subprocess.run(["git", "-C", repo, *args],
                            capture_output=True, text=True, timeout=10,

@@ -38,10 +38,25 @@ from i18n import M  # noqa: E402
 
 def default_timeout():
     """逐字执行的默认超时秒数（`REFLECT_REPLAY_TIMEOUT`；坏值 ⇒ 默认 10）。"""
+    seconds, _bad = timeout_with_status()
+    return seconds
+
+
+def timeout_with_status():
+    """`(秒数, 坏值)`：坏值 ⇒ 回落 10 并把**原值**带出来（调用方决定响不响）。
+
+    ⚠️ 此前 `default_timeout` 静默回落，而 `check_facts_replay.run` 自己又
+    `float(raw)` 探测一遍来告警 —— 同一个坏值，一个不响一个响（实测：
+    `REFLECT_REPLAY_TIMEOUT=""` 时 replay 报 `bad_timeout`，但 runner 自己
+    什么都不说）。两份判据一份只做一半。现在解析只此一份。
+    """
+    raw = os.environ.get("REFLECT_REPLAY_TIMEOUT")
+    if raw is None or not raw.strip():
+        return 10.0, None                     # 没配（含空串）= 正常默认
     try:
-        return float(os.environ.get("REFLECT_REPLAY_TIMEOUT", "10"))
+        return float(raw), None
     except ValueError:
-        return 10.0
+        return 10.0, raw                      # 坏值：回落 + 带出原值
 
 
 def quote(s, n=60):

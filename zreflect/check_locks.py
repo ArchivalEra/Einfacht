@@ -76,16 +76,12 @@ def _entry_missing_fields(entry):
             for f in REQUIRED_FIELDS if not entry.get(f)]
 
 
-def _resolve(path, root):
-    return path if os.path.isabs(path) else os.path.join(root, path)
-
-
 def _check_one(entry, hasher, root):
     """检查一条锁定项。返回 `(问题清单, 跳过清单)`。"""
     missing = _entry_missing_fields(entry)
     if missing:
         return missing, []
-    path = _resolve(entry["file"], root)
+    path = gate.repo_path(entry["file"], root)
     if not os.path.exists(path):
         if entry.get("optional"):
             return [], [M("locks.absent_optional", name=entry["name"])]
@@ -125,7 +121,7 @@ def check(spec, hasher=_sha, root=None):
 
 def main(argv):
     spec_path, explicit = resolve_spec(argv, os.environ.get("REFLECT_LOCKS", ""))
-    path = spec_path if os.path.isabs(spec_path) else repo(spec_path)
+    path = gate.repo_path(spec_path)
     if not os.path.isfile(path):
         if explicit:
             return fatal(M("locks.explicit_spec_missing", name=spec_path))
