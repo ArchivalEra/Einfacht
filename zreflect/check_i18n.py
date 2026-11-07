@@ -471,8 +471,13 @@ def _packs_match_their_language():
     零值守卫：至少验到一个非 zh 的包。
     """
     import i18n  # noqa: PLC0415
+    import knobs  # noqa: PLC0415
     checked = 0
-    for lang in ("en", "de"):
+    # **发现式**：非 zh 的已装包全查（不是手写 ("en","de") —— 新语言包
+    # 不该被静默跳过）。zh 本体豁免（零语言制度允许 zh 只出现在语言包里）。
+    for lang in sorted(knobs.installed_langs()):
+        if lang == "zh":
+            continue
         try:
             table = i18n.load_pack(lang)
         except Exception:                                # noqa: BLE001
