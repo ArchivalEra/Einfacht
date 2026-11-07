@@ -65,8 +65,9 @@ _QUOTES_RE = re.compile(r'^(?:["\'])|(?:["\'])$')
 # 旋钮记号：REFLECT_ + 大写。**左边界必需** —— 不加时，翻案示例文本
 # （`ZCODE_` 前缀 + 一个记号）会被从中间切成假记号，三语 README 对账
 # 各报一次假阳性（实测踩到）。⚠️ 本注释与自证里都**不写出**那个假记号
-# 字面量 —— 本文件在扫描面内，写出来就会被对账收编（自证用例用拼接构造）。
-_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_])REFLECT_[A-Z0-9_]+")
+
+# 记号正则的唯一产地在 knobs._TOKEN_RE（此前两份逐字相同，会漂）。
+from knobs import _TOKEN_RE  # noqa: E402  (唯一产地；本文件曾自抄一份)
 
 
 def known_knobs(py_dir=None):
@@ -253,7 +254,9 @@ def run(argv=None):
         syntax = None
     exports = parse_exports(text)
     # 载体内的判据：export 名 typo / 文件旋钮指向缺失 / 空值 / sh 语法。
-    # 幻影旋钮与 README 幻影已归 knobs.py（与载体无关）。
+    # （README 幻影与「工具仓扫描面」的幻影归 knobs.py；本闸门这份扫的是
+    # **被检查仓**的 zreflect/ —— 下游仓自己代码里的 typo 只有它看得见，
+    # 与 knobs 那份扫描面不同，两份都留。）
     probs = problems(exports, REGISTRY,
                      lambda t: os.path.exists(repo(t)),
                      lambda t: os.path.isdir(repo(t)),

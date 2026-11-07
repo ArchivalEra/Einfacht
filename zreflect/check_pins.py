@@ -79,14 +79,9 @@ def _required_field_problems(p):
             for f in ("name", "worktree") if not p.get(f)]
 
 
-def _resolve_worktree(root, p):
-    """worktree 相对仓库根解析（绝对路径原样用）。"""
-    return p["worktree"] if os.path.isabs(p["worktree"]) else os.path.join(root, p["worktree"])
-
-
 def _head_problems(p, root, run):
     """读 worktree HEAD。返回 (问题清单, head 或 None)；None ⇒ 本 pin 到此为止。"""
-    wt = _resolve_worktree(root, p)
+    wt = gate.repo_path(p["worktree"], root)
     if not os.path.isdir(wt):
         return [M("pins.worktree_missing", name=p["name"],
                   path=p["worktree"])], None
@@ -173,7 +168,7 @@ def check(spec, run=_run, root=None):
 
 def main(argv):
     spec_path, explicit = resolve_spec(argv, os.environ.get("REFLECT_PINS", ""))
-    path = spec_path if os.path.isabs(spec_path) else repo(spec_path)
+    path = gate.repo_path(spec_path)
     if not os.path.isfile(path):
         if explicit:
             return fatal(M("pins.explicit_spec_missing", name=spec_path))

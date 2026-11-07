@@ -1,13 +1,13 @@
 {
  "schema": 1,
- "generated": "2026-11-07T11:08:26+0800",
+ "generated": "2026-11-07T11:32:48+0800",
  "_why": "facts.ledger_why",
  "facts": {
   "py_files": {
    "value": 35,
    "cmd": "python3 zreflect/facts.py --count -files .py",
    "source": "repo",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-06",
    "note": "facts.note.example_fact"
   },
@@ -15,14 +15,14 @@
    "value": 9,
    "cmd": "python3 zreflect/facts.py --count -files .md",
    "source": "repo",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03"
   },
   "py_lines": {
-   "value": 16740,
+   "value": 16771,
    "cmd": "python3 zreflect/facts.py --count -lines .py",
    "source": "repo",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-07",
    "note": "facts.note.bare_number_demo"
   },
@@ -30,7 +30,7 @@
    "value": 2809,
    "cmd": "python3 zreflect/facts.py --count -md",
    "source": "repo",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-06",
    "note": "facts.note.excludes_machine_block"
   },
@@ -38,7 +38,7 @@
    "value": "ok",
    "cmd": "python3 -c \"import json,sys;d=json.load(open('FACTS.json', encoding='utf-8'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)\"",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03",
    "note": "数值/行为只认实测；每条事实都必须有一条复跑命令",
    "kind": "principle"
@@ -47,7 +47,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_facts.py",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03",
    "note": "数字只生产一次：文档引用写 [[键名]]，不手抄（双向拦）",
    "kind": "principle"
@@ -56,7 +56,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/registry.py --selftest",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03",
    "note": "断言要能证伪：恒真短路由 AST 扫出，命中即判 fail",
    "kind": "principle"
@@ -65,7 +65,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/registry.py --gates",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03",
    "note": "谓词是声明不是文件名：执行面读 registry --run <相位>",
    "kind": "principle"
@@ -74,7 +74,7 @@
    "value": "ok",
    "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import registry, criteria;gs=registry.gates()[0];p=criteria.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)\"",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03",
    "note": "off 与「跑过且通过」必须可区分；会 off 的闸门必须声明理由",
    "kind": "principle"
@@ -83,7 +83,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_i18n.py",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03",
    "note": "本体零语言：用户可见消息走 M(code)，机器契约结构上不可译",
    "kind": "principle"
@@ -92,7 +92,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/machine.py --selftest",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03",
    "note": "机器行由 machine.ROWS 唯一产地定义；shell 侧有行为对账器",
    "kind": "principle"
@@ -101,7 +101,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_readme_sync.py",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03",
    "note": "三语 README 是同一条断言的三份拷贝：改一份必须三份同批",
    "kind": "principle"
@@ -110,7 +110,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_snapshots.py",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03",
    "note": "跨模块 import 的可变全局是值拷贝（陈旧快照）：改读属性",
    "kind": "principle"
@@ -119,7 +119,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_retractions.py",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03",
    "note": "被推翻的断言不许悄悄回来当现状",
    "kind": "principle"
@@ -128,7 +128,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_stale.py",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03",
    "note": "退役名不许以现状出现；sha 出处与测龄可查",
    "kind": "principle"
@@ -137,7 +137,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_questions.py",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03",
    "note": "未结案的悬案必须挂一个能跑的结算件",
    "kind": "principle"
@@ -146,7 +146,7 @@
    "value": "ok",
    "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)\"",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-03",
    "note": "每个闸门都要有 --selftest 入口（写而不跑 = 装饰）",
    "kind": "principle"
@@ -155,7 +155,7 @@
    "value": "ok",
    "cmd": "python3 -c \"import os,sys;w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR','hook'+'SpecificOutput'];bad=[(d,f) for d in ('zreflect','reflect-hooks') for r,_,fs in os.walk(d) for f in fs if f.endswith(('.py','.sh')) and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)\"",
    "source": "principle",
-   "measured_at": "2026-11-07T11:08:26+0800",
+   "measured_at": "2026-11-07T11:32:48+0800",
    "first_seen": "2026-11-05",
    "note": "套件源码不认任何宿主的目录名 / 配置格式（宿主接线归使用方）",
    "kind": "principle"

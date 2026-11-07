@@ -105,8 +105,8 @@ def _pair_problems(pr, root, loader):
         # 「缺字段」本身就是这次要报的东西，别让它变成崩溃）。
         return problems, skips
     key = pr.get("key") or ""
-    ra, ea = loader(_join(root, pr["a"]))
-    rb, eb = loader(_join(root, pr["b"]))
+    ra, ea = loader(gate.repo_path(pr["a"], root))
+    rb, eb = loader(gate.repo_path(pr["b"], root))
     if ra is None or rb is None:
         skips.append(M("ab.artifact_unreadable", name=pr["name"],
                        error_a=ea or "", error_b=eb or ""))
@@ -132,13 +132,9 @@ def check(spec, root, loader=_load):
     return problems, skips
 
 
-def _join(root, path):
-    return path if os.path.isabs(path) else os.path.join(root, path)
-
-
 def main(argv):
     spec_path, explicit = resolve_spec(argv, os.environ.get("REFLECT_AB", ""))
-    path = spec_path if os.path.isabs(spec_path) else repo(spec_path)
+    path = gate.repo_path(spec_path)
     if not os.path.isfile(path):
         if explicit:
             return fatal(M("ab.explicit_spec_missing", name=spec_path))

@@ -43,6 +43,19 @@ def repo(*parts):
     return os.path.join(GATE_REPO, *parts)
 
 
+def repo_path(path, root=None):
+    """相对路径锚到 `root`（默认被检查仓根），绝对路径原样 —— 唯一产地。
+
+    `p if os.path.isabs(p) else os.path.join(root, p)` 这个表达式此前在
+    check_ab / check_locks / check_pins / check_facts / facts 里逐字抄了
+    五遍（`i18n.pack_dir` 还有一份变体）。绝对/相对的边界判据只许有一处：
+    「以 / 开头就是用户的绝对路径」这条一旦在某一处漂掉，那道闸门就会把
+    用户的绝对 spec 路径拼到仓根下面，然后报「文件不存在」。
+    """
+    root = GATE_REPO if root is None else root
+    return path if os.path.isabs(path) else os.path.join(root, path)
+
+
 def zdir():
     """**工具自己**的 `zreflect/` 目录 —— 全仓唯一产地。
 

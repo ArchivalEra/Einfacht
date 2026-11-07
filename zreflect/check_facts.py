@@ -15,6 +15,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import gate  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M, load_pack  # noqa: E402
 from knobs import a_pack_lang  # noqa: E402
@@ -238,7 +239,7 @@ def run(argv):
     probs = []
     scanned = 0
     for doc in docs:
-        p = doc if os.path.isabs(doc) else repo(doc)
+        p = gate.repo_path(doc)
         if not os.path.exists(p):
             # 名单里点名的文档不在 ⇒ 报（`REFLECT_DOCS` 是声明，不是建议）。
             # 但 `argv[0]` 显式给的走原来的硬 FATAL（那是调用方指错了）。

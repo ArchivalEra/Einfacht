@@ -362,7 +362,7 @@ def _prepare_render(path_rel, ledger):
     任一失败都返回非 0 的 rc（已报过 FATAL）—— 「文件在不在 / 归属对不对 /
     读不读得出」是三种不同的配置事故，各自的错误码不同。
     """
-    p = path_rel if os.path.isabs(path_rel) else repo(path_rel)
+    p = gate.repo_path(path_rel)
     if not os.path.exists(p):
         print(machine().emit("fatal", M("facts.doc_missing_render", path=p)),
               file=sys.stderr)
@@ -392,7 +392,7 @@ def _write_or_fatal(p, new, path_rel):
 
 
 def check_doc(path_rel, ledger):
-    p = path_rel if os.path.isabs(path_rel) else repo(path_rel)
+    p = gate.repo_path(path_rel)
     if not os.path.exists(p):
         print(machine().emit("fatal", M("facts.doc_missing_check", path=p)), file=sys.stderr)
         return 2
