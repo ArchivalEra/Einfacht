@@ -62,6 +62,7 @@ from __future__ import annotations
 import os
 import subprocess
 
+import knobs  # noqa: E402
 from i18n import M  # noqa: E402
 
 # 每一类最多列几条。**预算是接口**：改大它，`SECTION_MAX` 与
@@ -213,8 +214,9 @@ def _open_question_names(repo):
     读不到目录 ⇒ 返回空表（不是报错）：那是「这个仓不用悬案」的正常形态，
     `inject-state.py` 会明说「读不到」。
     """
-    d = os.path.join(repo, os.environ.get("REFLECT_QUESTIONS", "").strip()
-                     or "questions")
+    # 转调唯一产地（`knobs.questions_path` 会 strip）—— 此前这里自己
+    # `os.environ.get(...).strip() or "questions"`，是同一判据的第二份。
+    d = knobs.questions_path(repo)
     if not os.path.isdir(d):
         return []
     names = [n for n in sorted(os.listdir(d)) if n.endswith(".md")]

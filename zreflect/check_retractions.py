@@ -13,16 +13,15 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import knobs  # noqa: E402
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
 from ledger import load_or_fatal  # noqa: E402
 from living import HIST_MARK, living_lines  # noqa: E402
 
 REQUIRED = ("id", "text", "why", "evidence", "fixed_in")
-# 默认 = 本仓自用名单（三语 README 后共五份活状态文档；换仓改 REFLECT_DOCS，不改代码）
-DOCS = tuple(d for d in os.environ.get(
-    "REFLECT_DOCS",
-    "STATE.md,AGENTS.md,README.md,README.zh.md,README.de.md").split(",") if d)
+# **不在模块级取值**：`knobs.docs_names()` 是唯一产地（登记表里的默认值）。
+# ⚠️ 曾在这里手写一份五份的字面量，与登记表的六份（多 PRINCIPLES.md）漂开了。
 HIST_SECS = tuple(s for s in os.environ.get("REFLECT_HISTORY_SECS", "").split(",") if s)
 
 
@@ -72,13 +71,18 @@ def problems(retractions, docs, hist_secs=None):
         [r for r in entries if isinstance(r, dict)], docs, hist)
 
 
+def scanned_docs():
+    """本闸门要扫的文档名单（`knobs.docs_names()`，唯一产地）。"""
+    return knobs.docs_names()
+
+
 def run(argv):
     # 名字可配（issue #1 ②）：不写死，换仓库只改环境变量
     rp = repo(os.environ.get("REFLECT_RETRACTIONS", "retractions.json"))
     if not os.path.exists(rp):
         return fatal(M("retractions.file_missing", name=rp))
     docs = {}
-    for name in (argv or DOCS):
+    for name in (argv or scanned_docs()):
         p = repo(name)
         if os.path.exists(p):
             docs[name] = open(p, encoding="utf-8", errors="replace").read()

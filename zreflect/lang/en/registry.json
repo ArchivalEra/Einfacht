@@ -26,5 +26,6 @@
  "registry.undeclared_module": "these .py files are neither gates (no GATE declaration) nor declared platform modules (no MODULE = module_meta(…)) — a platform module must declare itself, even with selftest=False (state plainly that it needs no self-test): %(files)s",
  "registry.unexpected_shell": "unregistered shell file inside the suite: `%(file)s` — full-Python goal: shell is an exception; each one must be listed in `ALLOWED_SHELL` in `zreflect/criteria.py` (with a reason). **Your own repo's .sh files are not subject to this**",
  "registry.unknown_phase": "`%(file)s` declares runs_at=%(runs_at)r which is not a known phase (%(phases)s) — the frequency is a declaration field; a bad value makes the execution surface skip it",
- "registry.usage": "usage: registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]"
+ "registry.usage": "usage: registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]",
+ "registry.system_exit_not_int": "`raise SystemExit(...)` at `%(file)s:%(line)d` is given a non-int — `SystemExit(str)` exits **1** and `SystemExit()` exits **0**, both breaking the rc contract (0 green / 1 criterion red / 2 env broken). Use `gate.fatal_exit(msg)`"
 }

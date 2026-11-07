@@ -34,14 +34,15 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import knobs  # noqa: E402
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
 from ledger import age_days, facts_of, load_or_fatal, value_of  # noqa: E402
 from living import DATED_RECORD, living_lines  # noqa: E402
 
-DOCS = tuple(d for d in os.environ.get(
-    "REFLECT_DOCS",
-    "STATE.md,AGENTS.md,README.md,README.zh.md,README.de.md").split(",") if d)
+# **不在模块级取值**：`knobs.docs_names()` 是唯一产地（登记表里的默认值），
+# 而模块级常量会在 import 时把它冻住 —— 自证与换名的夹具都改不动它。
+# ⚠️ 曾在这里手写一份五份的字面量，与登记表的六份（多 PRINCIPLES.md）漂开了。
 HIST_SECS = tuple(s for s in os.environ.get("REFLECT_HISTORY_SECS", "").split(",") if s)
 RETIRED = tuple(s for s in os.environ.get("REFLECT_RETIRED", "").split(",") if s)
 STALE_DAYS_RAW = os.environ.get("REFLECT_STALE_DAYS", "").strip()
@@ -195,8 +196,18 @@ def _load_docs(names):
     return docs
 
 
+def scanned_docs():
+    """本闸门要扫的**文件名单**（`knobs.docs_names()`，唯一产地）。
+
+    ⚠️ 之前这个函数名给的是「名字→正文」的 dict，而 `check_retractions`
+    的同名函数给的是名单 —— 同一个名字两种返回形状，`knobs` 侧的对账判据
+    因此读到了 dict 的键（碰巧能跑）。名字说的是名单，就返回名单。
+    """
+    return knobs.docs_names()
+
+
 def run(argv):
-    docs = _load_docs(DOCS)
+    docs = _load_docs(scanned_docs())
     rc = guard_nonempty("check_stale", docs, M("stale.scanned_docs"))
     if rc:
         return rc

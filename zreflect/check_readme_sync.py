@@ -39,13 +39,17 @@ from gate import (  # noqa: E402
 )
 from i18n import M  # noqa: E402
 
-READMES = "README.md,README.zh.md,README.de.md"
-
-
 
 def lang_names():
-    return tuple(s.strip() for s in os.environ.get("REFLECT_READMES", READMES).split(",")
-                 if s.strip())
+    """三语 README 名单 —— 转调 `knobs.readme_names()`（唯一产地）。
+
+    ⚠️ 此前这里自己 `os.environ.get("REFLECT_READMES", READMES)`：**空串不
+    回落** —— `REFLECT_READMES=`（空 = 没配）返回 `()`，下游零值守卫把它
+    当「拿空清单判 README 组」报错；而 `knobs.readme_names()` 同一环境下
+    正确回落登记表。两份判据、空串语义分叉（实测）。
+    """
+    import knobs  # noqa: PLC0415
+    return tuple(knobs.readme_names())
 
 
 def problems_structure(files, langs):

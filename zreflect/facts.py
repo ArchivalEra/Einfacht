@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate  # noqa: E402
 import guard  # noqa: E402
+import knobs  # noqa: E402
 import registry  # noqa: E402
 from gate import (  # noqa: E402
     machine,  # noqa: E402
@@ -880,8 +881,9 @@ def _init_questions_dir(root):
     空目录会被 `check_questions` 的零值守卫拒（`questions.guard_empty`）——
     所以放一个**示例悬案**：它同时是「怎么写悬案」的样板。
     """
-    qdir = os.path.join(root, os.environ.get("REFLECT_QUESTIONS", "")
-                        .strip() or "questions")
+    # 转调唯一产地（会 strip；同判据此前三份，一份不 strip —— 实测空串
+    # 会让 check_questions 把仓根当悬案目录）。
+    qdir = knobs.questions_path(root)
     if not os.path.isdir(qdir):
         os.makedirs(qdir, exist_ok=True)
         print(str(M("facts.init_created", name="questions/")))

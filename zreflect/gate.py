@@ -93,8 +93,7 @@ def require_nonempty(name, seq, what=None):
         # `FATAL:` 是机器契约前缀 —— 在**发射点**字面量（不进语言包）。
         # `what` 可能是调用方给的 Message（如 `M("stale.scanned_docs")`）：
         # 先 str() 拍平，否则 null 包里会渲染成嵌套的 `repr(Message)`。
-        raise SystemExit(machine().emit("fatal", i18n.M("gate.require_nonempty",
-                                                     name=name, what=str(what))))
+        fatal_exit(i18n.M("gate.require_nonempty", name=name, what=str(what)))
     return items
 
 
@@ -130,6 +129,26 @@ def fatal(msg):
     """配置 / 环境坏：FATAL + 退 2。"""
     print(machine().emit("fatal", msg), file=sys.stderr)
     return 2
+
+
+def fatal_exit(msg):
+    """`fatal` 的**退出**形式（给那些没法 `return 2` 的调用点）。
+
+    ⚠️ **必须 `SystemExit(2)`，不是 `SystemExit(msg)`**：后者是 Python 的
+    「打印并退 1」约定 —— 于是打出 `FATAL:` 三个字母、退出码却是 **1**。
+    调用方（`registry._record`）按 rc 分类：1 = 判据红 / failed，
+    2 = 配置坏 / fatal。那四份 `raise SystemExit(machine().emit("fatal", …))`
+    全都在这里错位了：**配置事故被报成代码问题**，修法指向错误的文件。
+
+    实测：`gate.selftest('x', [])` 打 `FATAL: gate.selftest_empty_cases`，
+    rc 却是 1。
+
+    一处函数、四个调用点（`require_nonempty` / `selftest` /
+    `ledger._require_pairs` / `collect.parse_prev_values`）——
+    此前是四份手抄，四份都错。
+    """
+    print(machine().emit("fatal", msg), file=sys.stderr)
+    raise SystemExit(2)
 
 
 def declares_itself(path):
@@ -701,8 +720,7 @@ def selftest(name, cases):
         # 0/0 洞（本文件开头记载的第三种事故）：空用例清单的自证什么都没查，
         # 却打印「0 PASS / 0 FAIL」绿着退场 —— runner 的 grep 照样认它。
         # 空清单是写自证时的形状错误，当场响，不许绿。
-        raise SystemExit(machine().emit("fatal",
-                         i18n.M("gate.selftest_empty_cases", name=name)))
+        fatal_exit(i18n.M("gate.selftest_empty_cases", name=name))
     bad = delegated = 0
     for label, fn in cases:
         ok, was_delegated, _failure = _report_one(label, fn)
