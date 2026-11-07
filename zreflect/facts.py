@@ -1294,14 +1294,15 @@ def _env_from_envfile(d, base_env):
     path = os.path.join(d, "Einfacht.env")
     if not os.path.isfile(path):
         return out
-    with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line.startswith("export "):
-                continue
-            key, _, value = line[len("export "):].partition("=")
-            if key.strip():
-                out[key.strip()] = value.strip()
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        text = fh.read()
+    # **解析只此一份**：`check_envfile.parse_exports`（带引号剥离 + 可选
+    # export 前缀）。此前这里自己写了一遍 `startswith("export ")` +
+    # `partition("=")`，**不剥引号** —— 同一份 env，这边解析出
+    # `'"STATE.md"'`（带引号），那边解析出 `'STATE.md'`。实测：夹具里的
+    # 旋钮值静默带上引号 ⇒ 判据测的是另一套环境，还不报错。
+    import check_envfile  # noqa: PLC0415
+    out.update(check_envfile.parse_exports(text))
     return out
 
 

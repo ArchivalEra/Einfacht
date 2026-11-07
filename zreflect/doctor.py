@@ -67,6 +67,7 @@ import sys
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import machine  # noqa: E402
 from gate import fatal, load_spec, main_selftest_or, meta, off, repo  # noqa: E402
 from i18n import M  # noqa: E402
 
@@ -324,7 +325,7 @@ def run(argv=None):
         return 2
     downs = down_labels(checks)
     if downs:
-        print("DOWN: " + ", ".join(downs))
+        print(machine().emit("down", ", ".join(downs)))
         return 1
     print("ok")
     return 0

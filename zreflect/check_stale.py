@@ -38,7 +38,7 @@ import knobs  # noqa: E402
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
 from ledger import age_days, facts_of, load_or_fatal, value_of  # noqa: E402
-from living import DATED_RECORD, living_lines  # noqa: E402
+from living import CITE_RE, DATED_RECORD, living_lines  # noqa: E402
 
 # **不在模块级取值**：`knobs.docs_names()` 是唯一产地（登记表里的默认值），
 # 而模块级常量会在 import 时把它冻住 —— 自证与换名的夹具都改不动它。
@@ -77,7 +77,6 @@ def _sha_facts(f):
 
 # 引用式出处（issue #25）：`[[键名]]` 指向台账 —— 与「历史」标记不同，
 # 它是**可复跑**的锚。
-CITE_RE = re.compile(r"\[\[[A-Za-z_][A-Za-z0-9_]*\]\]")
 
 
 def _is_sourced(line):

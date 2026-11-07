@@ -37,6 +37,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate  # noqa: E402
+import machine  # noqa: E402
 from gate import (  # noqa: E402
     fatal,
     finish,
@@ -132,7 +133,7 @@ def main(argv):
         return fatal(M("locks.spec_broken", name=spec_path, error=err))
     problems, skips = check(spec)
     for x in skips:
-        print("SKIP: %s" % x, file=sys.stderr)   # 契约前缀在发射点字面量
+        print(machine().emit("skip", str(x)), file=sys.stderr)
     return finish(M("locks.title"), problems,
                   M("locks.ok", count=len(spec.get("locked")
                                          or spec.get("sources") or [])))
