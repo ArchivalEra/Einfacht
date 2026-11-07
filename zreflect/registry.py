@@ -1057,16 +1057,25 @@ def _cases_phase(fx):
     ]
 
 def _env_hint_case(which):
-    """`gate.env_hint()` 的三档行为（**按载体有无**，两侧都测）。
+    """`gate.env_hint()` 的**五档**行为（#28 修后：载体值参与判定）。
 
-    此前那两条断言是 `A is None or B is not None` —— 恒真（实测）。现在是
-    真的三档：无载体 ⇒ None；有载体+无旋钮 ⇒ **非 None**；有载体+`off` ⇒ None。
+    1. `no_carrier`  —— 无载体 ⇒ None（裸跑不吵）
+    2. `carrier_bare` —— 载体在、没设旋钮 ⇒ **提示**（没人 source）
+    3. `carrier_live` —— 旋钮已设、值与载体**一致** ⇒ None（载体已生效）
+    4. `carrier_drift` —— 旋钮已设、值与载体**不同** ⇒ **提示**（手动 export 漂）
+    5. `carrier_off`  —— `REFLECT_ENV_HINT=off` ⇒ 打印层一个字都不出
+
+    ⚠️ 判据的语义前提是「进程环境受控」：钩子语境会把载体 source 进环境，
+    旋钮一设 `carrier_bare` 就恒红（#29 实测：上游自己 `REFLECT_FACTS=x
+    registry --selftest` ⇒ 1）。测试隔离自己进程的输入是自证的本职：
+    相关旋钮全部临时 pop，finally 恢复。
     """
     import shutil
     import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     saved = gate.GATE_REPO
     saved_off = os.environ.pop("REFLECT_ENV_HINT", None)
+    saved_fact = os.environ.pop("REFLECT_FACTS", None)
     try:
         gate.GATE_REPO = d
         if which != "no_carrier":
@@ -1082,16 +1091,24 @@ def _env_hint_case(which):
             with contextlib.redirect_stderr(buf):
                 gate._maybe_hint()
             return buf.getvalue() == ""       # 必须**一个字符都不打**
+        if which == "carrier_live":
+            os.environ["REFLECT_FACTS"] = "FACTS.json"    # 与载体一致
+        elif which == "carrier_drift":
+            os.environ["REFLECT_FACTS"] = "OTHER.json"    # 与载体不同
         hint = gate.env_hint(consumed=("REFLECT_FACTS",))
-        if which == "carrier_bare":
-            return hint is not None          # 必须**提示**（有载体却没设旋钮）
-        return hint is None                  # 无载体 ⇒ 必须静默
+        if which in ("carrier_bare", "carrier_drift"):
+            return hint is not None          # 必须**提示**
+        return hint is None                  # 无载体 / 已生效 ⇒ 必须静默
     finally:
         gate.GATE_REPO = saved
         if saved_off is not None:
             os.environ["REFLECT_ENV_HINT"] = saved_off
         else:
             os.environ.pop("REFLECT_ENV_HINT", None)
+        if saved_fact is not None:
+            os.environ["REFLECT_FACTS"] = saved_fact
+        else:
+            os.environ.pop("REFLECT_FACTS", None)
         shutil.rmtree(d, True)
 
 
@@ -1105,6 +1122,12 @@ def _cases_hint(fx):
          lambda: _env_hint_case("no_carrier")),
         ("★ registry.env_hint_fires_with_carrier",
          lambda: _env_hint_case("carrier_bare")),
+        # #28：载体已生效（值一致）⇒ 静默 —— 接线正确的仓这才不吵
+        ("registry.env_hint_silent_when_carrier_live",
+         lambda: _env_hint_case("carrier_live")),
+        # #28：手动 export 与载体漂了 ⇒ 必须提示（这正是该吵的场景）
+        ("★ registry.env_hint_fires_on_drift",
+         lambda: _env_hint_case("carrier_drift")),
         ("★ registry.env_hint_off_silent",
          lambda: _env_hint_case("carrier_off")),
     ]

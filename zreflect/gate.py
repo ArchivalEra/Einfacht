@@ -397,8 +397,31 @@ def env_hint(consumed=(), module=None):
         consumed = gate_knobs(module)     # 声明里的旋钮清单（零手写）
     if not consumed:
         return None
-    if any(os.environ.get(k, "").strip() for k in consumed):
-        return None                      # 至少设了一个旋钮 ⇒ 认为是有意配置
+    # ⚠️ **「旋钮已设」不能一律静默**（#28）：钩子体系靠 source 载体把旋钮
+    # 放进环境 —— 接线正确的仓里「环境有旋钮」恒真，原来的第四档提示
+    # （有载体却没设旋钮 ⇒ 提示）在任何正常接线的仓里都不可达。
+    # 四档语义（比一次载体值，成本一次文件读）：
+    #   1. 无载体 ⇒ 静默（裸跑是正常用法）
+    #   2. 没设任何消费旋钮 ⇒ **提示**（载体在，但没人 source / 没 export）
+    #   3. 旋钮已设且值与载体**一致** ⇒ 载体已生效，静默
+    #   4. 旋钮已设但值与载体**不同**（或载体没写它）⇒ **提示**
+    #      （手动 export 可能漂 —— 这正是该吵的场景）
+    import check_envfile  # noqa: PLC0415
+    try:
+        with open(carrier, encoding="utf-8", errors="replace") as fh:
+            exported = check_envfile.parse_exports(fh.read())
+    except OSError:
+        exported = {}                    # 读不了载体：按「没写」处理（档案见 guard）
+    set_kv = {k: os.environ[k].strip() for k in consumed
+              if os.environ.get(k, "").strip()}
+    if not set_kv:
+        # 第二档：载体在，但一个旋钮都没设 ⇒ 原本的提示场景
+        rel = os.path.relpath(carrier, GATE_REPO)
+        import i18n  # noqa: PLC0415
+        return i18n.M("gate.env_hint", file=rel)
+    if all(exported.get(k) == v for k, v in set_kv.items()):
+        return None                      # 第三档：载体已生效，静默
+    # 第四档：至少一个旋钮被手动 export 且与载体不一致（或载体没写它）
     rel = os.path.relpath(carrier, GATE_REPO)
     import i18n  # noqa: PLC0415
     return i18n.M("gate.env_hint", file=rel)

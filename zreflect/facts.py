@@ -214,9 +214,19 @@ def _has_principles_doc():
 
 
 def _doc_names():
-    """有机器块的文档名（按 `_block_homes` 的归属派生，不手写名单）。"""
+    """有机器块的文档名（按 `_block_homes` 的归属派生，不手写名单）。
+
+    ⚠️ **必须尊重 `REFLECT_NO_PRINCIPLES`**（#27②）：`doc.accepts_principles()`
+    认 opt-out，而这里曾无条件返回两份 ⇒ 不采用原则文档的仓跑 `--check`
+    FATAL `doc_missing_check`，且 `gate._prepare(push)` 硬编码不带文档名的
+    `facts.py --check` ⇒ **pre-push 必红** —— 同一个 opt-out 在两处行为
+    不同，正是「一份规则两个产地」的形状（下游实测）。
+    """
     import doc  # noqa: PLC0415
-    return (_doc(), doc.PRINCIPLES)
+    names = [_doc()]
+    if _has_principles_doc():
+        names.append(doc.PRINCIPLES)
+    return tuple(names)
 
 
 def _block_homes(ledger):
@@ -238,13 +248,16 @@ def _block_homes(ledger):
     if probs:
         return None, M("facts.registry_mismatch", entries="\n  · ".join(probs))
     import doc  # noqa: PLC0415
-    return [
-        (_doc(), [(BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
-               (registry.GATES_BEGIN, registry.GATES_END,
-                registry.render_gates(gs))]),
-        (doc.PRINCIPLES, [(doc.RULES_BEGIN, doc.RULES_END,
-                           doc.render_rules())]),
-    ], None
+    homes = [(_doc(), [(BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
+                       (registry.GATES_BEGIN, registry.GATES_END,
+                        registry.render_gates(gs))])]
+    # 原则块跟 `_doc_names()` 同一条 opt-out（#27②）：不采用原则的仓
+    # 连渲染带 check 都不碰 PRINCIPLES.md —— 两处若一处认一处不认，
+    # opt-out 就只对一半命令生效。
+    if _has_principles_doc():
+        homes.append((doc.PRINCIPLES,
+                      [(doc.RULES_BEGIN, doc.RULES_END, doc.render_rules())]))
+    return homes, None
 
 
 
@@ -1136,6 +1149,11 @@ CASES = [
     # **真项目形状**：带 build.sh / src / 既有 README 的仓也要能走完。
     # 曾经「仓里任何 .sh ⇒ 整条链路 FATAL」，这是它的回归守卫。
     ("★ facts.real_repo_shaped_bootstraps", lambda: _real_repo_shaped()),
+    # **opt-out 对 --check / --render-doc 也生效**（#27②）：`REFLECT_NO_PRINCIPLES=1`
+    # 的仓不许被 FATAL `doc_missing_check` 拦住 —— 同一个 opt-out 在
+    # doc.accepts_principles（认）与 _doc_names/_block_homes（曾不认）两处
+    # 行为不同，正是「一份规则两个产地」的形状（下游实测 pre-push 必红）。
+    ("★ facts.no_principles_opt_out_respected", lambda: _opt_out_check_case()),
     # **坏台账是配置事故，不是判据红**：必须 FATAL rc=2。实测：`{ broken` 的
     # FACTS.json 让 `--check` 打 traceback 且 rc=0（调用方以为查过了），
     # 让各闸门 rc=1（在 `registry --run` 里被记成「判据红」——
@@ -1198,6 +1216,55 @@ def _is_unknown_cmd(first):
     return _classify([first]) == "unknown"
 
 
+def _copy_suite_into(d):
+    """把**平台名册内**的套件文件拷进夹具仓 `d`（#30 方向 B 的实现）。
+
+    ⚠️ 此前五处夹具各自 `copytree(zreflect/)` **整目录** —— 在 vendored
+    形态（`gate.tool_repo()` 解析到宿主根，#30）下，宿主自己的接线文件
+    （自有闸门 / measure 模块 / 额外语言包）被一起拷进新仓，而它们的输入
+    （specs/ 等）不在 ⇒ measure 掉条 ⇒ `guard.refuse_dropped` FATAL，
+    bootstrap 结构性必红。
+
+    名录是**发现式**的：平台模块 = `registry.modules()`，闸门 = `registry.gates()`
+    （声明行派生），但**锚点是套件自己的物理位置**（`__file__`），不是当前进程的
+    `zdir()` —— vendored 形态下 `zdir()` 解析到宿主接线目录，那里的名录混着
+    宿主自有闸门（它们也有 `GATE` 声明，发现式会收），拷进新仓就把宿主的
+    判据面带了进去（实测 4 道闸门红）。`facts.py` 是套件平台文件，它所在的
+    目录永远是套件 —— 与宿主怎么接线无关。
+    语言包按 `installed_langs()` 逐包拷（判据 = 有 .json 包文件）。
+    使用方接线的文件本来就不该进新仓的 bootstrap。
+    """
+    import shutil  # noqa: PLC0415
+    src_z = os.path.dirname(os.path.abspath(__file__))     # 套件自己，不锚 zdir()
+    dst_z = os.path.join(d, "zreflect")
+    os.makedirs(dst_z)
+    # 名录也锚套件目录（传入显式 zdir —— 发现式机制不变，锚点换成套件物理位置）
+    _gs, _missing = registry.gates(src_z)
+    mods, _missing2 = registry.modules(src_z)
+    roster = sorted({os.path.basename(g["file"]) for g in _gs}
+                    | {os.path.basename(m["file"]) for m in mods})
+    for rel in roster:
+        src = os.path.join(src_z, rel)
+        if os.path.isfile(src):
+            shutil.copy(src, os.path.join(dst_z, rel))
+    # 语言包：逐包拷（installed_langs 的判据是「有 .json 包文件」）
+    lang_src = os.path.join(src_z, "lang")
+    if os.path.isdir(lang_src):
+        for n in sorted(os.listdir(lang_src)):
+            pkg = os.path.join(lang_src, n)
+            if os.path.isdir(pkg) and any(x.endswith(".json")
+                                          for x in os.listdir(pkg)):
+                shutil.copytree(pkg, os.path.join(dst_z, "lang", n))
+    hooks_src = os.path.join(os.path.dirname(src_z), "reflect-hooks")
+    if os.path.isdir(hooks_src):
+        shutil.copytree(hooks_src, os.path.join(d, "reflect-hooks"),
+                        ignore=shutil.ignore_patterns(
+                            "__pycache__", ".mypy_cache", "*.pyc"))
+    ruff_conf = os.path.join(gate.tool_repo(), "ruff.toml")
+    if os.path.isfile(ruff_conf):
+        shutil.copy(ruff_conf, d)
+
+
 def _corrupt_ledger_rc():
     """坏台账下 `--check` 的 rc（夹具仓，不碰本仓台账）。"""
     import shutil  # noqa: PLC0415
@@ -1206,8 +1273,7 @@ def _corrupt_ledger_rc():
     d = tempfile.mkdtemp()
     try:
         subprocess.run(["git", "init", "-q", d], check=True, capture_output=True)
-        shutil.copytree(os.path.join(gate.tool_repo(), "zreflect"),
-                        os.path.join(d, "zreflect"))
+        _copy_suite_into(d)
         open(os.path.join(d, "FACTS.json"), "w", encoding="utf-8").write("{ broken")
         env = {k: v for k, v in os.environ.items()
                if not k.startswith("REFLECT_")}
@@ -1233,9 +1299,7 @@ def _unwritable_doc_rc():
         subprocess.run(["git", "init", "-q", d], check=True, capture_output=True)
         subprocess.run(["git", "-C", d, "config", "user.email", "a@b"], check=True)
         subprocess.run(["git", "-C", d, "config", "user.name", "a"], check=True)
-        for sub in ("zreflect", "reflect-hooks"):
-            shutil.copytree(os.path.join(gate.tool_repo(), sub),
-                            os.path.join(d, sub))
+        _copy_suite_into(d)
         env = {k: v for k, v in os.environ.items()
                if not k.startswith("REFLECT_")}
         env["GATE_REPO"] = d
@@ -1343,12 +1407,7 @@ def _real_repo_shaped():
     try:
         subprocess.run(["git", "init", "-q", d], check=True,
                        capture_output=True)
-        for sub in ("zreflect", "reflect-hooks"):
-            shutil.copytree(os.path.join(gate.tool_repo(), sub),
-                            os.path.join(d, sub))
-        ruff_conf = os.path.join(gate.tool_repo(), "ruff.toml")
-        if os.path.isfile(ruff_conf):
-            shutil.copy(ruff_conf, d)
+        _copy_suite_into(d)
         for name in ("build.sh", "deploy.sh"):
             with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
                 fh.write("#!/bin/sh\necho %s\n" % name)
@@ -1398,6 +1457,50 @@ def _real_repo_shaped():
         shutil.rmtree(d, True)
 
 
+def _opt_out_check_case():
+    """`REFLECT_NO_PRINCIPLES=1` 时 `--check` 不许向 `PRINCIPLES.md` 要块。
+
+    ⚠️ 必须用**没有 `PRINCIPLES.md` 的夹具仓**：本仓永远有那份文件，
+    「无条件查两份」的旧实现在这里也绿 —— 判据就瞎了（实测：子进程跑的是
+    新代码，patch 不跨进程）。夹具 = `_fresh_bootstraps` 同款 copytree +
+    `--init`，删掉 init 建的 `PRINCIPLES.md`（真实 opt-out 仓的形状），
+    然后断言两件事：
+
+      · 设旗标 ⇒ `--check` rc=0 且不碰 PRINCIPLES（旧行为在此 FATAL）；
+      · 不设旗标 ⇒ 查 PRINCIPLES ⇒ 报「文件缺失」（默认面没变，只是文件不在）。
+    """
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        subprocess.run(["git", "init", "-q", d], check=True, capture_output=True)
+        _copy_suite_into(d)
+        base = {k: v for k, v in os.environ.items()
+                if not k.startswith("REFLECT_") and k != "GATE_REPO"}
+        subprocess.run([sys.executable, "zreflect/facts.py", "--init"],
+                       cwd=d, env=base, capture_output=True, timeout=180)
+        # 走完 bootstrap 的量测与渲染（同 `_fresh_bootstraps`）：init 生成的
+        # STATE.md 块是空的，不跑这两步 --check 会报 block_stale —— 那是
+        # 夹具没走完流程，不是被测行为。
+        env_run = _env_from_envfile(d, base)
+        for argv in ([sys.executable, "zreflect/facts.py", "--accept-changes"],
+                     [sys.executable, "zreflect/facts.py", "--render-doc"]):
+            subprocess.run(argv, cwd=d, env=env_run, capture_output=True,
+                           timeout=180)
+        os.remove(os.path.join(d, "PRINCIPLES.md"))
+        env_opt = dict(base)
+        env_opt["REFLECT_NO_PRINCIPLES"] = "1"
+        p = subprocess.run([sys.executable, "zreflect/facts.py", "--check"],
+                           cwd=d, env=env_opt, capture_output=True, text=True,
+                           timeout=180, encoding="utf-8", errors="replace")
+        return p.returncode == 0 and "PRINCIPLES" not in (p.stdout + p.stderr)
+    except Exception:                                    # noqa: BLE001
+        return False
+    finally:
+        shutil.rmtree(d, True)
+
+
 def _fresh_bootstraps():
     """全新仓：`--init` → measure → 两次 render → `registry --run commit` 全绿。
 
@@ -1415,12 +1518,7 @@ def _fresh_bootstraps():
     try:
         subprocess.run(["git", "init", "-q", d], check=True,
                        capture_output=True)
-        for sub in ("zreflect", "reflect-hooks"):
-            shutil.copytree(os.path.join(gate.tool_repo(), sub),
-                            os.path.join(d, sub))
-        ruff_conf = os.path.join(gate.tool_repo(), "ruff.toml")
-        if os.path.isfile(ruff_conf):
-            shutil.copy(ruff_conf, d)
+        _copy_suite_into(d)
         # ⚠️ 必须连 `GATE_REPO` 一起清：`harness` 跑自证时把它设成**本仓**，
         # 而这里的夹具是另一个仓 —— 留着它，子进程会回头检查本仓。
         base = {k: v for k, v in os.environ.items()

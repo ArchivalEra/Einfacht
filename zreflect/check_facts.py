@@ -80,6 +80,10 @@ _SHAPE_PATTERNS = (
     r"\d+%",                           # 百分比
     r"\d+[KMG]i?B",                    # 容量 74MB / 32MiB
     r"[\w./-]+/\d+",                  # 路径段 /113/
+    # 千分位（#27①）：`6,757,104` 是**一个数**。没有这条时它被切成
+    # 6 / 757 / 104 三个假 token，后两个被当「无出处裸数字」报出来 ——
+    # 报出的数在原文里根本不存在，排查时对不上文档（下游实测）。
+    r"\d{1,3}(,\d{3})+",
 )
 
 
@@ -405,6 +409,21 @@ def _cases_misc(fx):
     ("★ facts.bare_number_outside_fence",
      lambda: codes(LED, "```\n4752\n```\nspeed is 4752 times\n"
                     + render_block(LED)) == ["facts.copied_value"]),
+    # 千分位（#27①）：`6,757,104` 是**一个数** —— 不许被切成 6/757/104
+    # 三个假 token（切出来的 757 在原文里根本不存在，排查对不上文档）。
+    # 正常不报（有 [[py_lines]] 引用）+ 假阳性必须红（去掉引用后仍不报
+    # 千分位本身，但会报同段其它裸数 —— 所以这里只断言「千分位数不出现」）。
+    ("★ facts.thousands_separator_is_one_number",
+     # 千分位（#27①）：`6,757,104` 是**一个数**，整段被形状白名单剥掉 ——
+     # 不许切成 6/757/104 三个假 token（切出来的 757 在原文里不存在）。
+     # 正向：千分位行不出假 token；反向：同行真正的裸数（99887766）必须报，
+     # 且只报它 —— 证明剥的是「整个千分位数」而不是「把数切碎了放行」。
+     lambda: problems(LED, "release 6,757,104 B\n" + render_block(LED)) == []
+     and codes(LED, "release 6,757,104 B and 99887766 measured\n"
+               + render_block(LED)) == ["facts.bare_number_unaccounted"]
+     and all("757" not in str(p) and "104" not in str(p)
+             for p in problems(LED, "release 6,757,104 B and 99887766 measured\n"
+                               + render_block(LED)))),
     ]
 
 
