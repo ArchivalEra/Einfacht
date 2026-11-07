@@ -280,8 +280,11 @@ def _emit_is_single_row(kind, body):
 def _packs_have_no_forgery():
     """**真包**逐值逐行过一遍宽表（不是夹具）—— 修复前这里对 `"x\\nOFF: y"` 是绿的。"""
     import i18n  # noqa: PLC0415
+    import knobs  # noqa: PLC0415
     bad = []
-    for lang in ("zh", "en", "de"):
+    # **发现式**（`knobs.installed_langs()`），不是手写 ("zh","en","de") ——
+    # 手写名录会让新装的语言包被静默跳过（C4：手写名录一定会漂）。
+    for lang in sorted(knobs.installed_langs()):
         try:
             table = i18n.load_pack(lang)
         except Exception as e:                           # noqa: BLE001

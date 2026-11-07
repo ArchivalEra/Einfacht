@@ -37,6 +37,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate  # noqa: E402
+import knobs  # noqa: E402
 import machine  # noqa: E402
 from gate import (  # noqa: E402
     fatal,
@@ -49,7 +50,8 @@ from gate import (  # noqa: E402
 )
 from i18n import M  # noqa: E402
 
-DEFAULT_SPEC = "upstream-lock.json"
+# 从旋钮登记表派生（唯一产地）—— 手写字面量会与它漂（本仓最贵的一类债）。
+DEFAULT_SPEC = knobs.REGISTRY["REFLECT_LOCKS"][1]
 
 
 def resolve_spec(argv, knob=""):
