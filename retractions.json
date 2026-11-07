@@ -123,6 +123,27 @@
       "why": "不能。`_question_status` 用 `ln.split(\":\", 1)[1]` 取 `**Status:** resolved` 的值，而冒号在**那对星号中间** —— 切出来是 `\"** resolved\"`，永远不等于 `resolved`。于是结案的悬案被永久报成待办，每轮提示去查一件已经查完的事。同一个坑 `check_questions.field` 早就填过（它的 docstring 专门写了这件事），`next.py` 是第二份自己写了一遍的判据。",
       "evidence": "python3 zreflect/next.py --selftest（★ next.resolved_question_is_dropped：一个结案 + 一个没结案的夹具，只有后者该出现）",
       "fixed_in": "next._question_status 转调 check_questions.field（唯一产地）"
+    },
+    {
+      "id": "R-018",
+      "text": "`raise SystemExit(<消息>)` 是退 2 的 FATAL",
+      "why": "退 **1**。`SystemExit(str)` 是 Python 的「打印并退 1」约定 —— 于是打出 `FATAL:` 三个字母、退出码却是 1，`registry._record` 按 rc 分类就把它归成「判据红 / 代码问题」，而真相是「配置 / 输入形状坏」。四条 FATAL 路径全错（require_nonempty / selftest 空用例 / ledger._require_pairs / collect.parse_prev_values）。",
+      "evidence": "python3 zreflect/criteria.py --selftest（★ registry.system_exit_is_int + 全仓 AST 扫描）",
+      "fixed_in": "gate.fatal_exit(msg)（唯一产地，SystemExit(2)）"
+    },
+    {
+      "id": "R-019",
+      "text": "`REFLECT_DOCS` 未设时 stale / retraction 扫全部六份活文档",
+      "why": "五份。两道闸门各手抄一份五份的字面量，登记表是六份 —— `PRINCIPLES.md`（规矩的唯一产地）从来不在它们的扫描面里，写在原则文档里的翻案文本与陈旧断言永远不会被看到。",
+      "evidence": "python3 zreflect/knobs.py --selftest（★ knobs.docs_names_follow_registry：从两道闸门的消费端读）",
+      "fixed_in": "knobs.docs_names()（登记表唯一产地）+ check_stale.scanned_docs() / check_retractions.scanned_docs()"
+    },
+    {
+      "id": "R-020",
+      "text": "`REFLECT_QUESTIONS=`（空串）等于没配",
+      "why": "对 `check_questions` 不成立：它不 strip，空串被 `os.path.join(仓根, \"\")` 解析成**仓根**，把 STATE.md / README.md / AGENTS.md 全当悬案收进来，报一堆 missing_status 假问题。同一个值在 facts / next 侧会 strip —— 三份判据、一份错。",
+      "evidence": "REFLECT_QUESTIONS= python3 zreflect/check_questions.py（修复前报 8+ 条假问题）",
+      "fixed_in": "knobs.questions_path()（唯一产地，strip + 回落登记表）"
     }
   ]
 }

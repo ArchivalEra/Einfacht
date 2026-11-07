@@ -192,6 +192,46 @@ def readme_names():
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
+def docs_names():
+    """活状态文档名单（`REFLECT_DOCS`，默认取 `REGISTRY` 里登记的那条）。
+
+    ⚠️ 与 `readme_names()` 同一个病、且**已经漂了**：`check_stale` 与
+    `check_retractions` 各写了一份**五份**的字面量默认值，而登记表里是
+    **六份**（多 `PRINCIPLES.md`）。实测：未设旋钮时两道闸门的 `DOCS`
+    都不含 `PRINCIPLES.md` —— 于是「规矩的唯一产地」从来不在它们的扫描面
+    里，写在原则文档里的翻案文本与陈旧断言永远不会被这两道闸门看到。
+
+    「必须一致的两份」的处置是一处产地，不是两份都改对。
+    """
+    raw = os.environ.get("REFLECT_DOCS", "").strip()
+    if not raw:
+        raw = REGISTRY["REFLECT_DOCS"][1]         # 登记表里的默认值
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def questions_dir(repo_root=None):
+    """悬案目录名（`REFLECT_QUESTIONS`，默认取登记表里的 `questions`）。
+
+    ⚠️ **必须 `.strip()`**：`REFLECT_QUESTIONS=` （设成空串）是「没配」的
+    常见形态 —— git hooks 里 `export X=$MAYBE_UNSET` 就会这样。此前
+    `check_questions.collect` 用 `os.environ.get(...)` 不 strip，空串会被
+    `os.path.join(仓根, "")` 解析成**仓根本身**，于是把 `STATE.md` /
+    `README.md` / `AGENTS.md` 全当悬案收进来，报一堆
+    `questions.missing_status` 假问题（实测）。
+
+    同一个值另外两处（`facts._init_questions_dir` / `next._open_question_names`）
+    早就会 strip —— 三份判据、一份错。
+    """
+    raw = os.environ.get("REFLECT_QUESTIONS", "").strip()
+    return raw or REGISTRY["REFLECT_QUESTIONS"][1]
+
+
+def questions_path(repo_root=None):
+    """悬案目录的**绝对路径**（被检查仓相对）。"""
+    root = repo_root or gate.GATE_REPO
+    return os.path.join(root, questions_dir())
+
+
 def _text_of(name, files=None):
     """取某个文件的文本。返回 `None` = 没有 / 读不到（**不是空串**）。
 
@@ -1057,7 +1097,56 @@ def _cases_registry(fx):
     ("★ knobs.discovery_planted_can_red", lambda: _planted_red_when_blind()),
     # **死默认值**：定义了 `DEFAULT_*` 却从不使用 —— 「声明了但不生效」
     ("★ knobs.dead_default", lambda: _dead_default_ok()),
+    # **名单旋钮的默认值只有一个产地**：`docs_names()` 必须与 `REGISTRY` 一致。
+    # ⚠️ 此前 `check_stale` 与 `check_retractions` 各手抄一份五份的默认值，
+    # 而登记表是六份 —— `PRINCIPLES.md` 从来不在它们的扫描面里（实测）。
+    ("★ knobs.docs_names_follow_registry", lambda: _docs_names_follows()),
     ]
+
+
+def _docs_names_follows():
+    """**两道扫描闸门的默认面必须等于登记表** —— 不是「函数返回登记表」。
+
+    ⚠️ 第一版写成 `docs_names() == REGISTRY["REFLECT_DOCS"]`，是**循环论证**
+    （函数自己就读 REGISTRY，两边一起变，改坏了也恒真 —— 实测：把旧的五份
+    默认值塞回 REGISTRY，这条照样绿）。恒真的判据比没有更坏。
+
+    真判据是**消费端**：`check_stale` / `check_retractions` 在**未设旋钮**
+    时实际扫哪些文件。它们曾经各手抄一份五份的字面量，登记表是六份 ——
+    只有从消费端读，才看得见那个差。
+    """
+    import os  # noqa: PLC0415
+    registered = [s.strip() for s in REGISTRY["REFLECT_DOCS"][1].split(",")
+                  if s.strip()]
+    prev = os.environ.get("REFLECT_DOCS")
+    try:
+        os.environ.pop("REFLECT_DOCS", None)
+        scanned = _docs_scanned_by_gates()
+        if scanned != registered:
+            return False
+        # 旋钮设了就**不许**回落登记表（否则用户改不动，旋钮是死的）
+        os.environ["REFLECT_DOCS"] = "only.md"
+        return _docs_scanned_by_gates() == ["only.md"]
+    finally:
+        if prev is None:
+            os.environ.pop("REFLECT_DOCS", None)
+        else:
+            os.environ["REFLECT_DOCS"] = prev
+
+
+def _docs_scanned_by_gates():
+    """两道闸门在**当前环境**下要扫的文档名单（消费端，唯一真相）。
+
+    调的是**闸门自己的入口**，不是重新读一遍登记表 —— 这才看得见
+    「闸门抄了一份不一样的字面量」那个差。
+    """
+    import check_retractions  # noqa: PLC0415
+    import check_stale  # noqa: PLC0415
+    # `check_stale.scanned_docs()` 返回的是**已读到的文档**（名字→正文的
+    # dict，读不到的会跳过），所以取键；`check_retractions` 那份返回名单。
+    stale = list(check_stale.scanned_docs())
+    retr = list(check_retractions.scanned_docs())
+    return stale if stale == retr else []          # 两侧不一致 ⇒ 空（必红）
 
 
 def _cases():

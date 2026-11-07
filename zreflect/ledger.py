@@ -14,7 +14,8 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from gate import (
-    machine,  # noqa: E402
+    fatal_exit,  # noqa: E402
+    machine,
     module_meta,
 )
 from i18n import M
@@ -63,7 +64,6 @@ def load_or_fatal(path, name=None):
     """
     import sys  # noqa: PLC0415
 
-    from gate import machine  # noqa: PLC0415
     from i18n import M  # noqa: PLC0415
     try:
         return load(path)
@@ -175,8 +175,7 @@ def _require_pairs(*pairs):
     """
     for a, b, name in pairs:
         if (a is None) != (b is None):
-            raise SystemExit(
-                machine().emit("fatal", M("ledger.shape_incomplete", name=name)))
+            fatal_exit(M("ledger.shape_incomplete", name=name))
 
 
 def _fill_optional(d, note, replay, witness, witness_expect,

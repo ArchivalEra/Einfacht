@@ -268,6 +268,66 @@ def _subprocess_encoding_problems(name, src):
     return out
 
 
+def fatal_exit_problems(repo_root=None):
+    """**`SystemExit` 只许带整数** —— rc 契约的唯一机械守卫。
+
+    `SystemExit(code)` 的语义按 `code` 的类型分叉：
+      · `int`  ⇒ 退出码就是它（契约：0 绿 / 1 判据红 / 2 配置坏）；
+      · `str`  ⇒ **打印并退 1**（Python 的约定），于是 `FATAL:` 的 rc 变成 1；
+      · `None` ⇒ 退 0 —— 一条「配置坏」的退出，却报成绿。
+
+    本仓四条 FATAL 路径都是 `raise SystemExit(machine().emit("fatal", …))`
+    （emit 返回 str）⇒ **全报成 rc=1**。调用方 `registry._record` 按 rc 分类，
+    于是「配置事故」被归进「判据红」，修法指向错误的文件。
+
+    「只写对一处」不够 —— 这是**形状**判据，所以扫全仓：套件里任何
+    `SystemExit(<表达式>)` 的实参都必须是整数常量，或者一个**看起来返回
+    整数**的调用（`fatal_exit` 是唯一允许的那个）。AST 级，不看运行。
+    """
+    import ast  # noqa: PLC0415
+    import os  # noqa: PLC0415
+    root = repo_root or gate.GATE_REPO
+
+    out = []
+    for sub in ("zreflect", "reflect-hooks"):
+        base = os.path.join(root, sub)
+        if not os.path.isdir(base):
+            continue
+        for rel, src in gate.py_sources(base):
+            try:
+                tree = ast.parse(src)
+            except SyntaxError:
+                continue
+            name = sub + "/" + rel.replace(os.sep, "/")
+            out.extend(M("registry.system_exit_not_int", file=name,
+                         line=node.lineno)
+                       for node in _non_int_exits(tree))
+    return out
+
+
+def _non_int_exits(tree):
+    """树里所有 `raise SystemExit(<非整数常量>)` 的节点（含无参形式）。"""
+    import ast  # noqa: PLC0415
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Raise) or node.exc is None:
+            continue
+        call = node.exc
+        if not (isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == "SystemExit"):
+            continue
+        if not call.args:
+            found.append(node)              # `SystemExit()` ⇒ 退 0，也是坏的
+            continue
+        arg = call.args[0]
+        if isinstance(arg, ast.Constant) and isinstance(
+                arg.value, int) and not isinstance(arg.value, bool):
+            continue                        # 整数常量：真正的退出码
+        found.append(node)
+    return found
+
+
 def suite_scope_problems(repo_root=None):
     """**套件闸门只审套件自己的代码** —— 接进真实项目的可行性守卫。
 
@@ -859,6 +919,35 @@ def _unexpected_shell_case():
         shutil.rmtree(d, True)
 
 
+def _system_exit_int_case():
+    """三种 `SystemExit` 形状各判一次：只有整数常量该放过。
+
+    ⚠️ **三种都要测**，因为它们的失败方式不同、后果也不同：
+      · `SystemExit("msg")` ⇒ 退 **1**（FATAL 被当判据红）
+      · `SystemExit()`      ⇒ 退 **0**（FATAL 被当成绿 —— 最坏的一种）
+      · `SystemExit(2)`     ⇒ 退 2（唯一正确的「配置坏」）
+    """
+    import os  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        suite = os.path.join(d, "zreflect")
+        os.makedirs(suite)
+        probe = os.path.join(suite, "probe.py")
+
+        def count(body):
+            with open(probe, "w", encoding="utf-8") as fh:
+                fh.write("def f():\n" + body)
+            return len(fatal_exit_problems(repo_root=d))
+
+        return (count('    raise SystemExit("msg")\n') == 1
+                and count("    raise SystemExit()\n") == 1
+                and count("    raise SystemExit(2)\n") == 0)
+    finally:
+        shutil.rmtree(d, True)
+
+
 def _undeclared_suite_file_case():
     """套件目录里一个**没有声明行**的 `.py` ⇒ 必须报。
 
@@ -1000,12 +1089,22 @@ def _dependency_coverage_ok():
 
 
 def _selftest_refuses_empty():
-    """`gate.selftest(name, [])` 必须 SystemExit（0/0 洞不许绿着退场）。"""
+    """`gate.selftest(name, [])` 必须 SystemExit（0/0 洞不许绿着退场），**且退 2**。
+
+    ⚠️ 只断言「抛了 SystemExit」不够：`raise SystemExit("一段字符串")` 也是
+    SystemExit，但 Python 的约定是**打印并退 1** —— 于是打出 `FATAL:` 却报
+    rc=1，调用方按 rc 分类就把它归成「判据红 / 代码有问题」，而真相是
+    「配置 / 输入形状坏」。实测：四份 `SystemExit(machine().emit("fatal", …))`
+    全是这个形状（`require_nonempty` / `selftest` / `ledger._require_pairs` /
+    `collect.parse_prev_values`），全部把 FATAL 报成了 rc=1。
+
+    所以这条同时钉 rc == 2 —— 报了什么不算数，退出码才算。
+    """
     try:
         gate.selftest("probe", [])
         return False                    # 没拒 ⇒ 这条红
-    except SystemExit:
-        return True
+    except SystemExit as e:
+        return e.code == 2
 
 
 
@@ -1261,6 +1360,9 @@ def _cases_self_checks():
         # **套件文件必须有声明**（没声明的会被当成使用方代码，闸门就不再审它）
         ("★ registry.suite_file_without_declaration",
          lambda: _undeclared_suite_file_case()),
+        # **FATAL 必须退 2**（`SystemExit(str)` 退 1、`SystemExit()` 退 0 ——
+        # 四条 FATAL 路径曾全部报成 rc=1，配置事故被归成代码问题）。
+        ("★ registry.system_exit_is_int", lambda: _system_exit_int_case()),
         ("★ registry.subprocess_without_encoding_detected",
          lambda: [p.code for p in _subprocess_encoding_problems(
              "x.py", 'import subprocess\n'

@@ -48,6 +48,7 @@
 import re
 
 from gate import (  # noqa: F401  (re-export 便利)
+    fatal_exit,
     machine,  # noqa: E402
     module_meta,
     repo,
@@ -84,11 +85,9 @@ def parse_prev_values(doc_text, row_pattern, group_names):
         for name in group_names:
             try:
                 rec[name] = m.group(name)
-            except IndexError as error:
+            except IndexError:
                 # 未命名分组 = 配置错，必须响，不许静默拿错值。
-                raise SystemExit(
-                    machine().emit("fatal", M("collect.regex_missing_group", name=name))
-                ) from error
+                fatal_exit(M("collect.regex_missing_group", name=name))
         out[key] = rec
     return out
 

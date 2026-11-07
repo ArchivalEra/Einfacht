@@ -26,5 +26,6 @@
  "registry.undeclared_module": "diese .py-Dateien sind weder Tore (keine GATE-Deklaration) noch deklarierte Plattformmodule (kein MODULE = module_meta(…)) — ein Plattformmodul muss sich selbst deklarieren, auch mit selftest=False (sage klar, dass es keinen Selbsttest braucht): %(files)s",
  "registry.unexpected_shell": "nicht registrierte Shell-Datei in der Suite: `%(file)s` — Ziel Volle-Python: Shell ist eine Ausnahme; jede muss in `ALLOWED_SHELL` in `zreflect/criteria.py` stehen (mit Begründung). **Die .sh-Dateien Ihres eigenen Repos fallen nicht darunter**",
  "registry.unknown_phase": "`%(file)s` deklariert runs_at=%(runs_at)r, was keine bekannte Phase ist (%(phases)s) — die Frequenz ist ein Deklarationsfeld; ein schlechter Wert lässt die Ausführungsoberfläche es überspringen",
- "registry.usage": "Aufruf: registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]"
+ "registry.usage": "Aufruf: registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]",
+ "registry.system_exit_not_int": "`raise SystemExit(...)` in `%(file)s:%(line)d` bekommt kein int — `SystemExit(str)` endet mit **1**, `SystemExit()` mit **0**; beides bricht den rc-Vertrag (0 grün / 1 Kriterium rot / 2 Umgebung defekt). `gate.fatal_exit(msg)` nutzen"
 }

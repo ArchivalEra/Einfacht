@@ -23,6 +23,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate  # noqa: E402
+import knobs  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta  # noqa: E402
 from i18n import M  # noqa: E402
 
@@ -126,8 +127,12 @@ def problems(files, exists=None):
 
 
 def collect(d=None):
-    # 名字可配（issue #1 ②）：默认 questions/，可用 REFLECT_QUESTIONS 换
-    d = d or os.environ.get("REFLECT_QUESTIONS", "questions")
+    # 名字可配（issue #1 ②）：默认 questions/，可用 REFLECT_QUESTIONS 换。
+    # ⚠️ 取值走 `knobs.questions_dir()`（唯一产地，会 strip）—— 此前这里
+    # 不 strip，`REFLECT_QUESTIONS=`（空串 = 没配）会把**仓根**当悬案目录，
+    # 把 STATE.md / README.md 全收进来报假问题（实测）。
+    # 显式给 `d`（自证注入假目录名）⇒ 自己拼；否则走唯一产地。
+    d = d or knobs.questions_dir()
     root = os.path.join(gate.GATE_REPO, d)
     files = {}
     if os.path.isdir(root):
