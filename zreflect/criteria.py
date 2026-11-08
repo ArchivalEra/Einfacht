@@ -1,32 +1,38 @@
 #!/usr/bin/env python3
-"""名录判据：**「哪些东西必须一致」的机器对账**（registry 判据的一半）。
+"""Roster criteria: **machine reconciliation of "which things must agree"** (half of
+registry's criteria).
 
-## 为什么从 registry.py 拆出来
+## Why this was split out of registry.py
 
-`registry.py` 曾在同时干四件事：发现（AST 读声明行）、**对账判据**、渲染机器块、
-CLI。判据占 1145 行 / 46 个函数 —— 是主体，且与「发现」的演进节奏完全不同：
+`registry.py` was doing four jobs at once: discovery (AST-reading declaration
+lines), **reconciliation criteria**, rendering machine blocks, and the CLI. The
+criteria were 1145 lines / 46 functions -- the bulk of it, and evolving on a rhythm
+completely different from discovery's:
 
-  · 发现面随闸门增加而变（`GATE = meta(…)` 的字段）；
-  · 判据面随「必须一致的两份」增加而变（C4 对账器）。
+  - the discovery surface changes as gates are added (fields of `GATE = meta(...)`);
+  - the criteria surface changes as "pairs that must agree" are added (C4
+    reconcilers).
 
-两者混在一个文件里，改任一侧都要在一个 1800 行的文件里找位置。拆开之后
-`registry.py` 只剩发现 + 渲染 + CLI，`criteria.py` 只有判据。
+Mixed in one file, changing either side meant finding a spot in an 1800-line file.
+After the split, `registry.py` keeps discovery + rendering + CLI; `criteria.py`
+holds only criteria.
 
-## 这里装的七条对账
+## The seven reconciliations housed here
 
-    dead_interface_problems      零消费者的公开函数（僵尸接口）
-    shell_surface_problems       .sh 白名单（全 Python 化的守卫）
-    trailing_newline_problems    文件必须以换行结尾（`py_lines` 两条量法的差）
-    off_reason_problems          会 off 的闸门必须声明理由（三向 + 真实性 + 落点）
-    reason_bases_agree           理由里的文件名落点与 env 插件口径一致（C4）
-    path_rule_problems           「工具的 zreflect/」只能一个产地（C4 ⑧）
-    dependency_coverage_problems 被消费的平台函数必须有断言（C4 ⑨）
+    dead_interface_problems      public functions with zero consumers (zombie interfaces)
+    shell_surface_problems       .sh whitelist (guard of the all-Python goal)
+    trailing_newline_problems    files must end with a newline (the gap between `py_lines`'s two measuring methods)
+    off_reason_problems          gates that can off must declare a reason (three-way + truthfulness + location)
+    reason_bases_agree           filename locations inside reasons match the env plugin's convention (C4)
+    path_rule_problems           "the tool's zreflect/" may have exactly one source (C4 ⑧)
+    dependency_coverage_problems consumed platform functions must have assertions (C4 ⑨)
 
-## 接口
+## Interface
 
-    problems(*args) → 各判据的聚合（由 `registry.problems()` 调用）
+    problems(*args) -> aggregation of the criteria (called by `registry.problems()`)
 
-每条都是**纯函数**（可注入 `sources=` / `zdir=`），自证在 `registry._cases_*`。
+Each is a **pure function** (injectable `sources=` / `zdir=`); selftests live in
+`registry._cases_*`.
 """
 from __future__ import annotations
 
@@ -36,42 +42,51 @@ import re
 
 import gate  # noqa: E402
 
-# 一个「看起来像文件名」的记号（`off_reason` 里提到 `foo.json` 这类）。
-# 从 `registry.py` 搬来时一起带过来 —— 它是 `off_reason_problems` 的判据数据。
+# A token that "looks like a filename" (`off_reason` mentioning `foo.json` and such).
+# Brought over from `registry.py` when it moved -- it is criterion data for
+# `off_reason_problems`.
 _FILE_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.[A-Za-z0-9]+")
 from i18n import M  # noqa: E402
 
-MUST_REASON_MIN = 8      # off 理由的最短字数（同 `PINNED:` 的纪律）
+MUST_REASON_MIN = 8      # minimum length of an off reason (same discipline as `PINNED:`)
 
 
-# 允许存在的 shell 文件（**有界白名单**）。全 Python 化的目标下，shell 是例外，
-# 每一个例外都要有理由；新长出来的（或没登记的）⇒ 报。
+# Shell files allowed to exist (**bounded whitelist**). Under the all-Python goal,
+# shell is the exception; every exception needs a reason. New arrivals (or
+# unregistered ones) => report.
 ALLOWED_SHELL = (
-    # 兼容薄壳：老仓的 `sh gates-selftest.sh` 仍有效（一行 exec、零文案）
+    # Compatibility shim: old repos' `sh gates-selftest.sh` keeps working (one exec
+    # line, zero prose)
     "gates-selftest.sh",
-    # 钩子 env 插件：**必须**是 shell（被 `source` 以 export 变量），文案已走 M()
+    # Hook env plugin: **must** be shell (sourced to export variables); its prose
+    # already goes through M()
     "reflect-hooks/einfacht-env.sh",
-    # 旧装法的两个钩子名（git 要求这两个名字，内容是一行 exec）
+    # The two hook names of the old install (git requires these names; content is a
+    # one-line exec)
     "reflect-hooks/pre-commit",
     "reflect-hooks/pre-push",
 )
 
 
-# 名字型旋钮的合法落点：仓根 + `reflect-hooks/`（后者优先）。
-# 与 `reflect-hooks/einfacht-env.sh` 同一口径（它先找钩子目录、再找仓根）。
+# Legal locations for name-type knobs: repo root + `reflect-hooks/` (the latter
+# wins). Same convention as `reflect-hooks/einfacht-env.sh` (it checks the hooks dir
+# first, then the repo root).
 _REASON_BASES = ("", "reflect-hooks")
 
 
 def _reason_files(reason, repo_root=None):
-    """`off_reason` 里提到的文件名 → [(名字, 该文件是否存在于**任一合法落点**)]。
+    """Filenames mentioned in an `off_reason` -> [(name, whether the file exists at
+    **any legal location**)].
 
-    只认「带扩展名的 token」（`ab.json` / `Einfacht.env` / `world.json`），
-    不认句子里的普通词 —— 否则「本仓不做 A/B 对照」会被切成假文件名。
+    Only "tokens with an extension" count (`ab.json` / `Einfacht.env` /
+    `world.json`), not ordinary words in the sentence -- otherwise "this repo does no
+    A/B comparison" would be sliced into fake filenames.
 
-    ⚠️ **两处都要查**：`Einfacht.env` 可以住在仓根**或** `reflect-hooks/`
-    （`einfacht-env.sh` 就是先看钩子目录、再看仓根的）。此前只查仓根 ⇒
-    载体真放进 `reflect-hooks/` 时判据漏判（实测：`off_reason_problems` 返回
-    `[]`，而那正是「理由已失效」的情形）。
+    ⚠️ **Both locations must be checked**: `Einfacht.env` may live at the repo root
+    **or** in `reflect-hooks/` (that is exactly `einfacht-env.sh`'s order: hooks dir
+    first, repo root second). Checking only the root => when a carrier genuinely sits
+    in `reflect-hooks/`, the criterion misses it (observed: `off_reason_problems`
+    returned `[]` in precisely the "reason has gone stale" case).
     """
     if not reason:
         return []
@@ -85,25 +100,33 @@ def _reason_files(reason, repo_root=None):
 
 
 def dead_interface_problems(zdir=None):
-    """**零消费者的公开函数** —— 「严查多余接口」的机器判据。
+    """**Public functions with zero consumers** -- the machine criterion behind
+    "strictly audit surplus interfaces".
 
-    为什么值得一条判据：手工枚举全仓公开函数、逐个 grep 调用点，能找出死接口
-    但很慢，且下次新增的没人查。本仓已有 `dependency_coverage_problems`
-    管「被消费但零断言」（哑火环节）；这条管**反方向**：定义了却没人用
-    （僵尸接口）。
+    Why it deserves a criterion: hand-enumerating every public function in the repo
+    and grepping call sites one by one finds dead interfaces but is slow, and
+    whatever gets added next goes unchecked. This repo already has
+    `dependency_coverage_problems` for "consumed but zero assertions" (the dead-link
+    problem); this one handles the **opposite direction**: defined but never used
+    (zombie interfaces).
 
-    判据（全发现式）：
-      · 平台模块（`zreflect/*.py`，非 `check_*`）里**不以 `_` 开头**的顶层函数；
-      · 该名字在**其它任何 .py** 里出现（`mod.fn` / `from mod import fn` / 直接调用）；
-      · 也允许它被**自己的 `_cases()`** 用到（那是内部缝 / 自证专用助手）；
-      · 三者都没有 ⇒ 报。
+    Criterion (fully discovery-based):
+      - top-level functions **not starting with `_`** in platform modules
+        (`zreflect/*.py`, non-`check_*`);
+      - the name appears in **any other .py** (`mod.fn` / `from mod import fn` /
+        direct call);
+      - it may also be used by **its own `_cases()`** (that is the internal seam /
+        selftest-only helper);
+      - none of the three => report.
 
-    诚实边界：
-      · 只看 `.py`。shell 脚本调 Python 函数不算（全 Python 化之后没有了）。
-      · 不区分「本该公开」与「本该私有」—— 零消费就是零消费，改名或删掉都对。
-      · 豁免：`run` / `main` / `problems` 这类**契约名**（每个闸门都必须有，
-        由 `main_selftest_or` 或 `__main__` 调用 —— 它们在**同文件**里被用，
-        所以本来就不会被报）。
+    Honest boundaries:
+      - Only `.py` is looked at. Shell scripts calling Python functions don't count
+        (gone after the all-Python move).
+      - No distinction between "should be public" and "should be private" -- zero
+        consumption is zero consumption; renaming or deleting are both correct.
+      - Exempt: **contract names** like `run` / `main` / `problems` (every gate must
+        have them, invoked by `main_selftest_or` or `__main__` -- they are used
+        **in the same file**, so they would never be reported anyway).
     """
     cand, own_text = _public_functions(zdir)
     corpus = _repo_corpus(zdir)
@@ -115,10 +138,12 @@ def dead_interface_problems(zdir=None):
 
 
 def _public_functions(zdir):
-    """① 平台模块（`zreflect/*.py`，非 `check_*`）里**不以 `_` 开头**的顶层函数。
+    """(1) Top-level functions **not starting with `_`** in platform modules
+    (`zreflect/*.py`, non-`check_*`).
 
-    返回 `(cand, own_text)`：`cand` = {函数名: 定义它的模块文件名}，
-    `own_text` = {模块文件名: 全文}（同文件引用计数要用）。
+    Returns `(cand, own_text)`: `cand` = {function name: module filename defining
+    it}, `own_text` = {module filename: full text} (needed for same-file reference
+    counting).
     """
     import ast  # noqa: PLC0415
     import os  # noqa: PLC0415
@@ -141,11 +166,13 @@ def _public_functions(zdir):
 
 
 def _repo_corpus(zdir):
-    """② 全仓（zreflect / reflect-hooks）的引用文本，`[(文件名, 文本)]`。
+    """(2) Reference text for the whole repo (zreflect / reflect-hooks), as
+    `[(filename, text)]`.
 
-    ⚠️ 记**文件名**而不是文本：按字符串身份（`is`）跳过自身永远失效
-    （Python 不保证两个相等字符串是同一对象）—— 实测：植入一个零消费函数
-    判据仍然报 clean。按名字排除才可靠。
+    ⚠️ Record the **filename**, not the text: skipping self by string identity
+    (`is`) never works (Python does not guarantee two equal strings are the same
+    object) -- observed: with a zero-consumer function planted, the criterion still
+    reported clean. Excluding by name is the reliable way.
     """
     import os  # noqa: PLC0415
     d = zdir if zdir is not None else gate.zdir()
@@ -166,8 +193,9 @@ def _repo_corpus(zdir):
 
 
 def _consumed(fn, mod, own_text, corpus):
-    """这个公开函数有没有消费者：别的文件引用过，**或**同文件里不止一次出现
-    （定义算一次 ⇒ 被自己 `_cases()` 用也算）。"""
+    """Does this public function have a consumer: referenced from another file, **or**
+    appearing more than once in its own file (the definition counts once => use by
+    its own `_cases()` counts too)."""
     own = len(re.findall(r"\b%s\b" % re.escape(fn), own_text.get(mod, "")))
     if own > 1:
         return True
@@ -176,21 +204,25 @@ def _consumed(fn, mod, own_text, corpus):
 
 
 def encoding_surface_problems(repo_root=None):
-    """**文本 `open()` 必须显式 `encoding=`** —— 跨平台可读性的守卫。
+    """**Text-mode `open()` must pass an explicit `encoding=`** -- the cross-platform
+    readability guard.
 
-    为什么值得判据：Windows 的默认编码是 cp1252（代码页），而本仓的文件
-    全是 UTF-8。本轮 CI 的 Windows 腿被这一条绊住**四次**，每次形式不同：
+    Why it deserves a criterion: Windows' default encoding is cp1252 (the code page),
+    while every file in this repo is UTF-8. This round's CI Windows leg tripped on
+    this **four times**, each in a different form:
 
-      · `registry --gates` 打印中文闸门名 → `UnicodeEncodeError`
-      · `subprocess.run(text=True)` 解码子进程输出 → 读线程崩，`stdout=None`
-      · 台账 `cmd` 里的 `open('FACTS.json')` → `UnicodeDecodeError`
-      · 各处 `open(..., "w")` 写中文夹具
+      - `registry --gates` printing Chinese gate names -> `UnicodeEncodeError`
+      - `subprocess.run(text=True)` decoding child output -> reader thread crashed,
+        `stdout=None`
+      - `open('FACTS.json')` in a ledger `cmd` -> `UnicodeDecodeError`
+      - assorted `open(..., "w")` writing Chinese fixtures
 
-    判据（AST）：文本模式（无 `b`）的 `open()` 必须带 `encoding=` 关键字。
-    二进制模式豁免（`rb` / `wb` 不做编码转换）。
+    Criterion (AST): a text-mode (no `b`) `open()` must carry the `encoding=`
+    keyword. Binary mode is exempt (`rb` / `wb` do no encoding conversion).
 
-    诚实边界：它只看**字面量调用**。`pathlib.Path.read_text()` 之类不在面内
-    （本仓不用）；动态构造的调用也看不见。
+    Honest boundary: it only sees **literal calls**. `pathlib.Path.read_text()` and
+    friends are out of scope (this repo doesn't use them); dynamically constructed
+    calls are invisible too.
     """
     import os  # noqa: PLC0415
     root = repo_root or gate.GATE_REPO
@@ -204,7 +236,7 @@ def encoding_surface_problems(repo_root=None):
 
 
 def _matching_paren(text, open_idx):
-    """`text[open_idx] == "("` 时返回配对的 `)` 下标；配不平 ⇒ None。"""
+    """When `text[open_idx] == "("`, return the index of the matching `)`; unbalanced => None."""
     depth = 0
     for i in range(open_idx, len(text)):
         if text[i] == "(":
@@ -217,22 +249,28 @@ def _matching_paren(text, open_idx):
 
 
 def subprocess_encoding_problems(repo_root=None):
-    """**`subprocess.run(text=True)` 必须显式 `encoding=`** —— 跨平台守卫。
+    """**`subprocess.run(text=True)` must pass an explicit `encoding=`** --
+    cross-platform guard.
 
-    为什么值得判据：这是本仓**踩了五次**的同一个坑，每次形式不同：
+    Why it deserves a criterion: the same pit this repo **fell into five times**,
+    each in a different form:
 
-      1. `registry --gates` 打印中文 → `UnicodeEncodeError`
-      2. `runner.run_cmd` 解码子进程输出 → **读线程崩**，`stdout=None`
-      3. 台账 `cmd` 里的 `open()` → `UnicodeDecodeError`
-      4. 各处 `open(..., "w")` 写中文夹具
-      5. `harness._run` 解码闸门自证输出 → 摘要行「消失」
-         （CI 的 Windows 腿报「缺机器摘要行」，而摘要在本地明明存在）
+      1. `registry --gates` printing Chinese -> `UnicodeEncodeError`
+      2. `runner.run_cmd` decoding child output -> **reader thread crash**,
+         `stdout=None`
+      3. `open()` in a ledger `cmd` -> `UnicodeDecodeError`
+      4. assorted `open(..., "w")` writing Chinese fixtures
+      5. `harness._run` decoding gate selftest output -> the summary line
+         "vanished" (CI's Windows leg reported "missing machine summary line" while
+         the summary plainly existed locally)
 
-    `text=True` 用 `locale.getpreferredencoding()` 解码，Windows 默认 cp1252；
-    子进程一旦输出非 cp1252 字节，`subprocess` 的**读线程**（主线程之外）
-    抛 `UnicodeDecodeError`，主线程拿到 `stdout=None` —— 症状离真因很远。
+    `text=True` decodes with `locale.getpreferredencoding()`, which is cp1252 on
+    Windows by default; once the child outputs non-cp1252 bytes, `subprocess`'s
+    **reader thread** (off the main thread) raises `UnicodeDecodeError` and the main
+    thread gets `stdout=None` -- the symptom is far from the true cause.
 
-    判据（AST）：`subprocess.run(...)` 带 `text=True` 时必须也带 `encoding=`。
+    Criterion (AST): `subprocess.run(...)` with `text=True` must also carry
+    `encoding=`.
     """
     import os  # noqa: PLC0415
     root = repo_root or gate.GATE_REPO
@@ -247,7 +285,7 @@ def subprocess_encoding_problems(repo_root=None):
 
 
 def _subprocess_encoding_problems(name, src):
-    """一个文件里 `subprocess.run(text=True)` 缺 `encoding` 的地方。"""
+    """Spots in one file where `subprocess.run(text=True)` lacks `encoding`."""
     import ast  # noqa: PLC0415
     try:
         tree = ast.parse(src)
@@ -269,20 +307,26 @@ def _subprocess_encoding_problems(name, src):
 
 
 def fatal_exit_problems(repo_root=None):
-    """**`SystemExit` 只许带整数** —— rc 契约的唯一机械守卫。
+    """**`SystemExit` may only carry an integer** -- the sole mechanical guard of the
+    rc contract.
 
-    `SystemExit(code)` 的语义按 `code` 的类型分叉：
-      · `int`  ⇒ 退出码就是它（契约：0 绿 / 1 判据红 / 2 配置坏）；
-      · `str`  ⇒ **打印并退 1**（Python 的约定），于是 `FATAL:` 的 rc 变成 1；
-      · `None` ⇒ 退 0 —— 一条「配置坏」的退出，却报成绿。
+    `SystemExit(code)`'s semantics fork on `code`'s type:
+      - `int`  => the exit code is it (contract: 0 green / 1 criterion red / 2 broken
+        config);
+      - `str`  => **print and exit 1** (Python's convention), so a `FATAL:` lands
+        with rc 1;
+      - `None` => exit 0 -- a "broken config" exit reported as green.
 
-    本仓四条 FATAL 路径都是 `raise SystemExit(machine().emit("fatal", …))`
-    （emit 返回 str）⇒ **全报成 rc=1**。调用方 `registry._record` 按 rc 分类，
-    于是「配置事故」被归进「判据红」，修法指向错误的文件。
+    All four FATAL paths in this repo were
+    `raise SystemExit(machine().emit("fatal", ...))` (emit returns str) => **all
+    reported as rc=1**. The caller `registry._record` classifies by rc, so
+    "configuration accident" was filed under "criterion red", with the fix pointing
+    at the wrong file.
 
-    「只写对一处」不够 —— 这是**形状**判据，所以扫全仓：套件里任何
-    `SystemExit(<表达式>)` 的实参都必须是整数常量，或者一个**看起来返回
-    整数**的调用（`fatal_exit` 是唯一允许的那个）。AST 级，不看运行。
+    "Write it right in one place" is not enough -- this is a **shape** criterion, so
+    it scans the whole repo: every `SystemExit(<expression>)` in the suite must take
+    an integer constant, or a call that **looks like it returns an integer**
+    (`fatal_exit` is the one allowed). AST-level; no runtime involved.
     """
     import ast  # noqa: PLC0415
     import os  # noqa: PLC0415
@@ -306,7 +350,8 @@ def fatal_exit_problems(repo_root=None):
 
 
 def _non_int_exits(tree):
-    """树里所有 `raise SystemExit(<非整数常量>)` 的节点（含无参形式）。"""
+    """All `raise SystemExit(<non-integer constant>)` nodes in the tree (including the
+    no-argument form)."""
     import ast  # noqa: PLC0415
     found = []
     for node in ast.walk(tree):
@@ -318,30 +363,35 @@ def _non_int_exits(tree):
                 and call.func.id == "SystemExit"):
             continue
         if not call.args:
-            found.append(node)              # `SystemExit()` ⇒ 退 0，也是坏的
+            found.append(node)              # `SystemExit()` => exit 0, also broken
             continue
         arg = call.args[0]
         if isinstance(arg, ast.Constant) and isinstance(
                 arg.value, int) and not isinstance(arg.value, bool):
-            continue                        # 整数常量：真正的退出码
+            continue                        # integer constant: a real exit code
         found.append(node)
     return found
 
 
 def suite_scope_problems(repo_root=None):
-    """**套件闸门只审套件自己的代码** —— 接进真实项目的可行性守卫。
+    """**Suite gates audit only the suite's own code** -- the feasibility guard for
+    wiring into a real project.
 
-    为什么值得判据：`check_lint` / `check_i18n` / `check_snapshots` 此前
-    扫**整个仓**。一个真项目接入后 `registry --run commit` 报 149 条 ruff、
-    59 条 i18n、3 条 snapshot —— **全部指向那个项目自己的文件**。用户既修不完，
-    也不理解为什么别人的套件在挑他的代码。
+    Why it deserves a criterion: `check_lint` / `check_i18n` / `check_snapshots`
+    used to scan the **whole repo**. After one real project wired in,
+    `registry --run commit` reported 149 ruff findings, 59 i18n findings, 3 snapshot
+    findings -- **all pointing at that project's own files**. The user could neither
+    fix them all nor understand why someone else's suite was nitpicking their code.
 
-    「套件代码」的判据是**声明**（模块级 `MODULE = …` / `GATE = …`），
-    与 `registry.modules()` / `gates()` 同一口径（发现式，不手写清单）。
+    The criterion for "suite code" is the **declaration** (module-level `MODULE = ...`
+    / `GATE = ...`), the same convention as `registry.modules()` / `gates()`
+    (discovery-based, no hand-written rosters).
 
-    这条判据扫的是：套件目录里**没有声明**的 `.py`（用户放的数据模块）
-    不应被算进套件面；同时套件自己的每个 `.py` **必须**有声明（否则它
-    会静默落到使用方那一侧，闸门就不再审它 —— 那是把闸门关掉的新方法）。
+    What this criterion scans: `.py` files in the suite directories **without a
+    declaration** (data modules the user dropped in) must not be counted into the
+    suite surface; meanwhile every `.py` of the suite **must** carry a declaration
+    (otherwise it silently falls to the consumer's side and gates stop auditing it --
+    that is a new way to switch a gate off).
     """
     import os  # noqa: PLC0415
     root = repo_root or gate.GATE_REPO
@@ -353,7 +403,7 @@ def suite_scope_problems(repo_root=None):
         for rel, _src in gate.py_sources(base):
             name = rel.replace(os.sep, "/")
             if name.startswith("measure_"):
-                continue                # 使用方的数据模块（README 要求的命名）
+                continue                # the consumer's data module (naming the README requires)
             if not gate.declares_itself(os.path.join(base, rel)):
                 out.append(M("registry.suite_file_without_declaration",
                              file=sub + "/" + name))
@@ -361,14 +411,15 @@ def suite_scope_problems(repo_root=None):
 
 
 def _rule_cmd_encoding_problems():
-    """**规则 cmd 里的 `open(` 也要查**。
+    """**`open(` inside rule cmds is audited too**.
 
-    ⚠️ 这一段是漏检补丁：`doc.RULES` 的 `cmd` 是**字符串字面量**，不是真的
-    `open()` 调用 —— AST 扫描（`_encoding_problems`）看不见它。而它会被
-    `check_facts_replay` **逐字执行**，于是同一个 Windows 编码问题从
-    「代码里的 open」漏到了「台账里的 cmd」（实测：CI 的 Windows 腿连续
-    两轮都栽在 `principle.only_measured` 那条 cmd 上，而 encoding 判据当时
-    报 0 违规 —— **判据自己的盲区**）。
+    ⚠️ This block is a missed-detection patch: `doc.RULES`'s `cmd` is a **string
+    literal**, not a real `open()` call -- the AST scan (`_encoding_problems`)
+    cannot see it. Yet it gets **executed verbatim** by `check_facts_replay`, so the
+    same Windows encoding problem leaked from "open in code" into "cmd in the
+    ledger" (observed: CI's Windows leg stumbled on the `principle.only_measured`
+    cmd two rounds in a row while the encoding criterion reported 0 violations --
+    **the criterion's own blind spot**).
     """
     import re  # noqa: PLC0415
     out = []
@@ -378,10 +429,11 @@ def _rule_cmd_encoding_problems():
         return out
     for rule in getattr(doc, "RULES", ()):
         cmd = getattr(rule, "cmd", "") or ""
-        # ⚠️ 不能用 `open\([^)]*\)`：参数里常有 `os.path.join(a, b)`，内层
-        # `)` 会让正则提前截断，于是**看不到后面的 `encoding=`** ——
-        # 实测：`host_agnostic` 那条明明带了 encoding，却被误报。
-        # 改成「从 `open(` 起，配平括号取到对应的 `)`」。
+        # ⚠️ `open\([^)]*\)` won't do: arguments often contain
+        # `os.path.join(a, b)`, whose inner `)` truncates the regex early, so the
+        # trailing `encoding=` is **never seen** -- observed: the `host_agnostic`
+        # rule plainly carried an encoding and was still reported.
+        # Instead: "start at `open(`, balance parens to the matching `)`".
         for idx in (m.start() for m in re.finditer(r"\bopen\(", cmd)):
             end = _matching_paren(cmd, idx + 4)
             if end is None:
@@ -396,7 +448,7 @@ def _rule_cmd_encoding_problems():
 
 
 def _encoding_problems(name, src):
-    """一个文件的文本 `open()` 缺 `encoding` 的地方。"""
+    """Spots in one file where a text-mode `open()` lacks `encoding`."""
     import ast  # noqa: PLC0415
     try:
         tree = ast.parse(src)
@@ -413,31 +465,36 @@ def _encoding_problems(name, src):
         if len(node.args) > 1 and isinstance(node.args[1], ast.Constant):
             mode = str(node.args[1].value)
         if "b" in mode:
-            continue                        # 二进制：不做编码转换
+            continue                        # binary: no encoding conversion
         out.append(M("registry.open_without_encoding",
                      file=name, lineno=node.lineno, mode=mode))
     return out
 
 
 def shell_surface_problems(repo_root=None):
-    """**套件自己**的 `.sh` 只许出现在 `ALLOWED_SHELL` 里 —— 全 Python 化的守卫。
+    """The **suite's own** `.sh` files may only appear in `ALLOWED_SHELL` -- the guard
+    of the all-Python goal.
 
-    为什么值得判据：本轮之前有 4 个 shell（662 行、67 处 `echo` 中文），它们
-    整份绕过了零语言制度（`check_i18n` 是 AST 扫描器，只认 `.py`）。把它们搬进
-    Python 之后，若不设守卫，下次又会有人「顺手写个 .sh」—— 然后同样的事故
-    重演。白名单是**有界的**：每个例外都必须写在这里，且必须有理由。
+    Why it deserves a criterion: before this round there were 4 shells (662 lines,
+    67 `echo` lines of Chinese) that bypassed the no-language regime wholesale
+    (`check_i18n` is an AST scanner and only reads `.py`). Once they moved into
+    Python, without this guard someone would sooner or later "just jot down a .sh"
+    -- and the same incident would replay. The whitelist is **bounded**: every
+    exception must be written here and must carry a reason.
 
-    ⚠️ **只扫套件目录（`zreflect/` + `reflect-hooks/`），不扫使用方的仓。**
-    这条曾是把这个套件接进真实项目时**最致命**的阻塞（实测：一个只有
-    `build.sh` 的空仓，`--render-doc` 就 FATAL，`--check` 就 FATAL，
-    pre-commit 就红，而**没有任何旋钮能放行**）：
+    ⚠️ **Scans only the suite directories (`zreflect/` + `reflect-hooks/`), never the
+    consumer's repo.** This used to be the **most lethal** blocker when wiring the
+    suite into a real project (observed: an empty repo with only `build.sh` -- then
+    `--render-doc` FATALs, `--check` FATALs, pre-commit goes red, and **no knob can
+    let it through**):
 
         FATAL: registry reconciliation failed, refusing to render:
-          · unregistered shell file `build.sh` — full-Python goal …
+          - unregistered shell file `build.sh` -- full-Python goal ...
 
-    「全 Python 化」是**本仓对自己的纪律**，不是对所有使用方的要求 ——
-    要求别人的仓不许有 `deploy.sh` 是把内部偏好强加给用户。判据的扫描面
-    必须与它守的东西同域。
+    "All Python" is **this repo's discipline for itself**, not a requirement on every
+    consumer -- telling someone else's repo it may not have a `deploy.sh` imposes an
+    internal preference on the user. A criterion's scan surface must share a domain
+    with what it guards.
     """
     import os  # noqa: PLC0415
     root = repo_root or gate.GATE_REPO
@@ -451,13 +508,14 @@ def shell_surface_problems(repo_root=None):
 
 
 def _shell_files_of(base, prefix):
-    """`base` 下的 `.sh` 里**不在白名单**的那些。"""
+    """`.sh` files under `base` that are **not in the whitelist**."""
     import os  # noqa: PLC0415
     out = []
     for dirpath, _dirnames, filenames in os.walk(base):
-        # ⚠️ **不能写 `"/.git" in dirpath`**：Windows 的分隔符是 `\`，
-        # 那个判断永不成立 ⇒ `.git/hooks/` 里的十几个 sample `.sh` 全被当成
-        # 「未登记的 shell」（实测：CI 的 Windows 腿就是这么红的）。
+        # ⚠️ **Never write `"/.git" in dirpath`**: Windows' separator is `\`, so that
+        # test never fires => the dozen sample `.sh` files inside `.git/hooks/` all
+        # counted as "unregistered shell" (observed: exactly how CI's Windows leg
+        # went red).
         parts = dirpath.replace(os.sep, "/").split("/")
         if ".git" in parts or "node_modules" in parts:
             continue
@@ -465,9 +523,10 @@ def _shell_files_of(base, prefix):
             if not n.endswith(".sh"):
                 continue
             rel = os.path.relpath(os.path.join(dirpath, n), base)
-            # ⚠️ **`relpath` 在 Windows 上给反斜杠**，而 `ALLOWED_SHELL` 里写的
-            # 是 `/` —— 不归一化的话，白名单里的每一项都「不在名单里」
-            # （实测：CI 的 Windows 腿报 `unexpected_shell(file='reflect-hooks\\einfacht-env.sh')`）。
+            # ⚠️ **`relpath` yields backslashes on Windows**, while `ALLOWED_SHELL`
+            # is written with `/` -- without normalization every whitelist entry
+            # would be "not on the list" (observed: CI's Windows leg reported
+            # `unexpected_shell(file='reflect-hooks\\einfacht-env.sh')`).
             norm = (prefix + "/" + rel).replace(os.sep, "/")
             if norm not in ALLOWED_SHELL:
                 out.append(M("registry.unexpected_shell", file=norm))
@@ -475,16 +534,19 @@ def _shell_files_of(base, prefix):
 
 
 def trailing_newline_problems(zdir=None):
-    """`.py` 文件必须以换行结尾。
+    """`.py` files must end with a newline.
 
-    为什么值得一条判据：`py_lines` 这个事实有**两条**量法 —— `facts.measure()`
-    用 `open()` 逐行数（保留最后那个无换行的行），台账里的 `cmd` 用
-    `cat | wc -l`（只数换行符）。一个没有末尾换行的文件让两者差 1，
-    于是 `check_facts_replay` **永远红**，而红的原因与代码毫无关系。
-    实测踩了**四次**（每次都是新建文件时写入器没补末尾换行）。
+    Why it deserves a criterion: the `py_lines` fact has **two** measuring methods --
+    `facts.measure()` counts lines via `open()` (keeping a final line without a
+    newline), while the ledger's `cmd` uses `cat | wc -l` (counting newline
+    characters). A file without a trailing newline makes the two differ by 1, so
+    `check_facts_replay` goes **permanently red** for a reason unrelated to any code.
+    Tripped on **four times** (each time a writer forgot the trailing newline when
+    creating a file).
 
-    修的是根：文件该有末尾换行（POSIX 文本定义，也是 diff 工具的前提）。
-    判据报出来，人补一行即可。
+    The fix targets the root: files should have trailing newlines (the POSIX text
+    definition, and a prerequisite for diff tooling). The criterion reports it; a
+    human adds one line.
     """
     import os  # noqa: PLC0415
     base = zdir or gate.zdir()
@@ -501,7 +563,7 @@ def trailing_newline_problems(zdir=None):
             with open(p, "rb") as fh:
                 fh.seek(0, os.SEEK_END)
                 if fh.tell() == 0:
-                    continue                 # 空文件不在这条判据的射程内
+                    continue                 # empty files are out of this criterion's range
                 fh.seek(-1, os.SEEK_END)
                 last = fh.read(1)
         except OSError:
@@ -512,7 +574,8 @@ def trailing_newline_problems(zdir=None):
 
 
 def _source_of(rel, sources):
-    """读闸门源码；读不到 ⇒ `None`（**不是空串** —— 两种含义必须可区分）。"""
+    """Read a gate's source; unreadable => `None` (**not an empty string** -- the two
+    meanings must stay distinguishable)."""
     if sources is not None:
         return sources.get(rel)
     try:
@@ -523,7 +586,8 @@ def _source_of(rel, sources):
 
 
 def _calls_off(text):
-    """AST 找 `off(...)` 调用（排除定义处与注释）。读不到源码 ⇒ `None`。"""
+    """AST-locate `off(...)` calls (excluding the definition site and comments).
+    Unreadable source => `None`."""
     if text is None:
         return None
     try:
@@ -535,11 +599,14 @@ def _calls_off(text):
 
 
 def _reason_shape_problems(rel, reason, calls_off):
-    """三向：会 off 却没理由 / 理由太短 / 声明了理由却从不 off。
+    """Three-way: can off but no reason / reason too short / reason declared but off
+    never called.
 
-    ⚠️ **读不到源码（`calls_off is None`）⇒ 这一向整个跳过**：夹具仓里没有
-    该文件时把 `False` 当真会报一堆假的「理由白写」（实测：`GATE_REPO=$tmp
-    registry --gates` 报 8 条）。理由真实性不依赖源码，仍照常检查。
+    ⚠️ **Unreadable source (`calls_off is None`) => this direction is skipped
+    entirely**: treating `False` as truth when the fixture repo lacks the file
+    reports a pile of fake "reason written for nothing" (observed: `GATE_REPO=$tmp
+    registry --gates` reported 8). Reason truthfulness does not depend on source and
+    is still checked normally.
     """
     if calls_off is None:
         return []
@@ -554,28 +621,34 @@ def _reason_shape_problems(rel, reason, calls_off):
 
 
 def _reason_truth_problems(rel, reason):
-    """**理由真实性**：理由里点名「本仓没有 X.json」——那 X.json 若实际存在，
-    理由就已经失效（闸门早该启用而没启用）。第 17 轮补的对称判据：
-    第 12 轮只要求「必须有理由」，没要求「理由得是真的」。
+    """**Reason truthfulness**: the reason claims "this repo has no X.json" -- if
+    X.json actually exists, the reason has gone stale (the gate should have been
+    enabled long ago). The symmetric criterion added in round 17: round 12 only
+    demanded "a reason must exist", never "the reason must be true".
     """
     return [M("registry.off_reason_stale", file=rel, name=tok)
             for tok, exists in _reason_files(reason) if exists]
 
 
 def off_reason_problems(gs, sources=None):
-    """C4 对账⑥：**会 `off()` 的闸门必须声明它为何可以未启用**。
+    """C4 reconciliation (6): **a gate that can `off()` must declare why it may be
+    not-enabled**.
 
-    为什么这条需要判据：本仓真的有过「8/13 道 off 而『全绿』不可见」的历史
-    （C2 的教训）。`off` 是合法状态，但**没有理由的 off** 与「本仓根本不用这套
-    机制」不可区分 —— 于是「闸门永远不跑」可以伪装成「设计如此」。
+    Why this needs a criterion: this repo really did go through "8 of 13 gates off
+    while 'all green' hid it" (the C2 lesson). `off` is a legitimate state, but an
+    **off without a reason** is indistinguishable from "this repo doesn't use that
+    mechanism at all" -- so "the gate never runs" can pass as "by design".
 
-    判据（三向，AST）：
-      · 源码里**会调 `off(`** 但声明行没有 `off_reason`（或太短）⇒ 报
-      · 声明行有 `off_reason` 但源码**从不调 `off(`** ⇒ 报（谎言：理由白写）
-    发现式：扫 `gs`（registry 已抽好的声明）+ 各文件源码，不写任何名录。
+    Criterion (three-way, AST):
+      - the source **does call `off(`** but the declaration has no `off_reason` (or
+        it is too short) => report
+      - the declaration has `off_reason` but the source **never calls `off(`** =>
+        report (a lie: the reason written for nothing)
+    Discovery-based: scans `gs` (declarations already extracted by registry) + each
+    file's source; no roster is hand-written.
 
-    两组判据各是一个具名 helper（形状 / 真实性）：拼在一起时 6 个分支
-    把复杂度推到 12，而两组之间没有任何共享状态。
+    The two groups are each a named helper (shape / truthfulness): merged, 6 branches
+    push complexity to 12, while the groups share no state at all.
     """
     out = []
     for g in gs:
@@ -588,25 +661,28 @@ def off_reason_problems(gs, sources=None):
 
 
 def reason_bases_agree(hook=False):
-    """C4 对账⑦：`_REASON_BASES` 必须与 `einfacht-env.sh` 的载体查找口径一致。
+    """C4 reconciliation (7): `_REASON_BASES` must agree with `einfacht-env.sh`'s
+    carrier-lookup convention.
 
-    `einfacht-env.sh` 先找**钩子目录**、再找**仓根**（两个位置）。本文件的
-    `_REASON_BASES`（理由真实性判据的合法落点）必须与它同口径 —— 否则
-    「载体真住在 reflect-hooks/ 却判据只看仓根」会让失效的理由漏判（第 18 轮
-    实测过）。
+    `einfacht-env.sh` checks the **hooks dir** first, then the **repo root** (two
+    locations). This file's `_REASON_BASES` (the legal locations for the reason
+    truthfulness criterion) must share that convention -- otherwise "the carrier
+    genuinely lives in reflect-hooks/ while the criterion only looks at the root"
+    lets stale reasons slip through (observed in round 18).
 
-    判据是**行为级**的，不是文本匹配：在临时仓里两个位置各放一份载体，
-    要求 `_reason_files` 都能看见。这样不依赖 `einfacht-env.sh` 的具体写法
-    （它改成 `.env` 后缀或换变量名都不会误伤）。
+    The criterion is **behavioral**, not a text match: put a carrier at both
+    locations in a temp repo and require `_reason_files` to see both. That way it
+    does not depend on `einfacht-env.sh`'s exact wording (changing it to a `.env`
+    suffix or renaming variables won't false-positive).
 
-    `hook` 可注入（自证用假实现）。默认跑真代码。
+    `hook` is injectable (selftests use a fake). Real code runs by default.
     """
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
     probe = hook or _reason_files
     d = tempfile.mkdtemp()
     try:
-        name = "ProbeCarrier" + ".env"                   # 拼接构造
+        name = "ProbeCarrier" + ".env"                   # joined, not a bare literal
         reason = "no " + name + " here"
         ok_both = True
         for base in ("", "reflect-hooks"):
@@ -628,7 +704,8 @@ def reason_bases_agree(hook=False):
 
 
 def _scan_sources(sources, base):
-    """扫描面：给了 `sources` 就用它（自证注入假文件系统），否则扫真目录。"""
+    """Scan surface: use `sources` when given (selftests inject a fake filesystem),
+    otherwise scan the real directory."""
     if sources is not None:
         return sorted(sources.items())
     items = []
@@ -643,11 +720,13 @@ def _scan_sources(sources, base):
 
 
 def _returns_self_computed_dir(text):
-    """函数体里有没有 `return dirname(abspath(__file__))`。
+    """Does a function body contain `return dirname(abspath(__file__))`?
 
-    ⚠️ **只抓「作为返回值的自算」**，不抓 `sys.path.insert(0, …)` ——
-    后者是**导入引导**（每个闸门顶部都有，22 处），它不表达「工具目录
-    是什么」，只是让脚本能找到兄弟模块。抓它会把判据变成 22 条噪音。
+    ⚠️ **Only catches "self-computation used as a return value"**, not
+    `sys.path.insert(0, ...)` -- the latter is **import bootstrapping** (present at
+    the top of every gate, 22 sites); it does not express "what the tool directory
+    is", it just lets the script find its sibling modules. Catching it would turn the
+    criterion into 22 lines of noise.
     """
     try:
         tree = ast.parse(text)
@@ -666,27 +745,30 @@ def _returns_self_computed_dir(text):
 
 
 def path_rule_problems(sources=None):
-    """C4 对账⑧：**「工具的 zreflect/」只能有一个产地**。
+    """C4 reconciliation (8): **"the tool's zreflect/" may have only one source**.
 
-    此前 `knobs._zdir()` / `registry._zdir()` / `i18n` 的 `_TOOL_DIR` 各自
-    `dirname(abspath(__file__))` 算一遍 —— 今天同值（靠巧合），改任一处就会
-    分裂。location 规则与所有「必须一致」同款：**得有一个产地 + 一个对账器**。
+    Previously `knobs._zdir()` / `registry._zdir()` / `i18n`'s `_TOOL_DIR` each
+    computed `dirname(abspath(__file__))` -- equal today (by coincidence); changing
+    any one would split them. The location rule follows the same pattern as every
+    "must agree" pair: **one source + one reconciler**.
 
-    判据（AST，发现式）：扫描面里出现 `dirname(os.path.abspath(__file__))`
-    这种**自算工具目录**的地方，除 `gate.py`（唯一产地在它）外都报。
-    `i18n` 的懒代理 `return gate.zdir()` 不算自算（它没有那个表达式）。
+    Criterion (AST, discovery-based): wherever the scan surface self-computes the
+    tool directory via `dirname(os.path.abspath(__file__))`, report -- except
+    `gate.py` (the single source lives there). `i18n`'s lazy proxy
+    `return gate.zdir()` is not self-computation (it lacks that expression).
     """
     out = []
     for name, text in _scan_sources(sources, gate.zdir()):
         if name == "gate.py":
-            continue                    # gate.py 是唯一产地，它自己有
+            continue                    # gate.py is the single source; it is allowed
         for fn in _returns_self_computed_dir(text):
             out.append(M("registry.path_rule_split", file=name, function=fn))
     return out
 
 
 def _platform_functions(names, read):
-    """平台模块（非 `check_*`）的顶层公开函数：`{模块: {函数名}}`。"""
+    """Top-level public functions of platform modules (non-`check_*`): `{module:
+    {function names}}`."""
     platform = {}
     for n in names:
         if n.startswith("check_") or not n.endswith(".py"):
@@ -707,10 +789,11 @@ def _platform_functions(names, read):
 
 
 def _asserted_names(case_bodies):
-    """各个 `_cases()` 体里被**读取**（Load）的名字集合。
+    """The set of names **read** (Load context) inside each `_cases()` body.
 
-    ⚠️ AST 节点而不是文本匹配：`helper` 出现在夹具字符串里不算断言
-    （第 19–24 轮反复出现的同一个病：文本匹配代替结构匹配）。
+    ⚠️ AST nodes, not text matching: a `helper` appearing inside a fixture string is
+    not an assertion (the same disease recurring through rounds 19-24: text matching
+    standing in for structural matching).
     """
     asserted = set()
     for text in case_bodies:
@@ -727,13 +810,13 @@ def _asserted_names(case_bodies):
 
 
 def _record(consumed, consumers, pair, file):
-    """记一次「某文件消费了某平台函数」。"""
+    """Record one instance of "some file consumed some platform function"."""
     consumed.add(pair)
     consumers.setdefault(pair, set()).add(file)
 
 
 def _import_aliases(tree, platform):
-    """`import <mod>` 的别名表：`{alias: mod}`（只收平台模块）。"""
+    """Alias table for `import <mod>`: `{alias: mod}` (platform modules only)."""
     aliases = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -744,7 +827,7 @@ def _import_aliases(tree, platform):
 
 
 def _from_import_uses(tree, platform):
-    """`from <平台模块> import <平台函数>` ⇒ `[(模块, 函数)]`。"""
+    """`from <platform module> import <platform function>` => `[(module, function)]`."""
     out = []
     for node in ast.walk(tree):
         if not (isinstance(node, ast.ImportFrom) and node.module in platform):
@@ -756,7 +839,7 @@ def _from_import_uses(tree, platform):
 
 
 def _attribute_uses(tree, platform, aliases):
-    """`<mod>.<fn>` / `<alias>.<fn>`（Load 上下文）⇒ `[(模块, 函数)]`。"""
+    """`<mod>.<fn>` / `<alias>.<fn>` (Load context) => `[(module, function)]`."""
     out = []
     for node in ast.walk(tree):
         if not (isinstance(node, ast.Attribute)
@@ -770,19 +853,22 @@ def _attribute_uses(tree, platform, aliases):
 
 
 def _consumer_files(files):
-    """真的**调用方**：`check_*` / `doctor.py`（平台模块互相调用不算）。"""
+    """The real **callers**: `check_*` / `doctor.py` (platform modules calling each
+    other don't count)."""
     return {n: t for n, t in files.items()
             if n.startswith("check_") or n == "doctor.py"}
 
 
 def _consumers(files, platform):
-    """谁消费了哪个平台函数：`({(模块, 函数)}, {(模块, 函数): {文件名}})`。
+    """Who consumed which platform function: `({(module, function)}, {(module,
+    function): {filenames}})`.
 
-    只扫 `check_*` / `doctor.py` —— 它们是真的调用方；平台模块互相调用不算
-    「闸门消费」。
+    Scans only `check_*` / `doctor.py` -- they are the real callers; platform
+    modules calling each other is not "gate consumption".
 
-    三种发现方式（`from import` / 别名属性 / 裸属性）各是一个 helper：
-    拼在一个函数里时，两轮 `ast.walk` + 三处 isinstance 分支把复杂度推到 14。
+    The three discovery forms (`from import` / aliased attribute / bare attribute)
+    are each a helper: merged into one function, two `ast.walk` passes plus three
+    isinstance branches pushed complexity to 14.
     """
     consumed, consumers = set(), {}
     for file, text in _consumer_files(files).items():
@@ -798,19 +884,24 @@ def _consumers(files, platform):
     return consumed, consumers
 
 
-# ⚠️ **框架 API 不要求断言**：`gate.meta` / `main_selftest_or` / `i18n.M` 被
-# 16 个闸门**全部**消费 —— 它们是入口脚手架，不是某个闸门消费的「领域函数」。
-# 要求它们的断言等于要求「框架给框架写测试」，那是自举。
-# 阈值用**绝对值**（≥3 个闸门共用 ⇒ 框架 API），不用「半数闸门」：后者在
-# 单闸门夹具里退化成 1，会把夹具里唯一那个消费关系也当框架跳过（实测）。
+# ⚠️ **Framework APIs are exempt from the assertion requirement**: `gate.meta` /
+# `main_selftest_or` / `i18n.M` are consumed by **all 16** gates -- they are entry
+# scaffolding, not the "domain function" of any particular gate. Requiring
+# assertions for them means demanding "the framework writes tests for the
+# framework", which is bootstrapping.
+# The threshold is an **absolute number** (>= 3 gates sharing => framework API), not
+# "half the gates": the latter degenerates to 1 in a single-gate fixture, which
+# would skip the fixture's only consumption edge as framework (observed).
 FRAMEWORK_MIN_GATES = 3
 
 
 def _load_platform_sources(zdir, sources):
-    """装载扫描面：`(names, files, read)`。读不到 ⇒ 空表（不是异常）。
+    """Load the scan surface: `(names, files, read)`. Unreadable => empty tables (not
+    an exception).
 
-    `read(n)` 对**未装载**的文件返回 None —— 「没有这个文件」与「文件是空的」
-    必须可区分（空模块与缺失模块在判据里含义不同）。
+    `read(n)` returns None for **unloaded** files -- "no such file" and "the file is
+    empty" must stay distinguishable (an empty module and a missing module mean
+    different things to the criteria).
     """
     d = zdir if zdir is not None else gate.zdir()
 
@@ -835,10 +926,12 @@ def _load_platform_sources(zdir, sources):
 
 
 def _untested_consumed(consumed, consumers, asserted):
-    """被闸门消费、却没有任何断言、且不是框架 API 的函数。
+    """Functions consumed by gates that have no assertion anywhere and are not
+    framework API.
 
-    ⚠️ 框架 API 的判据是**绝对数**（≥3 个闸门共用），不是「半数闸门」：
-    后者在单闸门夹具里退化成 1，会把夹具里唯一那个消费关系也当框架跳过。
+    ⚠️ The framework-API criterion is an **absolute count** (>= 3 gates sharing),
+    not "half the gates": the latter degenerates to 1 in a single-gate fixture and
+    would skip the fixture's only consumption edge as framework.
     """
     return [(mod, fn) for mod, fn in sorted(consumed)
             if fn not in asserted
@@ -846,13 +939,16 @@ def _untested_consumed(consumed, consumers, asserted):
 
 
 def dependency_coverage_problems(zdir=None, sources=None):
-    """C4 对账⑨：**被闸门消费的平台函数，必须在某处有断言**。
+    """C4 reconciliation (9): **platform functions consumed by gates must have an
+    assertion somewhere**.
 
-    一个被消费但没被测的模块，是依赖链上的哑火环节：它判错了，消费它的闸门
-    丢掉判据，而那个闸门自己的自证照样绿（第 24 轮 `living.living_lines()`）。
+    A consumed-but-untested module is a dead link in the dependency chain: when it
+    misjudges, every gate consuming it loses its criterion, while that gate's own
+    selftest stays green (round 24's `living.living_lines()`).
 
-    四段各是一个 helper（`_load_platform_sources` / `_platform_functions` /
-    `_asserted_names` / `_consumers` / `_untested_consumed`），本函数只做编排。
+    The four stages are each a helper (`_load_platform_sources` /
+    `_platform_functions` / `_asserted_names` / `_consumers` /
+    `_untested_consumed`); this function only orchestrates.
     """
     names, files, read = _load_platform_sources(zdir, sources)
     if not files:
@@ -864,10 +960,11 @@ def dependency_coverage_problems(zdir=None, sources=None):
             for m, f in _untested_consumed(consumed, consumers, asserted)]
 
 
-# ── 自证：判据属于自己的被测对象 ──────────────────────────────────────────────
+# ── Selftest: criteria belong to their own subject under test ─────────────────
 
 def _dead_interface_case():
-    """造一个零消费的公开函数 ⇒ 必须报；给它加个外部引用 ⇒ 不报。"""
+    """Plant a zero-consumer public function => must report; add an external reference
+    => must not report."""
     import os
     import shutil
     import tempfile  # noqa: PLC0415
@@ -879,7 +976,7 @@ def _dead_interface_case():
             "def zzz_orphan():\n    return 1\n")
         if not dead_interface_problems(zdir=d):
             return False
-        # 加一个外部消费者 ⇒ 不该再报
+        # An external consumer was added => should no longer report
         open(os.path.join(d, "check_probe.py"), "w", encoding="utf-8").write(
             "import probe\ndef run():\n    return probe.zzz_orphan()\n")
         return dead_interface_problems(zdir=d) == []
@@ -889,12 +986,13 @@ def _dead_interface_case():
 
 
 def _unexpected_shell_case():
-    """**套件目录**里的未登记 `.sh` ⇒ 必须报。
+    """An unregistered `.sh` in a **suite directory** => must report.
 
-    ⚠️ 判据的扫描面是 `zreflect/` + `reflect-hooks/`（套件自己），**不是
-    使用方的仓** —— 「全 Python 化」是本仓对自己的纪律。所以夹具也必须
-    造在套件子目录里；在使用方根上造 `.sh` 是**不该报**的（见
-    `_owner_shell_is_allowed`）。
+    ⚠️ The criterion's scan surface is `zreflect/` + `reflect-hooks/` (the suite
+    itself), **not the consumer's repo** -- "all Python" is this repo's discipline
+    for itself. So the fixture must also be planted inside a suite subdirectory; an
+    `.sh` at the consumer's root is **not to be reported** (see
+    `_owner_shell_is_allowed`).
     """
     import os  # noqa: PLC0415
     import shutil  # noqa: PLC0415
@@ -907,7 +1005,7 @@ def _unexpected_shell_case():
             fh.write("# probe\n")
         if not shell_surface_problems(repo_root=d):
             return False
-        # 登记过的名字（`reflect-hooks/einfacht-env.sh`）不该报
+        # A registered name (`reflect-hooks/einfacht-env.sh`) must not report
         hooks = os.path.join(d, "reflect-hooks")
         os.makedirs(hooks)
         with open(os.path.join(hooks, "einfacht-env.sh"), "w",
@@ -920,12 +1018,14 @@ def _unexpected_shell_case():
 
 
 def _system_exit_int_case():
-    """三种 `SystemExit` 形状各判一次：只有整数常量该放过。
+    """Judge each of the three `SystemExit` shapes once: only integer constants may
+    pass.
 
-    ⚠️ **三种都要测**，因为它们的失败方式不同、后果也不同：
-      · `SystemExit("msg")` ⇒ 退 **1**（FATAL 被当判据红）
-      · `SystemExit()`      ⇒ 退 **0**（FATAL 被当成绿 —— 最坏的一种）
-      · `SystemExit(2)`     ⇒ 退 2（唯一正确的「配置坏」）
+    ⚠️ **All three must be tested**, because they fail differently and with
+    different consequences:
+      - `SystemExit("msg")` => exits **1** (a FATAL treated as criterion red)
+      - `SystemExit()`      => exits **0** (a FATAL treated as green -- the worst one)
+      - `SystemExit(2)`     => exits 2 (the only correct "broken config")
     """
     import os  # noqa: PLC0415
     import shutil  # noqa: PLC0415
@@ -949,10 +1049,11 @@ def _system_exit_int_case():
 
 
 def _undeclared_suite_file_case():
-    """套件目录里一个**没有声明行**的 `.py` ⇒ 必须报。
+    """A `.py` in a suite directory **without a declaration line** => must report.
 
-    为什么：没声明 = 被当成使用方代码 = 三道闸门不再审它。那是**把闸门
-    关掉的新方法**，必须能红。`measure_*.py` 例外（那是使用方的数据模块）。
+    Why: no declaration = treated as consumer code = the three gates stop auditing
+    it. That is **a new way to switch a gate off** and must be able to go red.
+    `measure_*.py` is the exception (that is the consumer's data module).
     """
     import os  # noqa: PLC0415
     import shutil  # noqa: PLC0415
@@ -967,7 +1068,7 @@ def _undeclared_suite_file_case():
         found = [str(p) for p in suite_scope_problems(repo_root=d)]
         if not any("orphan.py" in s for s in found):
             return False
-        # `measure_*.py` 是使用方的数据模块 ⇒ 不报
+        # `measure_*.py` is the consumer's data module => must not report
         os.rename(os.path.join(suite, "orphan.py"),
                   os.path.join(suite, "measure_probe.py"))
         return suite_scope_problems(repo_root=d) == []
@@ -976,17 +1077,20 @@ def _undeclared_suite_file_case():
 
 
 def _scanned_sources_two_ways_case():
-    """`gate.scanned_sources` 的两条口径**各测一次**（`configured` 与否）。
+    """Both scopes of `gate.scanned_sources` are **tested once each** (`configured`
+    and not).
 
-    为什么必须两条都测：这是「闸门审使用方代码」那次修的**唯一**判据。
-    只测一条的话，另一半会静默漂回去 —— 而两种漂法代价相反、都致命：
+    Why both must be tested: this is the **sole** criterion born of the "gates
+    audit the consumer's code" fix. Testing only one half lets the other silently
+    drift back -- and the two drift directions have opposite, both fatal, costs:
 
-      · 未配却收了全部 ⇒ 使用方仓里 149 条 ruff / 59 条中文全报给他
-        （套件把自己的纪律强加给别人）；
-      · 配了却只收有声明的 ⇒ `REFLECT_I18N_ROOT=<dir>` 报
-        `scan_empty_dir` FATAL（把手动 opt-in 弄坏）。
+      - unset yet collecting everything => the consumer's repo gets all 149 ruff /
+        59 CJK findings reported to them (the suite imposing its discipline on
+        someone else);
+      - set yet collecting only declared files => `REFLECT_I18N_ROOT=<dir>` reports
+        a `scan_empty_dir` FATAL (breaking manual opt-in).
 
-    夹具用一个有声明和一个没声明的文件，两种口径各看一次。
+    The fixture uses one declared and one undeclared file, looked at once per scope.
     """
     import os  # noqa: PLC0415
     import shutil  # noqa: PLC0415
@@ -1007,11 +1111,12 @@ def _scanned_sources_two_ways_case():
 
 
 def _owner_shell_is_allowed():
-    """**使用方仓根**上的 `.sh` 不许被报 —— 那是他们的构建脚本，不是套件的事。
+    """`.sh` files at the **consumer's repo root** must not be reported -- those are
+    their build scripts, none of the suite's business.
 
-    这条是「接进真实项目」时最致命那个阻塞的回归守卫：此前判据扫整个
-    `GATE_REPO`，于是任何有 `build.sh` / `deploy.sh` 的仓都 `--render-doc`
-    FATAL，且没有旋钮能放行。
+    This is the regression guard for the most lethal blocker of "wiring into a real
+    project": the criterion used to scan the whole `GATE_REPO`, so any repo with a
+    `build.sh` / `deploy.sh` got `--render-doc` FATAL with no knob to let it through.
     """
     import os  # noqa: PLC0415
     import shutil  # noqa: PLC0415
@@ -1027,18 +1132,21 @@ def _owner_shell_is_allowed():
 
 
 def _han_predicate_case():
-    """`i18n.han()` 认中文、不认 ASCII、不认码点构造之外的近亲。"""
+    """`i18n.han()` recognizes Chinese, rejects ASCII, and rejects near-relatives
+    outside codepoint construction."""
     from i18n import han  # noqa: PLC0415
-    # 夹具里的中文用码点构造（本仓纪律：字面量会进扫描面）
+    # The fixture's Chinese is codepoint-constructed (repo discipline: literals
+    # would enter the scan surface)
     return (han(chr(0x4E2D)) and han("a" + chr(0x6587) + "b")
             and not han("plain ascii")
             and not han("")
-            and not han(chr(0x3042)))     # 平假名不在 CJK 统一表意区间内
+            and not han(chr(0x3042)))     # hiragana is outside the CJK Unified Ideographs range
 
 
 
 def _trailing_newline_case():
-    """造一个缺末尾换行的文件 ⇒ 必须报；补上 ⇒ 不报。"""
+    """Create a file missing its trailing newline => must report; add it => must not
+    report."""
     import os
     import shutil
     import tempfile  # noqa: PLC0415
@@ -1055,10 +1163,12 @@ def _trailing_newline_case():
 
 
 def _selftest_false_states_it():
-    """每个 `selftest=False` 的模块，描述里都必须点明「自证住在 registry._cases」。
+    """Every module with `selftest=False` must state in its description that "the
+    selftest lives in registry._cases".
 
-    三个都查（`collect.py` / `living.py` / `gate.py`）—— 发现式：从 `modules()`
-    取所有 `selftest=False` 的，不写名单。
+    All three are checked (`collect.py` / `living.py` / `gate.py`) -- discovery-
+    based: take everything with `selftest=False` from `modules()`, no hand-written
+    list.
     """
     from registry import modules  # noqa: PLC0415
     mods, _und = modules()
@@ -1069,15 +1179,17 @@ def _selftest_false_states_it():
         checked += 1
         if "registry._cases" not in m["desc"]:
             return False
-    return checked >= 1          # 零值守卫：一个都没查到 ⇒ 不看
+    return checked >= 1          # zero-trust guard: checked none => not credible
 
 
 
 def _dependency_coverage_ok():
-    """真仓：被消费的平台函数都有断言；再造一个「被消费但无断言」的 ⇒ 必须报。"""
+    """Real repo: consumed platform functions all have assertions; plant one more
+    "consumed but unasserted" => must report."""
     ok_real = dependency_coverage_problems() == []
-    # 名字必须**全仓唯一**：`helper` 那种常见词会被真 registry._cases 里的
-    # 同名变量命中 ⇒ 断言面「假装」覆盖了它（实测：fake 返回 []）。
+    # The name must be **unique repo-wide**: a common word like `helper` would be hit
+    # by a same-named variable in the real registry._cases => the assertion surface
+    # "pretends" to cover it (observed: fake returned []).
     fake = {
         "check_probe.py":
             "import probe\ndef run():\n    return probe.zzz_uniquely_named()\n",
@@ -1089,20 +1201,24 @@ def _dependency_coverage_ok():
 
 
 def _selftest_refuses_empty():
-    """`gate.selftest(name, [])` 必须 SystemExit（0/0 洞不许绿着退场），**且退 2**。
+    """`gate.selftest(name, [])` must SystemExit (the 0/0 hole may not exit green),
+    **and exit 2**.
 
-    ⚠️ 只断言「抛了 SystemExit」不够：`raise SystemExit("一段字符串")` 也是
-    SystemExit，但 Python 的约定是**打印并退 1** —— 于是打出 `FATAL:` 却报
-    rc=1，调用方按 rc 分类就把它归成「判据红 / 代码有问题」，而真相是
-    「配置 / 输入形状坏」。实测：四份 `SystemExit(machine().emit("fatal", …))`
-    全是这个形状（`require_nonempty` / `selftest` / `ledger._require_pairs` /
-    `collect.parse_prev_values`），全部把 FATAL 报成了 rc=1。
+    ⚠️ Asserting only "a SystemExit was raised" is not enough:
+    `raise SystemExit("a string")` is also a SystemExit, but Python's convention is
+    **print and exit 1** -- so it prints `FATAL:` yet reports rc=1, and a caller
+    classifying by rc files it under "criterion red / code problem", while the truth
+    is "broken config / input shape". Observed: all four
+    `SystemExit(machine().emit("fatal", ...))` copies had this shape
+    (`require_nonempty` / `selftest` / `ledger._require_pairs` /
+    `collect.parse_prev_values`), all reporting FATAL as rc=1.
 
-    所以这条同时钉 rc == 2 —— 报了什么不算数，退出码才算。
+    So this case also pins rc == 2 -- what was printed doesn't count; the exit code
+    does.
     """
     try:
         gate.selftest("probe", [])
-        return False                    # 没拒 ⇒ 这条红
+        return False                    # didn't refuse => this case is red
     except SystemExit as e:
         return e.code == 2
 
@@ -1110,10 +1226,12 @@ def _selftest_refuses_empty():
 
 
 def _off_reason_ok(_label, sources, ok, reason=None):
-    """构造一条假声明行 + 假源码，验 `off_reason_problems` 的判定方向。
+    """Build a fake declaration line + fake source and verify `off_reason_problems`'s
+    judgment direction.
 
-    `sources` 的值是**源码片段**；用 `_off(` 占位再替换成真调用，避免本文件
-    自己被这个判据收编（它本身是可 off 的闸门）。"""
+    `sources`' values are **source snippets**; `_off(` is a placeholder later
+    replaced with the real call, so this file itself doesn't get adopted by the
+    criterion (it is itself a gate that can off)."""
     body = sources["check_x.py"].replace("_off(", "off(")
     gs = [{"file": "check_x.py", "off_reason": reason}]
     got = off_reason_problems(gs, sources={"check_x.py": body})
@@ -1122,10 +1240,11 @@ def _off_reason_ok(_label, sources, ok, reason=None):
 
 
 def _off_reason_stale_ok():
-    """声称没有 `ab.json`，而 `ab.json` 真实存在 ⇒ 必须报 stale。
+    """Claims there is no `ab.json` while `ab.json` really exists => must report stale.
 
-    用临时目录做仓根（不碰真仓），并给源码让 `off()` 调用成立，
-    以隔离出**只由「理由失效」**触发的那一条。
+    Uses a temp dir as the repo root (the real repo untouched) and supplies source
+    so the `off()` call holds, isolating the finding triggered **only by "the reason
+    went stale"**.
     """
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
@@ -1133,14 +1252,14 @@ def _off_reason_stale_ok():
     try:
         with open(os.path.join(d, "ab.json"), "w", encoding="utf-8") as fh:
             fh.write("{}")
-        reason = ("no " + "ab.json" + " spec in this repo")   # ASCII，避免触发零语言闸门
+        reason = ("no " + "ab.json" + " spec in this repo")   # ASCII, to avoid triggering the no-language gate
         gs = [{"file": "check_ab.py", "off_reason": reason}]
         src = {"check_ab.py": "def run():\n    return off(null)\n"}
         old = gate.GATE_REPO
         gate.GATE_REPO = d
         try:
             got = [p.code for p in off_reason_problems(gs, sources=src)]
-            # 文件不在的对照组：把 ab.json 删掉 ⇒ 不该有 stale
+            # Control group with the file absent: delete ab.json => no stale expected
             os.remove(os.path.join(d, "ab.json"))
             got2 = [p.code for p in off_reason_problems(gs, sources=src)]
         finally:
@@ -1152,14 +1271,15 @@ def _off_reason_stale_ok():
 
 
 def _stale_in_hooks_dir():
-    """载体在 `reflect-hooks/`（不是仓根）时，stale 判据必须照样报。"""
+    """When the carrier sits in `reflect-hooks/` (not the repo root), the stale
+    criterion must still report."""
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         hooks = os.path.join(d, "reflect-hooks")
         os.makedirs(hooks)
-        name = "Probe" + ".env"                          # 拼接构造：不写死在仓里
+        name = "Probe" + ".env"                          # joined: not hardcoded in the repo
         with open(os.path.join(hooks, name), "w", encoding="utf-8") as fh:
             fh.write("export X=1\n")
         reason = "no " + name + " carrier in this repo"   # ASCII
@@ -1178,9 +1298,11 @@ def _stale_in_hooks_dir():
 
 
 def _path_rule_single_source():
-    """真仓只有 gate.py 自算工具目录；再造一份假的 ⇒ 必须报。"""
+    """Real repo: only gate.py self-computes the tool dir; plant one more fake =>
+    must report."""
     ok_real = path_rule_problems() == []
-    # 判据只抓**函数体里的 return**（不是模块级赋值 —— 那是导入引导 / 常量）
+    # The criterion only catches a **return inside a function body** (not
+    # module-level assignments -- those are import bootstrapping / constants)
     fake = {"splitter.py":
             "def f():\n"
             "    return os.path.dirname(os.path.abspath(__file__))\n"}
@@ -1190,10 +1312,12 @@ def _path_rule_single_source():
 
 
 def _cases_off_reason():
-    """见 `_cases()`：本组 7 条。**不碰夹具** —— 理由判据只读声明面。"""
+    """See `_cases()`: 7 cases in this group. **Touches no fixtures** -- the reason
+    criteria only read the declaration surface."""
     return [
-    # **off 必须有理由**（第 12 轮）：会调 `off()` 却没声明 `off_reason`、
-    # 理由太短、或声明了理由却不调 off —— 三个方向都要报。
+    # **off must have a reason** (round 12): calls `off()` without a declared
+    # `off_reason`, a too-short reason, or a declared reason without ever calling
+    # off -- all three directions must report.
     ("★ registry.off_without_reason", lambda: _off_reason_ok(
         "no-reason", {"check_x.py": "_off()"}, ok=False)),
     ("★ registry.off_reason_too_short", lambda: _off_reason_ok(
@@ -1204,19 +1328,23 @@ def _cases_off_reason():
     ("registry.off_reason_ok", lambda: _off_reason_ok(
         "complete", {"check_x.py": "_off()"}, ok=True,
         reason="a real justification long enough")),
-    # **理由真实性**（第 17 轮）：`off_reason` 声称「本仓没有 X.json」，
-    # 而 X.json 实际存在 ⇒ 理由已失效（闸门早该启用而没启用）。
-    # 第 12 轮只要求「必须有理由」，这是它的对称缺口：
-    # 不要求「理由得是真的」，理由就会变成永久免死金牌。
+    # **Reason truthfulness** (round 17): the `off_reason` claims "this repo has no
+    # X.json" while X.json actually exists => the reason has gone stale (the gate
+    # should have been enabled long ago). Round 12 only demanded "a reason must
+    # exist"; this is its symmetric gap: without demanding "the reason be true", a
+    # reason becomes a permanent get-out-of-jail card.
     ("★ registry.off_reason_stale", lambda: _off_reason_stale_ok()),
-    # **理由里的文件名要在两个合法落点都查**：`Einfacht.env` 可以住在仓根
-    # **或** `reflect-hooks/`（`einfacht-env.sh` 先看钩子目录、再看仓根）。
-    # 只查仓根会让「载体真放进 reflect-hooks/」的情形漏判（实测 []）。
+    # **Filenames inside reasons must be checked at both legal locations**:
+    # `Einfacht.env` may live at the repo root **or** in `reflect-hooks/`
+    # (`einfacht-env.sh` checks the hooks dir first, then the repo root). Checking
+    # only the root misses the "carrier genuinely placed in reflect-hooks/" case
+    # (observed: []).
     ("★ registry.off_reason_stale_in_hooks_dir",
      lambda: _stale_in_hooks_dir()),
-    # **口径对账**（C4）：`_REASON_BASES` 必须与 `einfacht-env.sh` 的
-    # 载体查找一致（钩子目录 + 仓根）。判据是行为级的：两个位置各放一份
-    # 载体，两边都必须看得见。只查仓根 ⇒ RED。
+    # **Convention reconciliation** (C4): `_REASON_BASES` must match
+    # `einfacht-env.sh`'s carrier lookup (hooks dir + repo root). The criterion is
+    # behavioral: place a carrier at both locations, both must be seen. Checking
+    # only the root => RED.
     ("★ registry.reason_bases_match_env_plugin",
      lambda: reason_bases_agree()),
     ]
@@ -1224,39 +1352,47 @@ def _cases_off_reason():
 
 
 def _cases_path_rule():
-    """见 `_cases()`：本组 4 条。**不碰夹具** —— 路径判据只读 gate 的产地。"""
+    """See `_cases()`: 4 cases in this group. **Touches no fixtures** -- the path
+    criteria only read gate's sources."""
     return [
-    # **口径分裂**（C4 对账⑧）：工具的 zreflect/ 只能有一个产地。
-    # 别处再写一份 `dirname(abspath(__file__))` ⇒ 报（改一处就会分裂）。
+    # **Convention split** (C4 reconciliation 8): the tool's zreflect/ may have only
+    # one source. Another `dirname(abspath(__file__))` elsewhere => report (changing
+    # one would split them).
     ("★ registry.path_rule_single_source",
      lambda: _path_rule_single_source()),
-    # **`gate.zdir()` / `tool_repo()` 的自证**（第 21 轮）：它们是全仓地基，
-    # 此前只有「别的模块委托它」的判据，没有「它自己算得对」的判据。
+    # **Selftest of `gate.zdir()` / `tool_repo()`** (round 21): they are the repo-wide
+    # foundation; previously only "other modules delegate to it" criteria existed,
+    # never "it computes the right thing itself".
     ("★ registry.zdir_matches_file",
-     # 值必须是**本文件所在目录**（`registry.py` 也在 zreflect/ 里）。
-     # ⚠️ 这里**不许**自己写 `dirname(abspath(__file__))` —— 那正好是
-     # 本闸门要禁的形状，写了就会被 `path_rule_single_source` 抓
-     # （实测：这条断言自己触发了那个判据）。改用 `os.path.dirname` 的
-     # 显式字面量对比：`gate.zdir()` 必须以 `zreflect` 结尾且可导入本文件。
+     # The value must be **the directory this file lives in** (`registry.py` is also
+     # in zreflect/).
+     # ⚠️ Do **not** write `dirname(abspath(__file__))` here -- that is exactly the
+     # shape this gate forbids, and writing it would be caught by
+     # `path_rule_single_source` (observed: this assertion triggered that criterion
+     # on itself). Uses an explicit literal comparison instead: `gate.zdir()` must
+     # end in `zreflect` and this file must be importable from it.
      lambda: os.path.basename(gate.zdir()) == "zreflect"
      and os.path.exists(os.path.join(gate.zdir(), "registry.py"))),
     ("★ registry.tool_repo_is_zdir_parent",
-     # `tool_repo()` 必须是 `zdir()` 的**上一级**（不是别的什么）
+     # `tool_repo()` must be `zdir()`'s **parent** (not something else)
      lambda: os.path.abspath(gate.tool_repo())
      == os.path.dirname(os.path.abspath(gate.zdir()))),
     ("★ registry.zdir_is_a_dir",
-     # 是个真实存在的目录（不是算出来的空字符串 / 错路径）
+     # A directory that actually exists (not a computed empty string / wrong path)
      lambda: os.path.isdir(gate.zdir())
      and os.path.basename(gate.zdir()) == "zreflect"),
     ]
 
 
 def _cases(fx=None):
-    """`criteria.py` 自己的判据：死接口 / shell 面积 / 中文谓词 / 末尾换行 /
-    依赖覆盖 / off 理由 / 路径规则 / 自证加固。**住在本模块** —— 判据属于被测对象。
+    """`criteria.py`'s own criteria: dead interfaces / shell surface / CJK predicate /
+    trailing newline / dependency coverage / off reasons / path rule / selftest
+    hardening. **Lives in this module** -- criteria belong to their subject under
+    test.
 
-    `fx` 是 `registry._cases_fixture()` 的产品（`off_reason` / `path_rule`
-    那两组要用名录夹具）；独立跑 `--selftest` 时从 `registry` 现造一份。
+    `fx` is the product of `registry._cases_fixture()` (the `off_reason` / `path_rule`
+    groups need the roster fixture); when `--selftest` runs standalone, one is built
+    fresh from `registry`.
     """
     if fx is None:
         import atexit
@@ -1275,14 +1411,17 @@ def _cases(fx=None):
 
 
 def _utf8_forced_case():
-    """Windows 的 cp1252 stdout 必须能被救回来（否则一行中文就能打红 CI）。
+    """Windows' cp1252 stdout must be recoverable (otherwise one line of Chinese
+    can turn CI red).
 
-    **确定性检查**，不靠「不 flush 就一定抛」这种未定义行为：
-      1. 静态断言：`_force_utf8_streams` 的源码里必须出现 `reconfigure` 与
-         `utf-8` —— 它做的是这件事，不是别的。
-      2. 行为断言：造两个 cp1252 流，一个直接写（必须抛），一个过
-         `_force_utf8_streams()` 后写（必须不抛）。两半都要 ——
-         只测「能写」的话，一个什么都不做的函数也会通过。
+    **A deterministic check**, not relying on "it will definitely throw if you
+    don't flush" -- that is undefined behavior:
+      1. Static assertion: `_force_utf8_streams`'s source must contain
+         `reconfigure` and `utf-8` -- that is what it does, nothing else.
+      2. Behavioral assertion: build two cp1252 streams; writing directly to
+         one must throw; writing to the other after `_force_utf8_streams()`
+         must not throw. Both halves are needed -- testing only "can write"
+         would let a function that does nothing pass.
     """
     import inspect  # noqa: PLC0415
     import io  # noqa: PLC0415
@@ -1291,20 +1430,20 @@ def _utf8_forced_case():
     import gate  # noqa: PLC0415
     src = inspect.getsource(gate._force_utf8_streams)
     if "reconfigure" not in src or "utf-8" not in src:
-        return False                    # 静态断言：它得真做那件事
-    sample = "A/B " + chr(0x95F8) + chr(0x95E8)          # 「闸门」
+        return False                    # static assertion: it must really do the thing
+    sample = "A/B " + chr(0x95F8) + chr(0x95E8)          # "gate" in Chinese
 
     def _can_encode(stream):
         try:
             stream.write(sample + "\n")
-            stream.flush()              # 显式 flush —— 不让错误躲到缓冲里
+            stream.flush()              # explicit flush -- don't let errors hide in buffers
             return True
         except UnicodeEncodeError:
             return False
 
     raw = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
     if _can_encode(raw):
-        return False                    # cp1252 竟然编得出来 ⇒ 夹具没造对
+        return False                    # cp1252 encoded it after all => fixture built wrong
 
     fixed = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
     old_out, old_err = sys.stdout, sys.stderr
@@ -1317,51 +1456,70 @@ def _utf8_forced_case():
 
 
 def _cases_self_checks():
-    """不依赖名录夹具的那 7 条（死接口 / shell 面积 / 中文谓词 / 末尾换行 /
-    依赖覆盖 / 自证加固）。"""
+    """The 7 checks that do not need the roster fixture (dead interfaces / shell
+    surface / CJK predicate / trailing newline / dependency coverage / selftest
+    hardening)."""
     return [
-        # **`living.py` / `collect.py` 的自证**（第 24 轮）：两个 `selftest=False`
-        # 模块此前**零断言**，而 `living_lines` 被 `check_stale` / `check_retractions`
-        # 消费 —— 它判错了，那两道闸门的判据全部失效。
-        # **`selftest=False` 的模块描述必须说清自证住在哪**（第 25 轮，
-        # 与第 23 轮 `gate.py` 同类）：`collect.py` / `living.py` / `gate.py`
-        # 都声明了 `selftest=False`，但它们的逻辑**有实质断言**在
-        # `registry._cases()`。描述若只写「无自证」= 免责声明。
-        # 「严查多余接口」的机器判据：零消费者的公开函数 ⇒ 必须报。
+        # **`living.py` / `collect.py` self-verification** (round 24): the two
+        # `selftest=False` modules previously had **zero assertions**, while
+        # `living_lines` is consumed by `check_stale` / `check_retractions` --
+        # had it judged wrongly, every criterion of those two gates would have
+        # been void.
+        # **A `selftest=False` module description must state where its selftest
+        # lives** (round 25, same class as round 23 `gate.py`): `collect.py` /
+        # `living.py` / `gate.py` all declare `selftest=False`, but their logic
+        # **has substantive assertions** in `registry._cases()`. A description
+        # that just says "no selftest" = a disclaimer.
+        # Machine criterion for "strictly check surplus interfaces": a public
+        # function with zero consumers ⇒ must report.
         ("★ registry.dead_interface_detected",
          lambda: _dead_interface_case()),
-        # 全 Python 化的守卫：未登记的 .sh ⇒ 必须报（造一个假的证明它有牙）
+        # All-Python guard: an unregistered .sh ⇒ must report (build a fake one
+        # to prove the guard has teeth)
         ("★ registry.unexpected_shell_detected",
          lambda: _unexpected_shell_case()),
-        # **使用方仓根的 .sh 不报**（接进真实项目的死路，已修）
+        # **A .sh at the consumer repo root does not report** (the dead end of
+        # adopting this in real projects; fixed)
         ("★ registry.owner_shell_is_allowed",
          lambda: _owner_shell_is_allowed()),
-        # `i18n.han()`：零语言制度的判据（`check_i18n` 与 `harness` 都消费它）。
-        # 它是「有没有中文」的**唯一产地** —— 判错了两道判据一起失效。
+        # `i18n.han()`: the criterion of the zero-language regime (`check_i18n`
+        # and `harness` both consume it). It is the **single producer** of
+        # "is there Chinese" -- judged wrongly, two criteria fail together.
         ("★ registry.han_predicate",
          lambda: _han_predicate_case()),
-        # 末尾换行（踩了四次）：一个没有末尾换行的 .py 让 `py_lines` 的两条
-        # 量法差 1，复跑闸门永远红 —— 报出来让人补，而不是每次手工发现。
+        # Trailing newline (stepped on four times): a .py without a trailing
+        # newline makes the two ways of counting `py_lines` differ by 1, and the
+        # replay gate goes red forever -- report it so a human fixes the file,
+        # instead of rediscovering it by hand every time.
         ("★ registry.trailing_newline_detected",
          lambda: _trailing_newline_case()),
         ("★ registry.selftest_false_modules_state_where_selftest_lives",
          lambda: _selftest_false_states_it()),
-        # **依赖链覆盖**（C4 对账⑨）：被闸门消费的平台函数必须在某处有断言。
-        # 第 24 轮的 `living.living_lines` 就是这么漏的（消费两道闸门，自身零断言）。
+        # **Dependency chain coverage** (C4 reconciliation (9)): platform
+        # functions consumed by gates must have an assertion somewhere. Round
+        # 24's `living.living_lines` leaked exactly this way (two gate
+        # consumers, zero assertions of its own).
         ("★ registry.dependency_coverage",
          lambda: _dependency_coverage_ok()),
-        # `gate.selftest` 被两道闸门直接调用 —— 它**执行**所有断言，但自身的
-        # 零值守卫（空 cases 必须拒收）此前零断言。测它不算自举：测的是
-        # 「0/0 洞会不会被拦住」，不是「断言跑得对不对」。
-        # Windows 的 cp1252 stdout —— 这个仓会打印**中文**的闸门名与描述
-        # **文本 `open()` 必须显式 encoding**（Windows 默认 cp1252）。
-        # 这条判据在 CI 的 Windows 腿上被验证过四次 —— 每次都是不同形式。
-        # **`subprocess.run(text=True)` 必须显式 encoding** —— 踩了五次的坑。
-        # **套件文件必须有声明**（没声明的会被当成使用方代码，闸门就不再审它）
+        # `gate.selftest` is called directly by two gates -- it **executes** all
+        # assertions, but its own zero-value guard (empty cases must be
+        # refused) previously had zero assertions. Testing it is not
+        # bootstrapping: what is tested is "will the 0/0 hole be blocked", not
+        # "do the assertions run correctly".
+        # Windows' cp1252 stdout -- this repo prints gate names and descriptions
+        # **in Chinese**; text `open()` must pass encoding explicitly (Windows
+        # defaults to cp1252).
+        # This criterion was proven on CI's Windows leg four times -- each time
+        # in a different form.
+        # **`subprocess.run(text=True)` must pass encoding explicitly** -- a pit
+        # stepped on five times.
+        # **Suite files must declare themselves** (undeclared ones get treated
+        # as consumer code and the gates stop auditing them)
         ("★ registry.suite_file_without_declaration",
          lambda: _undeclared_suite_file_case()),
-        # **FATAL 必须退 2**（`SystemExit(str)` 退 1、`SystemExit()` 退 0 ——
-        # 四条 FATAL 路径曾全部报成 rc=1，配置事故被归成代码问题）。
+        # **FATAL must exit 2** (`SystemExit(str)` exits 1, `SystemExit()` exits
+        # 0 -- all four FATAL paths once reported rc=1, filing configuration
+        # accidents as code problems).
         ("★ registry.system_exit_is_int", lambda: _system_exit_int_case()),
         ("★ registry.subprocess_without_encoding_detected",
          lambda: [p.code for p in _subprocess_encoding_problems(
@@ -1402,9 +1560,10 @@ def _selftest():
 from gate import module_meta  # noqa: E402
 
 MODULE = module_meta(
-    "名录判据",
-    "「哪些东西必须一致」的机器对账：死接口 / shell 面积 / 末尾换行 / "
-    "off 理由 / 路径规则 / 依赖覆盖（自证在本模块 `_cases`）",
+    "roster criteria",
+    "machine reconciliation of \"which things must agree\": dead interfaces / "
+    "shell surface / trailing newline / off reasons / path rule / dependency "
+    "coverage (self-verification lives in this module's `_cases`)",
     selftest=True)
 
 

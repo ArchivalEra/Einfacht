@@ -1,32 +1,41 @@
 #!/usr/bin/env python3
-"""registry —— 发现式名录的数据面：闸门清单 / 插件清单 / 红名单。
+"""registry — the data plane of the discovered rosters: gate list / plugin list / red list.
 
-「登记是被发现的，不是被记得的」—— 本仓早已把闸门的**集合**做成发现式
-（hooks / runner / CI 的 `for g in zreflect/check_*.py`），但集合的**叙述**
-仍是手写：STATE.md 手写「N 道闸门」并逐一列名（实测漂过：ab/locks/pins
-并入的当天，清单就少了三道，没有任何闸门拦得住 —— 手写的"十道"连道数
-都数错了）；gates-selftest.sh 手写红名单（默认名下实际红的 6 道，名单里
-只有 4 道）；插件与 doctor 靠点名。本 module 把叙述做成数据：
+"Registration is discovered, not remembered" — this repo long since made the
+**set** of gates discovered (`for g in zreflect/check_*.py` in hooks / runner /
+CI), but the **narrative** of the set was still hand-written: STATE.md
+hand-wrote "N gates" and named them one by one (observed drift: the day
+ab/locks/pins merged, the list was short three gates and no gate could stop it —
+the hand-written "ten" miscounted even the count); gates-selftest.sh hand-wrote
+the red list (6 gates actually red under default names, only 4 in the list);
+plugins and doctor relied on name-calling. This module turns the narrative into
+data:
 
-  · `gates()`：ast 解析每个 check_*.py 的模块级声明行
-        GATE = gate.meta("名字", "一句话", knobs=(…), name_dependent=…)
-    —— **声明即登记**；不 import 闸门模块（无副作用、无执行成本）。
-    没有声明行的 check_*.py ⇒ 名录不收（problems 报，render 拒绝渲染）；
-  · `red_need()`：换名自证里**必须红**的闸门（默认名承担载荷的那批）。
-    name_dependent 旗标是显式登记的 —— 机器推不出「off 态短路」（仪器
-    闸门默认关着，它消费的默认名永远轮不到用，不能凭消费就断言红），
-    但登记被两头拦：夹具要求它真红，`problems()` 要求它真消费改名的
-    默认名；
-  · `plugins()`：reflect-hooks/*.sh 带自证标记的（发现式）+ 点名特殊件
-    （doctor.py —— 理由住在数据旁）。
+  · `gates()`: ast-parses each check_*.py's module-level declaration line
+        GATE = gate.meta("name", "one line", knobs=(…), name_dependent=…)
+    — **declaration is registration**; gate modules are not imported (no side
+    effects, no execution cost). A check_*.py without a declaration line ⇒ the
+    roster does not take it (problems reports; render refuses to render);
+  · `red_need()`: the gates that **must go red** in the rename self-evidence
+    (the ones whose default names carry the load). The name_dependent flag is
+    registered explicitly — a machine cannot derive "the off-state short
+    circuit" (an instrument gate is off by default, so the default names it
+    consumes never get used; consumption alone cannot assert red), but the
+    registration is blocked on both ends: the fixture demands it really goes
+    red, and `problems()` demands it really consumes the renamed default names;
+  · `plugins()`: reflect-hooks/*.sh carrying the selftest marker (discovered) +
+    named special cases (doctor.py — the reason lives next to the data).
 
-消费方：`facts.py --render-doc` 渲染 AUTO:GATES 机器块（同 AUTO:FACTS
-先例 —— 手写清单退役，`check_facts` / `--check` 自动拦漂移）；
-gates-selftest.sh 消费 `--red-need` 与 `--plugins`（手写红名单、
-插件与 doctor 的点名退役）。
+Consumers: `facts.py --render-doc` renders the AUTO:GATES machine block (same
+precedent as AUTO:FACTS — the hand-written list retires, and `check_facts` /
+`--check` automatically blocks drift); gates-selftest.sh consumes `--red-need`
+and `--plugins` (the hand-written red list and the name-calling of plugins and
+doctor retire).
 
-诚实边界：本 module 只**叙述**名录，不执行闸门；闸门能不能红永远由
-gates-selftest.sh 实跑证明 —— 叙述与执行的判据各归各，别混。
+Honesty boundary: this module only **narrates** rosters and never executes
+gates; whether a gate can go red is forever proven by gates-selftest.sh actually
+running — the judgments of narration and execution each stay on their own side;
+do not mix them.
 """
 from __future__ import annotations
 
@@ -41,17 +50,21 @@ from gate import fatal, main_selftest_or, module_meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
 from knobs import REGISTRY  # noqa: E402
 
-# PINNED: AUTO 机器块固定语言（同 render.PREAMBLE 的理由）。
+# PINNED: the AUTO machine block uses a fixed language (same reason as render.PREAMBLE).
 GATES_BEGIN = "<!-- AUTO:GATES -->"
 GATES_END = "<!-- /AUTO:GATES -->"
 
 
 
-# 换名自证的夹具把哪些默认名改掉了（gates-selftest.sh 跨仓库节的改名面）。
-# 名册纪律同 knobs：只登记真的被夹具改名的默认名 —— 这是红名单对账的判据数据。
-# C4 对账③：`FIXTURE_RENAMES` 是「原名 → 夹具名」的**唯一产地** ——
-# gates-selftest.sh 的夹具从 `--fixture-renames` 派生它建的文件名，不再手写
-# 两份会漂的清单（此前夹具的名字与这张表是两处手写，无对账器）。
+# Which default names the rename self-evidence's fixture renames (the rename
+# surface of gates-selftest.sh's cross-repo section).
+# Roster discipline same as knobs: only register default names the fixture really
+# renames — this is the judgment data of the red-list reconciliation.
+# C4 reconciliation (3): `FIXTURE_RENAMES` is the **single producer** of
+# "original name -> fixture name" — gates-selftest.sh's fixture derives the file
+# names it creates from `--fixture-renames`, no longer hand-writing two lists
+# that would drift (the fixture's names and this table used to be two
+# hand-written copies with no reconciler).
 FIXTURE_RENAMES = {
     "FACTS.json": "LEDGER.json",
     "STATE.md": "NOTES.md",
@@ -63,19 +76,25 @@ FIXTURE_RENAMES = {
 }
 RENAMED_DEFAULTS = tuple(FIXTURE_RENAMES)
 
-# 已知相位（C1）：闸门声明自己的运行频率。执行面（gate.run_phase）按它过滤。
-#   commit        每次提交跑（pre-commit / pre-push / CI）
-#   start-of-work 开工前手动跑（doctor —— 查会死的东西，挂提交频率错）
-# ⚠️ issue #21：相位清单**焊死在这里**会逼下游 fork —— 使用方有自己的相位
-# （S26 仓的 lab：*.lab.py 只在实验目录在场时跑）。旋钮 `REFLECT_PHASES`
-# 追加自定义相位（逗号分隔，追加在两个内置相位之后）；核心两个不可删、
-# 不可重名 —— 相位是执行面与声明的公共词汇，乱改会让既有 runs_at 声明
-# 静默变孤儿。problems() 仍拦未知相位：声明了 runs_at 却不在清单 ⇒ 红。
+# Known phases (C1): gates declare their own run frequency. The execution plane
+# (gate.run_phase) filters on it.
+#   commit        runs on every commit (pre-commit / pre-push / CI)
+#   start-of-work run manually before starting work (doctor — checks things that
+#                 die; attaching it to commit frequency would be wrong)
+# ⚠️ issue #21: welding the phase list **here** would force downstream forks —
+# consumers have their own phases (the S26 repo's lab: *.lab.py only runs when
+# the experiment directory is present). The knob `REFLECT_PHASES` appends custom
+# phases (comma-separated, appended after the two built-ins); the core two
+# cannot be removed or shadowed — phases are the shared vocabulary of the
+# execution plane and declarations, and arbitrary renaming would silently orphan
+# existing runs_at declarations. problems() still blocks unknown phases: a
+# declared runs_at not in the list ⇒ red.
 BUILTIN_PHASES = ("commit", "start-of-work")
 
 
 def phases():
-    """已知相位 = 内置两个 + `REFLECT_PHASES` 追加（下游自定义，如 lab）。"""
+    """Known phases = the two built-ins + `REFLECT_PHASES` appends (downstream
+    custom, e.g. lab)."""
     raw = os.environ.get("REFLECT_PHASES", "").strip()
     out = list(BUILTIN_PHASES)
     for p in (x.strip() for x in raw.split(",")):
@@ -85,7 +104,7 @@ def phases():
 
 
 def phases_problems():
-    """相位清单自洽（旋钮坏值的判据；纯函数）。"""
+    """Phase-list self-consistency (the judgment for bad knob values; pure function)."""
     raw = os.environ.get("REFLECT_PHASES", "").strip()
     out = []
     if raw:
@@ -97,12 +116,14 @@ def phases_problems():
     return out
 
 def modules(zdir=None):
-    """平台模块名录（C5）：ast 解析 `MODULE = module_meta(…)` 声明行。
+    """Platform-module roster (C5): ast-parses `MODULE = module_meta(…)` declaration lines.
 
-    返回 (declared, undeclared)：`declared` = [{file, name, desc, selftest}]；
-    `undeclared` = **非闸门、非 __init__ 却没有 MODULE 声明**的 .py ——
-    平台模块必须声明自己（哪怕是 selftest=False，也要正面说「我不用自证」），
-    否则「该有自证却没写」无人问（文本猜 `_cases` 猜不出来「本该有」）。
+    Returns (declared, undeclared): `declared` = [{file, name, desc, selftest}];
+    `undeclared` = .py files that are **neither gates nor __init__ yet carry no
+    MODULE declaration** — a platform module must declare itself (even with
+    selftest=False it must positively say "I don't use self-evidence"),
+    otherwise "should have self-evidence but doesn't" goes unasked (guessing
+    `_cases` from text cannot guess "should have existed").
     """
     d = zdir if zdir is not None else gate.zdir()
     declared, undeclared = [], []
@@ -113,18 +134,21 @@ def modules(zdir=None):
     for n in names:
         if not n.endswith(".py") or n == "__init__.py":
             continue
-        # ⚠️ **`measure_*.py` 是使用方的数据模块，不是平台模块。**
+        # ⚠️ **`measure_*.py` are the consumer's data modules, not platform
+        # modules.**
         #
-        # 这条豁免是「接进真实项目」验收逼出来的：照 README 的
-        # 「Writing your measure()」把模块放 `zreflect/measure_myproject.py`，
-        # `--render-doc` 当场 FATAL：
+        # This exemption was forced by "wiring into a real project" acceptance:
+        # following the README's "Writing your measure()" and dropping the
+        # module at `zreflect/measure_myproject.py`, `--render-doc` went FATAL
+        # on the spot:
         #
         #     · these .py files are neither gates … nor declared platform
         #       modules: zreflect/measure_myproject.py
         #
-        # 用户无从知道要给自己的数据模块写 `MODULE = module_meta(...)`——
-        # 那是**本仓对自己代码**的纪律（「该有自证却没写」无人问），
-        # 不该强加给使用方的数据文件。
+        # The user has no way to know their data module needs
+        # `MODULE = module_meta(...)` — that is a discipline of **this repo for
+        # its own code** ("should have self-evidence but doesn't" goes unasked),
+        # not something to impose on a consumer's data file.
         if n.startswith("measure_"):
             continue
         rel = "zreflect/" + n
@@ -132,17 +156,19 @@ def modules(zdir=None):
             declared.append(_declaration(os.path.join(d, n), rel,
                                          attr="MODULE", func="module_meta"))
         elif _declaration(os.path.join(d, n), rel):
-            continue                    # 是闸门（有 GATE 声明），不算平台模块
+            continue                    # a gate (has a GATE declaration); not a platform module
         else:
             undeclared.append(rel)
     return declared, undeclared
 
 
 def selftest_modules(zdir=None):
-    """有自证义务的模块名录（C5，声明驱动）：`MODULE = module_meta(…,
-    selftest=True)` 声明的模块 —— 闸门（GATE 声明）不算在内（它们由
-    run_gates 覆盖）。返回 (mods, missing)：`mods` = 该跑自证的；
-    `missing` = 声明了 selftest=True 却没有 --selftest 入口的（写而不跑 = 装饰）。
+    """Roster of modules with a self-evidence obligation (C5, declaration-driven):
+    modules declared via `MODULE = module_meta(…, selftest=True)` — gates (GATE
+    declarations) are not counted (run_gates covers them). Returns (mods,
+    missing): `mods` = those that should run selftests; `missing` = declared
+    selftest=True but without a --selftest entry (written but never run =
+    decoration).
     """
     declared, _und = modules(zdir)
     d = zdir if zdir is not None else gate.zdir()
@@ -163,26 +189,21 @@ def selftest_modules(zdir=None):
 
 
 def gates(zdir=None):
-    """发现式闸门名录：**声明即闸门** —— ast 解析 zreflect/*.py 的模块级
-    `GATE = gate.meta(…)` 行，与文件名无关（C1）。
+    """The discovered gate roster: **declared means a gate** — ast-parses the
+    module-level `GATE = gate.meta(…)` lines of zreflect/*.py, independent of
+    file names (C1).
 
-    返回 (gates, missing)。gates = [{file, name, desc, knobs,
-    name_dependent, runs_at}]；missing = **叫 check_ 却没有声明行**的文件
-    （problems 报、render 拒绝 —— 那是「起名叫闸门却忘了声明」的形状）。
-
-    谓词 = **声明**，不是文件名（2026-10-10，C1）：执行面（hooks / CI）
-    改为读 registry.runnable() ⇒ 谓词只有一处（这里）。于是：
-      · 名字不再承重 —— doctor 靠 `runs_at="start-of-work"` 正面声明频率，
-        不靠「它没叫 check_」这种否定式命名意外；
-      · 「孤儿」（声明了却不叫 check_）概念消失 —— 声明了就是闸门，会被
-        runnable() 收进执行清单，不存在「进叙述不被执行」的中间态。
+    Returns (gates, missing). gates = [{file, name, desc, knobs,
+    name_dependent, runs_at}]; missing = files **named check_ without a
+    declaration line** (problems reports; render refuses — the shape of "named
+    like a gate but forgot to declare").
     """
     d = zdir if zdir is not None else gate.zdir()
     out, missing = [], []
     try:
         names = sorted(os.listdir(d))
     except OSError:
-        return [], []                     # zreflect/ 不在：调用方按零值守卫报
+        return [], []                     # zreflect/ absent: the caller reports per the zero-value guard
     for n in names:
         if not n.endswith(".py") or n == "__init__.py":
             continue
@@ -191,17 +212,20 @@ def gates(zdir=None):
         if meta:
             out.append(meta)
         elif n.startswith("check_"):
-            # 起名叫 check_ 却没声明 ⇒ 忘写声明（名录不收、render 拒绝）。
-            # 非 check_ 且无声明 = 平台模块（gate/knobs/registry/…），不是闸门。
+            # Named check_ but no declaration ⇒ forgot the declaration (the roster
+            # doesn't take it; render refuses).
+            # Non-check_ without a declaration = platform module
+            # (gate/knobs/registry/…), not a gate.
             missing.append(rel)
     return out, missing
 
 
 def _decl_call(node, attr, func):
-    """`node` 是不是 `<attr> = <func>(…)` 形状的声明行？是 ⇒ 那个调用节点。
+    """Is `node` a declaration line shaped `<attr> = <func>(…)`? If so ⇒ that call node.
 
-    两种等价写法都认：meta(…)（裸导入名）与 gate.meta(…)（属性）。
-    不是声明行 / 调用的不是 `func` ⇒ None（调用方继续扫下一行）。
+    Both equivalent spellings are recognized: meta(…) (bare imported name) and
+    gate.meta(…) (attribute). Not a declaration line / the call is not `func`
+    ⇒ None (the caller keeps scanning the next line).
     """
     if not (isinstance(node, ast.Assign) and len(node.targets) == 1
             and isinstance(node.targets[0], ast.Name)
@@ -216,7 +240,7 @@ def _decl_call(node, attr, func):
 
 
 def _module_meta(call, rel):
-    """`MODULE = module_meta(…)` → {file, name, desc, selftest}。"""
+    """`MODULE = module_meta(…)` → {file, name, desc, selftest}."""
     st = True
     for kw in call.keywords:
         if kw.arg == "selftest":
@@ -229,7 +253,7 @@ def _module_meta(call, rel):
 
 def _gate_meta(call, rel):
     """`GATE = gate.meta(…)` → {file, name, desc, knobs, name_dependent, runs_at,
-    off_reason}。"""
+    off_reason}."""
     knobs, name_dep, runs_at, off_reason = (), False, "commit", None
     for kw in call.keywords:
         if kw.arg == "knobs":
@@ -250,10 +274,11 @@ def _gate_meta(call, rel):
 
 
 def _declaration(path, rel, attr="GATE", func="meta"):
-    """从文件里 ast 提取声明行（默认 `GATE = meta(…)`；C5 用
-    `MODULE = module_meta(…)`）。没有 ⇒ None。
+    """ast-extract the declaration line from a file (default `GATE = meta(…)`;
+    C5 uses `MODULE = module_meta(…)`). None if absent.
 
-    `attr` / `func` 可换（同一套解析服务闸门与平台模块两类声明）。
+    `attr` / `func` are swappable (one parser serves both declaration kinds:
+    gates and platform modules).
     """
     try:
         tree = ast.parse(open(path, encoding="utf-8").read())
@@ -273,22 +298,27 @@ def _declaration(path, rel, attr="GATE", func="meta"):
 
 
 def runnable(phase="commit", zdir=None):
-    """按相位给出**该跑**的闸门清单（C1：执行面唯一产地）。
+    """The list of gates that **should run** for a phase (C1: the execution plane's
+    single producer).
 
-    `phase="commit"` ⇒ 每次提交跑的（hooks / CI）；`phase="start-of-work"`
-    ⇒ 开工前手动跑的（doctor）。返回 [{file, name, runs_at, …}]。
-    声明面（GATE = meta(…, runs_at=…)）是唯一产地 —— 执行面不再 glob 文件名。
+    `phase="commit"` ⇒ what runs on every commit (hooks / CI);
+    `phase="start-of-work"` ⇒ what runs manually before starting work (doctor).
+    Returns [{file, name, runs_at, …}]. The declaration surface
+    (GATE = meta(…, runs_at=…)) is the single producer — the execution plane no
+    longer globs file names.
     """
     gs, _missing = gates(zdir)
     return [g for g in gs if g.get("runs_at", "commit") == phase]
 
 
 def _touches_renamed(g):
-    """这道闸门消费的旋钮里，有没有默认名被换名自证改名。"""
+    """Among the knobs this gate consumes, is any default name renamed by the rename
+    self-evidence?"""
     for k in g["knobs"]:
         kind, dflt, _ = REGISTRY.get(k, ("", "", ""))
-        # 嵌套三元拆成显式分支（GitRoll #141）—— list 按逗号切、
-        # 有默认值算一个、没有就没有。语义不变。
+        # The nested ternary is split into explicit branches (GitRoll #141) — a
+        # list splits on commas, a default counts as one, none means none.
+        # Semantics unchanged.
         if kind == "list":
             vals = {x.strip() for x in dflt.split(",")}
         elif dflt:
@@ -301,14 +331,16 @@ def _touches_renamed(g):
 
 
 def _missing_declaration_problems(missing):
-    """叫 check_ 却没有 GATE 声明行 —— 忘写声明 = 叙述会漂。"""
+    """Named check_ but no GATE declaration line — forgetting the declaration means
+    the narrative drifts."""
     if not missing:
         return []
     return [M("registry.missing_declaration", files=", ".join(missing))]
 
 
 def _phase_problems(gs):
-    """runs_at 必须是已知相位 —— 频率是声明字段，写错值会让执行面漏掉它。"""
+    """runs_at must be a known phase — frequency is a declared field; a wrong value
+    makes the execution plane miss the gate."""
     out = []
     for g in gs:
         if g.get("runs_at", "commit") not in phases():
@@ -319,7 +351,8 @@ def _phase_problems(gs):
 
 
 def _name_dependent_problems(gs):
-    """标了 name_dependent 却不消费任何改名默认名 —— 旗标错了。"""
+    """Flagged name_dependent yet consumes no renamed default name — the flag is
+    wrong."""
     out = []
     for g in gs:
         if g["name_dependent"] and not _touches_renamed(g):
@@ -328,14 +361,16 @@ def _name_dependent_problems(gs):
 
 
 def _empty_gate_problems(gs, missing):
-    """名录整体为空 —— 零值守卫：空输入不是通过。"""
+    """The roster as a whole is empty — the zero-value guard: empty input is not a
+    pass."""
     if not gs and not missing:
         return [M("registry.empty_roster")]
     return []
 
 
 def _selftest_roster_problems(mods, mods_missing):
-    """平台模块自证名册：声明了就必须能跑，且名录不许为空。"""
+    """The platform modules' selftest roster: declared means runnable, and the roster
+    must not be empty."""
     if mods is None or mods_missing is None:
         mods, mods_missing = selftest_modules()
     out = []
@@ -348,8 +383,9 @@ def _selftest_roster_problems(mods, mods_missing):
 
 
 def _undeclared_module_problems(undeclared):
-    """C5：平台模块必须声明自己（MODULE = module_meta(…)），否则
-    「该有自证却没写」无人问（文本猜 _cases 猜不出「本该有」）。"""
+    """C5: platform modules must declare themselves (MODULE = module_meta(…)),
+    otherwise "should have self-evidence but doesn't" goes unasked (guessing
+    _cases from text cannot guess "should have existed")."""
     if undeclared is None:
         _decl, undeclared = modules()
     if not undeclared:
@@ -358,40 +394,52 @@ def _undeclared_module_problems(undeclared):
 
 
 def _knob_problems(knob_problems, gs):
-    """名册自洽性（C3）：幻影旋钮 / README 幻影 —— 与任何载体是否存在无关。
+    """Roster self-consistency (C3): phantom knobs / README phantoms — independent of
+    whether any carrier exists.
 
-    此前焊在 check_envfile.run() 的「载体存在」前置之后，本仓没有
-    Einfacht.env ⇒ 从未执行（实测踩到）。名册的家在这里收口。
+    It used to be welded behind check_envfile.run()'s "carrier exists"
+    precondition, and this repo has no Einfacht.env ⇒ never executed (observed
+    hit). The roster's home closes here.
     """
     if knob_problems is None:
         import knobs  # noqa: PLC0415
         knob_problems = (knobs.scan_surface_problems()
                          + knobs.readme_problems()
-                         # C4 对账：声明↔实读、REGISTRY↔README 表、zh↔en 包
+                         # C4 reconciliations: declared↔read, REGISTRY↔README
+                         # tables, zh↔en packs
                          + knobs.declared_vs_read_problems(gs)
                          + knobs.registry_vs_readme_problems()
                          + knobs.pack_sync_problems()
-                         # C4 对账④：**源码用到的 code 必须在每个已装包里**
-                         # （zh↔en 差集看不见「两边一起缺」，那是静默退化）
+                         # C4 reconciliation (4): **every code the source uses
+                         # must be in every installed pack** (the zh↔en set
+                         # difference cannot see "both sides missing the same
+                         # thing" — that is the silent degradation)
                          + knobs.pack_coverage_problems()
-                         # 声明了却从不使用的 DEFAULT_*（闸门假装配好了）
+                         # DEFAULT_* defined but never used (gates pretending a
+                         # default is configured)
                          + knobs.dead_default_problems())
     return list(knob_problems)
 
 
 def problems(gs, missing, mods=None, mods_missing=None,
              knob_problems=None, undeclared=None):
-    """名录的对账（纯函数）：空 = 绿。自证期间不许 print。
+    """The roster's reconciliation (pure function): empty = green. No print during
+    self-evidence.
 
-    `mods` / `mods_missing` / `knob_problems` 可注入（自证用夹具）；
-    None ⇒ 现读真仓。
+    `mods` / `mods_missing` / `knob_problems` are injectable (fixtures for
+    self-evidence); None ⇒ read the real repo now.
 
-    · 叫 check_ 却没有 GATE 声明行 ⇒ 报（忘写声明 = 叙述会漂）；
-    · runs_at 不是已知相位 ⇒ 报（频率是声明字段，写错值会让执行面漏掉它）；
-    · 标了 name_dependent 却不消费任何改名默认名 ⇒ 报（旗标错了）；
-    · 写了自证却没有 --selftest 入口 ⇒ 报（写而不跑 = 装饰）；
-    · 名册自洽性（幻影旋钮 / README 幻影）⇒ 报（C3，与载体无关）；
-    · 名录整体为空 ⇒ 报（零值守卫）。
+    · named check_ without a GATE declaration line ⇒ report (forgot the
+      declaration = the narrative drifts);
+    · runs_at is not a known phase ⇒ report (frequency is a declared field; a
+      wrong value makes the execution plane miss the gate);
+    · flagged name_dependent yet consumes no renamed default ⇒ report (the flag
+      is wrong);
+    · self-evidence written but no --selftest entry ⇒ report (written but never
+      run = decoration);
+    · roster self-consistency (phantom knobs / README phantoms) ⇒ report (C3,
+      carrier-independent);
+    · the roster as a whole is empty ⇒ report (zero-value guard).
     """
     out = []
     out += phases_problems()
@@ -409,9 +457,11 @@ def problems(gs, missing, mods=None, mods_missing=None,
     out += criteria.subprocess_encoding_problems()
     out += criteria.suite_scope_problems()
     out += criteria.fatal_exit_problems()
-    # ⚠️ 注入模式（`mods=` 给了）下**不扫死接口**：那条判据看的是真目录，
-    # 注入模式验的是「名录判据本身」，两者混在一张清单里会让断言被真仓状态
-    # 连坐（实测：`unknown_phase` 的断言多出一条 `dead_interface`）。
+    # ⚠️ In injection mode (`mods=` given), **dead interfaces are not scanned**:
+    # that judgment looks at the real directory while injection mode verifies
+    # "the roster judgment itself"; mixing both into one list makes assertions
+    # guilty by association with real-repo state (observed: the `unknown_phase`
+    # assertion picked up an extra `dead_interface`).
     if mods is None:
         out += criteria.dead_interface_problems()
     return out
@@ -437,7 +487,8 @@ def problems(gs, missing, mods=None, mods_missing=None,
 
 
 def _pinned_under(lang):
-    """自证帮手：在指定 REFLECT_LANG 下渲染 AUTO 块（用于证明它不随语言变）。"""
+    """Self-evidence helper: render the AUTO block under a given REFLECT_LANG (proves
+    it does not vary with language)."""
     old = os.environ.get("REFLECT_LANG", "")
     os.environ["REFLECT_LANG"] = lang
     try:
@@ -448,7 +499,8 @@ def _pinned_under(lang):
 
 
 def _with_phases(val):
-    """自证帮手：临时设 REFLECT_PHASES，返回 (phases(), problems())，恢复现场。"""
+    """Self-evidence helper: temporarily set REFLECT_PHASES, return (phases(),
+    problems()), restore the scene."""
     old = os.environ.get("REFLECT_PHASES", "")
     os.environ["REFLECT_PHASES"] = val
     try:
@@ -458,7 +510,8 @@ def _with_phases(val):
 
 
 def red_need(gs=None):
-    """换名自证里**必须红**的闸门文件名（默认名承担载荷的那批）。"""
+    """The gate file names that **must go red** in the rename self-evidence (the ones
+    whose default names carry the load)."""
     if gs is None:
         gs, _ = gates()
     return sorted(os.path.basename(g["file"]) for g in gs
@@ -466,11 +519,13 @@ def red_need(gs=None):
 
 
 def plugins(hooks_dir=None):
-    """自证点名的**插件**清单：`reflect-hooks/` 下带 `--selftest` 的脚本。
+    """The **plugin** list the self-evidence names: scripts under `reflect-hooks/`
+    carrying `--selftest`.
 
-    发现式：`.sh` 与 `.py` 都收 —— 全 Python 化之后入口是 `.py`，但
-    `einfacht-env.sh` 永远得是 shell（它被 `source` 以导出环境变量），
-    所以两种都存在。判据是「文件里有没有 `--selftest`」，不是扩展名。
+    Discovered: both `.sh` and `.py` are collected — after the full Python
+    migration the entry point is `.py`, but `einfacht-env.sh` must remain shell
+    forever (it gets `source`d to export environment variables), so both exist.
+    The judgment is "does the file contain `--selftest`", not the extension.
     """
     d = hooks_dir if hooks_dir is not None else repo("reflect-hooks")
     out = []
@@ -492,26 +547,32 @@ def plugins(hooks_dir=None):
 
 
 def render_gates(gs):
-    """闸门名录 → AUTO:GATES 机器块（含首尾标记）。**纯函数**：
-    同一名录渲染两次逐字节相同。
+    """Gate roster -> the AUTO:GATES machine block (including begin/end markers).
+    **Pure function**: rendering the same roster twice is byte-identical.
 
-    PINNED: 本块的文本**永远用固定语言**（issue #26，D' 的洞见），
-    不跟随 `REFLECT_LANG`。理由：它写进 `STATE.md` 并被 `facts.py --check`
-    逐字节对账 —— 若随语言变，`REFLECT_LANG=de --render-doc` 之后
-    `REFLECT_LANG=zh --check` 必然红，**同一提交在不同语言环境下结果不同**
-    （`collect.py` 原则 2 的同族病：不引入会自己变的输入）。
-    实测过：不 PINNED 就会不收敛。
+    PINNED: this block's text **always uses a fixed language** (issue #26, D''s
+    insight), never following `REFLECT_LANG`. Reason: it is written into
+    `STATE.md` and reconciled byte-for-byte by `facts.py --check` — if it
+    followed the language, `REFLECT_LANG=de --render-doc` followed by
+    `REFLECT_LANG=zh --check` would necessarily go red, and **the same commit
+    would give different results in different language environments** (the same
+    family of disease as `collect.py` principle 2: never introduce an input that
+    changes by itself).
+    Verified in practice: without PINNED it would not converge.
     """
     lines = [GATES_BEGIN,
-             ("> 本区块由 `zreflect/facts.py --render-doc` 从发现式名录"
-             "（zreflect/registry.py 的声明行）渲染，**不要手改**。"),
-             ("> 执行面（hooks / CI）读 `registry --run <相位>` —— 相位是声明字段"
-             "（`runs_at`），不是文件名。"),
+             ("> This block is rendered by `zreflect/facts.py --render-doc` from the "
+             "discovered roster (declaration lines in zreflect/registry.py); "
+             "**do not hand-edit**."),
+             ("> The execution plane (hooks / CI) reads `registry --run <phase>` — "
+             "the phase is a declared field (`runs_at`), not a file name."),
              "",
-             # ⚠️ 「可未启用的理由」是**声明**（静态），不是**运行时状态**。
-             # 运行时 off 要看 `registry --run <相位>` —— 把它渲染进本块会让
-             # AUTO 块每次运行都变 ⇒ 不收敛（本仓大忌，见 PINNED 说明）。
-             "| 闸门 | 相位 | 它挡住什么 | 消费的旋钮 | 可未启用的理由 |",
+             # ⚠️ "Reason it may be disabled" is a **declaration** (static), not
+             # **runtime state**. Runtime off is seen via `registry --run
+             # <phase>` — rendering it into this block would make the AUTO block
+             # change on every run ⇒ no convergence (this repo's cardinal sin;
+             # see the PINNED note).
+             "| Gate | Phase | What it guards | Knobs consumed | Why it may be off |",
              "|---|---|---|---|---|"]
     for g in sorted(gs, key=lambda x: (x.get("runs_at", "commit"), x["file"])):
         lines.append("| `%s`（%s） | %s | %s | %s | %s |"
@@ -521,70 +582,82 @@ def render_gates(gs):
                         g.get("off_reason") or "—"))
     off_capable = sum(1 for g in gs if g.get("off_reason"))
     lines += ["",
-              "%d 道闸门（发现式名录派生 —— 手写清单会漂，加闸门 = 落一个声明行，"
-              "这里自动长出来）；其中 %d 道**可未启用**（末列是**声明**理由，"
-              "不是运行时状态 —— 此刻谁 off 要看 `registry --run <相位>`）。"
+              "%d gates (derived from the discovered roster — a hand-written list "
+              "drifts; adding a gate = landing one declaration line, and it grows "
+              "here automatically); %d of them **may be disabled** (the last column "
+              "is a **declared** justification, not runtime state — who is off "
+              "right now is seen via `registry --run <phase>`)."
               % (len(gs), off_capable), GATES_END]
     return "\n".join(lines)
 
 
 def _arg_after(argv, flag):
-    """`--flag [value]` 的可选值（缺省 / 以 - 开头 ⇒ 默认 commit）。"""
+    """The optional value of `--flag [value]` (absent / starts with `-` ⇒ default
+    commit)."""
     i = argv.index(flag)
     return (argv[i + 1] if len(argv) > i + 1
             and not argv[i + 1].startswith("-") else "commit")
 
 
 def _emit_gate_output(text):
-    """把一道红闸门的输出转述给用户：**问题行 + 全部诊断行**，其余丢掉。
+    """Relay one red gate's output to the user: the **problem lines + all diagnostic
+    lines**, the rest dropped.
 
-    ⚠️ 截断规则是「第一条问题行之后停」，但 `ℹ ` 诊断行**一条都不许丢** ——
-    它们是唯一能救用户的那句话。实测：一次 bootstrap 后 registry 报 3 红，
-    而 `check_facts.py` 紧跟问题行的诊断是
-    `ℹ gate.env_hint(file='Einfacht.env')`（「先 source 它再手工跑」）。
-    旧规则把它整条丢掉，于是用户看到「缺 README.zh.md」就去造那份 ——
-    症状对、病因错，而且造了只会让红变多。
+    ⚠️ The truncation rule is "stop after the first problem line", but the `ℹ `
+    diagnostic lines must **not lose a single one** — they are the only sentence
+    that can save the user. Observed: after one bootstrap, registry reported 3
+    red, and `check_facts.py`'s diagnostic right after the problem line was
+    `ℹ gate.env_hint(file='Einfacht.env')` ("source it first, then run by
+    hand"). The old rule dropped it entirely, so the user, seeing "missing
+    README.zh.md", went and created that file — right symptom, wrong cause, and
+    creating it only made the red worse.
     """
     lines = [ln.rstrip() for ln in (text or "").splitlines() if ln.strip()]
     shown_problem = False
     for ln in lines:
         if ln.startswith("  \u00b7 "):
             if shown_problem:
-                continue                  # 第二条起的问题行省略（别刷屏）
+                continue                  # problem lines from the second on are omitted (don't flood)
             shown_problem = True
         elif ln.lstrip().startswith("\u2139 "):
-            pass                           # 诊断行：始终保留
+            pass                           # diagnostic line: always kept
         elif shown_problem:
-            continue                       # 问题行之后的非诊断行：不重复打印
+            continue                       # non-diagnostic lines after a problem line: don't re-print
         print("      " + ln)
 
 
 def _main_run(argv):
-    """执行面：跑一个相位的全部闸门并聚合 ran / off / failed（C1+C2）。
+    """The execution plane: run all gates of one phase and aggregate ran / off /
+    failed (C1+C2).
 
-    hooks / CI 只调这一行 —— glob 退役，谓词只有 gates() 一处。
+    hooks / CI call only this line — the glob retires, and the predicate has one
+    home: gates().
     """
     phase = _arg_after(argv, "--run")
     from gate import run_phase  # noqa: PLC0415
     gs = runnable(phase)
     if not gs:
         return fatal(M("registry.empty_phase", phase=phase))
-    # ⚠️ **本函数的全部输出走 stdout**（包括 fatal / error / failed 清单）。
-    # 与 `gate.finish()` 的「问题行统一 stderr」**不冲突**：那条只约束单个闸门
-    # 自己的判据输出；这里输出的是**运行报告**（谁没跑 / 谁红了 / 谁配置坏了），
-    # 是一份状态快照而不是判据。
-    # 理由：① 两个消费方（CI、hook）都只看 rc（`|| exit 1`），不解析 stdout；
-    # ② 只捕 stdout 的调用方（`$(...)` / 管道）必须看得见**是哪个文件**坏了 ——
-    # 只打 stderr 的话，它们看到 `fatal=1` 却不知道是谁（第 10 轮实测）。
+    # ⚠️ **All of this function's output goes to stdout** (including the fatal /
+    # error / failed lists). This does **not** conflict with `gate.finish()`'s
+    # "problem lines go to stderr": that rule only binds a single gate's own
+    # judgment output; what is printed here is a **run report** (who didn't run /
+    # who went red / whose config broke) — a status snapshot, not a judgment.
+    # Reasons: (a) both consumers (CI, hook) only look at rc (`|| exit 1`) and
+    # never parse stdout; (b) callers that capture only stdout (`$(...)` /
+    # pipes) must be able to see **which file** broke — with stderr-only output
+    # they would see `fatal=1` with no idea who (observed in round 10).
     res = run_phase(phase, gs)
     print(M("registry.phase_summary", phase=phase, ran=res["ran"],
             off=res["off"], failed=res["failed"], fatal=res.get("fatal", 0),
             error=res.get("error", 0)))
     for f in res["off_list"]:
         print(M("registry.phase_off", file=f))
-    # ⚠️ 这三个清单**同时打 stdout**：聚合方常常只捕 stdout（`$(...)` / 管道），
-    # 只打 stderr 的话它们看到 `fatal=1` 却不知道是哪个文件坏（review 实测）。
-    # 问题**原因**仍在闸门自己的 stderr 里 —— 这里补的是「谁」。
+    # ⚠️ These three lists are printed **to stdout as well**: aggregators often
+    # capture only stdout (`$(...)` / pipes); with stderr-only they would see
+    # `fatal=1` without knowing which file broke (observed in review). The
+    # problem **cause** remains in the gate's own stderr — what's added here is
+    # "who".
     for f in res.get("fatal_list", ()):
         print(M("registry.phase_fatal", file=f))
     for f in res.get("error_list", ()):
@@ -592,20 +665,24 @@ def _main_run(argv):
     for f in res["fail_list"]:
         print("  FAILED %s" % f)
         _emit_gate_output((res.get("fail_out", {}).get(f) or ""))
-    # 配置坏（rc=2）与判据红（rc=1）都要非零退出，但消息不同（修法不同）
+    # Broken config (rc=2) and red judgment (rc=1) both exit non-zero, but with
+    # different messages (different fixes)
     return 1 if (res["failed"] or res.get("fatal") or res.get("error")) else 0
 
 
 def cli_selftest_missing_lines(missing):
-    """`--selftest-modules` 的逐行点名（纯函数：自证用，零 print）。"""
+    """The per-line name-calling of `--selftest-modules` (pure function: for
+    self-evidence, zero print)."""
     return [M("registry.selftest_no_entry_cli", file=m) for m in missing]
 
 
 def _main_selftest_modules():
     mods, missing = selftest_modules()
     for line in cli_selftest_missing_lines(missing):
-        # CLI 逐行点名与 roster 的汇总句是**两处不同输出**（此前各一句措辞），
-        # 迁移时保持两条 code，不把 CLI 行改成汇总句的样子。
+        # The CLI's per-line name-calling and the roster's summary sentence are
+        # **two distinct outputs** (previously each had its own wording); keep
+        # both codes during migration, don't reshape the CLI line into the
+        # summary sentence.
         print(line, file=sys.stderr)
     if missing:
         return 1
@@ -613,14 +690,18 @@ def _main_selftest_modules():
     return 0
 
 
-# 哪些 code 是**可修复的配置提示**（不砖名录），哪些是**名录本身坏了**。
+# Which codes are **fixable configuration hints** (they don't brick the roster) and
+# which mean **the roster itself is broken**.
 #
-# ⚠️ 这条区分是实测出来的：用户按文档创建 `Einfacht.env` 之后，
-# `off_reason`（「本仓没有 Einfacht.env」）就过时了 —— 判据**是对的**，但把它
-# 当 fatal 会让 `registry --gates` / `--run commit` / pre-commit **永久红**，
-# 而唯一出路是删掉文档让他创建的那个文件。那是**自陷**，不是用户错。
+# ⚠️ This distinction came from practice: after the user creates `Einfacht.env`
+# per the docs, the `off_reason` ("this repo has no Einfacht.env") goes stale —
+# the judgment **is correct**, but treating it as fatal makes `registry --gates`
+# / `--run commit` / pre-commit **permanently red**, and the only way out is to
+# delete the file the docs told them to create. That is a **self-set trap**, not
+# a user error.
 #
-# 正确反应：明确说「去改闸门的 off_reason」，然后**继续**（名录是可用的）。
+# The right reaction: clearly say "go fix the gate's off_reason", then
+# **continue** (the roster is usable).
 _ADVISORY_CODES = frozenset({"registry.off_reason_stale"})
 
 
@@ -630,7 +711,7 @@ def _main_gates():
     fatal_probs = [p for p in probs if getattr(p, "code", "") not in _ADVISORY_CODES]
     for x in probs:
         if getattr(x, "code", "") in _ADVISORY_CODES:
-            print("  ! %s" % x, file=sys.stderr)      # 提示，不拒
+            print("  ! %s" % x, file=sys.stderr)      # hint, not a refusal
         else:
             print("  · %s" % x, file=sys.stderr)
     if fatal_probs:
@@ -641,20 +722,21 @@ def _main_gates():
 
 
 def _main_lists(argv):
-    """`--red-need` / `--runnable` / `--all-runnable` 三个清单打印。
+    """The three list prints: `--red-need` / `--runnable` / `--all-runnable`.
 
-    返回 rc；没有这些旗标 ⇒ None（调用方继续往下探）。
+    Returns rc; none of these flags ⇒ None (the caller keeps probing).
     """
     if "--red-need" in argv:
         print(" ".join(red_need()))
         return 0
     if "--runnable" in argv:
-        # 执行面唯一产地（C1）：--runnable [phase]，默认 commit。
+        # The execution plane's single producer (C1): --runnable [phase], default commit.
         for g in runnable(_arg_after(argv, "--runnable")):
             print(g["file"])
         return 0
     if "--all-runnable" in argv:
-        # 全部相位的闸门（自证用：每道闸门都必须证明自己能红，与相位无关）。
+        # Gates of all phases (for self-evidence: every gate must prove it can go
+        # red, regardless of phase).
         gs, _m = gates()
         for g in gs:
             print(g["file"])
@@ -663,15 +745,16 @@ def _main_lists(argv):
 
 
 def _main_listings(argv):
-    """`--plugins` / `--fixture-renames` 两个逐行清单。
+    """The two per-line listings: `--plugins` / `--fixture-renames`.
 
-    返回 rc；没有这些旗标 ⇒ None（调用方继续往下探）。
+    Returns rc; none of these flags ⇒ None (the caller keeps probing).
     """
     if "--plugins" in argv:
         print("\n".join(plugins()))
         return 0
     if "--fixture-renames" in argv:
-        # C4 对账③：夹具改名集的唯一产地（原名=夹具名，每行一条）。
+        # C4 reconciliation (3): the fixture rename set's single producer
+        # (original=fixture name, one per line).
         for orig, fix in sorted(FIXTURE_RENAMES.items()):
             print("%s=%s" % (orig, fix))
         return 0
@@ -679,8 +762,9 @@ def _main_listings(argv):
 
 
 def _usage():
-    """用法行。**函数而不是模块常量**：入口在 `main_selftest_or` 里才
-    `activate()` 语言包，模块级 `M(…)` 会在 import 时就被冻在 null 包上。"""
+    """The usage line. A **function, not a module constant**: the language pack is
+    only `activate()`d inside the `main_selftest_or` entry; a module-level `M(…)`
+    would be frozen on the null pack at import time."""
     return M("registry.usage")
 
 
@@ -702,16 +786,17 @@ def main(argv):
 
 
 def _phase_tiers_ok():
-    """`run_phase` 必须把 ran / off / failed / fatal 四档分清楚。"""
+    """`run_phase` must keep the four tiers ran / off / failed / fatal apart."""
     from gate import run_phase  # noqa: PLC0415
     script = {"fatal.py": (2, "FATAL: cfg"),
               "fail.py": (1, "gate.problems_header"),
               "off.py": (0, "OFF: x"),
               "ok.py": (0, "")}
-    # 第一次跑（四档基础形状）的返回体只用来确认不炸 —— GitRoll #104
-    # 「赋值了但从不使用」：显式接 `_`，意图从隐式变明说。
+    # The first run's (basic four-tier shape) return value only confirms it doesn't
+    # explode — GitRoll #104 "assigned but never used": explicitly bind `_`,
+    # turning the intent from implicit to explicit.
     _ = run_phase("commit", list(script), runner=lambda f: script[f])
-    script["err.py"] = (3, "boom")          # 未约定的码 / 被信号杀
+    script["err.py"] = (3, "boom")          # an unagreed code / killed by signal
     res = run_phase("commit", list(script), runner=lambda f: script[f])
     return (res["fatal"] == 1 and res["fatal_list"] == ["fatal.py"]
             and res["failed"] == 1 and res["fail_list"] == ["fail.py"]
@@ -721,12 +806,14 @@ def _phase_tiers_ok():
 
 
 def _captures_stderr():
-    """`default_runner` 必须把子进程的 **stderr 也带回来**。
+    """`default_runner` must bring the subprocess's **stderr back too**.
 
-    ⚠️ 这条**必须测默认执行器本身**（`gate.default_runner`），不能测注入的
-    runner：注入的 runner 是自证自己写的，测它等于测自己。此前那版就这么写，
-    实测对旧实现返回 BLIND（旧实现同样把 rc=2 归 fatal，差别在 out 里有没有
-    stderr 的内容）。
+    ⚠️ This must **test the default executor itself** (`gate.default_runner`),
+    not an injected runner: an injected runner is written by the self-test, and
+    testing it equals testing yourself. The previous version did exactly that
+    and returned BLIND against the old implementation (the old implementation
+    also filed rc=2 under fatal; the difference was whether out contained
+    stderr's content).
     """
     import os  # noqa: PLC0415
     import shutil  # noqa: PLC0415
@@ -741,7 +828,8 @@ def _captures_stderr():
                      "sys.stderr.write('FATAL: probe\\n')\n"
                      "sys.exit(2)\n")
         rc, out = default_runner(p, d)
-        # 只往 stderr 写 ⇒ stdout 空；若执行器只回 stdout，out 就是空串
+        # Writes to stderr only ⇒ stdout empty; if the executor returns only
+        # stdout, out is the empty string
         return rc == 2 and "FATAL: probe" in out
     finally:
         shutil.rmtree(d, True)
@@ -750,20 +838,21 @@ def _captures_stderr():
 
 
 def _render_shows_off_reason():
-    """声明了 `off_reason` 的假闸门 ⇒ AUTO 块里必须出现那段文字。"""
+    """A fake gate declaring `off_reason` ⇒ that text must appear in the AUTO block."""
     gs = [{"file": "zreflect/check_probe.py", "name": "probe",
            "desc": "probe gate", "knobs": (), "runs_at": "commit",
            "off_reason": "a declared justification long enough"}]
     body = render_gates(gs)
-    # ⚠️ **不写中文字面量**（本文件在零语言闸门的扫描面内 —— 实测踩到
-    # bare_text）。改判可机器读的部分：off_reason 那段文字必须出现在行尾，
-    # 且该行的列数与表头一致。
+    # ⚠️ **No Chinese literals** (this file is inside the zero-language gates'
+    # scan surface — observed hit on bare_text). Judge the machine-readable
+    # parts instead: the off_reason text must appear at end of line, and the
+    # line's column count must match the header.
     return ("a declared justification long enough" in body
             and body.count("|") >= 6)
 
 
 def _render_off_reason_dash():
-    """没声明 `off_reason` ⇒ 该格是 `—`（不是空串、不是 None）。"""
+    """No `off_reason` declared ⇒ that cell is `—` (not the empty string, not None)."""
     gs = [{"file": "zreflect/check_probe.py", "name": "probe",
            "desc": "probe gate", "knobs": (), "runs_at": "commit",
            "off_reason": None}]
@@ -773,7 +862,8 @@ def _render_off_reason_dash():
 
 
 def _streams_documented():
-    """两处措辞必须在源码里（gate.py 限定单个闸门 / 本文件说明聚合方走 stdout）。"""
+    """Both wordings must be in the source (gate.py scopes it to a single gate / this
+    file explains that aggregators go to stdout)."""
     import gate  # noqa: PLC0415
     try:
         g = open(gate.__file__, encoding="utf-8").read()
@@ -781,10 +871,14 @@ def _streams_documented():
         r = r.read()
     except OSError:
         return False
-    # ⚠️ 锚点用**码点拼**，不写中文字面量 —— 本文件在零语言闸门的扫描面内
-    # （实测踩到 bare_text）。判据名已说明测什么，锚点只需可机器匹配。
-    _a1 = "".join(chr(c) for c in (0x5355, 0x4E2A, 0x95F8, 0x95E8))   # 单个闸门
-    _a2 = "".join(chr(c) for c in (0x672C, 0x51FD, 0x6570))            # 本函数
+    # ⚠️ Anchors are plain ASCII fragments of the two normative sentences — this
+    # file is inside the zero-language gates' scan surface, so no natural-language
+    # fixture is written as a literal here (the CJK code-point assembly this
+    # check once used broke when the sources were de-language-fied; the anchors
+    # only need to be machine-matchable, and the judgment name still says what
+    # is tested).
+    _a1 = "single gate's problem lines"     # gate.py: the stderr rule is scoped to one gate
+    _a2 = "function's output goes to stdout"  # here: the run report goes to stdout
     return (_a1 in g and _a2 in r and
             ("stdout" in r and "stdout" in g))
 
@@ -796,28 +890,29 @@ def _streams_documented():
 
 
 def _plugin_discovery_ok():
-    """插件发现：目录在 ⇒ 必须发现 env 插件；目录不在 ⇒ 空名单也算对。"""
+    """Plugin discovery: directory present ⇒ the env plugin must be found; directory
+    absent ⇒ an empty list is also correct."""
     import os  # noqa: PLC0415
     d = repo("reflect-hooks")
     found = plugins()
     if not os.path.isdir(d):
-        return found == []          # 没装插件目录 ⇒ 空名单是对的
+        return found == []          # no plugin directory installed ⇒ empty list is correct
     return ("reflect-hooks/einfacht-env.sh" in found
             and "zreflect/doctor.py" not in found)
 
 
 def _nf_catches(which):
-    """用**真文件里的 lambda** 测 `never_falsifiable`（它按行号定位 AST，`-c`
-    里的 lambda 没有源码文件 ⇒ 会瞎）。
+    """Test `never_falsifiable` with **lambdas in a real file** (it locates the AST by
+    line number; a lambda in `-c` has no source file ⇒ it goes blind).
 
-    四个形状各造一个：
-      · `or_true`      —— `or True`（布尔被常量短路）
-      · `and_false`    —— `and False`
-      · `self_compare` —— `x == x`
-      · `real`         —— 真断言（必须返回 None）
+    Four shapes, one each:
+      · `or_true`      — `or True` (the boolean is short-circuited by a constant)
+      · `and_false`    — `and False`
+      · `self_compare` — `x == x`
+      · `real`         — a real assertion (must return None)
     """
     from gate import never_falsifiable  # noqa: PLC0415
-    y = 1                                                # 供 self_compare 用
+    y = 1                                                # used by self_compare
     shapes = {
         "or_true": lambda: (1 == 1) or True,
         "and_false": lambda: (1 == 1) and False,
@@ -828,30 +923,36 @@ def _nf_catches(which):
 
 
 def _nf_no_source():
-    """没有 `co_filename`（如 `-c` 里的 lambda / 内建）⇒ 必须返回 None（不猜）。
+    """No `co_filename` (a lambda in `-c`, builtins) ⇒ must return None (no guessing).
 
-    这条钉的是边界③：`never_falsifiable` 依赖 `ast` 定位**真文件**；
-    读不到就明说不猜，而不是当成「恒真」或「干净」。
+    This pins boundary (c): `never_falsifiable` relies on `ast` to locate the
+    **real file**; if it can't be read it says so rather than guessing — not
+    "always true" and not "clean".
     """
     from gate import never_falsifiable  # noqa: PLC0415
-    # 用 `compile` + `exec` 造一个**没有 co_filename** 的函数，而不是 `eval`：
-    # 语义完全相同（工具要的就是「读不到源码」这个边界），但静态安全扫描
-    # 不必为一个测试夹具的 `eval` 开豁免（`S307`）。夹具里的 eval 与产品里
-    # 的 eval 长得一样，将来没人分得清哪个是故意的。
+    # Build a function **without co_filename** via `compile` + `exec` instead of
+    # `eval`: identical semantics (the tool wants exactly the "can't read the
+    # source" boundary), but the static security scanner need not open an
+    # exemption (`S307`) for a test fixture's `eval`. An eval in a fixture looks
+    # like an eval in product code, and later nobody can tell which was
+    # intentional.
     ns = {}
     exec(compile("f = lambda: True", "<no-source>", "exec"), ns)  # noqa: S102
     return never_falsifiable(ns["f"])
 
 
 def _gate_desc_states_selftest():
-    """`gate.py` 的 MODULE 描述必须说明「逻辑自证住在 registry._cases」。"""
+    """`gate.py`'s MODULE description must state "the logic selftest lives in
+    registry._cases"."""
     mods, _und = modules()
     for m in mods:
         if m["file"].endswith("gate.py"):
             d = m["desc"]
-            # 锚点**全用 ASCII**：`registry._cases`（自证住在哪）+ `--selftest`
-            # （为什么没有入口）。不写中文字面量（本文件在零语言闸门扫描面内，
-            # 码点拼又容易拼错 —— 实测把 0x72EC 写成「独」）。
+            # Anchors are **all ASCII**: `registry._cases` (where the selftest
+            # lives) + `--selftest` (why there is no entry). No Chinese literals
+            # (this file is in the zero-language gates' scan surface, and
+            # code-point assembly is error-prone — 0x72EC was once mistyped as
+            # the wrong character).
             return ("registry._cases" in d) and ("--selftest" in d) \
                 and ("selftest" in d)
     return False
@@ -876,16 +977,18 @@ def _gate_desc_states_selftest():
 
 
 def _load_spec_ok():
-    """`load_spec` 读不到时返回 `(None, 错误句)`，**不 raise**。"""
+    """`load_spec` returns `(None, error sentence)` when unreadable; it does **not
+    raise**."""
     got = gate.load_spec("/nonexistent-probe.json")
     return isinstance(got, tuple) and len(got) == 2 \
         and got[0] is None and got[1] is not None
 
 
 def _cases_fixture(d):
-    """造一份假名录。`d` 来自 `_cases()`（它负责 mkdtemp 与清理）。"""
-    # 夹具的声明数据用**ASCII 名**：它们是被 ast 提取的输入（进 AUTO:GATES
-    # 机器块），不是本体输出 —— 中文夹具会被零语言闸门收编。
+    """Build a fake roster. `d` comes from `_cases()` (which owns mkdtemp and cleanup)."""
+    # The fixture's declaration data uses **ASCII names**: they are inputs
+    # extracted by ast (they enter the AUTO:GATES machine block), not core
+    # output — Chinese fixtures would be adopted by the zero-language gates.
     open(os.path.join(d, "check_ok.py"), "w", encoding="utf-8").write(
         'GATE = gate.meta("gate_a", "blocks_a", knobs=("REFLECT_FACTS",),'
         ' name_dependent=True)\n')
@@ -897,15 +1000,16 @@ def _cases_fixture(d):
     open(os.path.join(d, "doc_gate.py"), "w", encoding="utf-8").write(
         'GATE = gate.meta("gate_d", "start-of-work phase", knobs=(),'
         ' runs_at="start-of-work")\n')
-    open(os.path.join(d, "platform.py"), "w", encoding="utf-8").write("Y = 2\n")   # 无声明 = 平台模块
+    open(os.path.join(d, "platform.py"), "w", encoding="utf-8").write("Y = 2\n")   # no declaration = platform module
     gs, missing = gates(d)
     ok = [g for g in gs if g["file"].endswith("check_ok.py")][0]
     plain = [g for g in gs if g["file"].endswith("check_plain.py")][0]
     real, real_missing = gates()
 
     def real_files():
-        # ⚠️ `_zdir()`（**工具仓**的 zreflect），不是 `d`（临时夹具目录）——
-        # 这条断言比的是「真名录 vs 真磁盘」，与夹具无关。
+        # ⚠️ `_zdir()` (the **tooling repo's** zreflect), not `d` (the temporary
+        # fixture directory) — this assertion compares "real roster vs real
+        # disk", unrelated to the fixture.
         return {"zreflect/" + n for n in os.listdir(gate.zdir())
                 if n.startswith("check_") and n.endswith(".py")}
     return {"ok": ok, "plain": plain, "real": real,
@@ -914,7 +1018,7 @@ def _cases_fixture(d):
 
 
 def _cases_discovery_real(fx):
-    """① 正常不报：真仓的名录与声明面。（8 条）"""
+    """(a) Normally no report: the real repo's roster and declaration surface. (8 cases)"""
     ok, real = fx["ok"], fx["real"]
     gs, missing, real_missing, real_files = (fx["gs"], fx["missing"],
                                              fx["real_missing"], fx["real_files"])
@@ -944,14 +1048,16 @@ def _cases_discovery_real(fx):
         ("registry.fixture_renames_single_source",
          lambda: set(FIXTURE_RENAMES) == set(RENAMED_DEFAULTS)
          and len(FIXTURE_RENAMES) >= 7),
-        # 插件目录**可以不存在**（只拷 `zreflect/` 的部署）：那时没有插件可发现，
-        # 这不是失败。存在就必须发现它 —— 断言按「目录在不在」分两档。
+        # The plugin directory **may not exist** (a deployment copying only
+        # `zreflect/`): then there is no plugin to discover, and that is not a
+        # failure. Present means it must be found — the assertion splits on
+        # "directory present or not".
         ("registry.plugin_discovery", lambda: _plugin_discovery_ok()),
     ]
 
 
 def _cases_discovery_reports(fx):
-    """② 该报的必须报：名录对账的六种病。（6 条）"""
+    """(b) What must report must report: the roster reconciliation's six diseases. (6 cases)"""
     plain, missing = fx["plain"], fx["missing"]
     return [
         ("\u2605 registry.missing_declaration",
@@ -961,14 +1067,17 @@ def _cases_discovery_reports(fx):
              [dict(plain, name_dependent=True)], [],
              mods=["zreflect/x.py"], mods_missing=[], knob_problems=[],
              undeclared=[])] == ["registry.name_dependent_wrong"]),
-        # 这两条的空名录与「空清单不是通过」同时在场（gs=[] 必然触发零值守卫），
-        # 所以用 `any(code == …)` 而不是整表相等 —— 断言仍精确指向那一条。
+        # In the next two cases an empty roster and "an empty list is not a pass"
+        # are present simultaneously (gs=[] necessarily triggers the zero-value
+        # guard), so use `any(code == …)` instead of whole-list equality — the
+        # assertion still pins exactly that one.
         ("\u2605 registry.selftest_no_entry",
          lambda: any(p.code == "registry.selftest_no_entry" for p in problems(
              [], [], mods=["zreflect/x.py"],
              mods_missing=["zreflect/y.py"],
              knob_problems=[]))),
-        # CLI 逐行点名也必须能产出（否则它是「写而不跑」的装饰 —— 本仓纪律）。
+        # The CLI's per-line name-calling must be producible too (otherwise it is
+        # "written but never run" decoration — this repo's discipline).
         ("\u2605 registry.selftest_no_entry_cli",
          lambda: [m.code for m in cli_selftest_missing_lines(
              ["zreflect/y.py"])] == ["registry.selftest_no_entry_cli"]
@@ -978,18 +1087,21 @@ def _cases_discovery_reports(fx):
              [], [], mods=["zreflect/x.py"], mods_missing=[],
              knob_problems=[],
              undeclared=["zreflect/orphan_mod.py"]))),
-        # **聚合方的输出整体走 stdout**，与「单个闸门问题行统一 stderr」不冲突。
-        # 这条钉的是「两端语义分开写明白了」—— 判据是两处措辞都在。
+        # **The aggregator's output goes to stdout as a whole**, which does not
+        # conflict with "a single gate's problem lines go to stderr".
+        # This pins "the two ends' semantics are written apart" — the judgment is
+        # that both wordings exist.
         ("registry.aggregator_streams_documented",
          lambda: _streams_documented()),
     ]
 
 
 def _cases_discovery(fx):
-    """见 `_cases()`：本组 16 条。
+    """See `_cases()`: 16 cases in this group.
 
-    ① 真仓名录 / ② 名录病各是一个具名组：前者读夹具的真名录、后者造畸形
-    声明 —— 混在一起时读者分不清某条断言用的是哪个输入。
+    (a) Real-repo roster / (b) roster diseases are each a named group: the former
+    reads the fixture's real roster, the latter builds malformed declarations —
+    mixed together, a reader cannot tell which input an assertion uses.
     """
     return (_cases_discovery_real(fx) + _cases_discovery_reports(fx)
             + [("\u2605 registry.empty_roster",
@@ -998,7 +1110,7 @@ def _cases_discovery(fx):
 
 
 def _cases_render(fx):
-    """见 `_cases()`：本组 4 条。"""
+    """See `_cases()`: 4 cases in this group."""
     gs = fx["gs"]
     return [
     ("★ registry.auto_block_pinned_across_langs",
@@ -1008,18 +1120,21 @@ def _cases_render(fx):
      lambda: render_gates(gs) == render_gates(gs)
      and "gate_a" in render_gates(gs)
      and GATES_BEGIN in render_gates(gs) and GATES_END in render_gates(gs)),
-    # **`off_reason` 必须渲染进 AUTO 块**（让读者一眼看到哪些闸门可未启用、
-    # 为什么）—— 且它是**声明**不是运行时状态（后者会让块每次变、不收敛）。
+    # **`off_reason` must be rendered into the AUTO block** (so the reader sees at
+    # a glance which gates may be disabled and why) — and it is a
+    # **declaration**, not runtime state (the latter would change the block every
+    # run and never converge).
     ("★ registry.render_gates_shows_off_reason",
      lambda: _render_shows_off_reason()),
-    # 没声明的闸门那一格必须是 `—`（不写空、不写 "None"）
+    # A gate without a declaration must render `—` in that cell (no empty string,
+    # no "None")
     ("registry.render_gates_off_reason_dash",
      lambda: _render_off_reason_dash()),
     ]
 
 
 def _cases_phase(fx):
-    """见 `_cases()`：本组 9 条。"""
+    """See `_cases()`: 9 cases in this group."""
     plain = fx["plain"]
     d = fx["d"]
     return [
@@ -1033,19 +1148,23 @@ def _cases_phase(fx):
          [dict(plain, runs_at="whenever")], [],
          mods=["zreflect/x.py"], mods_missing=[], knob_problems=[],
          undeclared=[])] == ["registry.unknown_phase"]),
-    # **`run_phase` 是 hooks/CI 的唯一执行入口**，此前零自证。
-    # 三档聚合必须真的分开：rc=2（配置坏）≠ rc=1（判据红）≠ off。
-    # 混成一档的话，「有三道闸门报了真问题」与「有一道配置坏了」不可区分，
-    # 而修法完全不同（修问题 vs 改配置）。
+    # **`run_phase` is the only execution entry for hooks/CI** and previously had
+    # zero self-evidence. The tier aggregation must really be separate: rc=2
+    # (broken config) != rc=1 (red judgment) != off. If merged into one tier,
+    # "three gates reported real problems" and "one gate's config broke" would be
+    # indistinguishable, while the fixes are entirely different (fix problems vs
+    # fix config).
     ("★ registry.phase_tiers_separate",
      lambda: _phase_tiers_ok()),
-    # **stderr 必须被捕获**：本仓约定「问题行统一 stderr」，所以 rc=2 的
-    # 闸门 stdout 可能是空的（原因全在 stderr）。此前 `_default` 只回传
-    # `p.stdout` ⇒ 聚合方拿到 (2, "")，FATAL 被当成「跑过了」。
-    # 这条钉的是**默认执行器**的行为（注入 runner 测不到它）。
+    # **stderr must be captured**: this repo's convention is "problem lines go to
+    # stderr", so an rc=2 gate's stdout may be empty (the reason lives entirely
+    # in stderr). `_default` used to return only `p.stdout` ⇒ aggregators got
+    # (2, "") and the FATAL was treated as "ran". This pins the **default
+    # executor**'s behavior (an injected runner cannot test it).
     ("★ registry.run_phase_captures_stderr",
      lambda: _captures_stderr()),
-    # issue #21：相位旋钮 —— 下游自定义相位（如 S26 的 lab）不再 fork PHASES
+    # issue #21: the phase knob — downstream custom phases (like S26's lab) no
+    # longer fork PHASES
     ("registry.phases_extra_appended",
      lambda: _with_phases("lab")[0] == ("commit", "start-of-work", "lab")),
     ("★ registry.builtin_phase_repeated",
@@ -1053,22 +1172,27 @@ def _cases_phase(fx):
               ] == ["registry.builtin_phase_repeated"]),
     ("registry.phases_default_builtin_only",
      lambda: _with_phases("")[0] == ("commit", "start-of-work")),
-    # 人性化提示（env_hint）：四条判据
+    # The humane hint (env_hint): four judgments
     ]
 
 def _env_hint_case(which):
-    """`gate.env_hint()` 的**五档**行为（#28 修后：载体值参与判定）。
+    """`gate.env_hint()`'s **five tiers** of behavior (after the #28 fix: the carrier
+    value joins the decision).
 
-    1. `no_carrier`  —— 无载体 ⇒ None（裸跑不吵）
-    2. `carrier_bare` —— 载体在、没设旋钮 ⇒ **提示**（没人 source）
-    3. `carrier_live` —— 旋钮已设、值与载体**一致** ⇒ None（载体已生效）
-    4. `carrier_drift` —— 旋钮已设、值与载体**不同** ⇒ **提示**（手动 export 漂）
-    5. `carrier_off`  —— `REFLECT_ENV_HINT=off` ⇒ 打印层一个字都不出
+    1. `no_carrier`   — no carrier ⇒ None (a bare run stays quiet)
+    2. `carrier_bare` — carrier present, knob unset ⇒ **hint** (nobody sourced it)
+    3. `carrier_live` — knob set, value **matches** the carrier ⇒ None (the
+       carrier has taken effect)
+    4. `carrier_drift` — knob set, value **differs** from the carrier ⇒ **hint**
+       (a manual export drifted)
+    5. `carrier_off`  — `REFLECT_ENV_HINT=off` ⇒ the print layer emits nothing
 
-    ⚠️ 判据的语义前提是「进程环境受控」：钩子语境会把载体 source 进环境，
-    旋钮一设 `carrier_bare` 就恒红（#29 实测：上游自己 `REFLECT_FACTS=x
-    registry --selftest` ⇒ 1）。测试隔离自己进程的输入是自证的本职：
-    相关旋钮全部临时 pop，finally 恢复。
+    ⚠️ The judgment's semantic precondition is a "controlled process
+    environment": in hook contexts the carrier gets sourced into the
+    environment, and once the knob is set, `carrier_bare` would be permanently
+    red (#29 observed: upstream's own `REFLECT_FACTS=x registry --selftest` ⇒ 1).
+    Isolating the test from its own process's inputs is self-evidence's job: all
+    relevant knobs are temporarily popped and restored in finally.
     """
     import shutil
     import tempfile  # noqa: PLC0415
@@ -1082,23 +1206,24 @@ def _env_hint_case(which):
             open(os.path.join(d, "Einfacht.env"), "w",
                  encoding="utf-8").write("export REFLECT_FACTS=FACTS.json\n")
         if which == "carrier_off":
-            # `off` 的静默发生在**打印层**（`_maybe_hint`），不在 `env_hint`
-            # —— `env_hint()` 仍会算出那句话，只是没人打印它。测打印层。
+            # The silence of `off` happens at the **print layer** (`_maybe_hint`),
+            # not in `env_hint` — `env_hint()` still computes the sentence; nobody
+            # prints it. Test the print layer.
             os.environ["REFLECT_ENV_HINT"] = "off"
             import contextlib  # noqa: PLC0415
             import io  # noqa: PLC0415
             buf = io.StringIO()
             with contextlib.redirect_stderr(buf):
                 gate._maybe_hint()
-            return buf.getvalue() == ""       # 必须**一个字符都不打**
+            return buf.getvalue() == ""       # must **not print a single character**
         if which == "carrier_live":
-            os.environ["REFLECT_FACTS"] = "FACTS.json"    # 与载体一致
+            os.environ["REFLECT_FACTS"] = "FACTS.json"    # matches the carrier
         elif which == "carrier_drift":
-            os.environ["REFLECT_FACTS"] = "OTHER.json"    # 与载体不同
+            os.environ["REFLECT_FACTS"] = "OTHER.json"    # differs from the carrier
         hint = gate.env_hint(consumed=("REFLECT_FACTS",))
         if which in ("carrier_bare", "carrier_drift"):
-            return hint is not None          # 必须**提示**
-        return hint is None                  # 无载体 / 已生效 ⇒ 必须静默
+            return hint is not None          # must **hint**
+        return hint is None                  # no carrier / already live ⇒ must stay silent
     finally:
         gate.GATE_REPO = saved
         if saved_off is not None:
@@ -1113,19 +1238,23 @@ def _env_hint_case(which):
 
 
 def _cases_hint(fx):
-    """见 `_cases()`：环境提示（env_hint）的静默条件。"""
+    """See `_cases()`: the environment hint's (env_hint) silence conditions."""
     return [
-        # ⚠️ 此前这两条是**恒真**：`env_hint(...) is None or env_carrier() is not
-        # None` —— 只要仓里有 `Einfacht.env` 第二条永远成立（把 `env_hint` 弄成
-        # 永远返回一行，断言仍 True，实测）。现在按**载体有无**三个档位都测。
+        # ⚠️ These two used to be **vacuously true**: `env_hint(...) is None or
+        # env_carrier() is not None` — as long as the repo had `Einfacht.env`,
+        # the second clause always held (make `env_hint` always return a line and
+        # the assertion still passed; observed). Now all three tiers by
+        # **carrier presence** are tested.
         ("★ registry.env_hint_silent_without_carrier",
          lambda: _env_hint_case("no_carrier")),
         ("★ registry.env_hint_fires_with_carrier",
          lambda: _env_hint_case("carrier_bare")),
-        # #28：载体已生效（值一致）⇒ 静默 —— 接线正确的仓这才不吵
+        # #28: the carrier has taken effect (values match) ⇒ silent — only a
+        # correctly wired repo stays quiet
         ("registry.env_hint_silent_when_carrier_live",
          lambda: _env_hint_case("carrier_live")),
-        # #28：手动 export 与载体漂了 ⇒ 必须提示（这正是该吵的场景）
+        # #28: a manual export drifted from the carrier ⇒ must hint (exactly the
+        # scenario that should be loud)
         ("★ registry.env_hint_fires_on_drift",
          lambda: _env_hint_case("carrier_drift")),
         ("★ registry.env_hint_off_silent",
@@ -1139,36 +1268,45 @@ def _cases_hint(fx):
 
 
 def _cases_gate_hosted(fx):
-    """`gate.py` 的判据**寄宿在这里** —— 它 `selftest=False`（提供 `selftest`
-    本身，自举会打架），所以它的逻辑自证只能住在别处。本仓唯一合法寄宿。"""
+    """`gate.py`'s judgments **are hosted here** — it declares `selftest=False`
+    (it provides `selftest` itself; bootstrapping would fight itself), so its
+    logic selftest can only live elsewhere. The only legal hosting in this repo."""
     return [
-        # **`never_falsifiable` 的自证**（第 22 轮）：它是 `gate.selftest()` 的
-        # 核心守卫（`gate.py:36` 起），用来抓「恒真断言」—— 此前**全仓零自证**。
-        # 「检测器的检测器」没被测过：它失效时，所有断言都会静默失去牙。
+        # **`never_falsifiable`'s selftest** (round 22): it is the core guard of
+        # `gate.selftest()` (from `gate.py:36`), catching "vacuously true
+        # assertions" — previously the **whole repo had zero self-evidence** for
+        # it. "The detector's detector" was never tested: when it fails, every
+        # assertion silently loses its teeth.
         ("★ registry.never_falsifiable_catches_or_true",
          lambda: _nf_catches("or_true") is not None),
         ("★ registry.never_falsifiable_catches_and_false",
          lambda: _nf_catches("and_false") is not None),
         ("★ registry.never_falsifiable_catches_self_compare",
          lambda: _nf_catches("self_compare") is not None),
-        # **阳性对照**：真断言必须**不报**（否则「总是报」也能骗过自证）
+        # **Positive control**: a real assertion must **not** report (otherwise
+        # "always report" would also fool the self-test)
         ("registry.never_falsifiable_allows_real",
          lambda: _nf_catches("real") is None),
-        # 边界③：「读不到源码」⇒ 不猜（返回 None，不是「恒真」也不是「干净」）
+        # Boundary (c): "can't read the source" ⇒ no guessing (returns None, neither
+        # "always true" nor "clean")
         ("★ registry.never_falsifiable_no_source_no_guess",
          lambda: _nf_no_source() is None),
-        # **`gate.py` 的 `selftest=False` 必须说清真实含义**（第 23 轮）：
-        # 它不表示「没有自证义务」，只表示「没有 `--selftest` 入口（自举会打架）」。
-        # 此前描述只写「提供 selftest，自己不消费」—— 读起来像免责声明。
+        # **`gate.py`'s `selftest=False` must state its real meaning** (round 23):
+        # it does not mean "no self-evidence obligation", only "no `--selftest`
+        # entry (bootstrapping would fight itself)". The description used to say
+        # only "provides selftest, doesn't consume it itself" — reads like a
+        # disclaimer.
         ("★ registry.gate_module_meta_states_where_selftest_lives",
          lambda: _gate_desc_states_selftest()),
-        # 依赖链判据刚点名的两条 `gate` 函数（消费方多，自身零断言）
+        # The two `gate` functions just named by the dependency-chain judgment
+        # (many consumers, zero assertions of their own)
         ("★ registry.guard_nonempty_returns_2",
-         # 空 ⇒ rc 2（FATAL）；非空 ⇒ None
+         # empty ⇒ rc 2 (FATAL); non-empty ⇒ None
          lambda: gate.guard_nonempty("x", []) == 2
          and gate.guard_nonempty("x", [1]) is None),
         ("★ registry.load_spec_returns_error_not_raise",
-         # 坏路径 ⇒ (None, 错误句)；不抛异常（调用方要拼自己的措辞）
+         # broken path ⇒ (None, error sentence); no exception (the caller wants to
+         # compose its own wording)
          lambda: _load_spec_ok()),
     ]
 
@@ -1177,7 +1315,8 @@ def _cases_gate_hosted(fx):
 
 
 def _cases():
-    """拼装六组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    """Assemble the six fixture groups. **Assembly only** — the judgments live in the
+    group functions."""
     import atexit  # noqa: PLC0415
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
@@ -1193,14 +1332,15 @@ def _cases():
     )
 
 
-MODULE = module_meta("发现式名录", "闸门/模块/插件的声明派生：执行面 + 叙述 + 红名单", selftest=True)
+MODULE = module_meta("Discovered rosters", "declaration-derived gates/modules/plugins: execution plane + narrative + red list", selftest=True)
 
 
 if __name__ == "__main__":
-    # 收尾统一走 `main_selftest_or`：它先做语言包激活（`activate_or_fatal`），
-    # 再分流 `--selftest` 与 `main()`。此前这里自己抄了一份 activate+FATAL，
-    # 而 gate 自己的 `__main__` 又是第三种写法（连 FATAL 都没有）—— 同一件事
-    # 三份拷贝，口径必然漂。
+    # The finish goes uniformly through `main_selftest_or`: it first activates the
+    # language pack (`activate_or_fatal`), then splits into `--selftest` and
+    # `main()`. This used to hand-copy its own activate+FATAL, while gate's own
+    # `__main__` was a third variant (no FATAL at all) — three copies of the same
+    # thing; the wording was bound to drift.
     sys.exit(main_selftest_or(sys.argv[1:],
                               M("gate.title.registry"),
                               _cases, main))

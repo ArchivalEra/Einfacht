@@ -1,50 +1,63 @@
 #!/usr/bin/env python3
-"""模块级快照闸门（**可插拔模块**，deepening 第 5 轮）。
+"""Module-level snapshot gate (**pluggable module**, deepening round 5).
 
-守的是一条**踩了三次的坑**：
+It guards a pit that was stepped on **three times**:
 
-    from gate import GATE_REPO        # ← 值拷贝，此刻冻结
+    from gate import GATE_REPO        # <- value copy, frozen at this moment
     ...
-    gate.GATE_REPO = other_repo       # ← 后来改了，上面那个副本不知道
-    subprocess.run(..., cwd=GATE_REPO)  # ← 还在用旧仓
+    gate.GATE_REPO = other_repo       # <- changed later; the copy above never knows
+    subprocess.run(..., cwd=GATE_REPO)  # <- still using the old repo
 
-`from X import CONST` 在 Python 里是**值拷贝**，不是引用。若 `CONST` 之后会被
-重新赋值（`gate.GATE_REPO` 就是，任何夹具都会改它），所有拷贝都变成**陈旧快照** ——
-而且失败得没有声音：不报错、不抛异常，只是悄悄地读错仓库。
+`from X import CONST` in Python is a **value copy**, not a reference. If `CONST`
+gets reassigned afterwards (`gate.GATE_REPO` is exactly that; any fixture may
+reassign it), every copy becomes a **stale snapshot** -- and it fails silently:
+no error, no exception, just quietly reading the wrong repo.
 
-本仓实际踩到三次：
+This repo actually hit it three times:
 
-  1. `i18n.pack_dir()` 用 GATE_REPO 相对 ⇒ 跨仓夹具里装载器找不到包（0/15 全红）
-  2. `knobs.installed_langs()` 同类
-  3. `check_envfile` 的自证想改 `os.environ["GATE_REPO"]` 却发现无效（`repo()`
-     读的是模块级变量，不是环境变量）
+  1. `i18n.pack_dir()` resolved relative to GATE_REPO => in cross-repo fixtures
+     the loader could not find the language packs (0/15 all red)
+  2. `knobs.installed_langs()`, same class of bug
+  3. `check_envfile`'s self-proof tried to change `os.environ["GATE_REPO"]` and
+     found it had no effect (`repo()` reads a module-level variable, not an
+     environment variable)
 
-第三次最典型：**作者以为改环境变量就够了**，因为看不见「这个值是 import 时
-定下的」。本闸门把这个隐形耦合变成可判定的。
+The third is the most typical: **the author assumed changing the environment
+variable would suffice**, because "this value was fixed at import time" is
+invisible. This gate turns that hidden coupling into something decidable.
 
-## 判据（AST，零执行）
+## Criterion (AST, zero execution)
 
-对 `zreflect/*.py` 里每一条 `from <本地模块> import <大写名>`：
+For every `from <local module> import <UPPER_NAME>` in `zreflect/*.py`:
 
-  · 若 `<大写名>` 在**源模块里是模块级可赋值名字**（且不是函数 / 常量数据），
-    且导入方**在运行路径上用了它** ⇒ 报。
+  - if `<UPPER_NAME>` is a **module-level assignable name in the source module**
+    (and not a function / constant data), and the importer **uses it on a live
+    path** => report.
 
-「模块级可赋值」的判据：源模块里有模块顶层的 `NAME = ...` 赋值，且该名字
-**不是** frozen 数据（`REGISTRY` 这类只在 import 时构造一次、此后没人改的）。
+"Module-level assignable" means: the source module has a top-level
+`NAME = ...` assignment, and the name is **not** frozen data (something like
+`REGISTRY`, constructed once at import and never touched again).
 
-诚实边界（**三条，都是写明的缺口**）：
+Honest boundaries (**three, all explicitly written gaps**):
 
- 1. 静态判据只会看「谁 import 了可变全局」，**判不出**「这里改它是否真的发生过」。
-    所以它报的是**风险形状**，不是已发生的事故。
- 2. **类属性不报**：`class C: OUT = repo(...)` 在 import 时同样会冻结，但判据只
-    收 `ast.Assign` / `ast.AnnAssign` 的**模块顶层**赋值。取舍理由：类属性是
-    「类定义的一部分」，读它要写 `C.OUT`，语义上不像模块级常量那样容易被当成
-    全局配置散播；而且真仓目前没有这种写法（实测扫描 0 处）。若将来出现，
-    这里应该补判据而不是放宽 —— 现在**不假装覆盖**。
- 3. 扫描集**之外**的模块做赋值（如 `tools/` 里的脚本改 `gate.GATE_REPO`）看不见。
-    扫描面由 `REFLECT_SNAPSHOT_ROOT` 定，这是可插拔闸门的设计边界。
+  1. A static criterion only sees "who imports a mutable global"; it **cannot
+     tell** whether the reassignment ever actually happens at runtime. So what
+     it reports is a **risk shape**, not an incident that occurred.
+  2. **Class attributes are not reported**: `class C: OUT = repo(...)` freezes
+     at import just the same, but the criterion only collects **module-level**
+     `ast.Assign` / `ast.AnnAssign`. Trade-off rationale: a class attribute is
+     "part of the class definition", read as `C.OUT`, and semantically less
+     likely than a module-level constant to be treated as global config and
+     spread around; moreover the real repo currently has no such pattern
+     (verified: 0 occurrences in a scan). If one appears, add a criterion here
+     rather than loosen it -- for now we **do not pretend to cover it**.
+  3. Assignments made by modules **outside** the scan set (e.g. a script in
+     `tools/` changing `gate.GATE_REPO`) are invisible. The scan surface is
+     defined by `REFLECT_SNAPSHOT_ROOT`; that is the design boundary of a
+     pluggable gate.
 
-修法永远是同一个：改成 `import gate` + `gate.GATE_REPO`（每次读属性，不拷贝）。
+The fix is always the same: switch to `import gate` + `gate.GATE_REPO`
+(read the attribute every time; do not copy).
 """
 from __future__ import annotations
 
@@ -57,22 +70,30 @@ import gate  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta  # noqa: E402
 from i18n import M  # noqa: E402
 
-# ⚠️ 默认值**不是空**：本闸门守的正是本仓自己的代码（`zreflect/*.py`），
-# 所以它对任何 Einfacht 落地的仓库都该默认生效。此前默认空 ⇒ 旋钮没人配 ⇒
-# 活体 `registry --run commit` 里它永远是 `off`（实测：CI/hook/自证三处都没配）。
-# 「闸门存在、自证绿、但从没跑过」正是本仓立身要消灭的假绿。
+# ⚠️ The default value is **not empty**: this gate guards the repo's own code
+# (`zreflect/*.py`), so it should be on by default for every repo where
+# Einfacht lands. Previously the default was empty => nobody configured the
+# knob => in a live `registry --run commit` it was forever `off` (verified:
+# configured in none of CI / hook / self-proof). "The gate exists, its
+# self-proof is green, but it never runs" is exactly the fake green this repo
+# exists to eliminate.
 KNOB = "REFLECT_SNAPSHOT_ROOT"
-# 默认扫描面不再存这里：未配旋钮 ⇒ 锚 `gate.zdir()`（工具仓自己的
-# zreflect/，cwd 无关）。曾有一个 `DEFAULT_ROOT = "zreflect"` 裸相对名，
-# 判据改锚工具仓后它成了死默认（knobs.dead_default 抓到）—— 删。# ⚠️ **不再用手写名单**。此前这里是一串硬编码模块名（`("gate", "knobs", …)`），
-# 违反 AGENTS「手写名录一定会漂」：全仓 28 个 `zreflect/*.py` 里只有 12 个在册，
-# 另外 16 个（全部 `check_*.py`）作为**被导入源**时判据完全看不到。
-# 现在是**发现式**：扫描面里每个 `.py` 都是候选源模块 —— 名单 = 扫描面本身。
-# （第三方库不会被误收：只认 `from X import …` 且 X 在扫描面里。）
+# The default scan surface is no longer stored here: knob unset => anchor at
+# `gate.zdir()` (the tool repo's own zreflect/, independent of cwd). There used
+# to be a bare relative `DEFAULT_ROOT = "zreflect"`; once the criterion
+# re-anchored to the tool repo it became a dead default (caught by
+# knobs.dead_default) -- deleted. # ⚠️ **No more hand-written roster**. This used to be a hardcoded tuple of
+# module names (`("gate", "knobs", ...)`), violating the AGENTS rule "a
+# hand-written roster always drifts": of the 28 `zreflect/*.py` files in the
+# repo only 12 were listed, and the other 16 (all `check_*.py`) were completely
+# invisible to the criterion **as imported sources**. It is now **discovery
+# based**: every `.py` in the scan surface is a candidate source module --
+# the roster is the scan surface itself. (Third-party libraries are not
+# mis-collected: only `from X import ...` with X inside the scan surface.)
 
 
 def _module_level_assigns(tree):
-    """模块顶层被赋值的名字集合（`NAME = ...` / `NAME: T = ...`）。"""
+    """Names assigned at module top level (`NAME = ...` / `NAME: T = ...`)."""
     out = set()
     for node in tree.body:
         if isinstance(node, ast.Assign):
@@ -85,14 +106,14 @@ def _module_level_assigns(tree):
 
 
 def _aliases_of(trees, src_mod):
-    """扫描面里 `import <src_mod> as <alias>` 的别名集合（`_reassigned_elsewhere` 用）。"""
+    """Aliases bound by `import <src_mod> as <alias>` in the scan surface (used by `_reassigned_elsewhere`)."""
     return {a.asname for tree in trees.values()
             for node in ast.walk(tree) if isinstance(node, ast.Import)
             for a in node.names if a.name == src_mod and a.asname}
 
 
 def _import_aliases(trees):
-    """`import <mod> as <alias>` ⇒ `{alias: mod}`（别名也指向那个模块）。"""
+    """`import <mod> as <alias>` => `{alias: mod}` (the alias also points at that module)."""
     aliases = {}
     for _m, tree in trees.items():
         for node in ast.walk(tree):
@@ -104,7 +125,7 @@ def _import_aliases(trees):
 
 
 def _assign_targets(node):
-    """一个赋值类节点写到的全部 target（`Assign` / `AnnAssign` / `AugAssign`）。"""
+    """All targets written by an assignment-like node (`Assign` / `AnnAssign` / `AugAssign`)."""
     if isinstance(node, ast.Assign):
         return node.targets
     if isinstance(node, (ast.AnnAssign, ast.AugAssign)):
@@ -113,7 +134,7 @@ def _assign_targets(node):
 
 
 def _attribute_mutations(tree, aliases):
-    """形状①：`<src_mod>.<name> = …` 或 `<alias>.<name> = …`。"""
+    """Shape 1: `<src_mod>.<name> = ...` or `<alias>.<name> = ...`."""
     out = set()
     for node in ast.walk(tree):
         for t in _assign_targets(node):
@@ -124,7 +145,7 @@ def _attribute_mutations(tree, aliases):
 
 
 def _module_global_mutations(tree, module):
-    """形状②：模块自己用 `global NAME` + 再赋值（同模块内改写）。"""
+    """Shape 2: the module itself reassigns via `global NAME` (rewrite within the same module)."""
     globs = _globals_of(tree)
     out = set()
     for node in ast.walk(tree):
@@ -137,19 +158,24 @@ def _module_global_mutations(tree, module):
 
 
 def _mutated_globals(trees):
-    """**一次性索引**：哪些 `(模块, 名字)` 会在运行期被别人赋值。
+    """One-time index: which `(module, name)` pairs get assigned by others at runtime.
 
-    ⚠️ 此前 `_reassigned_elsewhere(trees, src_mod, name)` 对**每个候选名**都
-    重新 `ast.walk` 全部模块 —— 115 个名字 × 28 个模块的 AST ⇒ 6.3 秒
-    （实测：占整个闸门 6.5s 的 97%）。索引建一次即可，查询 O(1)。
+    ⚠️ Previously `_reassigned_elsewhere(trees, src_mod, name)` re-ran
+    `ast.walk` over all modules **for every candidate name** -- 115 names x
+    28 modules' ASTs => 6.3 seconds (measured: 97% of the gate's total 6.5s).
+    Build the index once; lookups are O(1).
 
-    判据形状的关键：不是「源模块自己赋值几次」（`gate.GATE_REPO` 只赋一次），
-    而是「**别人会不会改它**」—— `check_envfile` / `i18n` 的自证都在
-    `gate.GATE_REPO = …` 改它。只赋值一次、无人改写的常量（`REGISTRY`）不报
-    —— 它们的语义是「一个数据表」，拷贝与引用没区别。
+    The key shape of the criterion: not "how many times the source module
+    itself assigns it" (`gate.GATE_REPO` is assigned once), but "**will others
+    reassign it**" -- the self-proofs of `check_envfile` / `i18n` both do
+    `gate.GATE_REPO = ...`. A constant assigned once and rewritten by nobody
+    (`REGISTRY`) is not reported -- its semantics is "a data table", where
+    copy and reference are indistinguishable.
 
-    两个形状各是一个具名 helper（跨模块属性赋值 / 模块内 global 改写）：
-    拼在一个函数里时两层嵌套 + 三种声明的 isinstance 分支把复杂度推到 15。
+    Each shape gets a named helper (cross-module attribute assignment /
+    within-module global rewrite): merged into one function, the two nesting
+    levels plus isinstance branches over three statement kinds pushed
+    complexity to 15.
     """
     aliases = _import_aliases(trees)
     out = set()
@@ -160,7 +186,7 @@ def _mutated_globals(trees):
 
 
 def _globals_of(tree):
-    """这个模块里所有 `global <name>` 声明涉及的名字。"""
+    """All names covered by `global <name>` declarations in this module."""
     out = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Global):
@@ -169,19 +195,21 @@ def _globals_of(tree):
 
 
 def _uses_global(tree, name):
-    """这个模块里有没有 `global <name>` 声明（name=None ⇒ 有没有任何 global）。"""
+    """Does this module declare `global <name>`? (name=None => any global at all)."""
     g = _globals_of(tree)
     return bool(g) if name is None else name in g
 
 
 def _functions_reading(src_tree, name):
-    """`src_mod` 里**（传递地）**读 `name` 的顶层函数名。
+    """Top-level function names in `src_mod` that (transitively) read `name`.
 
-    派生快照常经由封装出现：`OUT = repo(LEDGER_NAME)` —— 表达式文本里没有
-    `gate.GATE_REPO`，但 `repo()` 的体里有。只看一跳会漏**两跳**：
-    `def a(): return repo(x)` 然后 `OUT = a()`（实测 []）。
-    所以这里做**闭包**：反复把「调用了已知 reader 的函数」也加入 reader 集合，
-    直到不动点。对 `zreflect` 这种 28 个模块的规模，几轮就收敛。
+    Derived snapshots often appear through a wrapper: `OUT = repo(LEDGER_NAME)`
+    -- the expression text contains no `gate.GATE_REPO`, but the body of
+    `repo()` does. Looking only one hop misses **two hops**: `def a(): return
+    repo(x)` followed by `OUT = a()` (measured: []).
+    So this computes a **closure**: repeatedly add "functions that call a known
+    reader" to the reader set until a fixed point. At zreflect's scale of 28
+    modules, a few rounds suffice.
     """
     defs = {}
     for node in src_tree.body:
@@ -204,10 +232,11 @@ def _functions_reading(src_tree, name):
 
 
 def _calls_outside_lambda(node):
-    """`node` 里**不在 lambda 体内**的 Call 节点（lambda 体是延迟求值）。
+    """Call nodes inside `node` that are **not within a lambda body** (lambda bodies evaluate lazily).
 
-    ⚠️ 必须把 `node` **自己**也算进去：`OUT = repo("L")` 的 `node.value` 自身
-    就是 Call —— 只遍历 children 会漏掉它（实测：派生检测全失效）。
+    ⚠️ `node` **itself** must be counted: in `OUT = repo("L")` the `node.value`
+    is itself a Call -- walking only children misses it (measured: derived
+    detection completely dead).
     """
     out = []
     def walk(n):
@@ -215,14 +244,14 @@ def _calls_outside_lambda(node):
             out.append(n)
         for child in ast.iter_child_nodes(n):
             if isinstance(child, ast.Lambda):
-                continue            # 整条 lambda 体跳过
+                continue            # skip the entire lambda body
             walk(child)
     walk(node)
     return out
 
 
 def _call_graph(tree):
-    """本模块每个顶层函数**调用的裸函数名**集合（一次性建，避免重复 ast.walk）。"""
+    """Per top-level function of this module: the set of bare function names it **calls** (built once, avoiding repeated ast.walk)."""
     out = {}
     for node in tree.body:
         if not isinstance(node, ast.FunctionDef):
@@ -234,21 +263,27 @@ def _call_graph(tree):
 
 
 def _reaches(node, readers, graph):
-    """这个表达式**直接或经本模块的顶层函数**能到达 `readers` 里的函数吗？
+    """Can this expression reach a function in `readers`, directly or via this module's top-level functions?
 
-    ⚠️ 用预建的调用图（`graph`）+ 显式栈做可达性，**不递归、不重复 walk**：
-    此前版本对每个派生节点都 `ast.walk` 整个函数体并递归下去，遇到互相递归的
-    函数直接挂死（实测：真仓 28 模块 timeout 60s 不返回）。
+    ⚠️ Reachability uses the prebuilt call graph (`graph`) + an explicit stack:
+    **no recursion, no repeated walk**. The previous version ran `ast.walk`
+    over the whole function body per derived node and recursed -- mutually
+    recursive functions hung it outright (measured: the real repo's 28 modules
+    never returned within the 60s timeout).
 
-    两条防误报约束（此前都会假红，实测）：
-      · 本模块自己定义的同名函数不算「源模块的 reader」（遮蔽）——
-        它仍会被沿调用图继续追（它自己可能转调 repo）
-      · 属性调用（`tools.repo(…)`）不算 —— `getattr(...​,"attr")` 会匹配任何
-        模块的同名函数，与本模块的 repo 不是同一个东西
+    Two false-positive guards (both previously produced false reds, measured):
+      - a same-named function defined in this module does not count as a
+        reader of the source module (shadowing) -- it is still followed along
+        the call graph (it may itself forward to repo)
+      - attribute calls (`tools.repo(...)`) do not count --
+        `getattr(...,"attr")` would match same-named functions of any module,
+        which is not this module's repo
     """
-    # ⚠️ **不进 lambda 体**：`CASES = [("label", lambda: check_doc(..., repo(...)))]`
-    # 里的调用是**延迟执行**的，import 时不求值，不会被冻结。此前用 `ast.walk`
-    # 无差别扫，把 lambda 体内的 repo 也算进去 ⇒ 误报 `facts.CASES`（实测）。
+    # ⚠️ **Do not enter lambda bodies**: calls inside
+    # `CASES = [("label", lambda: check_doc(..., repo(...)))]` are **executed
+    # lazily**, not evaluated at import, so nothing freezes. A previous version
+    # scanned indiscriminately with `ast.walk`, counting the repo call inside
+    # the lambda body => false positive on `facts.CASES` (measured).
     seen = set()
     stack = [n.func.id for n in _calls_outside_lambda(node)
              if isinstance(n.func, ast.Name)]
@@ -258,19 +293,20 @@ def _reaches(node, readers, graph):
             continue
         seen.add(fn)
         if fn in graph:
-            stack.extend(graph[fn])     # 本地函数：继续追它调用的
+            stack.extend(graph[fn])     # local function: keep following what it calls
         elif fn in readers:
-            return True                 # 源模块里的 reader
+            return True                 # a reader inside the source module
     return False
 
 
 def _module_level_assigns_all(tree):
-    """模块顶层的所有赋值节点（含类体里的属性赋值）。
+    """All assignment nodes at module top level (including attribute assignments in class bodies).
 
-    三种形状都认（此前只认 `ast.Assign`，漏报另外两种 —— review 实测）：
-      · `OUT = repo(...)`              普通赋值
-      · `OUT: str = repo(...)`         带类型注解（AnnAssign）
-      · `class C: OUT = repo(...)`     类属性（同样在 import 时求值）
+    All three shapes are accepted (previously only `ast.Assign` was; the other
+    two were missed -- found in review):
+      - `OUT = repo(...)`              plain assignment
+      - `OUT: str = repo(...)`         annotated (AnnAssign)
+      - `class C: OUT = repo(...)`     class attribute (also evaluated at import)
     """
     nodes = []
     for node in tree.body:
@@ -286,20 +322,21 @@ def _module_level_assigns_all(tree):
 
 
 def _target_names(node):
-    """赋值节点的目标名（`Assign` 有 `.targets`，`AnnAssign` 只有 `.target`）。"""
+    """Target names of an assignment node (`Assign` has `.targets`, `AnnAssign` only `.target`)."""
     return [t.id for t in (getattr(node, "targets", None) or [node.target])
             if isinstance(t, ast.Name)]
 
 
 def _module_level_derivations(tree, src_mod, name, readers=(), graph=None):
-    """模块顶层有没有 `OTHER = <表达式里含 src_mod.name>`？那是**同一类快照**。
+    """Does the module top level contain `OTHER = <expression mentioning src_mod.name>`? That is **the same class of snapshot**.
 
-    两种写法都会在 import 那一刻冻结：
-        from gate import GATE_REPO      # 值拷贝
-        OUT = repo(LEDGER_NAME)        # repo() 内部读 gate.GATE_REPO ⇒ 冻结成字符串
+    Both spellings freeze at the moment of import:
+        from gate import GATE_REPO      # value copy
+        OUT = repo(LEDGER_NAME)        # repo() internally reads gate.GATE_REPO => frozen into a string
 
-    只抓第一种会漏掉第二种 —— 而那正是本仓实际存在的一处（`facts.py:35`，
-    实测：改 `gate.GATE_REPO` 后 `facts.OUT` 仍是旧路径）。
+    Catching only the first misses the second -- and the second is the one
+    actually present in this repo (`facts.py:35`; measured: after changing
+    `gate.GATE_REPO`, `facts.OUT` still held the old path).
     """
     marker = "%s.%s" % (src_mod, name)
     hits = []
@@ -313,23 +350,25 @@ def _module_level_derivations(tree, src_mod, name, readers=(), graph=None):
 
 
 def _loaded_names(tree):
-    """这个模块里**被读取**（Load）的所有名字集合（一次性建，供 `_used_in_module`）。
+    """Set of all names **read** (Load) in this module (built once; serves `_used_in_module`).
 
-    ⚠️ 此前 `_used_in_module(tree, name)` 对**每个候选名**都 `ast.walk` 整棵树 —— 
-    在 28 个模块 × 数百个名字的规模下退化成 1000 万次 `ast.walk`
-    （实测：cProfile 32s，`iter_child_nodes` 被调 2000 万次）。缓存成集合后
-    一次遍历即可，查询 O(1)。
+    ⚠️ Previously `_used_in_module(tree, name)` ran `ast.walk` over the whole
+    tree **per candidate name** -- at 28 modules x hundreds of names it
+    degenerated into 10 million `ast.walk` calls (measured: cProfile 32s,
+    `iter_child_nodes` called 20 million times). Caching as a set reduces it
+    to one traversal; lookups are O(1).
     """
     return {n.id for n in ast.walk(tree)
             if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
 
 
 def _index(sources):
-    """建索引：AST / 模块级赋值 / 被别处改的名字 / 读取名 / 调用图 / 读者集。
+    """Build the index: ASTs / module-level assigns / names reassigned elsewhere / loaded names / call graph / reader sets.
 
-    ⚠️ 全部**预计算**。此前在双重循环里对每个 `(模块 × 名字)` 都重算一次
-    `ast.walk` 全部模块的 AST ⇒ O(M²·N)，实测 400+ 次调用后 timeout 60s。
-    这些量都只依赖单个模块（或单个 `(src_mod, name)` 对），与调用方无关。
+    ⚠️ Everything is **precomputed**. Previously the double loop recomputed
+    `ast.walk` over all modules for every `(module x name)` => O(M^2*N);
+    measured: timeout 60s after 400+ calls. These quantities depend only on a
+    single module (or a single `(src_mod, name)` pair), never on the caller.
     """
     trees = {}
     for mod, src in sources.items():
@@ -353,7 +392,7 @@ def _index(sources):
 
 
 def _derived_hits(ix, mod, tree, src_mod, names):
-    """一个消费模块里，来自 `src_mod` 的可变全局被派生存成常量的名字。"""
+    """In one consumer module: names where a mutable global from `src_mod` is baked into a derived constant."""
     loaded = ix["loaded"][mod]
     graph = ix["graph"][mod]
     hits = []
@@ -371,8 +410,7 @@ def _derived_hits(ix, mod, tree, src_mod, names):
 
 
 def _derived_copy_problems(ix):
-    """② **派生快照**：模块顶层把「含可变全局的表达式」存成常量（同 import 一样
-    会冻住）。"""
+    """2. **Derived snapshots**: the module top level stores "an expression containing a mutable global" as a constant (freezes just like an import)."""
     out = []
     for mod, tree in sorted(ix["trees"].items()):
         for src_mod, names in sorted(ix["assigned"].items()):
@@ -381,8 +419,7 @@ def _derived_copy_problems(ix):
 
 
 def _mutable_copy_problems(ix):
-    """① **值快照**：`from <本地模块> import ALL_CAPS`，而那个全局被别处重赋值
-    ⇒ 拷贝停在 import 那一刻。"""
+    """1. **Value snapshots**: `from <local module> import ALL_CAPS` where that global is reassigned elsewhere => the copy stays frozen at import time."""
     out = []
     for mod, tree in sorted(ix["trees"].items()):
         for node in ast.walk(tree):
@@ -396,40 +433,44 @@ def _mutable_copy_problems(ix):
 
 
 def _frozen_imports(ix, mod, node):
-    """这条 `from <src> import …` 里**哪些名字是值快照**（拷贝会冻住）。
+    """Which names in this `from <src> import ...` are **value snapshots** (the copy freezes).
 
-    五道守全是「不值得报」的出口，各自是不同理由 —— 挤在调用点就是 5 个
-    连续 `continue`（复杂度 11）。抽成具名函数后，调用点只剩一句。
+    The five guards are all "not worth reporting" exits, each for a different
+    reason -- crammed at the call site they become 5 consecutive `continue`s
+    (complexity 11). Extracted into a named function, the call site is one line.
     """
     src_mod = node.module
     if src_mod not in ix["trees"]:
-        return []                       # 不在扫描面里 ⇒ 不是本地兄弟模块
+        return []                       # not in the scan surface => not a local sibling module
     if src_mod not in ix["assigned"]:
-        return []                       # 源模块不在扫描面里 ⇒ 不猜
+        return []                       # source module outside the scan surface => do not guess
     loaded = ix["loaded"][mod]
     out = []
     for alias in node.names:
         name = alias.name
         if name != name.upper():
-            continue                    # 函数 / 类 / 小写名不是「值快照」
+            continue                    # functions / classes / lowercase names are not "value snapshots"
         if name not in ix["assigned"][src_mod]:
-            continue                    # 源模块没有这个模块级名字
+            continue                    # the source module has no such module-level name
         if (src_mod, name) not in ix["mutable"]:
-            continue                    # 没人改它 ⇒ 拷贝安全
+            continue                    # nobody reassigns it => the copy is safe
         if (alias.asname or name) not in loaded:
-            continue                    # 死导入，不报
+            continue                    # dead import; not reported
         out.append(name)
     return out
 
 
 def problems(paths=None, sources=None):
-    """纯函数：返回问题清单（空 = 没有快照风险）。
+    """Pure function: return the problem list (empty = no snapshot risk).
 
-    `sources` 可注入 `{模块名: 源码}`（自证用，零文件 I/O）。
+    `sources` accepts injected `{module name: source}` (for self-proof, zero
+    file I/O).
 
-    只编排：索引一次建好（`_index`），两段检测各读它（`_mutable_copy_problems` /
-    `_derived_copy_problems`）。此前两段拼在同一个函数里，索引与检测交错 ——
-    改一段要读懂另一段。
+    Orchestration only: the index is built once (`_index`), and each of the
+    two detection passes reads it (`_mutable_copy_problems` /
+    `_derived_copy_problems`). Previously both passes were jammed into one
+    function with indexing interleaved -- to change one you had to read the
+    other.
     """
     if sources is None:
         if paths is None:
@@ -444,27 +485,32 @@ def problems(paths=None, sources=None):
 
 
 def collect(root, configured=False):
-    """收哪些 `.py` —— 见 `gate.scanned_sources`（两条口径的唯一产地）。"""
+    """Which `.py` files to collect -- see `gate.scanned_sources` (the single source of both policies)."""
     return gate.scanned_sources(root, configured)
 
 
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    # ⚠️ **`REFLECT_SNAPSHOT_ROOT` 为空 ⇒ 扫套件自己的 `zreflect/`**，
-    # 不是「未启用」。（README 曾把这条说反了：「empty ⇒ that gate says out
-    # loud it is off」—— 实测为空时它照跑并对套件报 `snapshot.ok`。）
-    # 为什么这样设计：这道闸门守的是「跨模块 import 的可变全局」，套件自己
-    # 就是最大的受害者（`gate.GATE_REPO` 被多道自证改写），所以默认面是它。
-    # 要扫**你的代码**就显式设 `REFLECT_SNAPSHOT_ROOT=<目录>`。
+    # ⚠️ **`REFLECT_SNAPSHOT_ROOT` empty => scan the suite's own `zreflect/`**,
+    # not "not enabled". (The README once stated this backwards: "empty => that
+    # gate says out loud it is off" -- measured: with the knob empty it still
+    # runs and reports `snapshot.ok` for the suite.)
+    # Why designed this way: this gate guards "mutable globals imported across
+    # modules", and the suite itself is the biggest victim (`gate.GATE_REPO`
+    # is rewritten by several self-proofs), so the default surface is the
+    # suite. To scan **your code**, set `REFLECT_SNAPSHOT_ROOT=<dir>`
+    # explicitly.
     configured = os.environ.get(KNOB, "").strip()
-    # ⚠️ **未配 ⇒ 锚工具仓**（`gate.zdir()`），不是裸相对名 —— 后者取决于
-    # cwd：在仓根跑是对的，在别处跑（harness / 钩子的 cwd 不保证）就
-    # `scan_empty_dir` FATAL（实测：cd /tmp 后 rc=2）。
-    # 显式配了 ⇒ **被检查仓**相对（用户在 env 里写的是相对仓根的名字）。
+    # ⚠️ **Unset => anchor at the tool repo** (`gate.zdir()`), not a bare
+    # relative name -- the latter depends on cwd: correct when run from the
+    # repo root, but elsewhere (harness / hook cwd is not guaranteed) it dies
+    # with `scan_empty_dir` FATAL (measured: rc=2 after cd /tmp).
+    # Explicitly set => relative to the **audited repo** (the user writes a
+    # repo-root-relative name in the env file).
     root = gate.zdir() if not configured \
         else os.path.join(gate.GATE_REPO, configured)
     if not os.path.isdir(root):
-        # 旋钮指向不存在的目录 ⇒ 配置坏（不是「没启用」）
+        # knob points at a nonexistent directory => broken config (not "not enabled")
         return fatal(M("snapshot.scan_empty_dir", root=root))
     paths = collect(root, configured=bool(configured))
     if not paths:
@@ -476,7 +522,7 @@ def run(argv=None):
 ALIAS_GATE = 'GATE_REPO = "/repo"\n'
 ALIAS_USER = 'import gate as g\ng.GATE_REPO = "/other"\n'
 ALIAS_VICTIM = 'from gate import GATE_REPO\ndef f():\n    return GATE_REPO\n'
-# 一个此前不在 LOCAL_MODULES 里的模块（`check_zzz`）作为**源模块**
+# A module that used to be absent from LOCAL_MODULES (`check_zzz`) as the **source module**
 CHECK_AS_SOURCE = 'SHARED = "/x"\n'
 CHECK_AS_VICTIM = ('import check_zzz\ncheck_zzz.SHARED = "/y"\n'
                    'from check_zzz import SHARED\ndef f():\n    return SHARED\n')
@@ -492,12 +538,15 @@ def set_repo(p):
 
 
 def _fixtures():
-    """夹具源码（英文：它们是被校验的**输入**，不是本体输出）。
+    """Fixture sources (English: they are the **inputs** being audited, not the module's own output).
 
-    ⚠️ 必须**在函数里**构造，不能放模块级常量：闸门扫的正是「模块顶层被赋值的
-    表达式」，模块级夹具会被它自己当成派生快照 —— 实测：提到模块级之后
-    `snapshot.derived_copy(derived='fx["ok_style"]', source='gate')` 自报。
-    判据没错，是夹具放错了层。
+    ⚠️ Must be constructed **inside a function**, not as module-level
+    constants: the gate scans exactly "expressions assigned at module top
+    level", so module-level fixtures would be flagged by the gate itself as
+    derived snapshots -- measured: after hoisting to module level it
+    self-reported
+    `snapshot.derived_copy(derived='fx["ok_style"]', source='gate')`.
+    The criterion was right; the fixtures sat at the wrong layer.
     """
     return {
         "good": "GATE_REPO = \"/repo\"\nCONST = [1]\n",
@@ -510,7 +559,7 @@ def _fixtures():
 
 
 def _cases_value_copy(fx):
-    """① 值拷贝：常量安全 / 属性写法安全 / 可变全局被拷必须报。"""
+    """1. Value copies: constants safe / attribute style safe / a copied mutable global must be reported."""
     return [
         ("snapshot.constant_copy_is_fine",
          lambda: problems(sources={"gate": fx["good"],
@@ -522,19 +571,21 @@ def _cases_value_copy(fx):
          lambda: [p.code for p in problems(
              sources={"gate": fx["bad_gate"], "check_x": fx["bad_user"]})
          ] == ["snapshot.mutable_copy"]),
-        # 死导入不报（import 了没用的不算风险）
+        # dead imports are not reported (importing something unused is not a risk)
         ("snapshot.dead_import_not_reported",
          lambda: problems(sources={
              "gate": fx["bad_gate"],
              "check_x": "from gate import GATE_REPO\n"}) == []),
-        # 别名模块赋值（`import gate as g; g.GATE_REPO = …`）—— 与
-        # `gate.GATE_REPO = …` 是同一件事的另一种写法，此前漏报（实测 []）
+        # aliased module assignment (`import gate as g; g.GATE_REPO = ...`) --
+        # another spelling of the same act as `gate.GATE_REPO = ...`;
+        # previously missed (measured: [])
         ("\u2605 snapshot.mutable_copy_via_alias",
          lambda: [p.code for p in problems(sources={
              "gate": ALIAS_GATE, "usr": ALIAS_USER, "victim": ALIAS_VICTIM})
          ] == ["snapshot.mutable_copy"]),
-        # 发现式源模块：**扫描面里的任何 .py** 都可作为源模块，不再只认
-        # 手写名单里的 12 个名字（此前 16 个 check_*.py 全部看不见）
+        # discovery-based source modules: **any .py in the scan surface** can
+        # be a source module, not just the 12 names on the old hand-written
+        # roster (previously all 16 check_*.py were invisible)
         ("\u2605 snapshot.source_from_any_module",
          lambda: [p.code for p in problems(sources={
              "check_zzz": CHECK_AS_SOURCE, "victim": CHECK_AS_VICTIM})
@@ -543,16 +594,16 @@ def _cases_value_copy(fx):
 
 
 def _cases_derived():
-    """② 派生快照：顶层把「经薄封装读到可变全局」的表达式存成常量。"""
+    """2. Derived snapshots: the top level stores an expression that reaches a mutable global through a thin wrapper as a constant."""
     return [
-        # `OUT = repo(NAME)`，repo() 体内读 GATE_REPO ⇒ 冻在 import 那一刻
+        # `OUT = repo(NAME)`, whose repo() body reads GATE_REPO => frozen at import time
         ("\u2605 snapshot.derived_copy",
          lambda: [p.code for p in problems(sources={
              "gate": GATE_WITH_REPO,
              "facts": "OUT = repo('L.json')\nprint(OUT)\n"})
          ] == ["snapshot.derived_copy"]),
-        # 带类型注解的派生（`OUT: str = repo(...)`）—— 此前只认 `ast.Assign`，
-        # 漏报 AnnAssign（review 实测 `[]`）
+        # annotated derivation (`OUT: str = repo(...)`) -- previously only
+        # `ast.Assign` was accepted, missing AnnAssign (review measured `[]`)
         ("\u2605 snapshot.derived_copy_annotated",
          lambda: [p.code for p in problems(sources={
              "gate": GATE_WITH_REPO,
@@ -562,11 +613,13 @@ def _cases_derived():
 
 
 def _default_root_case():
-    """**默认扫描面锚工具仓，与 cwd 无关**。
+    """The default scan surface anchors at the tool repo, independent of cwd.
 
-    ⚠️ 此前未配旋钮时用裸相对名 `zreflect` —— 在仓根跑是对的，cwd 在别处
-    （harness / 钩子的 cwd 不保证）就 `scan_empty_dir` FATAL（实测：cd /tmp
-    后 rc=2）。这条用例**换到临时目录**再跑真闸门，钉住「cwd 不是前提」。
+    ⚠️ Previously, with the knob unset, a bare relative name `zreflect` was
+    used -- correct when run from the repo root, but from elsewhere (harness /
+    hook cwd is not guaranteed) it died with `scan_empty_dir` FATAL (measured:
+    rc=2 after cd /tmp). This case **switches to a temp directory** before
+    running the real gate, pinning "cwd is not a prerequisite".
     """
     import subprocess  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
@@ -577,9 +630,11 @@ def _default_root_case():
         p = subprocess.run([sys.executable, os.path.join(here, __file__)],
                            cwd=d, env=env, capture_output=True, text=True,
                            timeout=120, encoding="utf-8", errors="replace")
-        # ⚠️ 只判 **rc**，不匹配输出措辞：`snapshot.ok(...)` 是 code，装了
-        # 语言包会渲染成自然语言（实测：REFLECT_LANG=en 下这条判据红 ——
-        # 它在拿当前语言包的措辞当判据，第一版就是自己的反例）。
+        # ⚠️ Assert only the **rc**, never match output wording:
+        # `snapshot.ok(...)` is a code; with a language pack installed it
+        # renders as natural language (measured: this case went red under
+        # REFLECT_LANG=en -- it was using the current language pack's wording
+        # as the criterion, making the first version its own counterexample).
         return p.returncode == 0
     finally:
         import shutil  # noqa: PLC0415
@@ -587,10 +642,11 @@ def _default_root_case():
 
 
 def _cases():
-    """三条：值拷贝 / 派生快照 / 空输入。
+    """Three cases: value copies / derived snapshots / empty input.
 
-    ①② 各是一个具名组（夹具源码也提到模块级常量了 —— 80 行函数里那些
-    三引号字符串占了将近三分之一、和断言交错）。
+    Groups 1 and 2 are each a named group (the fixture sources also moved up
+    to module constants -- in the old 80-line function those triple-quoted
+    strings made up nearly a third, interleaved with assertions).
     """
     return (_cases_value_copy(_fixtures()) + _cases_derived()
             + [("\u2605 snapshot.empty_scan",
@@ -599,8 +655,8 @@ def _cases():
                 lambda: _default_root_case())])
 
 
-GATE = meta("模块级快照闸门",
-            "跨模块 import 的可变全局是值拷贝（陈旧快照）：改成 import 模块 + 读属性",
+GATE = meta("module-level snapshot gate",
+            "a mutable global imported across modules is a value copy (stale snapshot): switch to importing the module and reading the attribute",
             knobs=("REFLECT_SNAPSHOT_ROOT",))
 
 if __name__ == "__main__":

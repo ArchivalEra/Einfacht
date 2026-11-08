@@ -1,38 +1,51 @@
 #!/usr/bin/env python3
-"""语言覆盖闸门（**可插拔模块**，issue #26）：本体真·零语言化的机械保证。
+"""Language-coverage gate (**pluggable module**, issue #26): the mechanical guarantee that the core is truly zero-language.
 
-它守的是一条**封闭判据**——「本体里不许有用户可见的自然语言」：
+It guards one **closed criterion** -- "the core must not contain user-visible natural language":
 
-  · **消息**必须是 `M(<字面量 code>, **params)`——不许 `out.append("中文…")`
-    这种裸字面量（那是「本体在说人话」，正是本条要消灭的）；
-  · **自证用例标签**按用户决策（1C）**id 化**——不许自然语言句子；
-  · **docstring** 豁免（维护者文档，不是输出）；
-  · **语言包**里可以有任何自然语言（那是可选数据，不在本体里）。
+  - **messages** must be `M(<literal code>, **params)` -- a bare literal like
+    `out.append("Chinese...")` is forbidden (that is "the core speaking prose",
+    exactly what this rule exists to eliminate);
+  - **self-proof case labels** are **id-ified** per user decision (1C) --
+    no natural-language sentences;
+  - **docstrings** are exempt (maintainer documentation, not output);
+  - **language packs** may contain any natural language (optional data,
+    not part of the core).
 
-为什么这条判据必须存在（不给就是「看起来零语言、实际漏一半」）：
+Why this criterion must exist (without it: "looks zero-language, actually
+half-leaking"):
 
-  语言包是可选的 ⇒ 用户可能只装 `en`。若本体里还藏着一条中文硬编码消息，
-  它会在 en 用户屏幕上显示中文，且**没有任何东西会报**——正是本仓立身
-  要消灭的静默退化。这条闸门把「本体零语言」从口号变成可判定。
+  Language packs are optional => a user may install only `en`. If the core
+  still hides one hardcoded Chinese message, it shows Chinese on an en user's
+  screen and **nothing reports it** -- precisely the silent degradation this
+  repo exists to eliminate. This gate turns "core is zero-language" from a
+  slogan into something decidable.
 
-## 它现在有四条判据族（第 16 轮的审视结论：**不拆**）
+## It currently has four criterion families (round-16 review verdict: **do not split**)
 
-  1. **裸中文**（`bare_text`）—— 输出位置的 CJK 字符串常量
-  2. **PINNED 声明面** —— `PINNED:` 标记的函数/常量整段豁免（AUTO 机器块必须
-     固定语言，跟随语言就不收敛）
-  3. **夹具字面量**（`fixture_literal`）—— `_cases()` 里的中文只许在**标签**
-     与 **docstring**；夹具源码必须码点构造（同一错误犯三次后补的判据）
-  4. **消息必须走 M()** —— `_is_msg_call` / `_is_output_call` 的形状判据
+  1. **Bare CJK** (`bare_text`) -- CJK string constants in output positions
+  2. **PINNED declaration surface** -- functions/constants marked `PINNED:`
+     are exempt as a whole (AUTO machine blocks must be language-fixed;
+     following the language would never converge)
+  3. **Fixture literals** (`fixture_literal`) -- Chinese inside `_cases()` is
+     allowed only in **labels** and **docstrings**; fixture source must be
+     codepoint-constructed (criterion added after the same mistake three times)
+  4. **Messages must go through M()** -- the shape criteria of
+     `_is_msg_call` / `_is_output_call`
 
-**为什么不拆成四个闸门**：它们共享同一次 `ast.parse(src)` 与同一轮文件遍历。
-拆开 = 四份重复的解析与遍历，而每一份都可能独立漂（本仓最痛的那种）。
-四条判据族的**差异只在「什么算合法」**，那已经由各自的 helper 隔离
-（`_declares_pinned` / `_fixture_literal_problems` / `cjk`）。共享解析是拆不动
-的真实理由 —— 不是因为「它们看起来像一类」。
+**Why not split into four gates**: they share one `ast.parse(src)` and one
+file traversal. Splitting = four duplicated parses and traversals, each of
+which can drift independently (the most painful kind in this repo). The four
+families **differ only in what counts as legal**, and that is already isolated
+by their respective helpers (`_declares_pinned` / `_fixture_literal_problems`
+/ `cjk`). Shared parsing is the real reason they cannot be split -- not
+"they look like one class".
 
-诚实边界（写明的缺口）：判据是 **AST 级**的——抓「裸中文字面量出现在输出位置」，
-抓不到「用英文写的消息」（那仍是本体语言，但主体已零中文；要抓它需要
-更复杂的语言识别，代价过大）。所以本闸门的强度 = 「零中文 + 消息必须走 M()」。
+Honest boundary (an explicitly written gap): the criterion is **AST-level** --
+it catches "a bare Chinese literal in an output position" but not "messages
+written in English" (that is still a core language, though the core is now
+CJK-free; catching it would need much heavier language detection, too
+expensive). So this gate's strength = "zero CJK + messages must go through M()".
 """
 from __future__ import annotations
 
@@ -47,41 +60,48 @@ import machine  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
 
-# 未配旋钮时扫**这些**目录 —— 套件自己的全部 Python。
+# When the knob is unset, scan **these** directories -- the suite's own Python.
 #
-# ⚠️ 这个清单必须**覆盖套件的两半**（判据库 + 钩子入口）：只扫一半，就等于
-# 「半个本体零语言」，而另一半的裸中文照样发得出去。
+# ⚠️ This list must **cover both halves of the suite** (criterion library +
+# hook entry points): scanning only one half means "half the core is
+# zero-language", while the other half keeps emitting bare Chinese.
 #
-# ⚠️ 它**不该**包含任何宿主的目录 —— 那会把套件焊死在某个宿主的目录约定上。
-# 曾经这里确实有过那样一项（同时扫描一个编辑器专用的钩子目录），而那种耦合
-# 的完整经过与判据见 `retractions.json` 的 R-003 与 `doc.RULES` 的
-# `host_agnostic`。历史不留在代码注释里：那既不该被维护，也会让
-# `host_agnostic` 扫到自己（本文件正是它的扫描面）。
+# ⚠️ It must **not** include any host's directories -- that would weld the
+# suite to one host's directory conventions. There really was such an entry
+# here once (also scanning an editor-specific hooks directory); the full
+# account of that coupling lives in `retractions.json` R-003 and
+# `doc.RULES`'s `host_agnostic`. History is not kept in code comments: it
+# should not be maintained there, and it would make `host_agnostic` scan
+# itself (this file is part of its scan surface).
 DEFAULT_ROOTS = ("zreflect", "reflect-hooks")
 KNOB = "REFLECT_I18N_ROOT"
 
 
-# CJK 统一表意文字的码点区间（U+4E00–U+9FFF）。**用码点常量而不是字面字符**：
-# 写成 `"一"`/`"鿿"` 会让本闸门扫到自己的源码（那两个就是区间端点）——
-# 实测踩到（报了两条「一」「鿿」的假违规）。
+# Codepoint range of the CJK Unified Ideographs block (U+4E00-U+9FFF).
+# **Codepoint constants, not literal characters**: writing the two endpoint
+# characters as literals would make this gate scan its own source (they are
+# exactly the range endpoints) --
+# actually hit once (it reported two fake violations on the endpoint chars).
 from i18n import CJK_LO, han  # noqa: E402
 
 PINNED_MARK = "PINNED:"
 
 
 def _declares_pinned(doc):
-    """docstring 里有没有**带理由的** `PINNED:` 声明。
+    """Does the docstring carry a `PINNED:` declaration **with a reason**?
 
-    ⚠️ 只认「`PINNED:` 后面还有字数 ≥ 8 的理由」：否则任何函数只要在
-    docstring 里写个 `PINNED:` 就能把它的全部中文豁免（实测：一个普通
-    `report_problem()` 加一行 `PINNED: x` 就全豁免）。豁免必须说明「为什么
-    这段文本不能翻译」—— 与 `REFLECT_INVARIANTS` 的 `why` 必填同一条纪律。
+    ⚠️ Only "`PINNED:` followed by a reason of at least 8 characters" counts:
+    otherwise any function could exempt all of its Chinese by writing
+    `PINNED:` in its docstring (measured: a plain `report_problem()` plus one
+    line `PINNED: x` was fully exempt). An exemption must state "why this
+    text cannot be translated" -- same discipline as the mandatory `why` in
+    `REFLECT_INVARIANTS`.
     """
     if not doc or PINNED_MARK not in doc:
         return False
     idx = doc.index(PINNED_MARK)
     reason = doc[idx + len(PINNED_MARK):].strip()
-    # 理由取到第一个句号 / 换行为止（一句话够用）
+    # The reason runs to the first sentence end / newline (one sentence suffices)
     for sep in ("\n", "。", ". "):
         cut = reason.find(sep)
         if cut != -1:
@@ -90,14 +110,15 @@ def _declares_pinned(doc):
 
 
 def _pinned_by_comment(src, node):
-    """该赋值语句**紧邻的上方**（前面连续注释块里）有没有 `PINNED:`。
+    """Does `PINNED:` appear **immediately above** the assignment (in the contiguous comment block before it)?
 
-    模块级常量没有 docstring，声明只能写在注释里。只向上看紧邻的注释块
-    （遇到空行或非注释行就停）—— 不扫全文，避免「文件里任何一处写了
-    PINNED: 就全豁免」。
+    Module-level constants have no docstring, so their declaration can only
+    live in a comment. Look up only the immediately adjacent comment block
+    (stop at a blank or non-comment line) -- never scan the whole file,
+    avoiding "a single `PINNED:` anywhere in the file exempts everything".
     """
     lines = src.splitlines()
-    i = node.lineno - 2                      # 上一行（0-based）
+    i = node.lineno - 2                      # the line above (0-based)
     while i >= 0:
         line = lines[i].strip()
         if line.startswith("#"):
@@ -105,18 +126,19 @@ def _pinned_by_comment(src, node):
                 return True
             i -= 1
             continue
-        break                                # 注释块结束
+        break                                # end of the comment block
     return False
 
 
-# 「含中文吗」的判据住在 `i18n.han()`（零语言制度的持有者），这里只转发 ——
-# 两份区间常量会漂（C4）。
+# The "does it contain Chinese" criterion lives in `i18n.han()` (the owner of
+# the zero-language regime); this only forwards -- two copies of a range
+# constant would drift (C4).
 cjk = han
 
 
 
 def _is_msg_call(node):
-    """`M(code, **params)` 或 `i18n.M(...)`。"""
+    """`M(code, **params)` or `i18n.M(...)`."""
     if not isinstance(node, ast.Call):
         return False
     f = node.func
@@ -125,7 +147,7 @@ def _is_msg_call(node):
 
 
 def _is_output_call(node):
-    """产出用户可见文本的调用：append / print / off / fatal / finish。"""
+    """Calls that produce user-visible text: append / print / off / fatal / finish."""
     if not isinstance(node, ast.Call):
         return False
     f = node.func
@@ -135,7 +157,7 @@ def _is_output_call(node):
 
 
 def _docstring_node_id(node):
-    """一个作用域节点里 docstring 常量的 id（没有 ⇒ None）。"""
+    """The id of the docstring constant within one scope node (None if absent)."""
     d = ast.get_docstring(node, clean=False)
     if not d:
         return None
@@ -146,7 +168,7 @@ def _docstring_node_id(node):
 
 
 def _doc_nodes(tree):
-    """docstring 节点（豁免面①：docstring 不是写给用户的话）。"""
+    """Docstring nodes (exemption surface 1: docstrings are not words to the user)."""
     out = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
@@ -157,7 +179,7 @@ def _doc_nodes(tree):
 
 
 def _msg_consts(tree):
-    """`M(...)` 里的常量 id —— 那些是**合法位置**（消息走 M 就是对的）。"""
+    """Constant ids inside `M(...)` -- those are **legal positions** (a message going through M is the right thing)."""
     out = set()
     for node in ast.walk(tree):
         if _is_msg_call(node):
@@ -167,19 +189,20 @@ def _msg_consts(tree):
     return out
 
 
-# 豁免形状①的调用名单：这些函数的实参是**声明数据 / 匹配器数据**，不是
-# 给用户看的句子。⚠️ 自证标题**不在**其中（用户裁决：选英文出中文不允许）。
+# Roster of calls exempting shape 1: their arguments are **declaration data /
+# matcher data**, not sentences shown to the user. ⚠️ Self-proof titles are
+# **not** on it (user ruling: choosing English and emitting Chinese is not allowed).
 _EXEMPT_CALLS = ("meta", "module_meta", "Rule", "compile",
                  "startswith", "endswith", "match", "search", "fullmatch", "find")
 
 
 def _branch_constants(node):
-    """`node` 子树里全部字符串常量节点的 id（豁免面用）。"""
+    """Ids of all string constant nodes in `node`'s subtree (used by the exemption surfaces)."""
     return {id(n) for n in ast.walk(node) if isinstance(n, ast.Constant)}
 
 
 def _exempt_call_args(tree):
-    """① 调用实参：`meta(…)` / `module_meta(…)` / `Rule(…)` / `re.compile(…)` 等。"""
+    """1. Call arguments: `meta(...)` / `module_meta(...)` / `Rule(...)` / `re.compile(...)` and the like."""
     out = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
@@ -191,9 +214,10 @@ def _exempt_call_args(tree):
 
 
 def _pinned_constants(tree, src):
-    """② `PINNED:` 声明面（AUTO 机器块：固定语言、逐字节对账）。
+    """2. The `PINNED:` declaration surface (AUTO machine blocks: language-fixed, reconciled byte by byte).
 
-    按**声明**收编，不按名字 —— 手写名单一定会漂（deepening 第 8 轮）。
+    Collected by **declaration**, not by name -- a hand-written roster always
+    drifts (deepening round 8).
     """
     out = set()
     for node in ast.walk(tree):
@@ -207,11 +231,12 @@ def _pinned_constants(tree, src):
 
 
 def _exempt_ids(tree, name, src):
-    """**声明的**豁免面（不是猜的）。每一条都要说清为什么，否则豁免会变成
-    下一张会漂的手写名单。三段各是一个具名函数（见各自文档）。
+    """The **declared** exemption surfaces (not guessed). Each must state its why, or exemptions become the next drifting hand-written roster. The three parts are each a named function (see their docstrings).
 
-    ③ 语言包装载器自身的错误（`i18n.py`）：`MissingPack` 的文案**不能用
-    M()**（循环依赖：M 依赖语言包，包坏了才抛它）。文件级豁免。
+    3. The language-pack loader's own errors (`i18n.py`): `MissingPack`'s
+    text **cannot use M()** (circular dependency: M depends on the language
+    pack, and it is raised precisely when the pack is broken). File-level
+    exemption.
     """
     out = _exempt_call_args(tree) | _pinned_constants(tree, src)
     if name == "i18n.py":
@@ -220,7 +245,7 @@ def _exempt_ids(tree, name, src):
 
 
 def _bare_text_problems(name, tree, src):
-    """一条源码里的**裸自然语言**（四类豁免之外、且不是 id 化标签）。"""
+    """**Bare natural language** in one source file (outside the four exemption classes and not an id-ified label)."""
     out = []
     doc_nodes = _doc_nodes(tree)
     msg_consts = _msg_consts(tree)
@@ -233,7 +258,8 @@ def _bare_text_problems(name, tree, src):
             continue
         if id(node) in doc_nodes or id(node) in msg_consts or id(node) in exempt:
             continue
-        # 用户决策 1C：标签**以点分 id 开头**即可，后面可跟简短中文括注。
+        # User decision 1C: a label only needs to **start with a dotted id**;
+        # a short Chinese gloss may follow.
         if re.match(r"^\s*(★\s*)?[a-z_][a-z0-9_]*(\.[a-z0-9_.]+)+", v):
             continue
         out.append(M("i18n_cover.bare_text",
@@ -241,25 +267,32 @@ def _bare_text_problems(name, tree, src):
     return out
 
 def _non_literal_code_problems(name, tree):
-    """`M(...)` 的首参**不许是算出来的** code（条件表达式 / 拼接 / f-string / 调用）。
+    """The first argument of `M(...)` must **not be computed** (conditional expression / concatenation / f-string / call).
 
-    为什么值得一条判据：`i18n.M` 的 docstring 从第一天就写着「`code` 必须是
-    字面量（覆盖闸门会拒变量 code）」—— 而**没有任何闸门执行这条**。
-    实测的代价：`check_envfile` 里写着 `M("a" if is_dir else "b", …)`，
-    两个 code 都真实存在于语言包里、也真的会渲染给用户，但
-    `knobs.used_codes()`（正则扫字面 `M("..."`）只抓得到第一个 ⇒
-    另一个对 `pack_coverage` **完全不可见**。它在包完整性对账里是一个洞，
-    而不是一条违规 —— 洞比违规更坏，因为没有任何一行输出说它存在。
+    Why this deserves its own criterion: `i18n.M`'s docstring said from day
+    one that "`code` must be a literal (the coverage gate will reject variable
+    codes)" -- yet **no gate enforced it**. The measured cost: `check_envfile`
+    contained `M("a" if is_dir else "b", ...)`; both codes really exist in the
+    language pack and really do render for users, but `knobs.used_codes()`
+    (a regex scanning literal `M("..."`) only catches the first => the other
+    is **completely invisible** to `pack_coverage`. In the pack-integrity
+    reconciliation that is a hole, not a violation -- a hole is worse than a
+    violation, because no line of output ever says it exists.
 
-    **转发不算违规**：`_say(code)` 这种薄壳、`_Semantic` 的延迟渲染、以及
-    遍历语言包做完整性自证的探针，它们的 code 在**调用点**是字面量或者
-    **就是包里的键**。让它们变形去满足一条形状判据是本末倒置。
-    所以这里只抓**表达式**：`IfExp` / `BinOp` / `JoinedStr` / `Call` /
-    `Subscript` —— 那才是「运行时才拼出来、静态无法枚举」的那一类。
+    **Forwarding is not a violation**: thin shells like `_say(code)`,
+    `_Semantic`'s deferred rendering, and probes that walk language packs for
+    integrity self-proofs have codes that are literals **at their own call
+    site** or **are keys of the pack itself**. Forcing them to contort in
+    order to satisfy one shape criterion is putting the cart before the horse.
+    So this catches only **expressions**: `IfExp` / `BinOp` / `JoinedStr` /
+    `Call` / `Subscript` -- the class that is "assembled at runtime, not
+    statically enumerable".
 
-    **诚实边界**：首参是 `Name` / `Attribute` 时**不查**。它可能是合法转发，
-    也可能是从别处传来的非字面量，静态上无法区分；逐调用点做类型分析代价
-    过大。这条边界写在这里，而不是假装判据覆盖了它。
+    **Honest boundary**: when the first argument is a `Name` / `Attribute`,
+    it is **not checked**. It may be legitimate forwarding or a non-literal
+    passed from elsewhere; statically the two are indistinguishable, and
+    per-call-site type analysis is too expensive. This boundary is written
+    here rather than pretending the criterion covers it.
     """
     computed = (ast.IfExp, ast.BinOp, ast.JoinedStr, ast.Call, ast.Subscript)
     out = []
@@ -270,7 +303,7 @@ def _non_literal_code_problems(name, tree):
         if isinstance(first, ast.Constant) and isinstance(first.value, str):
             continue
         if not isinstance(first, computed):
-            continue                       # 转发（见诚实边界）
+            continue                       # forwarding (see honest boundary)
         out.append(M("i18n_cover.code_not_literal",
                      file=name, lineno=node.lineno,
                      kind=type(first).__name__))
@@ -278,21 +311,23 @@ def _non_literal_code_problems(name, tree):
 
 
 def problems(paths):
-    """纯函数：返回问题清单（空 = 零语言）。`paths` = [(名字, 源码文本)]。
+    """Pure function: return the problem list (empty = zero-language). `paths` = [(name, source text)].
 
-    `paths` 可注入 ⇒ 自证用假源码，零文件 I/O。
+    `paths` is injectable => self-proofs use fake sources, zero file I/O.
 
-    四段（各是 helper）：`_doc_nodes` / `_msg_consts` / `_exempt_ids` /
-    `_bare_text_problems`。本函数只编排 —— 111 行 → 15 行。
+    Four parts (each a helper): `_doc_nodes` / `_msg_consts` / `_exempt_ids` /
+    `_bare_text_problems`. This function only orchestrates -- 111 lines -> 15.
     """
     if not paths:
         return [M("i18n_cover.empty_scan")]
     out = []
-    # ⚠️ **文件名本身**也是攻击面：一个叫 `evil\nOFF: x.py` 的文件，一旦名字
-    # 被渲染进消息（`i18n_cover.bare_text(file=…)` 这类），就会伪造出机器行。
-    # 判据用 `machine.LINE_BREAKS` 的**同一张表**（C4：不能自己再写一份近似
-    # 的分行符集）。此前这条完全没有 —— 实测把带换行的 .py 放进扫描面，
-    # `i18n_cover.ok(files=34)` 照样绿。
+    # ⚠️ **The filename itself** is also an attack surface: a file named
+    # `evil\nOFF: x.py`, once its name is rendered into a message (as in
+    # `i18n_cover.bare_text(file=...)`), forges a machine line. The criterion
+    # uses the **same table** as `machine.LINE_BREAKS` (C4: do not write a
+    # second, near-identical set of line breaks). This check did not exist at
+    # all before -- measured: a .py with an embedded newline placed in the
+    # scan surface still got `i18n_cover.ok(files=34)`.
     for name, _src in paths:
         if any(b in name for b in machine.LINE_BREAKS):
             out.append(M("i18n_cover.filename_has_line_break",
@@ -310,16 +345,20 @@ def problems(paths):
 
 
 def _cases_scope(tree):
-    """自证扫描范围：`_cases()` 本身 + 它**引用的同文件顶层 helper**。
+    """Self-proof scan scope: `_cases()` itself plus the **same-file top-level helpers it references**.
 
-    ⚠️ 范围要覆盖辅助函数：`_cases()` 调用的同文件 helper 也在自证路径上
-    （实测踩到：判据锚点写进 `_streams_documented()`，本判据扫不到 ⇒ bare_text
-    由主判据报出、这条漏）。
+    ⚠️ The scope must cover helper functions: same-file helpers called by
+    `_cases()` are also on the self-proof path (actually hit: a criterion
+    anchor was written into `_streams_documented()`, invisible to this
+    criterion => bare_text got reported by the main criterion while this one
+    missed it).
 
-    ⚠️ **PINNED 的函数不算夹具 helper**：`_cases()` 会调用 `render_gates()`
-    来测「渲染确定性」，但那个函数的文本是 AUTO 机器块、**本来就固定语言**
-    （第 3 族已豁免）。把它拉进夹具扫描会误报（实测：7 条 PINNED 行被
-    `fixture_literal` 抓）。豁免面之间必须互相尊重。
+    ⚠️ **PINNED functions do not count as fixture helpers**: `_cases()` calls
+    `render_gates()` to test "rendering determinism", but that function's text
+    is an AUTO machine block, **language-fixed by design** (already exempted
+    by family 3). Pulling it into the fixture scan false-positives (measured:
+    7 PINNED lines caught by `fixture_literal`). The exemption surfaces must
+    respect one another.
     """
     fns = [n for n in ast.walk(tree)
            if isinstance(n, ast.FunctionDef) and n.name == "_cases"]
@@ -335,7 +374,7 @@ def _cases_scope(tree):
 
 
 def _docstring_nodes(bodies):
-    """豁免面①：docstring 常量节点（维护者文档，不是输出）。"""
+    """Exemption surface 1: docstring constant nodes (maintainer documentation, not output)."""
     out = set()
     for node in [n for b in bodies for n in ast.walk(b)]:
         if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
@@ -350,7 +389,7 @@ def _docstring_nodes(bodies):
 
 
 def _label_nodes(bodies):
-    """豁免面②：自证标签（`(标签, callable)` 元组的首元素）。"""
+    """Exemption surface 2: self-proof labels (first element of a `(label, callable)` tuple)."""
     return {id(node.elts[0])
             for b in bodies for node in ast.walk(b)
             if isinstance(node, ast.Tuple) and len(node.elts) == 2
@@ -358,22 +397,28 @@ def _label_nodes(bodies):
 
 
 def _fixture_literal_problems(name, tree):
-    """**自证夹具里不许有中文源码字面量**（必须是码点构造）。
+    """**No Chinese source-code literals in self-proof fixtures** (they must be codepoint-constructed).
 
-    为什么这条值得判据：我踩了**三次**（第 8 轮 PINNED 理由、第 9 轮、
-    第 13 轮）—— 每次都是「写个中文夹具/断言 → `check_i18n` 报 bare_text →
-    才发现本文件自己在扫描面内」。第三次之后该把它变成机器判据。
+    Why this deserves its own criterion: I stepped on it **three times**
+    (round 8 PINNED reason, round 9, round 13) -- every time the sequence was
+    "write a Chinese fixture/assertion -> `check_i18n` reports bare_text ->
+    only then notice this very file is inside its own scan surface". After
+    the third time it had to become a machine criterion.
 
-    `_cases()` 里的 CJK 字符串常量只许出现在两种合法位置：
-      · 自证**标签**（`(标签, callable)` 元组的首元素）—— 按 1C 决策，标签
-        是 id 形式的，后面可以跟中文括注帮扫读
-      · **docstring** —— 维护者文档，不是输出
-    其余（夹具源码样例 / 断言里的中文串）⇒ 报。
-    码点构造（`chr(CJK_LO)` / `_cj(n)`）产出的值**不在 AST 里**，天然不报 ——
-    这就是正确的写法。
+    Within `_cases()`, CJK string constants may appear in only two legal
+    positions:
+      - self-proof **labels** (first element of a `(label, callable)` tuple)
+        -- per decision 1C, labels are id-shaped and may carry a Chinese
+        gloss to aid skimming
+      - **docstrings** -- maintainer documentation, not output
+    Anything else (Chinese strings in fixture source samples / assertions)
+    => report. Values produced by codepoint construction (`chr(CJK_LO)` /
+    `_cj(n)`) are **not in the AST** and naturally never report -- that is
+    the correct spelling.
 
-    三步各是一个 helper（范围 / 两种豁免面）：拼在一起时节点收集的两个
-    独立循环 + 判定循环把复杂度推到 13。
+    Each of the three steps is a helper (scope / the two exemption surfaces):
+    merged together, the two independent node-collection loops plus the
+    deciding loop pushed complexity to 13.
     """
     bodies = _cases_scope(tree)
     if not bodies:
@@ -387,25 +432,31 @@ def _fixture_literal_problems(name, tree):
 
 
 def sources_for(d, configured=False):
-    """收哪些 `.py` —— 见 `gate.scanned_sources`（两条口径的唯一产地）。
+    """Which `.py` files to collect -- see `gate.scanned_sources` (the single source of both policies).
 
-    ⚠️ 这里曾经自己写了一遍那个三元判断，`check_snapshots.collect` 又写了
-    一遍 —— 同一判据两份。现在只转调。
+    ⚠️ This used to re-implement that ternary inline, and
+    `check_snapshots.collect` had its own copy -- the same criterion in two
+    places. Now it only forwards.
     """
     return gate.scanned_sources(d, configured)
 
 
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    # ⚠️ 默认扫描根**不是空**：本闸门守的正是**套件自己**的代码，所以未配旋钮
-    # 时扫**工具仓**的 `zreflect/`。此前 `DEFAULT_ROOT` 定义了却**从不使用**，
-    # 旋钮没人配 ⇒ 活体 `registry --run commit` 里它永远 `off` ——
-    # 「闸门存在、自证绿、但从没跑过」。与 `check_snapshots` 同一个病。
+    # ⚠️ The default scan root is **not empty**: this gate guards the
+    # **suite's own** code, so with the knob unset it scans the **tool repo's**
+    # `zreflect/`. Previously `DEFAULT_ROOT` was defined but **never used**,
+    # nobody configured the knob => in a live `registry --run commit` it was
+    # forever `off` -- "the gate exists, its self-proof is green, but it never
+    # runs". Same disease as `check_snapshots`.
     #
-    # 两条口径（与 `i18n.pack_dir()` 同款，别混）：
-    #   · 未配 ⇒ **工具仓**的 `zreflect/`（跟着套件走，跨仓夹具也对）
-    #   · 配了 ⇒ **被检查仓**相对的路径（env 里写的「相对仓库根的名字」）
-    # 混成一条会导致跨仓夹具里 FATAL（实测：GATE_REPO=$tmp 时扫不到 zreflect/）。
+    # Two policies (same pattern as `i18n.pack_dir()`; do not conflate them):
+    #   - unset => the **tool repo's** `zreflect/` (travels with the suite;
+    #     correct in cross-repo fixtures too)
+    #   - set => a path relative to the **audited repo** (the "name relative
+    #     to the repo root" written in the env file)
+    # Collapsing them into one causes FATAL in cross-repo fixtures (measured:
+    # with GATE_REPO=$tmp the zreflect/ scan finds nothing).
     configured = os.environ.get(KNOB, "").strip()
     roots = [configured] if configured else list(DEFAULT_ROOTS)
     paths = []
@@ -430,31 +481,36 @@ _PH = re.compile(r"%\(([A-Za-z_][A-Za-z0-9_]*)\)"
 
 
 def _params_for(template):
-    """按模板的**转换符**造参数：`%d`/`%f` 给数字，其余给串。
+    """Build parameters according to the template's **conversion specifiers**: `%d`/`%f` get numbers, the rest get strings.
 
-    ⚠️ 一律给 `"v"` 会在 `%(count)d` 上炸 `TypeError`（实测）。
+    ⚠️ Always handing `"v"` explodes with a `TypeError` on `%(count)d`
+    (measured).
     """
     return {m.group(1): (3 if m.group(2) in "dixXfFeEgG" else "v")
             for m in _PH.finditer(template)}
 
 
 def _null_output_has_no_cjk():
-    """**未装语言包**时渲染全部 code，断言输出零 CJK。
+    """Render every code **with no language pack installed** and assert the output contains zero CJK.
 
-    null 包只输出 `code(param=…)` —— 这是「没要语言包 ⇒ 零自然语言」的
-    **行为**判据。穷举**全部** key，不手挑：手挑的清单漏过一次后加的命名空间
-    （那时漏的是注入模板），而漏掉的部分照样绿。
+    The null pack only outputs `code(param=...)` -- this is the **behavioral**
+    criterion for "no language pack requested => zero natural language". It
+    enumerates **all** keys rather than hand-picking: a hand-picked roster
+    missed a namespace added after one such miss (the injected templates were
+    what got missed), and the missed part stayed green.
 
-    ⚠️ 注意它**不能**证明「模板里没有中文」：null 包根本不查表。后者由
-    `_packs_match_their_language()` 管（装包渲染 + 按语言判 CJK）。
+    ⚠️ Note it **cannot** prove "the templates contain no Chinese": the null
+    pack never consults a table. That is covered by
+    `_packs_match_their_language()` (render with packs installed + judge CJK
+    per language).
     """
     import i18n  # noqa: PLC0415
     try:
         table = i18n.load_pack("en")
     except Exception:                                    # noqa: BLE001
-        return False              # 读不到真包 ⇒ 没法证明，不算通过
+        return False              # real pack unreadable => cannot prove; not a pass
     if not table:
-        return False              # 零值守卫
+        return False              # zero-value guard
     probes = 0
     with i18n.bind(i18n.NULL):
         for code in sorted(table):
@@ -465,20 +521,25 @@ def _null_output_has_no_cjk():
 
 
 def _packs_match_their_language():
-    """**装包**渲染：en / de 的每一条都不许含 CJK；zh 的 *文案* 可以含。
+    """Render **with packs installed**: no entry of en / de may contain CJK; zh's *prose* may.
 
-    这是「模板本身有没有中文」的真判据 —— null 包测不到它（null 不查表）。
+    This is the real criterion for "do the templates themselves contain
+    Chinese" -- the null pack cannot test it (the null pack never consults a
+    table).
 
-    判据按语言：`en` / `de` 输出里出现 CJK ⇒ 那条模板没被翻译（或漏了）。
-    `zh` 允许中文（那是它的语言）。只在**已装**的包里验，装了 `de` 就验 `de`。
+    Criterion per language: CJK in `en` / `de` output => that template was
+    not translated (or was missed). `zh` may contain Chinese (that is its
+    language). Verify only **installed** packs: if `de` is installed, verify
+    `de`.
 
-    零值守卫：至少验到一个非 zh 的包。
+    Zero-value guard: at least one non-zh pack must get verified.
     """
     import i18n  # noqa: PLC0415
     import knobs  # noqa: PLC0415
     checked = 0
-    # **发现式**：非 zh 的已装包全查（不是手写 ("en","de") —— 新语言包
-    # 不该被静默跳过）。zh 本体豁免（零语言制度允许 zh 只出现在语言包里）。
+    # **Discovery based**: check every installed non-zh pack (not a hand-written
+    # ("en","de") -- a new language pack must not be silently skipped). The zh
+    # core is exempt (the zero-language regime allows zh only in language packs).
     for lang in sorted(knobs.installed_langs()):
         if lang == "zh":
             continue
@@ -500,26 +561,29 @@ def _packs_match_their_language():
 
 
 def _cj(n):
-    """按码点造 n 个 CJK 字符（源码里不出现中文字面量，AST 求值后是真 CJK）。
+    """Build n CJK characters by codepoint (no Chinese literal in the source; real CJK after AST evaluation).
 
-    ⚠️ 夹具**必须含真中文**（否则「该报的必须报」用例没有对象），但字面量
-    又会被本闸门扫到（闸门看的是 AST 求值后的值）。用码点构造是唯一干净的
-    写法 —— 与 `cjk()` 里用码点区间同源。
+    ⚠️ Fixtures **must contain real Chinese** (otherwise the "what must be
+    reported gets reported" case has no target), yet a literal would be swept
+    up by this very gate (the gate sees values after AST evaluation).
+    Codepoint construction is the only clean spelling -- same origin as the
+    codepoint range used inside `cjk()`.
     """
     return "".join(chr(CJK_LO + i) for i in range(n))
 
 
 def _cjk_src(doc):
-    """造一段含 CJK 字面量的源码（字面量用码点构造，本文件源码里不出现中文）。"""
+    """Craft a snippet of source containing a CJK literal (the literal is codepoint-constructed; no Chinese appears in this file's source)."""
     return ('def render_world_block(w):\n'
             '    """%s"""\n'
             '    return "%s"\n') % (doc, chr(CJK_LO) * 2)
 
 
-# 理由用码点构造（本文件源码里不出现中文 —— 否则会被自己的覆盖闸门收编）
+# Reasons are codepoint-constructed (no Chinese in this file's source --
+# otherwise this file's own coverage gate would collect it)
 PINNED_FN = _cjk_src("PINNED: " + chr(CJK_LO) * 10 + " pinned, byte-exact.")
 PINNED_BARE = _cjk_src("PINNED: x")
-# 夹具字面量三例（值用码点拼，本文件源码不出现中文）
+# Three fixture-literal examples (values assembled from codepoints; no Chinese in this file's source)
 _CJ4 = chr(CJK_LO) * 4
 FIXTURE_BAD = ("def _cases():\n"
                "    SAMPLE = \"" + _CJ4 + "\"\n"
@@ -538,7 +602,7 @@ BARE_FN = _cjk_src("ordinary renderer.")
 
 
 def _fixtures():
-    """`_cases()` 用的源码样例（码点构造中文，不写字面量）。"""
+    """Source samples for `_cases()` (Chinese is codepoint-constructed, never written as a literal)."""
     sample = _cj(4)
     return {
         "good": (
@@ -561,7 +625,7 @@ def _fixtures():
 
 
 def _cases_bare_text(fx):
-    """① 裸自然语言：该报的必须报。"""
+    """1. Bare natural language: what must be reported gets reported."""
     return [
         ("i18n_cover.good_fixture",
          lambda: problems([("good.py", fx["good"])]) == []),
@@ -578,7 +642,7 @@ def _cases_bare_text(fx):
 
 
 def _cases_pinned():
-    """② PINNED 按**声明**收编，不按名字（三向：豁免 / 未声明 / 冒充）。"""
+    """2. PINNED collected by **declaration**, not by name (three-way: exempt / undeclared / impostor)."""
     return [
         ("i18n_cover.pinned_by_declaration",
          lambda: problems([("r.py", PINNED_FN)]) == []),
@@ -592,7 +656,7 @@ def _cases_pinned():
 
 
 def _cases_fixture_literal():
-    """③ 自证夹具里不许有中文源码字面量（我踩了三次：第 8/9/13 轮）。"""
+    """3. No Chinese source-code literals in self-proof fixtures (I stepped on it three times: rounds 8/9/13)."""
     return [
         ("★ i18n_cover.fixture_literal",
          lambda: [p.code for p in problems([("t.py", FIXTURE_BAD)])
@@ -608,7 +672,7 @@ def _cases_fixture_literal():
 
 
 def _cases_code_literal():
-    """④ `M(...)` 的 code 不许是算出来的（否则包完整性对它失去约束力）。"""
+    """4. The code of `M(...)` must not be computed (otherwise pack integrity loses its hold on it)."""
     return [
         ("★ i18n_cover.computed_code_is_rejected",
          lambda: [p.code for p in problems(
@@ -628,7 +692,7 @@ def _cases_code_literal():
 
 
 def _cases_end_to_end():
-    """⑤ 端到端 + 扫描面：静态判据抓不到的运行时泄漏。"""
+    """5. End-to-end + scan surface: runtime leaks the static criteria cannot catch."""
     return [
         ("★ i18n_cover.null_pack_output_has_no_cjk",
          lambda: _null_output_has_no_cjk()),
@@ -643,7 +707,7 @@ def _cases_end_to_end():
 
 
 def _cases_input_guards():
-    """⑥ 输入守卫：文件名本身也是攻击面；空输入必须报。"""
+    """6. Input guards: the filename itself is an attack surface; empty input must be reported."""
     return [
         ("★ i18n_cover.filename_line_break",
          lambda: [p.code for p in problems(
@@ -656,7 +720,7 @@ def _cases_input_guards():
 
 
 def _cases():
-    """拼装六组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    """Assemble the six fixture-assertion groups. **Assembly only** -- the criteria live in the group functions."""
     fx = _fixtures()
     return (_cases_bare_text(fx)
             + _cases_pinned()
@@ -666,7 +730,8 @@ def _cases():
             + _cases_input_guards())
 
 
-GATE = meta("语言覆盖闸门", "本体零语言：用户可见文本必须走 M(code)；语言包可选",
+GATE = meta("language coverage gate",
+            "the core is zero-language: user-visible text must go through M(code); language packs are optional",
             knobs=("REFLECT_I18N_ROOT",))
 
 if __name__ == "__main__":

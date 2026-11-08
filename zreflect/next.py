@@ -1,61 +1,78 @@
 #!/usr/bin/env python3
-"""「接着上一轮」的**采集器** —— 记忆系统的那一半。
+"""The "pick up from the last turn" **collector** -- the memory system's half.
 
-## 它替换掉的是一件人工活
+## What it replaces is manual labor
 
-会话压缩之前，人得手工整理「这次干了什么、下一步干什么」。不整理，压缩后
-agent 就两手空空：重新提出已经结案的问题，或者从零重新分析一遍。
+Before a session gets compacted, a human had to hand-write "what was done
+this round, what comes next". Skip it, and after compaction the agent starts
+empty-handed: re-raising already-closed questions, or re-analyzing from zero.
 
-**「每次都要有人准备压缩」本身就是缺陷** —— 它要求人记得做一件机制该做的事，
-而人一旦忘了，代价是整段上下文。
+**"Someone must prepare every compaction" is itself a defect** -- it requires
+a human to remember to do what a mechanism should do, and the cost of
+forgetting is the entire context.
 
-## 接口：一段行，**不落盘**
+## Interface: a block of lines, **never persisted**
 
-    section(repo) -> list[str]      # 含自己的标题行；≤ SECTION_MAX 行
+    section(repo) -> list[str]      # includes its own header line; <= SECTION_MAX lines
 
-**它是宿主无关的**：`section(repo)` 只返回行，不认识任何编辑器的钩子协议、
-不认识任何宿主的 JSON 信封、也不需要知道那个宿主把会话开始叫什么。要接进某个宿主的钩子，
-使用方自己加一层薄壳（读它的 stdout 拼进宿主需要的样子）—— 套件不替宿主做决定，
-也不校验宿主的配置 schema。
+**It is host-agnostic**: `section(repo)` only returns lines; it knows no
+editor's hook protocol, no host's JSON envelope, and does not need to know
+what a given host calls session start. To plug into some host's hook, the
+consumer adds a thin shell of its own (read its stdout and shape it however
+the host wants) -- the suite does not make host decisions and does not
+validate any host's config schema.
 
-## 为什么不在文档里留一块
+## Why there is no block in a document
 
-此前这里渲染一个 `STATE.md` 的 `AUTO:NEXT` 机器块，由 `Stop` 钩子每轮重写。
-**那条路一次都没有跑通过**（实测：`facts.py --render-doc` 只认
-`AUTO:FACTS` / `AUTO:GATES` / `AUTO:RULES`，这个块从未进过任何文档；`next.render()`
-除自证外没有调用方）。更要命的是，它与 `facts.py --check` 的逐字节对账**天然
-互斥**：块每轮都变，对账就永远红；豁免它，文档里那块就没人再验。
+This module used to render an `AUTO:NEXT` machine block in `STATE.md`,
+rewritten every turn by a `Stop` hook. **That path never worked once**
+(measured: `facts.py --render-doc` only accepts `AUTO:FACTS` / `AUTO:GATES` /
+`AUTO:RULES`; this block never made it into any document, and `next.render()`
+had no caller besides the self-proof). Worse, it is **naturally incompatible**
+with `facts.py --check`'s byte-exact reconciliation: a block that changes
+every turn makes the check permanently red; exempt it, and that block of the
+document is verified by no one.
 
-**每轮都变的东西不该占一个会被判的位置。** 所以它不落盘：每次会话开始时现算。
-代价是贵一点点（两次 git 调用 + 一次目录读），换来的是它**永远是新鲜的**，
-而且没有任何「文档说它是自动的、其实从没写过」的中间态。
+**What changes every turn must not occupy a position that gets judged.** So
+it is not persisted: it is computed fresh at each session start. The cost is
+slightly higher (two git calls + one directory read); what it buys is that
+it is **always fresh**, with no intermediate state of "the document says it
+is automatic, but it was never actually written".
 
-## 采集什么，从哪采
+## What gets collected, and from where
 
-全部从**已经存在的东西**长出来，不新增需要人维护的输入：
+Everything grows out of **what already exists**; no new human-maintained
+inputs:
 
-    git log HEAD --not --remotes    → 未推送的提交（「这一轮做了什么」）
-    git status --porcelain          → 未提交的改动 / 未跟踪文件
-    questions/                      → 未结案的悬案（「下一步是什么」）
+    git log HEAD --not --remotes    -> unpushed commits ("what this round did")
+    git status --porcelain          -> uncommitted changes / untracked files
+    questions/                      -> unresolved open questions ("what is next")
 
-这也是 `collect.py` 的采集器契约（只读持久盘、不引入会自己变的输入）。
+This is also `collect.py`'s collector contract (read only durable disk; no
+inputs that change by themselves).
 
-## 预算是接口的一部分
+## The budget is part of the interface
 
-注入进上下文的文本超过一屏就会挤掉真正的工作内容，而 `AUTO:NEXT` 曾经被调用方
-用 `[:8]` 截断 —— 于是**排在最后的待办被静默截掉**（实测：那正是压缩后最需要的
-那一段）。现在截断在**模块内部**完成（`MAX_LISTED` / `SECTION_MAX`），调用方
-不再需要知道长度；`next.section_budget_holds` 钉住「待办一条都不许被挤掉」。
+Text injected into context beyond one screen crowds out the actual work, and
+`AUTO:NEXT` was once truncated by a caller with `[:8]` -- so **the last
+pending items were silently cut** (measured: exactly the part most needed
+after compaction). Truncation now happens **inside the module**
+(`MAX_LISTED` / `SECTION_MAX`); callers no longer need to know the length.
+`next.section_budget_holds` pins "not a single pending item may be squeezed
+out".
 
-## 诚实边界
+## Honest boundaries
 
-  · 它知道「机器看得见的」进度（提交、未提交、悬案），**不知道**「agent 想
-    干什么」。后者要人写 —— 但只写一句 `questions/` 里的悬案就够，不需要
-    整篇 handoff。
-  · 「上一轮」是按**未推送提交**切分的。已经推送的轮次不在里面 ——
-    那是历史，而历史不进丈量面（不可复现的东西不占会被判的位置）。
-  · 待办列表最多列 `MAX_LISTED` 条；**更多的数量由紧随其后的悬案段报**
-    （那段给「未结案 N / 共 M」，这里给「先做这几件」）。
+  - It knows the progress **the machine can see** (commits, uncommitted
+    changes, open questions); it does **not** know "what the agent intends to
+    do". The latter requires a human to write -- but one open question in
+    `questions/` suffices; no full handoff needed.
+  - "The last turn" is delimited by **unpushed commits**. Already-pushed turns
+    are not in it -- that is history, and history stays out of the measured
+    surface (what cannot be reproduced does not occupy a judged position).
+  - The pending list shows at most `MAX_LISTED` entries; **the count beyond
+    that is reported by the open-questions section right after** (that
+    section gives "N open of M"; this one gives "do these few first").
 """
 from __future__ import annotations
 
@@ -65,25 +82,30 @@ import subprocess
 import knobs  # noqa: E402
 from i18n import M  # noqa: E402
 
-# 每一类最多列几条。**预算是接口**：改大它，`SECTION_MAX` 与
-# `next.section_budget_holds` 会同时要求重新算账（那正是想要的）。
+# How many entries each category may list at most. **The budget is the
+# interface**: enlarging it makes `SECTION_MAX` and `next.section_budget_holds`
+# demand a recount together (which is exactly what you want).
 MAX_LISTED = 3
 
-# 整段最多多少行。逐项账（全是最坏情况）：
-#   1 标题 + 1 提交计数 + 3 提交 + 1 省略 + 1 工作区 + 1 空行 + 1 待办标题 + 3 待办
+# Maximum lines for the whole section. Item-by-item accounting (worst case each):
+#   1 header + 1 commit count + 3 commits + 1 elision + 1 worktree + 1 blank + 1 pending header + 3 pending
 SECTION_MAX = 12
 
 
 def _git(repo, *args):
-    """跑一条 git 命令；失败返回 None（**不编空值** —— 见 collect.py 原则 3）。
+    """Run one git command; on failure return None (**never fabricate zero values** -- see collect.py principle 3).
 
-    ⚠️ 刻意**不走** `runner.run_cmd`：那是「台账 cmd 逐字复跑」的 seam ——
-    字符串命令经三档 shell（bash pipefail 语义 / sh / Windows argv 拆分），
-    cwd 恒为 `GATE_REPO`。git 调用是**argv 形状**（`-C <repo>`、列表参数，
-    不经 shell，无注入面），cwd 是**参数给的仓**（不是被检查仓），失败
-    形状是 None 不是 (rc, out)。三个契约都不同 —— 收口会把安全的 argv
-    改成 shell 拼接，或把 cwd 语义改错。两份（这里与
-    `check_world.current_branch`）是有意保留的。"""
+    ⚠️ Deliberately does **not** go through `runner.run_cmd`: that seam is for
+    "re-running a ledger cmd verbatim" -- a string command passes through the
+    three-tier shell (bash pipefail semantics / sh / Windows argv splitting)
+    and cwd is always `GATE_REPO`. The git call here is **argv-shaped**
+    (`-C <repo>`, list arguments, no shell, no injection surface), cwd is the
+    **repo given as a parameter** (not the audited repo), and the failure shape
+    is None, not (rc, out). All three contracts differ -- funneling them
+    together would turn the safe argv into shell concatenation or get the cwd
+    semantics wrong. The two copies (here and `check_world.current_branch`)
+    are kept intentionally.
+    """
     try:
         p = subprocess.run(["git", "-C", repo, *args],
                            capture_output=True, text=True, timeout=10,
@@ -96,18 +118,20 @@ def _git(repo, *args):
 
 
 def unpublished_commits(repo):
-    """未推送的提交标题。取不到 ⇒ None（**不是空表**）。
+    """Unpushed commit subjects. Unreadable => None (**not an empty list**).
 
-    ⚠️ 命令必须带 `HEAD`：`git log --oneline --not --remotes`（**没有起点**）
-    会**静默返回 0 行** —— 看着像「全都推送了」，实际是「没给起点，git 走了
-    另一条默认路径」。实测：同一个仓，带 `HEAD` 得 26 行，不带得 0 行。
-    这是本仓最恨的那种失败：**不报错、答案是错的**。
+    ⚠️ The command must carry `HEAD`: `git log --oneline --not --remotes`
+    (**no start point**) **silently returns 0 lines** -- it looks like
+    "everything is pushed" but is really "no start point given, so git took a
+    different default path". Measured: same repo, 26 lines with `HEAD`, 0
+    without. This is the failure this repo hates most: **no error, wrong
+    answer**.
     """
     branch = (_git(repo, "rev-parse", "--abbrev-ref", "HEAD") or "").strip()
     if not branch or branch == "HEAD":
         return None
-    # 顺序也重要：`HEAD` 在前，`--not --remotes` 在后（`git log` 的起点
-    # 必须在 rev 列表里，不能只靠 `--not`）。
+    # Order matters too: `HEAD` first, `--not --remotes` after (a `git log`
+    # start point must be inside the rev list, `--not` alone is not enough).
     out = _git(repo, "log", "--oneline", "HEAD", "--not", "--remotes")
     if out is None:
         return None
@@ -115,7 +139,7 @@ def unpublished_commits(repo):
 
 
 def working_tree(repo):
-    """未提交的改动：返回 (改动文件数, 未跟踪文件数)。"""
+    """Uncommitted changes: returns (changed-file count, untracked-file count)."""
     out = _git(repo, "status", "--porcelain")
     if out is None:
         return None
@@ -131,7 +155,7 @@ def working_tree(repo):
 
 
 def _commit_lines(repo, last):
-    """未推送提交那一段：计数 + 前 N 条 + 「还有 N 条」。"""
+    """The unpushed-commits section: count + first N subjects + "N more"."""
     commits = unpublished_commits(repo)
     if commits is None:
         last.append(M("next.commits_unreadable"))
@@ -147,7 +171,7 @@ def _commit_lines(repo, last):
 
 
 def _tree_lines(repo, last, pending):
-    """工作区那一段：多少改动 / 有没有脏。"""
+    """The working-tree section: how much changed / whether it is dirty."""
     wt = working_tree(repo)
     if wt is None:
         last.append(M("next.tree_unreadable"))
@@ -159,13 +183,16 @@ def _tree_lines(repo, last, pending):
 
 
 def _question_lines(repo, pending):
-    """**未结案的悬案 = 下一步**。
+    """**Unresolved open questions = what is next**.
 
-    此前这里刻意留空（理由是「`inject-state.py` 已有悬案段，两处都列会重复」）
-    —— 但那个段只报「有几条未结案」，不报「它们是什么」，而压缩后 agent
-    最需要的正是**名字**。现在这里给名字，那段给状态，各司其职。
+    This used to be deliberately empty (rationale: "`inject-state.py` already
+    has an open-questions section; listing in both places duplicates") -- but
+    that section only reports "how many are open", not "which ones", and what
+    the agent needs most after compaction is exactly the **names**. Now this
+    gives the names and that section gives the status; each has its job.
 
-    预算：提交段与工作区段可能已占掉一部分 `MAX_LISTED`，剩下的给悬案。
+    Budget: the commits and worktree sections may already have consumed part
+    of `MAX_LISTED`; the remainder goes to open questions.
     """
     room = MAX_LISTED - len(pending)
     if room <= 0:
@@ -175,19 +202,24 @@ def _question_lines(repo, pending):
 
 
 def collect(repo):
-    """采集「接着上一轮」的输入。返回 `(last_turn, pending)` 两个**Message 列表**。
+    """Collect the "pick up from the last turn" inputs. Returns `(last_turn, pending)`, two **Message lists**.
 
-    两者都可能是空表 —— 空**不是**通过，`section()` 会明说「没有记录」。
-    保留 `Message`（而不是提前 `str()`）是为了让自证能按 **code** 断言，
-    不被语言包是否装着影响。
+    Both may be empty -- empty is **not** a pass; `section()` says explicitly
+    "no record". Keeping `Message` (rather than `str()`-ing early) lets the
+    self-proof assert on **codes**, unaffected by which language packs are
+    installed.
 
-    ⚠️ 这些行是**用户可见文本**（注入进 agent 上下文）⇒ 一律走 `M()`。
-    此前这里写的是裸中文 + 一句 PINNED，理由是「它进 STATE.md 被 --check
-    逐字节对账」——**那句是假的**（那个块从未进过文档，也从不参与对账）。
-    拿一个不成立的理由去豁免，正是本仓在 `machine_vocab_ok` 上抓过的同一个错。
+    ⚠️ These lines are **user-visible text** (injected into agent context)
+    => always go through `M()`. This used to be bare Chinese plus a one-line
+    PINNED, on the rationale "it lands in STATE.md and gets byte-exactly
+    reconciled by --check" -- **that rationale was false** (that block never
+    made it into a document and never took part in reconciliation). Claiming
+    an exemption on a rationale that does not hold is exactly the mistake
+    this repo caught on `machine_vocab_ok`.
 
-    三段各是一个具名 helper（提交 / 工作区 / 悬案）：它们读三个不同的来源，
-    拼在一起时「预算怎么分」变成隐式知识。
+    The three sections are each a named helper (commits / worktree / open
+    questions): they read three different sources, and merged together "how
+    the budget is split" would become implicit knowledge.
     """
     last, pending = [], []
     _commit_lines(repo, last)
@@ -197,31 +229,37 @@ def collect(repo):
 
 
 def _question_status(text):
-    """悬案正文里的 `**Status:**` 值（小写）；没有 ⇒ 空串。
+    """The `**Status:**` value in an open question's body (lowercase); absent => empty string.
 
-    ⚠️ **必须转调 `check_questions.field`**：此前这里自己写了一遍
-    `ln.split(":", 1)[1]`，而真实写法是 `**Status:** resolved`（冒号在
-    **那对星号中间**）—— 于是切出来的是 `"** resolved"`，永远不等于
-    `"resolved"`。后果：**结案的悬案一直被当成待办**报进「接着上一轮」，
-    每轮都提示去查一件已经查完的事。实测（本仓 `questions/01-example.md`
-    结案后 `next.py` 仍列它）。
+    ⚠️ **Must forward to `check_questions.field`**: this used to hand-roll
+    `ln.split(":", 1)[1]`, but the real-world spelling is
+    `**Status:** resolved` (the colon sits **between that pair of asterisks**)
+    -- so what got split out was `"** resolved"`, never equal to
+    `"resolved"`. Consequence: **resolved questions kept being treated as
+    pending** and reported into "pick up from the last turn", nagging every
+    turn to check something already checked. Measured (this repo's
+    `questions/01-example.md` stayed listed after being resolved).
 
-    两份判据必有一份错 —— 而 `check_questions` 那份有 196 行自证守着。
+    Of two copies of a criterion, one must be wrong -- and the
+    `check_questions` copy is guarded by 196 lines of self-proof.
     """
     import check_questions  # noqa: PLC0415
-    # 归一化（小写 + 首词）的唯一产地在 check_questions.status_of ——
-    # 这份曾是第三种判法（R-017），现在只转调。
+    # The single source of normalization (lowercase + first word) lives in
+    # check_questions.status_of -- this copy used to be a third judging method
+    # (R-017); now it only forwards.
     return check_questions.status_of(text)
 
 
 def _open_question_names(repo):
-    """`questions/` 里未结案的悬案文件名（按名字排序，最多 `MAX_LISTED` 个）。
+    """Unresolved open-question filenames from `questions/` (sorted by name, at most `MAX_LISTED`).
 
-    读不到目录 ⇒ 返回空表（不是报错）：那是「这个仓不用悬案」的正常形态，
-    `inject-state.py` 会明说「读不到」。
+    Directory unreadable => return an empty list (not an error): that is the
+    normal shape of "this repo does not use open questions"; `inject-state.py`
+    will say "unreadable" explicitly.
     """
-    # 转调唯一产地（`knobs.questions_path` 会 strip）—— 此前这里自己
-    # `os.environ.get(...).strip() or "questions"`，是同一判据的第二份。
+    # Forward to the single source (`knobs.questions_path` strips) -- this used
+    # to hand-roll `os.environ.get(...).strip() or "questions"`, a second copy
+    # of the same criterion.
     d = knobs.questions_path(repo)
     if not os.path.isdir(d):
         return []
@@ -231,7 +269,7 @@ def _open_question_names(repo):
 
 
 def _read_question(d, name):
-    """读一条悬案；读不到 ⇒ 空串（当成「未结案」—— 读不到不该被算成已结案）。"""
+    """Read one open question; unreadable => empty string (treated as "unresolved" -- unreadable must not count as resolved)."""
     try:
         with open(os.path.join(d, name), encoding="utf-8",
                   errors="replace") as fh:
@@ -241,32 +279,41 @@ def _read_question(d, name):
 
 
 def section(repo):
-    """「接着上一轮」整段（含自己的标题行）。行数 ≤ `SECTION_MAX`。
+    """The whole "pick up from the last turn" section (including its own header line). At most `SECTION_MAX` lines.
 
-    **读不到 ≠ 抛异常**：git 不在 / 不是仓 / 悬案目录没有，全部变成明说的行
-    （`next.commits_unreadable` 这类），绝不编 0、也绝不静默空着。
+    **Unreadable is not an exception**: git missing / not a repo / no open-
+    questions directory all become explicit lines (`next.commits_unreadable`
+    and the like) -- never fabricate a 0, and never fall silently empty.
 
-    **但真正的 bug 照抛**（空 input 列表、模板缺失、编码错）。两者必须可区分：
-    把 `except Exception` 套在这里，就等于让「采集器坏了」与「真的没事」同形。
-    宿主那一侧因此能靠退出码把两种结局分开：读不到 ⇒ 一段明说的行 + rc 0；
-    真坏了 ⇒ 非零退出，宿主自己的日志看得见（套件不替宿主判断）。
+    **But real bugs still raise** (empty input lists, missing templates,
+    encoding errors). The two outcomes must stay distinguishable: wrapping
+    this in `except Exception` would make "the collector is broken" and
+    "nothing to report" the same shape. The host side can then separate them
+    by exit code: unreadable => a block of explicit lines + rc 0; truly
+    broken => nonzero exit, visible in the host's own logs (the suite does
+    not judge on the host's behalf).
 
-    注入进 agent 上下文的用户可见文本 ⇒ 全部走 `M()`（null 包下是裸 code，
-    那是诚实的：没装语言包就说 code）。
+    User-visible text injected into agent context => everything goes through
+    `M()` (under the null pack that is a bare code, which is the honest form:
+    no language pack installed, so say the code).
 
-    `section` 只产**行**：信封、JSON、钩子语义全在调用方 —— 这样它能在
-    零 I/O 之外被断言（`_format`），也能被手跑（`python3 zreflect/next.py`）。
-    手跑的输出就是契约本身：使用方按自己宿主的形状包一层即可。
+    `section` produces only **lines**: envelope, JSON, and hook semantics all
+    belong to the caller -- which lets it be asserted with zero I/O
+    (`_format`) and also run by hand (`python3 zreflect/next.py`). The output
+    of a manual run is the contract itself: a consumer just wraps it in
+    whatever shape its host needs.
     """
     last, pending = collect(repo)
     return _format(last, pending)
 
 
 def _format(last, pending):
-    """`section` 的零 I/O 版本（自证用：不碰 git）。
+    """The zero-I/O version of `section` (for self-proofs: never touches git).
 
-    排版也在这里 —— 调用方不该知道「哪些行加缩进」。空表必须**明说**
-    （`next.pending_none`），不许只是一行空：空不是通过。
+    Layout lives here too -- callers should not know "which lines get
+    indented". An empty list must be **stated explicitly**
+    (`next.pending_none`); a bare empty line is not allowed: empty is not a
+    pass.
     """
     lines = [str(M("next.section_header"))]
     lines.extend("  \u00b7 %s" % str(ln).strip() for ln in (last or []))
@@ -280,59 +327,68 @@ def _format(last, pending):
 
 
 def main(argv=None):
-    """`python3 zreflect/next.py [repo]` → 打印整段（人工核对用，不供钩子拼装）。"""
+    """`python3 zreflect/next.py [repo]` -> prints the whole section (for human inspection, not for hook assembly)."""
     import sys  # noqa: PLC0415
     repo = (argv or sys.argv[1:] or ["."])[0]
     sys.stdout.write("\n".join(section(os.path.abspath(repo))) + "\n")
     return 0
 
 
-# ── 自证 ──────────────────────────────────────────────────────────────────────
+# ── Self-proof ────────────────────────────────────────────────────────────────
 #
-# 本模块**有**自证入口（`selftest=True`）：它的判据是「采集器读不到东西时
-# 会不会假装读到了」—— 那是本仓最痛的那类事故，必须能当场证伪。
+# This module **has** a self-proof entry (`selftest=True`): its criterion is
+# "when the collector cannot read something, does it pretend it did?" -- the
+# class of incident this repo hurts most over, so it must be falsifiable on
+# the spot.
 
 def _cases():
-    """每条都造出**能让它红**的输入（夹具仓，零依赖真仓）。"""
+    """Every case crafts an input **that can make it red** (fixture repos, zero reliance on the real repo)."""
     return [
-        # ① 正常不报：一个真 git 仓，干净工作区 ⇒ 采集器说得出来
+        # 1. Normal non-report: a real git repo, clean worktree => the collector can say so
         ("next.collects_from_real_git", lambda: _real_git_case()),
-        # ② 该报的必须报 —— **读不到不许编 0**
+        # 2. What must be reported gets reported -- **unreadable must not fabricate a 0**
         ("★ next.missing_repo_is_loud_not_zero",
          lambda: _missing_repo_loud()),
-        # 排版是纯函数：同输入两次逐字节相同
+        # Layout is a pure function: same input, two runs, byte-identical
         ("★ next.section_is_deterministic", lambda: _section_deterministic()),
-        # 空待办必须**明说**「若你认为应该有 —— 那是记录的缺口」
+        # Empty pending must be **stated explicitly** ("if you expected items -- that is a gap in the record")
         ("★ next.empty_pending_is_explicit", lambda: _empty_pending_explicit()),
-        # `git log` 的起点不能省：没有 `HEAD` 时它静默返回 0 行
-        # （实测：同一个仓 26 vs 0）。这条钉住「命令形状」而不是结果 ——
-        # 结果依赖真仓状态，形状不依赖。
+        # The `git log` start point must not be omitted: without `HEAD` it
+        # silently returns 0 lines (measured: 26 vs 0 on the same repo). This
+        # case pins the **command shape**, not the result -- the result depends
+        # on real repo state, the shape does not.
         ("★ next.log_command_has_start_point",
          lambda: _log_command_shape_ok()),
-        # **预算是接口的一部分**：提交多 + 悬案多 + 工作区脏 ⇒ 待办一条都不许
-        # 被挤掉，整段 ≤ SECTION_MAX。此前调用方的 `[:8]` 把待办截掉了
-        # （实测：27 个未推送提交时，压缩后最需要的那段整段消失）。
+        # **The budget is part of the interface**: many commits + many open
+        # questions + dirty worktree => not one pending item may be squeezed
+        # out, and the section stays <= SECTION_MAX. A caller's `[:8]` used to
+        # truncate the pending items (measured: with 27 unpushed commits the
+        # section most needed after compaction vanished entirely).
         ("★ next.section_budget_holds", lambda: _section_budget_holds()),
-        # `**Status:**` 的星号写法 —— 结案的悬案不许再出现在「下一步」里。
-        # 此前 `_question_status` 用 `split(":", 1)` 切出 `"** resolved"`，
-        # 于是**每一条结案的悬案都被永远报成待办**（实测本仓 01-example.md）。
+        # The `**Status:**` asterisk spelling -- resolved questions must stop
+        # appearing under "what is next". `_question_status` used to split with
+        # `split(":", 1)` yielding `"** resolved"`, so **every resolved
+        # question was forever reported as pending** (measured on this repo's
+        # 01-example.md).
         ("★ next.resolved_question_is_dropped",
          lambda: _resolved_question_dropped()),
-        # ③ 空输入必须报：一个不存在的仓根
+        # 3. Empty input must be reported: a nonexistent repo root
         ("★ next.nonexistent_root_is_loud",
          lambda: _nonexistent_root_loud()),
     ]
 
 
 def _resolved_question_dropped():
-    """**结案的悬案不得出现在「下一步」里**（`**Status:**` 的星号写法）。
+    """**Resolved open questions must not appear under "what is next"** (the `**Status:**` asterisk spelling).
 
-    夹具刻意一个结案、一个没结案：`**Status:** resolved` 必须不列，
-    `**Status:** ready-for-agent` 必须列。任何一侧错都会红 —— 这就是那个
-    「切出 `"** resolved"`」的 bug 的判据。
+    The fixture deliberately has one resolved and one unresolved:
+    `**Status:** resolved` must not be listed, `**Status:** ready-for-agent`
+    must be. Either side wrong => red -- that is the criterion for the
+    "split out `"** resolved"`" bug.
 
-    ⚠️ **不许用真仓**：真仓的悬案会被结掉，那时这条用例就验不到任何东西
-    （绿得毫无意义）。所以造临时目录。
+    ⚠️ **Never use the real repo**: real questions eventually get resolved,
+    and then this case verifies nothing (green with zero meaning). So build a
+    temp directory.
     """
     import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
@@ -366,9 +422,12 @@ def _real_git_case():
         subprocess.run(["git", "-C", d, "commit", "-qm", "c"], check=True,
                        capture_output=True)
         last, pending = collect(d)
-        # 夹具里的中文用码点（本仓纪律；字面量会让 check_i18n 红）
-        # ⚠️ 按 **code** 判，不按渲染文本 —— null 包下渲染成 `next.tree_state(...)`，
-        # 断言「文本里有某个词」等于断言「语言包装了」，那是另一件事。
+        # Chinese in fixtures is codepoint-built (this repo's discipline; a
+        # literal would turn check_i18n red)
+        # ⚠️ Assert on the **code**, not the rendered text -- under the null
+        # pack it renders as `next.tree_state(...)`; asserting "some word is
+        # in the text" is asserting "a language pack is installed", which is a
+        # different thing.
         return any("next.tree_" in getattr(ln, "code", str(ln)) for ln in last)
     except Exception:                                    # noqa: BLE001
         return False
@@ -377,7 +436,7 @@ def _real_git_case():
 
 
 def _missing_repo_loud():
-    """不存在的仓 ⇒ `unpublished_commits` 返回 None，而不是 `[]`。"""
+    """Nonexistent repo => `unpublished_commits` returns None, not `[]`."""
     return unpublished_commits("/nonexistent-xyz") is None
 
 
@@ -392,9 +451,10 @@ def _section_deterministic():
 
 
 def _empty_pending_explicit():
-    """没有待办 ⇒ 必须**明说**（`next.pending_none`），不许只是一行空。
+    """No pending items => it must be **stated explicitly** (`next.pending_none`); a bare empty line is not allowed.
 
-    按 code 判（null 包下渲染成 `next.pending_none`，不是句子）。
+    Assert on the code (under the null pack it renders as `next.pending_none`,
+    not a sentence).
     """
     import i18n  # noqa: PLC0415
     with i18n.bind(i18n.NULL):
@@ -403,11 +463,13 @@ def _empty_pending_explicit():
 
 
 def _nonexistent_root_loud():
-    """没有上一轮记录 ⇒ 必须**明说**（`next.commits_unreadable`），不许静默空着。
+    """No record of a last turn => it must be **stated explicitly** (`next.commits_unreadable`), never silently empty.
 
-    ⚠️ 断言走**真采集器**（`collect`），不是自己先构造好消息再断言它在场 ——
-    后者是恒真断言（它只证明 `_format` 会抄一遍输入）。这里要证的是：
-    读不到的时候 `collect` 产出的**是** unreadable 那一条，不是空表。
+    ⚠️ The assertion goes through the **real collector** (`collect`), not
+    "construct a good message myself, then assert it is present" -- the
+    latter is a tautology (it only proves `_format` copies its input). What
+    must be proven here: when reading fails, `collect` **does** produce the
+    unreadable entries, not an empty list.
     """
     last, pending = collect("/nonexistent-xyz")
     codes = {getattr(ln, "code", "") for ln in last}
@@ -415,17 +477,18 @@ def _nonexistent_root_loud():
 
 
 def _log_command_shape_ok():
-    """`unpublished_commits` 用的 git 命令**必须带起点**。
+    """The git command used by `unpublished_commits` **must carry a start point**.
 
-    从源码里读那条命令的参数（不执行 git）—— 判据是形状的，所以夹具无关、
-    真仓状态无关。
+    Read that command's arguments from the source (without executing git) --
+    the criterion is about shape, so it is fixture-independent and independent
+    of real repo state.
     """
     import inspect  # noqa: PLC0415
     src = inspect.getsource(unpublished_commits)
-    # 找 `_git(repo, "log", ...)` 那一行
+    # Find the `_git(repo, "log", ...)` line
     for line in src.splitlines():
         if '"log"' in line:
-            # 起点必须在 --not 之前出现
+            # The start point must appear before --not
             if '"HEAD"' not in line:
                 return False
             return line.index('"HEAD"') < line.index("--not")
@@ -433,7 +496,7 @@ def _log_command_shape_ok():
 
 
 def _section_budget_holds():
-    """提交多 + 悬案多 + 工作区脏 ⇒ 待办在场且整段 ≤ `SECTION_MAX`。"""
+    """Many commits + many open questions + dirty worktree => pending items present and the section <= `SECTION_MAX`."""
     import shutil
     import subprocess
     import tempfile  # noqa: PLC0415
@@ -456,13 +519,16 @@ def _section_budget_holds():
         for i in range(MAX_LISTED + 2):
             open(os.path.join(q, "%02d-q.md" % i), "w", encoding="utf-8").write(
                 "# q\n\n**Status:** open\n")
-        open(os.path.join(d, "dirty"), "w", encoding="utf-8").write("d")     # 未跟踪 → 待办
+        open(os.path.join(d, "dirty"), "w", encoding="utf-8").write("d")     # untracked -> pending
         import i18n  # noqa: PLC0415
-        # ⚠️ **在 null 包里重新渲染**，不是拿当前语言包的输出做字符串匹配。
-        # 此前 `text` 是 `section(d)` 用**当前包**渲染的，然后在
-        # `bind(NULL)` 里查 `"next.pending_header" in text` —— 装了任何语言包
-        # （en/zh/de）时那句永远不成立，用例恒红；零包时恰好绿。
-        # 实测：CI 之后 `next --selftest` 在 REFLECT_LANG=en 下 6 PASS / 1 FAIL。
+        # ⚠️ **Re-render inside the null pack**, do not string-match the
+        # current language pack's output. Previously `text` was rendered by
+        # `section(d)` with the **current pack**, and then
+        # `"next.pending_header" in text` was checked inside `bind(NULL)` --
+        # with any language pack installed (en/zh/de) that substring never
+        # holds, so the case was permanently red; with zero packs it happened
+        # to be green. Measured: after CI, `next --selftest` gave 6 PASS /
+        # 1 FAIL under REFLECT_LANG=en.
         with i18n.bind(i18n.NULL):
             lines = section(d)
             text = "\n".join(lines)
@@ -495,7 +561,7 @@ if __name__ == "__main__":
 from gate import module_meta  # noqa: E402
 
 MODULE = module_meta(
-    "接着上一轮",
-    "记忆系统的数据采集：未推送提交 / 工作区 / 未结案悬案 ⇒ 一段宿主无关的注入行"
-    "（现算，不落盘；预算在模块内）",
+    "pick up from the last turn",
+    "memory-system data collection: unpushed commits / worktree / unresolved open questions => one block of host-agnostic injection lines "
+    "(computed fresh, never persisted; budget lives in the module)",
     selftest=True)

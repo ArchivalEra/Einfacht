@@ -1,29 +1,42 @@
 #!/usr/bin/env python3
-"""三语 README 同步闸门：语言版本是同一条断言的三份拷贝 —— 不同批动，就是漂移。
+"""Trilingual README sync gate: the language versions are three copies of the
+same assertion -- touching them in separate batches is drift.
 
-门面 README 有三份语言拷贝（默认 `README.md` 英语 + `README.zh.md` + `README.de.md`，
-名单见 `REFLECT_READMES`）。三语化引入一个新的静默坏法：**改了一份、放任另两份** ⇒
-三份从"同一句话"变成互相矛盾的断言。用户的纪律（2026-10-01）刻意做得苛刻：
-**每次推送必须三份同批更新** —— 本闸门是它的判据与证人：
+The front-page README has three language copies (by default `README.md`
+English + `README.zh.md` + `README.de.md`, names in `REFLECT_READMES`).
+Trilingualization introduces a new silent failure mode: **edit one copy,
+leave the other two alone** => the three copies go from "one sentence" to
+mutually contradictory assertions. The user's discipline (2026-10-01) is
+deliberately strict: **every push must update all copies in the same batch**
+-- this gate is that discipline's criterion and witness:
 
-  · 默认模式（pre-commit / 手动 / gates-selftest 跑的是它）：**结构判据** ——
-    `REFLECT_READMES` 声明的每份 README 必须存在、非空、且含 trio 全部文件名
-    （语言切换器必须指全所有语言：切换器断 = 入口断）。
-    单条目清单（`REFLECT_READMES=maintaince.md`）⇒ 互链判据**退化**：
-    只有一份语言时「必须指全全部语言」自动成立，自引用是退化要求
-    （issue #8）—— 此时互链不查，由 run() 明说「不适用」（与其他
-    闸门声明 off 状态的同款）；存在 / 非空判据照常；
-  · `--changed <文件|->`：**推送集判据** —— 从文件（或 `-` = stdin）读本次推送
-    改动的文件路径（一行一个），**每份 README 都必须在改动集里**，缺一份报一份。
-    改动集为空 ⇒ 必须报（空不是通过）。pre-push 与 CI 走这个模式。
-    ⚠️ 推送集判据**不退化**：单条目时「每次推送必须更新它」仍是实打实的判据。
+  - Default mode (what pre-commit / manual runs / gates-selftest run): the
+    **structural criterion** -- every README declared by `REFLECT_READMES`
+    must exist, be non-empty, and contain all the trio's file names (the
+    language switcher must point at every language: a broken switcher is a
+    broken entry point).
+    A single-entry list (`REFLECT_READMES=maintaince.md`) => the cross-link
+    criterion **degrades**: with only one language, "must point at every
+    language" holds vacuously and self-reference is a degenerate requirement
+    (issue #8) -- the cross-links are then not checked, with run() saying
+    explicitly "not applicable" (same style as other gates declaring an off
+    state); the exist / non-empty criteria still apply as usual;
+  - `--changed <file|->`: the **push-set criterion** -- read the file paths
+    changed in this push from a file (or `-` = stdin, one per line); **every
+    README must be in the change set**, reporting one miss per missing copy.
+    An empty change set => must report (empty is not a pass). pre-push and
+    CI use this mode.
+    Warning: the push-set criterion does **not** degrade: with a single
+    entry, "every push must update it" remains a real criterion.
 
-零值守卫：`REFLECT_READMES` 为空 ⇒ 报（拿空清单判"README 组"是空话）；推送模式收到
-空改动集 ⇒ 报。
+Zero-value guards: `REFLECT_READMES` empty => report (judging the "README
+group" against an empty list is empty talk); push mode receiving an empty
+change set => report.
 
-⚠️ 诚实的边界：pre-push 可被 `git push --no-verify` 跳过 —— 那是 git 的原生出口，
-任何 hook 都拦不住它。所以 CI（`.github/workflows/readme-sync.yml`）跑**同一条判据**：
-本地 hook 是第一时间疼，CI 才是承诺的正面。
+Warning, the honest boundary: pre-push can be skipped with
+`git push --no-verify` -- that is git's native escape and no hook can stop
+it. So CI (`.github/workflows/readme-sync.yml`) runs **the same criterion**:
+the local hook is the first pain, CI is the commitment's front line.
 """
 import os
 import sys
@@ -41,26 +54,35 @@ from i18n import M  # noqa: E402
 
 
 def lang_names():
-    """三语 README 名单 —— 转调 `knobs.readme_names()`（唯一产地）。
+    """The trilingual README list -- delegates to `knobs.readme_names()` (the
+    single source of truth).
 
-    ⚠️ 此前这里自己 `os.environ.get("REFLECT_READMES", READMES)`：**空串不
-    回落** —— `REFLECT_READMES=`（空 = 没配）返回 `()`，下游零值守卫把它
-    当「拿空清单判 README 组」报错；而 `knobs.readme_names()` 同一环境下
-    正确回落登记表。两份判据、空串语义分叉（实测）。
+    Warning: this used to do its own `os.environ.get("REFLECT_READMES",
+    READMES)` here: the **empty string did not fall back** --
+    `REFLECT_READMES=` (empty = unset) returned `()`, and the downstream
+    zero-value guard reported it as "judging the README group against an
+    empty list"; while `knobs.readme_names()` under the same environment
+    fell back to the registry correctly. Two criteria, forked empty-string
+    semantics (measured).
     """
     import knobs  # noqa: PLC0415
     return tuple(knobs.readme_names())
 
 
 def problems_structure(files, langs):
-    """结构判据（纯函数：自证要用）。`files` = {名字: 正文（读不到就没有这个键）}。"""
+    """Structural criterion (pure function: the selftest depends on that).
+    `files` = {name: body (unreadable => no key for it)}."""
     out = []
     if not langs:
-        # 零值守卫：清单为空 ⇒ 「README 组都齐」是一句无法判定的话。
+        # Zero-value guard: an empty list => "all README group members are
+        # present" is an undecidable sentence.
         return [M("readme.names_empty_structure")]
-    # 单条目 ⇒ 互链判据退化（issue #8）：只有一份语言时「切换器必须
-    # 指全全部语言」自动成立，自引用是退化要求。存在 / 非空判据照常，
-    # 互链不查（退化判据由 run() 明说不适用 —— 不许假装查过）。
+    # Single entry => cross-link criterion degrades (issue #8): with only one
+    # language, "the switcher must point at every language" holds vacuously
+    # and self-reference is a degenerate requirement. The exist / non-empty
+    # criteria still apply as usual; cross-links are not checked (run()
+    # states the degraded criterion is not applicable -- never pretend to
+    # have checked).
     switcher_applies = len(langs) > 1
     for name in langs:
         if name not in files:
@@ -79,23 +101,31 @@ def problems_structure(files, langs):
 
 
 def problems_push(changed, langs):
-    """推送集判据（纯函数）。`changed` = 本次推送改动过的文件路径集合。
+    """Push-set criterion (pure function). `changed` = the set of file paths
+    changed in this push.
 
-    **条件式**（与 AGENTS 原话一致：「改任何一份 ⇒ 这次推送的改动集必须三份
-    全含」）：
-      · 一份 README 都没改 ⇒ 不适用（纯代码 / 纯文档提交不该被拦）
-      · 改了至少一份 ⇒ 三份都必须在推送集里（缺一份报一份）
+    **Conditional** (matching AGENTS' wording: "touch any one copy => this
+    push's change set must contain all copies"):
+      - no README touched at all => not applicable (pure code / pure docs
+        commits should not be blocked)
+      - at least one touched => all copies must be in the push set (one miss
+        reported per missing copy)
 
-    **两种名单形态，两条判据**（文档第 12/19 行的区分）：
+    **Two list shapes, two criteria** (the distinction from doc lines 12/19):
 
-      · **多条目**（默认三语 trio）⇒ **条件式**：「改任何一份 ⇒ 这次推送的
-        改动集必须三份全含」。一份都没碰 ⇒ 不适用（纯代码提交不该被拦）。
-      · **单条目**（`REFLECT_READMES=maintaince.md` 这种「把一份活文档当
-        README」的用法）⇒ **无条件**：「每次推送必须更新它」。这是更强的那条
-        —— 单份清单没有「同批」可言，它的判据就是「必须有」。
+      - **Multi-entry** (the default trilingual trio) => **conditional**:
+        "touch any one copy => this push's change set must contain all
+        copies". None touched => not applicable (pure code commits should
+        not be blocked).
+      - **Single-entry** (`REFLECT_READMES=maintaince.md`, the "use a living
+        doc as the README" usage) => **unconditional**: "every push must
+        update it". This is the stronger one -- a single-entry list has no
+        "same batch" to speak of; its criterion is simply "must be present".
 
-    ⚠️ 此前对**多条目**也是无条件，于是任何不改 README 的提交都被判红
-    （CI 上连续红：`0cef263` 只改了 `i18n.py` + 台账）。多条目按文档是条件式。
+    Warning: this used to be unconditional for **multi-entry** too, so any
+    commit not touching a README went red (consecutive CI reds: `0cef263`
+    only changed `i18n.py` + the ledger). For multi-entry the documented
+    form is conditional.
     """
     out = []
     if not langs:
@@ -103,7 +133,7 @@ def problems_push(changed, langs):
     if not changed:
         return [M("readme.changed_empty")]
     multi = len(langs) > 1
-    # 多条目的条件式：一份都没碰 ⇒ 不适用
+    # Multi-entry conditional form: none touched => not applicable
     if multi and not any(name in changed for name in langs):
         return []
     for name in langs:
@@ -134,8 +164,10 @@ def run(argv):
         if os.path.exists(p):
             files[name] = open(p, encoding="utf-8", errors="replace").read()
     if len(langs) == 1:
-        # 退化的互链判据要说出口（issue #8）—— 与其他闸门声明
-        # 「未启用」同款：单条目时互链自动成立，不许假装查过。
+        # The degraded cross-link criterion must be said out loud (issue #8)
+        # -- same style as other gates declaring themselves "off": with a
+        # single entry the cross-links hold vacuously; never pretend to have
+        # checked.
         print(M("readme.switcher_not_applicable", name=langs[0]),
               file=sys.stderr)
     probs = problems_structure(files, langs)
@@ -154,11 +186,13 @@ def _trio():
 
 
 def _cases_structure():
-    """① 结构判据：互链（trio）/ 存在 / 非空（单条目）。"""
+    """(1) Structural criterion: cross-links (trio) / existence / non-emptiness
+    (single entry)."""
     return [
         ("readme.trio_linked",
          lambda: problems_structure(_trio(), LANGS) == []),
-        # ① 正常不报（单条目：互链判据退化，issue #8）
+        # (1) Normal case: no report (single entry: cross-link criterion
+        # degrades, issue #8)
         ("readme.single_no_self_reference",
          lambda: problems_structure({"maintaince.md": "# rules\n\nno links here."},
                                     ("maintaince.md",)) == []),
@@ -174,14 +208,14 @@ def _cases_structure():
         ("\u2605 readme.file_empty",
          lambda: "readme.file_empty" in [p.code for p in problems_structure(
              dict(_trio(), **{"README.zh.md": "   \n"}), LANGS)]),
-        # 单条目：存在 / 非空不退化（issue #8）
+        # Single entry: existence / non-emptiness do not degrade (issue #8)
         ("\u2605 readme.single_file_missing",
          lambda: [p.code for p in problems_structure({}, ("maintaince.md",))]
          == ["readme.file_missing"]),
         ("\u2605 readme.single_file_empty",
          lambda: "readme.file_empty" in [p.code for p in problems_structure(
              {"maintaince.md": "  \n"}, ("maintaince.md",))]),
-        # ③ 空输入必须报
+        # (3) Empty input must be reported
         ("\u2605 readme.names_empty_structure",
          lambda: [p.code for p in problems_structure(_trio(), ())]
          == ["readme.names_empty_structure"]),
@@ -189,7 +223,7 @@ def _cases_structure():
 
 
 def _cases_push():
-    """② 推送集判据：trio 条件式 / 单条目无条件。"""
+    """(2) Push-set criterion: trio conditional / single-entry unconditional."""
     return [
         ("readme.push_all_present",
          lambda: problems_push(set(LANGS) | {"code.py"}, LANGS) == []),
@@ -200,22 +234,25 @@ def _cases_push():
          lambda: [p.code for p in problems_push(
              {"README.md", "README.zh.md", "zreflect/facts.py"}, LANGS)]
          == ["readme.not_in_push"]),
-        # 单条目：同批判据不退化（issue #8）
+        # Single entry: the same-batch criterion does not degrade (issue #8)
         ("\u2605 readme.single_not_in_push",
          lambda: [p.code for p in problems_push({"other.md"}, ("maintaince.md",))]
          == ["readme.not_in_push"]),
-        # **多条目条件式**：一份 README 都没碰 ⇒ 不适用（纯代码提交不该被拦）。
-        # 这是 CI 上 `0cef263`（只改 i18n.py + 台账）被判红的那一类 ——
-        # 文档说的是条件判据（「改任何一份 ⇒ 三份全含」），不是无条件。
+        # **Multi-entry conditional**: no README touched at all => not
+        # applicable (pure code commits should not be blocked).
+        # This is the class that went red on CI at `0cef263` (only i18n.py +
+        # the ledger changed) -- the doc specifies a conditional criterion
+        # ("touch any one => all copies included"), not an unconditional one.
         ("readme.multi_untouched_is_not_in_scope",
          lambda: problems_push({"zreflect/x.py"},
                                ("README.md", "README.zh.md")) == []),
-        # 但**碰了一份就必须三份全含**（否则改成条件式就等于放水了）
+        # But **touch one and all copies must be included** (otherwise
+        # making it conditional would just be letting water through)
         ("\u2605 readme.multi_partial_still_fires",
          lambda: [p.code for p in problems_push(
              {"README.md", "zreflect/x.py"}, ("README.md", "README.zh.md"))
          ] == ["readme.not_in_push"]),
-        # ③ 空输入必须报
+        # (3) Empty input must be reported
         ("\u2605 readme.names_empty_push",
          lambda: [p.code for p in problems_push({"README.md"}, ())]
          == ["readme.names_empty_push"]),
@@ -226,11 +263,13 @@ def _cases_push():
 
 
 def _cases():
-    """两条判据各一组（结构 / 推送集）：它们读不同的输入、管不同的事。"""
+    """One group per criterion (structure / push set): they read different
+    inputs and govern different things."""
     return _cases_structure() + _cases_push()
 
 
-GATE = meta("三语 README 闸门", "语言版本是同一条断言的三份拷贝：结构互链 + 每次推送同批",
+GATE = meta("Trilingual README gate",
+            "language versions are three copies of one assertion: structural cross-links + same-batch on every push",
             knobs=("REFLECT_READMES",), name_dependent=True)
 
 if __name__ == "__main__":

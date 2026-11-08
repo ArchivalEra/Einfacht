@@ -1,32 +1,41 @@
 #!/usr/bin/env python3
-"""A/B 同旗标不变式闸门（**可插拔模块**；源自 Octave-Full-Wasm 工单 57/61 的通用化）。
+"""A/B same-flags invariant gate (**pluggable module**; generalized from
+Octave-Full-Wasm tickets 57/61).
 
-对比两个工件（构建产物身份证、基准报告、任何 JSON）的**声明面**时，唯一的合法差异
-是**被测轴**本身。除此之外任何键不同 = 混淆变量混进了 A/B —— 结论作废。
-真实事故：分配器 A/B 首报 −39%，事后发现基线带了运行期断言（`--diag` 全套）而候选只带
-`NAMES=1` ⇒ 同旗标重测真实差 −27%。如果 A/B 前有这道闸门，−39% 根本不会落档。
+When comparing the **declared surfaces** of two artifacts (build-product
+identity cards, benchmark reports, any JSON), the only legal difference is the
+**axis under test** itself. Any other key differing = a confounding variable
+slipped into the A/B -- the conclusion is void. Real incident: an allocator A/B
+first reported -39%; it later turned out the baseline carried runtime assertions
+(the full `--diag` set) while the candidate only carried `NAMES=1` => retested
+with same flags, the real difference was -27%. Had this gate existed before the
+A/B, the -39% would never have entered the record.
 
-规格（`REFLECT_AB`，默认 `ab.json`；数据不是代码）：
+Spec (`REFLECT_AB`, default `ab.json`; data, not code):
 
     { "pairs": [
-        { "name": "分配器 A/B",
+        { "name": "allocator A/B",
           "a": "artifacts/base/octave.build.json",
           "b": "artifacts/cand/octave.build.json",
-          "key": "declared",            # 可选：JSON 内点分路径（默认整文件）
-          "allow": ["malloc"],          # 被测轴（唯一允许不同的键）
-          "why": "…必填…" } ] }
+          "key": "declared",            # optional: dotted path into the JSON (default: whole file)
+          "allow": ["malloc"],          # axis under test (the only key allowed to differ)
+          "why": "...required..." } ] }
 
-- 除 `allow` 外任何键的值差异 ⇒ 报（混淆变量）；
-- `allow` 内的键在两件中**必须都存在且不同或同值**——都存在即可，缺失本身不算
-  （缺失语义由产出方管）；
-- 工件读不到 ⇒ `SKIP:` 明说（跨机器现实，不是通过）；
-- `pairs` 为空 / 条目缺 why ⇒ 报（零值守卫）；
-- `REFLECT_AB` 未配 ⇒ 明说未启用退 0；显式指定（--spec / 旋钮）而文件
-  不在 ⇒ FATAL 退 2。
+- A value difference on any key outside `allow` => report (confounding
+  variable);
+- keys inside `allow` **must simply exist in both** -- differing or equal both
+  count; mere existence is the criterion, absence itself is not judged
+  (absence semantics belong to the producer);
+- an artifact that cannot be read => `SKIP:`, stated openly (a cross-machine
+  reality, not a pass);
+- empty `pairs` / an entry missing why => report (zero-value guard);
+- `REFLECT_AB` unset => explicitly not enabled, exit 0; explicitly specified
+  (--spec / knob) but the file missing => FATAL exit 2.
 
-用法（cwd=仓库根）：python3 zreflect/check_ab.py [--spec ab.json]
-（规格名解析：--spec 显式 > `REFLECT_AB` 旋钮 > 默认 `ab.json`）
-退出码：0=绿或未启用 / 1=发现问题 / 2=配置坏。自证：--selftest（夹具注入）。
+Usage (cwd = repo root): python3 zreflect/check_ab.py [--spec ab.json]
+(Spec-name resolution: explicit --spec > `REFLECT_AB` knob > default `ab.json`.)
+Exit codes: 0 = green or not enabled / 1 = problems found / 2 = broken config.
+Selftest: --selftest (fixture-injected).
 """
 from __future__ import annotations
 
@@ -50,12 +59,14 @@ from gate import (  # noqa: E402
 )
 from i18n import M  # noqa: E402
 
-# 从旋钮登记表派生（唯一产地）—— 手写字面量会与它漂（本仓最贵的一类债）。
+# Derived from the knob registry (single origin) -- a handwritten literal would
+# drift from it (the most expensive class of debt in this repo).
 DEFAULT_SPEC = knobs.REGISTRY["REFLECT_AB"][1]
 
 
 def resolve_spec(argv, knob=""):
-    """见 `gate.resolve_spec`：实现只有一处，这里只绑定本闸门的默认名。"""
+    """See `gate.resolve_spec`: the implementation lives in one place; this only
+    binds this gate's default name."""
     return gate.resolve_spec(argv, knob, DEFAULT_SPEC)
 
 
@@ -77,18 +88,20 @@ def _dig(obj, dotted):
 
 
 def _pair_field_problems(pr):
-    """pair 条目必填字段（name / a / b / why）缺失 ⇒ 报。"""
+    """A pair entry missing a required field (name / a / b / why) => report."""
     return [M("ab.pair_missing_field", field=f, entry=pr)
             for f in ("name", "a", "b", "why") if not pr.get(f)]
 
 
 def _declared(obj, key):
-    """取声明面：key 为空 ⇒ 整文件，否则按点分路径下钻。"""
+    """Take the declared surface: empty key => the whole file; otherwise dig
+    down the dotted path."""
     return _dig(obj, key) if key else obj
 
 
 def _confound_problems(pr, key, da, db):
-    """除 allow 轴外任何键的值不一致 ⇒ 混淆变量（A/B 作废）。"""
+    """A value mismatch on any key outside the allow axis => confounding
+    variable (A/B void)."""
     allow = set(pr.get("allow") or [])
     return [M("ab.confound", name=pr["name"],
               key=key or M("ab.root_label"), field=k,
@@ -98,11 +111,13 @@ def _confound_problems(pr, key, da, db):
 
 
 def _pair_problems(pr, root, loader):
-    """单组 A/B 对比：字段 / 可读性 / 声明面类型 / 混淆变量。返回 (problems, skips)。"""
+    """One A/B pair comparison: fields / readability / declared-surface type /
+    confounding variables. Returns (problems, skips)."""
     problems, skips = _pair_field_problems(pr), []
     if problems:
-        # 必填字段缺失 ⇒ 到此为止（后续 a/b/key 的读取会 KeyError ——
-        # 「缺字段」本身就是这次要报的东西，别让它变成崩溃）。
+        # A missing required field ends it here (the a/b/key reads below would
+        # raise KeyError -- the missing field is itself what this round
+        # reports; do not let it become a crash).
         return problems, skips
     key = pr.get("key") or ""
     ra, ea = loader(gate.repo_path(pr["a"], root))
@@ -120,7 +135,7 @@ def _pair_problems(pr, root, loader):
 
 
 def check(spec, root, loader=_load):
-    """纯逻辑（自证注入 loader）。返回 (problems, skips)。"""
+    """Pure logic (the selftest injects `loader`). Returns (problems, skips)."""
     pairs = spec.get("pairs") or []
     if not pairs:
         return [M("ab.empty")], []
@@ -164,7 +179,7 @@ def _cases():
     spec = {"pairs": [
         {"name": "allocator A/B", "a": "a.json", "b": "b.json", "key": "declared",
          "allow": ["malloc"], "why": "axis under test = allocator"}]}
-    # a/b：除 malloc 外全等
+    # a/b: identical except malloc
     wf("a.json", {"declared": {"simd": True, "malloc": "mimalloc", "v128": 4752}})
     wf("b.json", {"declared": {"simd": True, "malloc": "dlmalloc", "v128": 4752}})
     wf("mut-a.json", {"declared": {"simd": True, "malloc": "mimalloc", "v128": 4752}})
@@ -179,9 +194,9 @@ def _cases():
          and resolve_spec([], "K.json") == ("K.json", True)
          and resolve_spec([], "") == ("ab.json", False)
          and resolve_spec([], "  ") == ("ab.json", False)),
-        # ① 正常不报
+        # (1) compliant input: nothing reported
         ("ab.ok", lambda: check(spec, d)[0] == []),
-        # ② 该报的必须报
+        # (2) what must be reported is reported
         ("★ ab.confound",
          lambda: [p.code for p in check(confound_spec, d)[0]] == ["ab.confound"]),
         ("★ ab.artifact_unreadable",
@@ -196,15 +211,15 @@ def _cases():
          lambda: [p.code for p in check(
              {"pairs": [{"a": "a.json", "b": "b.json", "why": "w"}]}, d)[0]]
          == ["ab.pair_missing_field"]),
-        # ③ 空输入必须报
+        # (3) empty input must be reported
         ("★ ab.empty",
          lambda: [p.code for p in check(empty, d)[0]] == ["ab.empty"]),
     ]
 
 
-GATE = meta("A/B 闸门", "A/B 同旗标不变式（非 allow 轴差异 = 混淆变量，A/B 作废）",
+GATE = meta("A/B gate", "A/B same-flags invariant (a difference outside the allow axis = confounding variable, A/B void)",
             knobs=("REFLECT_AB",),
-            off_reason="不做 A/B 对照实验的仓不需要它：规格未配 ⇒ 明说未启用")
+            off_reason="repos that run no A/B experiments do not need it: spec unset => explicitly not enabled")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_ab", _cases, main))

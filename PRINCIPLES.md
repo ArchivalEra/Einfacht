@@ -40,27 +40,27 @@
 不是这段散文 —— 散文里再讲一遍就是第三份拷贝（假定 3）。
 
 <!-- AUTO:RULES -->
-> 本区块由 `zreflect/facts.py --render-doc` 从 `zreflect/doc.py` 的 `RULES` 表渲染，**不要手改**。
-> 每行的判定命令都在 `FACTS.json` 里，每次提交被逐字执行（`check_facts_replay`）。
+> This block is rendered by `zreflect/facts.py --render-doc` from the `RULES` table in `zreflect/doc.py`; **do not hand-edit**.
+> Every row's judging command is in `FACTS.json` and is executed verbatim at every commit (`check_facts_replay`).
 
-| id | 原则 | 判定命令 |
+| id | principle | judging command |
 |---|---|---|
-| `assertion_lifecycle` | 被推翻的断言不许悄悄回来当现状 | `python3 zreflect/check_retractions.py` |
-| `declared_not_globbed` | 谓词是声明不是文件名：执行面读 registry --run <相位> | `python3 zreflect/registry.py --gates` |
-| `falsifiable` | 断言要能证伪：恒真短路由 AST 扫出，命中即判 fail | `python3 zreflect/registry.py --selftest` |
-| `host_agnostic` | 套件源码不认任何宿主的目录名 / 配置格式（宿主接线归使用方） | `python3 -c "import os,sys;w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR','hook'+'SpecificOutput'];bad=[(d,f) for d in ('zreflect','reflect-hooks') for r,_,fs in os.walk(d) for f in fs if f.endswith(('.py','.sh')) and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)"` |
-| `machine_rows` | 机器行由 machine.ROWS 唯一产地定义；shell 侧有行为对账器 | `python3 zreflect/machine.py --selftest` |
-| `no_retired_names` | 退役名不许以现状出现；sha 出处与测龄可查 | `python3 zreflect/check_stale.py` |
-| `number_once` | 数字只生产一次：文档引用写 [[键名]]，不手抄（双向拦） | `python3 zreflect/check_facts.py` |
-| `off_is_visible` | off 与「跑过且通过」必须可区分；会 off 的闸门必须声明理由 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry, criteria;gs=registry.gates()[0];p=criteria.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)"` |
-| `only_measured` | 数值/行为只认实测；每条事实都必须有一条复跑命令 | `python3 -c "import json,sys;d=json.load(open('FACTS.json', encoding='utf-8'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
-| `open_questions_settle` | 未结案的悬案必须挂一个能跑的结算件 | `python3 zreflect/check_questions.py` |
-| `selfcert_harness` | 每个闸门都要有 --selftest 入口（写而不跑 = 装饰） | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)"` |
-| `snapshot_hygiene` | 跨模块 import 的可变全局是值拷贝（陈旧快照）：改读属性 | `python3 zreflect/check_snapshots.py` |
-| `three_readmes` | 三语 README 是同一条断言的三份拷贝：改一份必须三份同批 | `python3 zreflect/check_readme_sync.py` |
-| `zero_language` | 本体零语言：用户可见消息走 M(code)，机器契约结构上不可译 | `python3 zreflect/check_i18n.py` |
+| `assertion_lifecycle` | a retracted claim must not quietly return as current state | `python3 zreflect/check_retractions.py` |
+| `declared_not_globbed` | predicates are declarations, not filenames: the execution surface reads registry --run <phase> | `python3 zreflect/registry.py --gates` |
+| `falsifiable` | claims must be falsifiable: always-true shortcuts are swept by AST and any hit fails | `python3 zreflect/registry.py --selftest` |
+| `host_agnostic` | the suite's source recognizes no host's directory names / config formats (host wiring belongs to the consumer) | `python3 -c "import os,sys;w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR','hook'+'SpecificOutput'];bad=[(d,f) for d in ('zreflect','reflect-hooks') for r,_,fs in os.walk(d) for f in fs if f.endswith(('.py','.sh')) and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)"` |
+| `machine_rows` | machine rows are defined in one place, machine.ROWS; the shell side has a behavior reconciler | `python3 zreflect/machine.py --selftest` |
+| `no_retired_names` | retired names must not appear as current state; sha provenance and age are checkable | `python3 zreflect/check_stale.py` |
+| `number_once` | each number is produced once: documents reference it as [[key]], never hand-copied (enforced both ways) | `python3 zreflect/check_facts.py` |
+| `off_is_visible` | off must be distinguishable from "ran and passed"; a gate that can go off must declare why | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry, criteria;gs=registry.gates()[0];p=criteria.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)"` |
+| `only_measured` | numbers/behavior trust measurement only; every fact must carry a re-run command | `python3 -c "import json,sys;d=json.load(open('FACTS.json', encoding='utf-8'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
+| `open_questions_settle` | every unresolved open question must carry a runnable settler | `python3 zreflect/check_questions.py` |
+| `selfcert_harness` | every gate must have a --selftest entry (written but never run = decoration) | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)"` |
+| `snapshot_hygiene` | a mutable global imported across modules is a value copy (stale snapshot): read via the module attribute instead | `python3 zreflect/check_snapshots.py` |
+| `three_readmes` | the three-language READMEs are three copies of one assertion: change one, change all three in the same batch | `python3 zreflect/check_readme_sync.py` |
+| `zero_language` | zero language in the core: user-visible messages go through M(code); machine contracts are untranslatable by construction | `python3 zreflect/check_i18n.py` |
 
-14 条原则 —— 每条都有一条**真的会跑**的判定命令。
+14 principles — each with a judging command that **really runs**.
 <!-- /AUTO:RULES -->
 
 ## 怎么用这张表
