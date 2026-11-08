@@ -121,33 +121,28 @@ python3 reflect-hooks/install.py --chain          # 接钩子
 旋钮全在 `zreflect/knobs.py` 登记，名字型旋钮（`REFLECT_DOCS` / `REFLECT_READMES`
 / `REFLECT_QUESTIONS` …）在那个仓的 `Einfacht.env` 里改，不改代码。
 
-## 本仓只读锁 + 宿主钩子不接线
+## 本仓规程：接线与防直写
 
-本仓是**套件仓**：别的 agent 对它的产出一律走 issue 反哺（如 #31），**不许
-直写**。**kimi-code 用户级钩子已全部摘掉**（2026-11-08）：它没有 ZCode 那样
-省事的按仓挂载，用户级钩子会把注入/闸门代跑洒进机器上每一个会话 ——
-实测把本仓待办注进了 10 个外仓会话，还假拦截过 LLVM-wasm 37 次提交。
-**各跑各的**：每个仓的 git 钩子（pre-commit/pre-push 经 `install.py --chain`
-接）与 `python3 zreflect/next.py <仓>` 手跑命令就是唯一接线，宿主不代管
-（`host_agnostic` 原则不动）。要「接着上一轮」就在对应仓手跑，别在宿主层
-替它做决定。
+本仓是**套件仓**：别的 agent 对它的产出一律走 issue 反哺（带复现与根因
+file:line），由 owner 会话裁决后落补丁，**不许直写**。
 
-防直写只剩 **OS 层 advisory 锁**（宿主侧 `einfacht-lock.sh`，不进判据面）：
-`chmod -R a-w` 全树；缓存目录（`.ruff_cache` / `__pycache__` 等）保持可写，
-否则 `check_lint` 会因 ruff 写不了缓存而 FATAL。同用户进程能 chmod 回来，
-挡的是误写与莽撞，不是对抗。
+**各跑各的**：每个仓自己接 git 钩子（`reflect-hooks/install.py --chain`），
+要「接着上一轮」就在对应仓手跑 `python3 zreflect/next.py <仓>`。宿主不代管
+（`host_agnostic` 原则不动）——不在用户级 config 注册会话钩子。
 
-owner 侧管理（`einfacht-lock.sh`，四件事）：
+防直写用 OS 层 advisory 锁（宿主侧 `einfacht-lock.sh`，不进判据面）：
+`chmod -R a-w` 全树，缓存目录（`.ruff_cache` / `__pycache__` 等）保持可写，
+否则 ruff 写不了缓存、`check_lint` 会 FATAL。同用户进程能 chmod 回来，挡的是
+误写与莽撞，不是对抗。
 
 ```bash
-~/.kimi-code/hooks/einfacht-lock.sh claim <session_id>  # 登记 owner（记账用）
-~/.kimi-code/hooks/einfacht-lock.sh seal                # 加 OS 层（收工时）
-~/.kimi-code/hooks/einfacht-lock.sh open                # 解除 OS 层（自己要写时）
+~/.kimi-code/hooks/einfacht-lock.sh claim <session_id>  # 登记 owner
+~/.kimi-code/hooks/einfacht-lock.sh seal                # 收工时加锁
+~/.kimi-code/hooks/einfacht-lock.sh open                # 自己要写时解锁
 ~/.kimi-code/hooks/einfacht-lock.sh release             # 全放
 ```
 
-**别的 agent 想改本仓**：开 issue，带复现与根因（file:line），由 owner 会话
-裁决后落补丁。直写先撞 EACCES；绕过 chmod 硬写视为越界。
+直写先撞 EACCES；绕过 chmod 硬写视为越界。
 
 ## 不懂就问
 
