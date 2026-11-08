@@ -1,23 +1,29 @@
 #!/usr/bin/env python3
-"""逐字执行器（裸值契约的 runner，**公共 seam**）。
+"""Verbatim executor (bare-value-contract runner, **public seam**).
 
-「逐字跑一条命令、stdout 去掉首尾空白后必须等于期望值」是本仓最重要的
-interface 之一 —— 复跑闸门（台账 `cmd`，issue #2 ①）与 world 印章（环境
-对账，issue #13）都是它的 adapter。「两个 adapter = 真实 seam」：它原本
-住在 check_facts_replay 的私有区，check_world 掏邻居的下划线名字来用
-（docstring 自称「嫁接」）—— 现在归位成 module，闸门之间不再互掏私有。
+"Run a command verbatim, and stdout stripped of leading/trailing whitespace
+must equal the expected value" is one of the repo's most important interfaces
+— the replay gate (ledger `cmd`, issue #2 (1)) and the world stamp (environment
+reconciliation, issue #13) are both adapters over it. "Two adapters = a real
+seam": this used to live in check_facts_replay's private section, and
+check_world reached into its neighbor's underscore name to use it (its own
+docstring called the maneuver a "graft") — it is now promoted to a module,
+so gates no longer pick each other's privates.
 
-判据（`cmd` 逐字执行，cwd = 仓库根）：
+Criteria (`cmd` runs verbatim, cwd = repo root):
 
-  · **裸值契约**：stdout 去掉首尾空白后必须**等于**期望 —— 只打印
-    「含该值的整行」人眼可读、机器不可判，各 adapter 自己报不符；
-  · rc≠0 / 超时 / OSError 都**不算通过** —— 返回 (rc, stdout) 让
-    adapter 决定措辞（超时 ⇒ rc=None）；
-  · 管道不吞错：有 bash 用 `bash -o pipefail -c`（`cat 没了 | wc -l`
-    打印 0 且 rc=0 的那种「失败但绿」正是要抓的东西），没有 bash 退回
-    /bin/sh —— 判据强度随环境变化这件事，不许静默；
-  · 超时默认 `REFLECT_REPLAY_TIMEOUT`（10s）：挂在 pre-commit 里的
-    命令不该永远等不到。
+  · **Bare-value contract**: stdout stripped of leading/trailing whitespace
+    must **equal** the expected value — printing "the whole line that contains
+    the value" is readable by humans but not judgeable by machines; each
+    adapter reports mismatches itself;
+  · rc≠0 / timeout / OSError all **do not count as a pass** — return
+    (rc, stdout) and let the adapter choose the wording (timeout ⇒ rc=None);
+  · pipes must not swallow errors: with bash use `bash -o pipefail -c`
+    (the "fails but green" shape where `cat is gone | wc -l` prints 0 with
+    rc=0 is exactly what this catches); without bash fall back to /bin/sh —
+    criteria strength varying with the environment must never happen silently;
+  · timeout defaults to `REFLECT_REPLAY_TIMEOUT` (10s): a command wired into
+    pre-commit must not wait forever.
 """
 from __future__ import annotations
 
@@ -37,63 +43,72 @@ from i18n import M  # noqa: E402
 
 
 def default_timeout():
-    """逐字执行的默认超时秒数（`REFLECT_REPLAY_TIMEOUT`；坏值 ⇒ 默认 10）。"""
+    """Default timeout seconds for verbatim execution (`REFLECT_REPLAY_TIMEOUT`; bad value ⇒ default 10)."""
     seconds, _bad = timeout_with_status()
     return seconds
 
 
 def timeout_with_status():
-    """`(秒数, 坏值)`：坏值 ⇒ 回落 10 并把**原值**带出来（调用方决定响不响）。
+    """`(seconds, bad_value)`: bad value ⇒ fall back to 10 and carry the **original** value out (caller decides whether to sound off).
 
-    ⚠️ 此前 `default_timeout` 静默回落，而 `check_facts_replay.run` 自己又
-    `float(raw)` 探测一遍来告警 —— 同一个坏值，一个不响一个响（实测：
-    `REFLECT_REPLAY_TIMEOUT=""` 时 replay 报 `bad_timeout`，但 runner 自己
-    什么都不说）。两份判据一份只做一半。现在解析只此一份。
+    ⚠️ Previously `default_timeout` fell back silently, while
+    `check_facts_replay.run` probed again with its own `float(raw)` to warn —
+    the same bad value, one silent and one loud (observed: with
+    `REFLECT_REPLAY_TIMEOUT=""` replay reported `bad_timeout` but the runner
+    itself said nothing). Two copies of the criterion, each doing half. Parsing
+    now lives in exactly one place.
     """
     raw = os.environ.get("REFLECT_REPLAY_TIMEOUT")
     if raw is None or not raw.strip():
-        return 10.0, None                     # 没配（含空串）= 正常默认
+        return 10.0, None                     # unset (incl. empty string) = normal default
     try:
         return float(raw), None
     except ValueError:
-        return 10.0, raw                      # 坏值：回落 + 带出原值
+        return 10.0, raw                      # bad value: fall back + carry the original out
 
 
 def quote(s, n=60):
-    """把一段输出缩成可引用的 repr（复现事故时别把 1 MiB stdout 糊进终端）。"""
+    """Shrink a chunk of output into a quotable repr (don't smear 1 MiB of stdout into the terminal while reproducing an incident)."""
     t = s if len(s) <= n else s[:n] + "…"
     return repr(t)
 
 
 def _shell_argv(cmd):
-    """把一条 `cmd` 包装成「哪个 shell 能跑它」的 argv。
+    """Wrap a `cmd` into the argv of "whichever shell can run it".
 
-    三档，**强度随环境下降这件事必须可见**（不静默）：
+    Three tiers, and **the drop in strength with the environment must be
+    visible** (never silent):
 
-      1. `bash -o pipefail -c` —— 最好：管道里任一环失败都带出来
-         （`cat 没了 | wc -l` 打印 0 且 rc=0 的那种「失败但绿」正是要杀的）。
-      2. `/bin/sh -c` —— 没有 bash 的系统（部分容器 / 精简发行版）。
-         没有 `pipefail`，所以**管道中间的失败可能丢**。
-      3. **Windows**：没有 `bash` 也没有 `/bin/sh`。回落到 `cmd.exe`——
-         它能跑本仓台账里的那些 `python3 ...` / `git ...` 单命令，
-         但不支持 POSIX 管道语义（`|` 会被 cmd 解释成管道，但 `$(...)` 等不认）。
+      1. `bash -o pipefail -c` — the best: a failure in any stage of a pipe
+         is carried out (the "fails but green" shape where `cat is gone |
+         wc -l` prints 0 with rc=0 is exactly what this kills).
+      2. `/bin/sh -c` — systems without bash (some containers / minimal
+         distros). No `pipefail`, so **a failure in the middle of a pipe
+         can be lost**.
+      3. **Windows**: no `bash` and no `/bin/sh`. Fall back to `cmd.exe` —
+         it can run the `python3 ...` / `git ...` single commands in this
+         repo's ledger, but has no POSIX pipe semantics (`|` is interpreted
+         as a pipe by cmd, but `$(...)` and friends are not understood).
 
-    返回 `(argv, 强度标签)`；标签写进 `EINFACHT_REPLAY_SHELL` 供诊断。
+    Returns `(argv, strength label)`; the label goes into
+    `EINFACHT_REPLAY_SHELL` for diagnostics.
     """
     bash = shutil.which("bash")
     if bash:
         return [bash, "-o", "pipefail", "-c", _python_of(cmd)], "bash"
     if os.name != "nt" and os.path.exists("/bin/sh"):
         return ["/bin/sh", "-c", _python_of(cmd)], "sh"
-    # Windows：**不经 shell**，由 `_windows_argv` 拆成参数表。
+    # Windows: **no shell at all** — `_windows_argv` splits it into an argv.
     #
-    # ⚠️ 走 `cmd.exe /c` 会掉进引号地狱：`sys.executable` 常在
-    # `C:/Program Files/...`（含空格），cmd 会把外层引号剥掉再重新切分
-    # ⇒ **127 找不到命令**。实测：CI 的 Windows 腿 19 条 replay 全红在这里。
+    # ⚠️ Going through `cmd.exe /c` lands you in quote hell: `sys.executable`
+    # usually lives in `C:/Program Files/...` (with spaces), and cmd strips
+    # the outer quotes then re-splits ⇒ **127 command not found**. Observed:
+    # all 19 replay entries on CI's Windows leg went red right here.
     #
-    # ⚠️ 也不用 `shlex.split`：`posix=False` **保留引号**（带引号的路径原样
-    # 传给 CreateProcess ⇒ 找不到文件）；`posix=True` 会把 `C:/Program Files`
-    # 的反斜杠当转义符吃掉。两者都错。见 `_windows_argv`。
+    # ⚠️ `shlex.split` is no good either: `posix=False` **keeps the quotes**
+    # (a quoted path gets passed to CreateProcess verbatim ⇒ file not found);
+    # `posix=True` eats the backslashes of `C:/Program Files` as escapes.
+    # Both wrong. See `_windows_argv`.
     return None, "no-shell"
 
 
@@ -101,39 +116,48 @@ _QUOTED = re.compile(r'"([^"]*)"|(\S+)')
 
 
 def _windows_argv(cmd):
-    """把一条 `cmd` 拆成参数表（Windows，不经 shell）。
+    """Split a `cmd` into an argv (Windows, no shell in between).
 
-    规则：**双引号内原样保留**（含空格与反斜杠），引号外按空白切。
-    这是 Windows `CommandLineToArgvW` 的近似 —— 对「解释器 + 脚本 + 几个参数」
-    这个形状足够，而且不碰反斜杠。
+    Rule: **everything inside double quotes is kept verbatim** (spaces and
+    backslashes included), split on whitespace outside quotes. This is an
+    approximation of Windows `CommandLineToArgvW` — good enough for the
+    "interpreter + script + a few args" shape, and it never touches
+    backslashes.
 
-    **不支持** shell 语法（`|` / `&&` / 重定向）。本仓台账里的 `cmd` 全是
-    单命令；使用方若要管道，得让那台机器装 bash（`_shell_argv` 会优先选它，
-    而那条路径有 `pipefail`）。
+    Shell syntax (`|` / `&&` / redirections) is **not supported**. Every
+    `cmd` in this repo's ledger is a single command; a consumer who needs a
+    pipe has to get bash installed on that machine (`_shell_argv` picks it
+    first, and that path has `pipefail`).
     """
     return [m.group(1) if m.group(1) is not None else m.group(2)
             for m in _QUOTED.finditer(cmd)]
 
 
-# 台账里的 `cmd` 一律用 `python3`（惯用写法，Linux/macOS 上就是它）。
-# Windows 上没有 `python3` 这个名字（setup-python 给的是 `python.exe`）——
-# 所以在这里把**开头的 `python3`** 换成**当前解释器**。
+# The ledger's `cmd` values always use `python3` (the conventional spelling,
+# which on Linux/macOS is exactly what runs). Windows has no `python3` name
+# (setup-python provides `python.exe`) — so the **leading `python3`** is
+# rewritten to the **current interpreter** here.
 #
-# 为什么这不是作弊：`python3 <脚本>` 的语义是「用这个仓的 Python 跑它」，
-# 换成 `sys.executable` 是同一件事的当前进程版本。而且台账 `cmd` 的契约是
-# **逐字复跑**（`stdout == value`），不是「逐字执行同一条命令」—— 值才是判据。
+# Why this is not cheating: `python3 <script>` means "run it with this repo's
+# Python"; substituting `sys.executable` is the same thing, current-process
+# edition. And the ledger `cmd` contract is **verbatim re-run of the value**
+# (`stdout == value`), not "execute the identical command line" — the value
+# is the criterion.
 _PY_CMD = re.compile(r"^\s*python3(?=\s)")
 
 
 def _python_of(cmd):
-    """把行首的 `python3` 换成当前解释器（Windows 兼容）；其余原样。
+    """Rewrite a leading `python3` to the current interpreter (Windows compat); everything else verbatim.
 
-    ⚠️ 顺带把紧随其后的 `zreflect/<script>` 解析成**工具仓的绝对路径**。
-    为什么必须：台账 `cmd` 里的 `zreflect/facts.py` 是**相对路径**，而
-    `run_cmd` 的 cwd 是**被检查仓**（`gate.GATE_REPO`）。两者一致时没问题
-    （自己量自己），不一致时（套件被拷到别处、或夹具仓只造数据）复跑就
-    `No such file` —— 而错误信息会指向「命令失败」，不是「路径解析错了」。
-    实测：harness 的换名夹具就撞上这个。
+    ⚠️ Along the way, the `zreflect/<script>` right after it is resolved to
+    an **absolute path into the tool repo**. Why this is necessary: in the
+    ledger `cmd`, `zreflect/facts.py` is a **relative path**, while `run_cmd`'s
+    cwd is the **repo being audited** (`gate.GATE_REPO`). When the two
+    coincide (suite measures itself) it works; when they don't (suite copied
+    elsewhere, or a fixture repo that only fabricates data) the re-run dies
+    with `No such file` — and the error message points at "command failed",
+    not at "path resolution broke". Observed: the harness's rename fixture
+    hit exactly this.
     """
     interp = _quote_for_shell(sys.executable)
     out = _PY_CMD.sub(lambda _m: interp, cmd, count=1)
@@ -142,42 +166,49 @@ def _python_of(cmd):
         out, count=1)
 
 
-# shell 会让这些字符「有含义」：空格（切词）、反斜杠（转义，POSIX sh 里
-# `C:/hosted` 里的反斜杠会被吃成 `C:hosted`）、shell 元字符。
+# Characters a shell gives "meaning" to: whitespace (word splitting),
+# backslash (escaping — in POSIX sh the backslashes in `C:/hosted` get eaten
+# into `C:hosted`), shell metacharacters.
 _NEEDS_QUOTING = re.compile(r"""[\s\\$`"'|&;<>()*?{}\[\]#~]""")
 
 
 def _quote_for_shell(path):
-    """把一个路径包成**任何 shell 都不会误解**的形式。
+    """Wrap a path in a form **no shell can misread**.
 
-    ⚠️ 这条是 CI 的 Windows 腿用一整轮换来的：GitHub 的 windows-latest
-    **装了 Git Bash**，于是 `shutil.which("bash")` 有值 ⇒ 走 bash 分支。
-    而 `sys.executable` 形如 `C:/hostedtoolcache/windows/Python/3.13/x64/python.exe` ——
-    在 bash 里**反斜杠是转义符**：一个 `C:` 后面跟反斜杠的路径会被吃成 `C:hosted`，
-    于是 `python` 找不到 ⇒ **rc=127**（实测：19 条 replay 全红）。
+    ⚠️ This one was paid for with a full CI round on the Windows leg: GitHub's
+    windows-latest **has Git Bash installed**, so `shutil.which("bash")` hits
+    ⇒ the bash branch runs. And `sys.executable` looks like
+    `C:/hostedtoolcache/windows/Python/3.13/x64/python.exe` — in bash
+    **the backslash is an escape character**: a `C:` followed by backslashes
+    gets eaten into `C:hosted`, so `python` is not found ⇒ **rc=127**
+    (observed: all 19 replay entries red).
 
-    `" " in path` 判据不够：`C:/...` 没有空格，但有反斜杠。
+    A `" " in path` criterion is not enough: `C:/...` has no spaces but it
+    does have backslashes.
     """
     if not _NEEDS_QUOTING.search(path):
         return path
-    # POSIX sh 里单引号是最安全的（不解释任何字符）；但 Windows 路径可能
-    # 含单引号（极罕见）——那一次用双引号 + 转义。
+    # In POSIX sh, single quotes are the safest (nothing is interpreted);
+    # but a Windows path may contain a single quote (extremely rare) — that
+    # one time use double quotes + escaping.
     if "'" not in path:
         return "'%s'" % path
     return '"%s"' % path.replace('"', '\\"')
 
 
-# 行首 `python3` 之后的 `zreflect/<script>`（工具仓相对路径）
+# The `zreflect/<script>` after a leading `python3` (tool-repo relative path)
 _TOOL_REL = re.compile(r"(?<!\w)(zreflect/[A-Za-z_][A-Za-z0-9_]*\.py)")
 
 
 def _non_local_encoding_ok():
-    """子进程打印**非本地编码**的字节时，`run_cmd` 必须仍拿到 str。
+    """When a subprocess prints bytes in a **non-local encoding**, `run_cmd` must still get a str.
 
-    做法：让子进程输出一段**必然不在 cp1252 里**的字节（中文），并把本地
-    环境伪装成 cp1252 —— 靠 `PYTHONIOENCODING` 不够（那管子进程的**输出**），
-    真判据是父进程的**解码**。这里直接验证 `run_cmd` 在子进程吐 UTF-8 中文时
-    返回的是 str 而不是 None。
+    Method: make the subprocess emit bytes that are **guaranteed absent from
+    cp1252** (Chinese), and disguise the local environment as cp1252 —
+    `PYTHONIOENCODING` alone is not enough (it governs the subprocess's
+    **output**); the real criterion is the parent process's **decoding**.
+    This directly verifies that `run_cmd` returns a str, not None, when the
+    subprocess spits UTF-8 Chinese.
     """
     cmd = ('python3 -c "import sys;'
            'sys.stdout.reconfigure(encoding=\'utf-8\');'
@@ -187,21 +218,24 @@ def _non_local_encoding_ok():
 
 
 def run_cmd(cmd, timeout=None):
-    """逐字跑一条 `cmd`（cwd=仓库根），返回 (返回码, stdout)。超时 ⇒ 返回码 None。
+    """Run a `cmd` verbatim (cwd=repo root), returning (returncode, stdout). Timeout ⇒ returncode None.
 
-    ⚠️ **Windows 上没有 bash 也没有 `/bin/sh`**：此前这里硬写
-    `["/bin/sh", "-c", cmd]`，于是 CI 的 Windows 腿每条 cmd 都 OSError 127。
-    现在由 `_shell_argv` 分三档，并把实际用的是哪一档写进
-    `EINFACHT_REPLAY_SHELL`（`bash` / `sh` / `cmd`）—— 判据强度随环境变化，
-    不许静默。
+    ⚠️ **On Windows there is neither bash nor `/bin/sh`**: this used to
+    hard-code `["/bin/sh", "-c", cmd]`, so every cmd on CI's Windows leg died
+    with OSError 127. `_shell_argv` now splits it into three tiers and records
+    which tier actually ran in `EINFACHT_REPLAY_SHELL` (`bash` / `sh` /
+    `cmd`) — criteria strength varying with the environment must never happen
+    silently.
     """
     t = default_timeout() if timeout is None else timeout
     argv, shell_kind = _shell_argv(cmd)
     if argv is None:
         argv = _windows_argv(_python_of(cmd))
-    # ⚠️ **环守卫的跨进程那一半**：把深度传给子进程。一条 cmd 可以是另一个
-    # 闸门（复用），而那个闸门可能又触发复跑 —— 没有这个变量，环会无限
-    # spawn 直到 OOM（实测）。深度上限由复跑器判（`_MAX_DEPTH`）。
+    # ⚠️ **The cross-process half of the cycle guard**: pass the depth to the
+    # child. A cmd can be another gate (reused), and that gate may itself
+    # trigger a re-run — without this variable, the cycle spawns without end
+    # until OOM (observed). The depth cap is judged by the replay gate
+    # (`_MAX_DEPTH`).
     env = dict(os.environ)
     env["EINFACHT_REPLAY_SHELL"] = shell_kind
     try:
@@ -210,40 +244,46 @@ def run_cmd(cmd, timeout=None):
     except ValueError:
         env["EINFACHT_REPLAY_DEPTH"] = "1"
     try:
-        # ⚠️ **必须显式 `errors="replace"`**：`text=True` 用
-        # `locale.getpreferredencoding()` 解码，而 Windows 默认是 cp1252。
-        # 子进程一旦输出非 cp1252 字节（本仓的闸门会打印中文），读线程抛
-        # `UnicodeDecodeError` —— **在主线程之外**，于是 `p.stdout` 变成
-        # None，下游 `stdout.strip()` 报 `AttributeError`，而 traceback
-        # 里只有一行 `Exception in thread Thread-N (_readerthread)`。
-        # 实测：CI 的 Windows 腿连续两轮都栽在这一层。
+        # ⚠️ **`errors="replace"` must be explicit**: `text=True` decodes with
+        # `locale.getpreferredencoding()`, and Windows defaults to cp1252.
+        # The moment a subprocess emits non-cp1252 bytes (this repo's gates
+        # print Chinese), the reader thread raises `UnicodeDecodeError` —
+        # **outside the main thread** — so `p.stdout` becomes None, downstream
+        # `stdout.strip()` reports `AttributeError`, and the traceback shows
+        # only one line: `Exception in thread Thread-N (_readerthread)`.
+        # Observed: CI's Windows leg crashed on this layer for two rounds
+        # in a row.
         p = subprocess.run(argv, cwd=gate.GATE_REPO, capture_output=True, text=True,
                            errors="replace", timeout=t, env=env,
                            encoding="utf-8")
     except subprocess.TimeoutExpired:
         return None, ""
-    except OSError as e:                # 连 shell 起不来 —— 报成失败，不许算通过
-        # 诊断：把**实际 argv** 带进错误里。127 的原因只可能是「第一个元素
-        # 不是可执行文件」——不说清 argv 就只能猜（实测：CI 的 Windows 腿
-        # 报了 19 条 127，而本地永远复现不了）。
+    except OSError as e:                # even the shell won't start — report as failure, never a pass
+        # Diagnostics: carry the **actual argv** into the error. 127 can only
+        # mean "the first element is not an executable" — without spelling out
+        # the argv, all you can do is guess (observed: CI's Windows leg
+        # reported 19 failures with 127, never reproducible locally).
         return 127, machine().emit(
             "fatal", "%s [shell=%s argv=%r]" % (e, shell_kind, argv[:2]))
-    # ⚠️ **`p.stdout` 可能是 `None`**：`capture_output=True` 通常保证它是
-    # str，但 Windows 上子进程若因解码失败提前结束，`subprocess` 会把
-    # `stdout` 留成 None —— 于是下游 `stdout.strip()` 抛
+    # ⚠️ **`p.stdout` can be `None`**: `capture_output=True` usually
+    # guarantees a str, but on Windows, if the subprocess dies early on a
+    # decode failure, `subprocess` leaves `stdout` as None — so downstream
+    # `stdout.strip()` throws
     # `AttributeError: 'NoneType' object has no attribute 'strip'`
-    # （实测：CI 的 Windows 腿就是这么红的，而报错指向 `_judge_ok`，
-    # 离真因三层远）。
+    # (observed: that is exactly how CI's Windows leg went red, with the
+    # error pointing at `_judge_ok`, three layers away from the true cause).
     if p.returncode != 0 and p.stderr:
-        # ⚠️ **失败时必须把 stderr 带出来**：`run_cmd` 此前只返回 stdout，
-        # 于是「命令跑挂了」与「命令正确地报告了问题」分不开 —— 两者都是
-        # 一个 rc≠0 加一段空 stdout。实测：CI 的 Windows 腿报
-        # `command_failed(rc=1)` 而**看不到任何原因**，只能靠猜。
-        # 拼进 stdout 是安全的：调用方只在 rc==0 时比 stdout 与值。
+        # ⚠️ **On failure, stderr must be carried out**: `run_cmd` used to
+        # return stdout only, so "the command crashed" and "the command
+        # correctly reported a problem" were indistinguishable — both are a
+        # rc≠0 plus an empty stdout. Observed: CI's Windows leg reported
+        # `command_failed(rc=1)` with **no visible reason**, pure guessing.
+        # Concatenating into stdout is safe: the caller only compares stdout
+        # against the value when rc==0.
         return p.returncode, (p.stdout or "") + p.stderr
     if p.stdout is None:
-        # 诊断：stdout 为 None 时把 stderr / argv 带进结果，别让下游
-        # 只看到一个 `AttributeError`。
+        # Diagnostics: when stdout is None, carry stderr / argv into the
+        # result; don't let downstream see a bare `AttributeError`.
         return p.returncode, machine().emit(
             "fatal", "stdout=None rc=%s shell=%s argv=%r stderr=%r"
             % (p.returncode, shell_kind, argv[:2], (p.stderr or "")[:200]))
@@ -251,7 +291,7 @@ def run_cmd(cmd, timeout=None):
 
 
 def _timeout_falls_back():
-    """`REFLECT_REPLAY_TIMEOUT` 是坏值 ⇒ 必须回落 10.0（不是 raise）。"""
+    """`REFLECT_REPLAY_TIMEOUT` is a bad value ⇒ must fall back to 10.0 (not raise)."""
     import os  # noqa: PLC0415
     prev = os.environ.get("REFLECT_REPLAY_TIMEOUT")
     try:
@@ -265,15 +305,14 @@ def _timeout_falls_back():
 
 
 def _cases():
-    """三档自证（真跑 shell —— runner 的判据就是 shell 行为，假 runner 自证
-    runner 是循环论证；但命令都是 echo/printf/false，无副作用、无网络）。"""
+    """Three-tier self-evidence (really runs the shell — the runner's criterion is shell behavior, so a fake runner self-certifying the runner would be circular; but the commands are all echo/printf/false: no side effects, no network)."""
     return [
-        # ① 正常不报
+        # (1) normal: no report
         ("runner.echo_rc0",
          lambda: run_cmd("echo hello") == (0, "hello\n")),
         ("runner.stdout_newline_preserved",
          lambda: run_cmd("printf 'v1'") == (0, "v1")),
-        # ② 该报的必须报
+        # (2) what must be reported gets reported
         ("★ runner.nonzero_rc_passthrough",
          lambda: run_cmd("exit 3")[0] == 3),
         ("★ runner.pipefail_catches_swallowed_error",
@@ -282,18 +321,19 @@ def _cases():
          lambda: run_cmd("sleep 5", timeout=0.3)[0] is None),
         ("★ runner.missing_command_not_a_pass",
          lambda: run_cmd("definitely_not_a_command_xyz")[0] != 0),
-        # quote 的截断（复现事故时不糊终端）
+        # quote truncation (no terminal smear while reproducing an incident)
         ("runner.quote_truncates_long",
          lambda: quote("a" * 100).endswith("…'")),
         ("runner.quote_keeps_short",
          lambda: quote("ok") == "'ok'"),
-        # 稳态：`default_timeout()` 读到坏值时必须回落 10（不是崩）
+        # Steady state: `default_timeout()` must fall back to 10 on a bad value (not crash)
         ("runner.default_timeout_bad_value_falls_back",
          lambda: _timeout_falls_back()),
-        # **`python3` 前缀在 Windows 上不存在**（`setup-python` 给的是
-        # `python.exe`）—— 台账 `cmd` 一律写 `python3`，所以执行前要换成
-        # 当前解释器。这条钉住三条边界：只改行首、不误伤 `python3x`、
-        # 不碰中段的同名串。
+        # **The `python3` prefix does not exist on Windows** (`setup-python`
+        # provides `python.exe`) — ledger `cmd` values always say `python3`,
+        # so it is rewritten to the current interpreter before execution.
+        # This case pins three boundaries: only at line start, no false hit on
+        # `python3x`, and same-named strings mid-command are untouched.
         ("\u2605 runner.python3_prefix_rewritten",
          lambda: _python_of("python3 x.py") != "python3 x.py"
          and _python_of("python3 x.py").endswith(" x.py")),
@@ -301,22 +341,25 @@ def _cases():
          lambda: _python_of("python3x foo") == "python3x foo"),
         ("\u2605 runner.python3_midstring_untouched",
          lambda: _python_of("echo 'python3 x'") == "echo 'python3 x'"),
-        # **Windows 档不能带引号给 CreateProcess**：带引号的路径会被当成
-        # 字面文件名（找不到），而 `shlex.split(posix=False)` 正好保留引号。
-        # 实测：CI 的 Windows 腿 19 条 replay 全红在这一处。
+        # **The Windows tier must not hand quotes to CreateProcess**: a quoted
+        # path is treated as a literal filename (not found), and
+        # `shlex.split(posix=False)` happens to keep the quotes.
+        # Observed: all 19 replay entries on CI's Windows leg went red here.
         ("★ runner.windows_argv_strips_quotes",
          lambda: _windows_argv('"C:\\Program Files\\Py\\python.exe" x.py')
          == ["C:\\Program Files\\Py\\python.exe", "x.py"]),
         ("★ runner.windows_argv_keeps_backslashes",
          lambda: _windows_argv("a\\b c") == ["a\\b", "c"]),
-        # **子进程输出非本地编码时，读线程不许静默崩溃**：`text=True` 用
-        # 本地编码解码，Windows 默认 cp1252，而本仓的闸门打印中文 ⇒
-        # 读线程抛 UnicodeDecodeError（在**主线程之外**）⇒ `p.stdout` 是
-        # None ⇒ 下游 `stdout.strip()` 报 AttributeError，而日志里只有
-        # 一行 `Exception in thread Thread-N (_readerthread)`。
+        # **When a subprocess outputs a non-local encoding, the reader thread
+        # must not crash silently**: `text=True` decodes with the local
+        # encoding, Windows defaults to cp1252, and this repo's gates print
+        # Chinese ⇒ the reader thread raises UnicodeDecodeError (**outside the
+        # main thread**) ⇒ `p.stdout` is None ⇒ downstream `stdout.strip()`
+        # reports AttributeError, with only one line in the log:
+        # `Exception in thread Thread-N (_readerthread)`.
         ("\u2605 runner.non_local_encoding_output_survives",
          lambda: _non_local_encoding_ok()),
-        # ③ 空输入必须报（对 runner 而言，「空」是空输出/空命令的形状）
+        # (3) empty input must be reported (for the runner, "empty" is the shape of empty output / an empty command)
         ("★ runner.quote_empty_is_visible",
          lambda: quote("") == "''"),
         ("★ runner.empty_command_not_a_pass",
@@ -338,7 +381,7 @@ def _selftest():
                             _cases, _run)
 
 
-MODULE = module_meta("逐字执行器", "裸值契约的公共 seam（复跑 / world 印章共用）", selftest=True)
+MODULE = module_meta("Verbatim executor", "public seam of the bare-value contract (shared by replay / world stamp)", selftest=True)
 
 
 if __name__ == "__main__":

@@ -1,38 +1,41 @@
 #!/usr/bin/env python3
-"""声明式不变量闸门（**可插拔模块**，issue #7）。
+"""Declarative invariants gate (**pluggable module**, issue #7).
 
-「仓库文件必须/不得含某片段」做成**数据**（JSON 规格），
-引擎通用、与仓无关。规格文件：
+"Repo file must / must not contain a snippet" is encoded as **data** (a JSON
+spec); the engine is generic and repo-agnostic. Spec file:
 
     { "checks": [
         { "path": "build/113/link-web.sh",
           "must_contain": ["ALLOW_TABLE_GROWTH=1"],
           "must_not_contain": ["-flto"],
-          "why": "dlopen 需可增长函数表；-flto 是被证伪的杠杆" } ] }
+          "why": "dlopen needs a growable function table; -flto is the falsified lever" } ] }
 
-引擎只读文件、**不构建、不碰容器、不跑网络** ⇒ 能进
-pre-commit。零值守卫：清单为空 / 检查项缺 path / 读不到
-文件 ⇒ 都报（不是静默通过）。`why` 必填是有意的：没有
-理由的检查项没人敢删，会变成僵尸。
+The engine only reads files -- **no builds, no containers, no network** -- so it
+can run in pre-commit. Zero-value guards: empty checklist / a check without a
+path / an unreadable file => all reported (never a silent pass). Requiring `why`
+is deliberate: a check with no stated reason is one nobody dares to delete, and
+it turns into a zombie.
 
-**边界（issue #7 明说的，不藏）**：这是 **grep 级**不变式
-—— 分不清注释与代码（片段出现在注释里也算"存在"），它
-证明的是"这段文字还在"，不是"代码里真在用"。声明式检查
-的强度上限 = 它匹配的文本形态。要更强保证的，别用 grep：
-那是 `calibrate`（对**产物**量）或 `witness`（对**来源**
-量）的活。与 `calibrate`（#6 ①）正交、别混：一个守
-**量测仪器**，一个守**仓库文件本身**（配方/源码该长
-什么样）。
+**Boundary (stated openly in issue #7)**: this is a **grep-level** invariant --
+it cannot tell comments from code (a snippet inside a comment still counts as
+"present"). What it proves is "this text is still there", not "the code really
+uses it". The strength ceiling of a declarative check is the shape of the text
+it matches. For stronger guarantees, do not use grep: that is the job of
+`calibrate` (measures the **artifact**) or `witness` (measures the **source**).
+Orthogonal to `calibrate` (issue #6, item 1) -- keep them apart: one guards the
+**measurement instruments**, the other guards **the repo files themselves**
+(what recipes / source code should look like).
 
-**可插拔**：`REFLECT_INVARIANTS` 未配 ⇒ 明说未启用、退 0
-（不配的仓库完全不受影响；发现式名录照样收编它，自证
-照样证明它能红）。与 `collect.py` 原则 5 的接法：
-不变量文件 = 输入落点；不变量闸门 = 该落点的便宜来源
-不变式。
+**Pluggable**: `REFLECT_INVARIANTS` unset => explicitly not enabled, exit 0
+(repos that do not configure it are entirely unaffected; the discovery-based
+roster still enrolls it, and the selftest still proves it can go red).
+Connection to `collect.py` principle 5: the invariants file is the input
+landing spot; the invariants gate is the cheap origin invariant for that spot.
 
-用法（直接跑，cwd=仓库根）：
+Usage (run directly, cwd = repo root):
     python3 zreflect/check_invariants.py [--selftest]
-退出码：0=绿 / 1=发现问题 / 2=配置或环境坏了（配置性失败 ≠ 检查失败）。
+Exit codes: 0 = green / 1 = problems found / 2 = config or environment broken
+(a config failure is not a check failure).
 """
 from __future__ import annotations
 
@@ -55,11 +58,13 @@ INVARIANTS_RAW = os.environ.get("REFLECT_INVARIANTS", "").strip()
 
 
 def _shape_problems(c):
-    """一条检查项的形状校验：返回 `(问题清单, 规范化字段或 None)`。
+    """Shape validation for one check entry: returns `(problem list, normalized
+    fields or None)`.
 
-    「形状坏」与「内容不符」是两件事：形状坏时**没有可比的片段**，
-    必须早退（否则 `frag not in text` 会 TypeError）。五道守挤在调用点
-    就是 5 个连续 `continue`（复杂度 14）。
+    "Bad shape" and "content mismatch" are two different things: with a bad
+    shape there is **no comparable snippet**, so we must exit early (otherwise
+    `frag not in text` raises TypeError). Five guards crammed into the call site
+    would be 5 consecutive `continue`s (complexity 14).
     """
     if not isinstance(c, dict):
         return [M("invariants.not_object", entry=c)], None
@@ -76,11 +81,12 @@ def _shape_problems(c):
 
 
 def _criteria_problems(path, mc, mnc):
-    """判据字段（must_contain / must_not_contain）的形状校验。
+    """Shape validation for the criteria fields (must_contain / must_not_contain).
 
-    返回 None = 形状可用；返回清单 = 形状坏（调用方早退）。
-    三个坏形状各是一道守（没有判据 / 不是清单 / 元素不是串），从
-    `_shape_problems` 拆出来 —— 那边剩的是「逐字段收值」，这边是「判据本身」。
+    Returns None = shape usable; returns a list = shape broken (caller exits
+    early). The three bad shapes each get a guard (no criteria / not a list /
+    element not a string), split out of `_shape_problems` -- what remains over
+    there is "collect values field by field"; this one is "the criteria itself".
     """
     if not isinstance(mc, list) and not isinstance(mnc, list):
         return [M("invariants.no_criteria", path=path)]
@@ -94,7 +100,8 @@ def _criteria_problems(path, mc, mnc):
 
 
 def _content_problems(path, why, mc, mnc, read):
-    """片段比对：`must_contain` 必须都在、`must_not_contain` 必须都不在。"""
+    """Snippet comparison: every `must_contain` must be present, every
+    `must_not_contain` must be absent."""
     try:
         text = read(path)
     except OSError:
@@ -102,9 +109,11 @@ def _content_problems(path, why, mc, mnc, read):
     out = []
     for frag in mc:
         if frag not in text:
-            # `DRIFT` 是机器可读标记：**字面量留在发射点**（参数值），
-            # 语言包只负责把它摆进句子里 —— 包值不许以 `^[A-Z][A-Z0-9_]*:`
-            # 开头（否则一条翻译就能伪装成机器契约行，见 i18n._validate）。
+            # `DRIFT` is a machine-readable marker: the **literal stays at the
+            # emission point** (as a parameter value); the language pack only
+            # places it into the sentence -- a pack value must not start with
+            # `^[A-Z][A-Z0-9_]*:` (otherwise a single translation could masquerade
+            # as a machine contract line; see i18n._validate).
             out.append(M("invariants.drift_missing", marker="DRIFT",
                          path=path, fragment=frag, why=why))
     for frag in mnc:
@@ -115,14 +124,17 @@ def _content_problems(path, why, mc, mnc, read):
 
 
 def problems(checks, read=None):
-    """纯函数：返回问题清单（空 = 绿）。自证期间不许 print。
+    """Pure function: return the problem list (empty = green). No printing during
+    the selftest.
 
-    `read(path) -> str` 可注入（自证用假文件系统 —— 真文件
-    进了自证，自证就依赖机器了）。判据 = 片段的**存在/
-    不存在**（grep 级，见模块文档的边界）。
+    `read(path) -> str` is injectable (a fake filesystem for the selftest -- if
+    real files entered the selftest, the selftest would depend on the machine).
+    The criterion is the **presence/absence** of a snippet (grep level; see the
+    boundary in the module docstring).
 
-    两段各是一个 helper（形状 / 内容）：形状坏时没有可比的片段，
-    必须早退 —— 把两段拼在一起时，5 个形状守 + 2 个内容守 = 复杂度 14。
+    Each half is its own helper (shape / content): with a bad shape there is no
+    comparable snippet, so an early exit is mandatory -- merged into one body,
+    5 shape guards + 2 content guards = complexity 14.
     """
     if not checks:
         return [M("invariants.empty")]
@@ -155,7 +167,8 @@ def run(argv=None):
 
 
 def _fake_read(files):
-    """假文件系统：不给的文件名抛 `FileNotFoundError`（真读路径的 OSError）。"""
+    """Fake filesystem: a filename not provided raises `FileNotFoundError` (the
+    OSError of the real read path)."""
     def r(path):
         if path not in files:
             raise FileNotFoundError(path)
@@ -164,7 +177,7 @@ def _fake_read(files):
 
 
 def _cases_ok(read):
-    """① 正常不报：片段在 / 不在都符合声明。"""
+    """(1) Compliant input: nothing reported; presence/absence both as declared."""
     return [
         ("invariants.must_contain_present",
          lambda: problems([{"path": "a.sh", "why": "w",
@@ -183,7 +196,7 @@ def _cases_ok(read):
 
 
 def _cases_content(read):
-    """② 该报的必须报：内容不符 / 读不到。"""
+    """(2) What must be reported is reported: content mismatch / unreadable."""
     return [
         ("\u2605 invariants.drift_missing",
          lambda: [x.code for x in problems(
@@ -198,7 +211,8 @@ def _cases_content(read):
          lambda: [x.code for x in problems(
              [{"path": "b.sh", "why": "w", "must_contain": ["x"]}],
              read=read)] == ["invariants.unreadable"]),
-        # why 缺了**先报**（它不 continue：同一检查项可能还有 DRIFT，两条都报）
+        # A missing why is reported **first** (it does not continue: the same
+        # entry may also carry DRIFT, so both problems get reported)
         ("\u2605 invariants.missing_why",
          lambda: [x.code for x in problems(
              [{"path": "a.sh", "must_contain": ["x"]}],
@@ -208,7 +222,7 @@ def _cases_content(read):
 
 
 def _cases_shape(read):
-    """② 该报的必须报：规格形状坏了（五道守）。"""
+    """(2) What must be reported is reported: broken spec shapes (five guards)."""
     return [
         ("\u2605 invariants.missing_path",
          lambda: [x.code for x in problems(
@@ -222,7 +236,7 @@ def _cases_shape(read):
          lambda: [x.code for x in problems(["not-a-dict"], read=read)
                   ] == ["invariants.not_object"]),
         ("\u2605 invariants.not_string_list",
-         # 一条 list、另一条非 list（两侧都非 list 走的是 no_criteria）
+         # one side a list, the other not (both sides non-list is no_criteria's case)
          lambda: [x.code for x in problems(
              [{"path": "a.sh", "why": "w", "must_contain": ["x"],
                "must_not_contain": "y"}],
@@ -238,15 +252,17 @@ def _cases():
     read = _fake_read({"a.sh": "ALLOW_TABLE_GROWTH=1\n"
                               "SFLAGS=(-sMEMORY64=1)"})
     return (_cases_ok(read) + _cases_content(read) + _cases_shape(read)
-            # ③ 空输入必须报
+            # (3) empty input must be reported
             + [("\u2605 invariants.empty",
                 lambda: [x.code for x in problems([], read=read)]
                 == ["invariants.empty"])])
 
 
-GATE = meta("不变量闸门", "声明式不变量：仓库文件必须/不得含某片段（grep 级）",
+GATE = meta("Invariants gate",
+            "declarative invariants: repo files must / must not contain a snippet (grep level)",
             knobs=("REFLECT_INVARIANTS",),
-            off_reason="不写声明式不变量的仓不需要它：规格未配 ⇒ 明说未启用（可插拔）")
+            off_reason="repos that write no declarative invariants do not need it:"
+                       " spec unset => explicitly not enabled (pluggable)")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],

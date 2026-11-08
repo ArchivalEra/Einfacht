@@ -1,38 +1,50 @@
 #!/usr/bin/env python3
-"""闸门入口：**给别人的钩子体系调用**，不抢占钩子位置。
+"""Gate entry point: **meant to be called by other hook systems**; it never
+takes over hook slots.
 
-## 为什么是「暴露一个入口」而不是 `git config core.hooksPath`
+## Why "expose one entry" instead of `git config core.hooksPath`
 
-`core.hooksPath` 是 git 的**全局覆盖开关** —— 一旦设上，git 就**完全不再看**
-`.git/hooks/`。实测：设了之后 `.git/hooks/pre-commit` 里的脚本一次都不跑，
-提交照样成功、没有任何提示。于是 husky / lefthook / pre-commit(Python) /
-手写钩子全被**静默废掉** —— 正是本仓立身要消灭的「部署了 ≠ 在跑」。
+`core.hooksPath` is git's **global override switch** -- once it is set, git
+**stops looking at** `.git/hooks/` entirely. Measured: after setting it, the
+script inside `.git/hooks/pre-commit` never ran once, while commits kept
+succeeding with no message at all. So husky / lefthook / pre-commit (Python)
+/ handwritten hooks are all **silently disabled** -- exactly the "deployed
+does not mean running" state this repo exists to eliminate.
 
-所以本仓只**暴露一张口**：任何钩子体系在自己的钩子里调这一行即可。钩子位置、
-顺序、其它工具，全归你自己 —— 我们只提供判据，不抢座位。
+So this repo only **exposes one mouth**: any hook system can call this line
+from its own hook. Hook locations, ordering, other tools -- all yours; we
+provide the criteria and never take the seat.
 
-    用法（任何钩子脚本里）：
+    Usage (from any hook script):
         python3 <repo>/reflect-hooks/gate.py commit "$(git rev-parse --show-toplevel)"
         python3 <repo>/reflect-hooks/gate.py push   "$(git rev-parse --show-toplevel)"
 
-    commit  重渲染机器块（并 `git add`）+ 跑 runs_at="commit" 的全部闸门
-    push    只校验不修改：机器块必须新鲜 + 全部闸门 + 三语 README 同批
+    commit  re-render the machine block (and `git add`) + run every gate with
+            runs_at="commit"
+    push    verify only, modify nothing: the machine block must be fresh + all
+            gates + trilingual READMEs in the same batch
 
-    退出码：0 = 绿；1 = 判据红（拒）；2 = 环境/配置坏。
+    Exit codes: 0 = green; 1 = criterion red (reject); 2 = environment/config
+    broken.
 
-## 为什么用 Python 而不是 sh
+## Why Python instead of sh
 
-此前这是 `einfacht-gate.sh`（155 行 shell，26 处 `echo` 中文）。三个病：
+This used to be `einfacht-gate.sh` (155 lines of shell with 26 `echo`s of
+Chinese). Three diseases:
 
-  1. **它绕过了零语言制度**：`check_i18n` 是 AST 扫描器（只认 `.py`），看不见
-     shell ⇒「未装语言包却输出中文」在这里长期存在且无人拦。
-  2. 跨平台：Windows 上 `sh` 不一定在，`$(...)` / `[ -f ]` 也各有各的方言。
-  3. pre-push 的 ref 协议是**文本解析** —— Python 写它比 shell 清楚得多。
+  1. **It bypassed the zero-language regime**: `check_i18n` is an AST scanner
+     (it only reads `.py`), so it cannot see shell => "outputs Chinese with
+     no language pack installed" lived here undetected for a long time.
+  2. Portability: on Windows `sh` may not exist, and `$(...)` / `[ -f ]` each
+     have their own dialects.
+  3. pre-push's ref protocol is **text parsing** -- far clearer in Python
+     than in shell.
 
-## 旧装法仍然可用
+## The old install style still works
 
-`core.hooksPath reflect-hooks` 的老用户调的是目录里的 `pre-commit` / `pre-push`，
-它们是本入口的薄壳（仍然在），只升级不破坏。
+Old users of `core.hooksPath reflect-hooks` invoke the `pre-commit` /
+`pre-push` files in this directory; they are thin shells around this entry
+(still present). Upgrade without breakage.
 """
 from __future__ import annotations
 
@@ -52,7 +64,7 @@ PHASES = ("commit", "push")
 
 
 def _sh(cmd, stdin=None, env=None):
-    """跑一条命令，返回 `(rc, 合并输出)`。"""
+    """Run one command, return `(rc, merged output)`."""
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, input=stdin,
                            env=env,
@@ -68,18 +80,23 @@ def _usage():
 
 
 def _load_env_plugin(tool_dir):
-    """可拔插件（issue #8）：`einfacht-env.sh` 里 `export` 的旋钮。
+    """Pluggable add-on (issue #8): knobs `export`ed inside
+    `einfacht-env.sh`.
 
-    ⚠️ 这是**唯一**必须留 shell 的地方 —— shell 的 `export` 只能由 shell 做。
-    我们用「跑一个 shell、把它的环境打出来」的方式把它搬进 Python 进程：
-    插件本身仍然是一份 shell，但**它只做 export，不产任何文案**（无中文可漏）。
+    Warning: this is the **only** place that must keep a shell -- a shell's
+    `export` can only be done by a shell. We carry it into the Python process
+    by "running one shell and printing its environment": the plugin itself is
+    still a shell file, but **it only exports and produces no copy at all**
+    (no Chinese left to leak).
     """
     plugin = os.path.join(tool_dir, "einfacht-env.sh")
     if not os.path.isfile(plugin):
         return
-    # ⚠️ 必须显式告诉插件**它自己在哪**：`sh -c '...' sh <plugin>` 里 `$0` 是
-    # `sh`，插件用 `dirname $0` 推目录会推到 `/`，于是**钩子目录里的
-    # Einfacht.env 被静默忽略**（实测：`env -0` 里一个 REFLECT_* 都没有）。
+    # Warning: the plugin must be told explicitly **where it itself lives**:
+    # in `sh -c '...' sh <plugin>`, `$0` is `sh`, so a plugin deriving its
+    # directory with `dirname $0` would derive `/` -- and then the
+    # Einfacht.env in the hooks directory is **silently ignored** (measured:
+    # `env -0` showed not a single REFLECT_*).
     env = dict(os.environ)
     env["EINFACHT_PLUGIN_DIR"] = tool_dir
     rc, out = _sh(["sh", "-c",
@@ -95,7 +112,8 @@ def _load_env_plugin(tool_dir):
 
 
 def _refs_from_stdin():
-    """git 的 pre-push ref 协议：每行 `<local ref> <local sha> <remote ref> <remote sha>`。"""
+    """git's pre-push ref protocol: each line is
+    `<local ref> <local sha> <remote ref> <remote sha>`."""
     try:
         raw = sys.stdin.read() if not sys.stdin.isatty() else ""
     except (OSError, ValueError):
@@ -109,13 +127,14 @@ def _refs_from_stdin():
 
 
 def _new_content_refs(repo, refs):
-    """把 ref 协议行过滤成「这次真的要发布新内容的分支」，返回 `[(lref, revs)]`。"""
+    """Filter the ref-protocol lines down to "branches actually publishing
+    new content this time"; returns `[(lref, revs)]`."""
     out = []
     for lref, lsha, _rref, rsha in refs:
         if lref.startswith("refs/tags/"):
-            continue                       # tag 不携带新内容
+            continue                       # tags carry no new content
         if lsha == ZERO_SHA:
-            continue                       # 删分支
+            continue                       # branch deletion
         if rsha == ZERO_SHA:
             rc, revs = _sh(["git", "-C", repo, "rev-list", lsha,
                             "--not", "--remotes"])
@@ -128,7 +147,8 @@ def _new_content_refs(repo, refs):
 
 
 def _push_readmes_together(repo, refs):
-    """pre-push 第三条：这批推送必须把三语 README 同批更新。返回 (ok, lines)。"""
+    """pre-push third check: this push must update the trilingual READMEs in
+    the same batch. Returns (ok, lines)."""
     import tempfile  # noqa: PLC0415
     lines = []
     refs_with_content = _new_content_refs(repo, refs)
@@ -164,12 +184,14 @@ def _push_readmes_together(repo, refs):
 
 
 def _prepare(phase, repo, doc):
-    """① 相位的前置步。返回 `(是否应当拒绝)`。
+    """(1) The phase's setup step. Returns `(whether to reject)`.
 
-    两个相位做**性质相反**的事，因此各是一个具名分支：
+    The two phases do **opposite** things, hence one named branch each:
 
-      · commit —— 重渲染机器块并 `git add`（**只渲染，不重测**；重测由人负责）
-      · push   —— **不改文件、不动历史**：块不新鲜就直接拒
+      - commit -- re-render the machine block and `git add` (**render only,
+        do not re-measure**; re-measuring is a human's job)
+      - push   -- **touches no files, rewrites no history**: a stale block is
+        an outright rejection
     """
     facts = os.path.join(repo, "zreflect", "facts.py")
     if phase == "commit":
@@ -186,7 +208,8 @@ def _prepare(phase, repo, doc):
 
 
 def run(phase, repo, stdin_rows=None):
-    """执行一个相位。返回 rc。**纯编排**：所有判断都在被调的命令里。"""
+    """Run one phase. Returns rc. **Pure orchestration**: every judgment
+    lives inside the commands it calls."""
     if phase not in PHASES:
         print(str(M("hookgate.unknown_phase", phase=phase)), file=sys.stderr)
         return 2
@@ -200,7 +223,7 @@ def run(phase, repo, stdin_rows=None):
     if _prepare(phase, repo, doc):
         return 1
 
-    # ② 全部闸门：执行面唯一产地（C1）
+    # (2) All gates: the single source of the execution surface (C1)
     rc, out = _sh([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
                    "--run", "commit"])
     if rc != 0:
@@ -216,7 +239,7 @@ def run(phase, repo, stdin_rows=None):
     return 0
 
 
-# ── 自证 ──────────────────────────────────────────────────────────────────────
+# -- Self-verification -------------------------------------------------------
 
 def _cases():
     import shutil  # noqa: PLC0415
@@ -233,20 +256,22 @@ def _cases():
         return _run_cli(list(args), quiet=True)
 
     return [
-        # ① 正常不报：无参数 ⇒ 打印用法、退 0（求帮助不是错误）
+        # (1) Normal case: no report -- no args => print usage, exit 0
+        # (asking for help is not an error)
         ("hookgate.no_args_prints_usage", lambda: case([]) == 0),
-        # ② 该报的必须报
+        # (2) What must be reported gets reported
         ("★ hookgate.unknown_phase_is_2", lambda: case(["bogus", "/tmp"]) == 2),
         ("★ hookgate.missing_repo_is_2",
          lambda: case(["commit", "/nonexistent-xyz"]) == 2),
-        # ③ 空输入必须报：只给相位，不给仓根
+        # (3) Empty input must be reported: phase given, repo root missing
         ("★ hookgate.missing_root_is_2", lambda: case(["commit"]) == 2),
-        # ④ 仓里没有 zreflect ⇒ 明说「不是套件落地的仓库」（rc=2，不是静默 0）
+        # (4) No zreflect in the repo => say outright "not a repo where the
+        # suite is installed" (rc=2, not a silent 0)
         ("★ hookgate.no_zreflect_is_2", lambda: _no_zreflect_case(mk_repo,
                                                                   shutil)),
-        # 摘要行判据本身有牙
+        # The summary-line criterion itself has teeth
         ("★ hookgate.summary_shape_can_red", lambda: _summary_shape_ok()),
-        # ref 协议解析：零 sha 的删除行要被跳过
+        # Ref-protocol parsing: all-zero-sha deletion lines must be skipped
         ("★ hookgate.refs_skip_deletions", lambda: _refs_case()),
     ]
 
@@ -260,7 +285,8 @@ def _no_zreflect_case(mk_repo, shutil):
 
 
 def _summary_shape_ok():
-    """判据在 `machine.is_summary()`（唯一产地，不再各写一份正则）。"""
+    """Criterion lives in `machine.is_summary()` (single source of truth; no
+    per-file regex copies anymore)."""
     import machine  # noqa: PLC0415
     return machine.is_summary("=== 3 PASS / 0 FAIL ===") and \
         not machine.is_summary("=== 3 PASS / 0 fail ===")
@@ -273,12 +299,14 @@ def _refs_case():
 
 
 def _run_cli(argv, quiet=False):
-    """走一遍 CLI 分派，返回 rc。
+    """Walk the CLI dispatch once, return rc.
 
-    `quiet=True`（**自证专用**）：不打印任何东西 —— 自证输出是给人核对的接口，
-    被诊断刷屏就没法核对了（本仓纪律「纯函数保持安静」）。
-    ⚠️ 此前自证里它会打印，于是那些行排在机器摘要行**之后**，harness 取
-    "最后一行当摘要"时拿到的是错误消息（实测）。
+    `quiet=True` (**selftest only**): print nothing -- selftest output is the
+    interface a human checks; if diagnostics flood it, there is nothing left
+    to check (this repo's discipline: "pure functions stay quiet").
+    Warning: it used to print during the selftest, so those lines landed
+    **after** the machine summary line, and the harness taking "the last
+    line as the summary" picked up an error message (measured).
     """
     def _say(code, **kw):
         if not quiet:
@@ -295,10 +323,13 @@ def _run_cli(argv, quiet=False):
 
 
 def _validate(argv, say):
-    """命令行形状校验。返回 rc（`None` = 形状合法，可以往下跑）。
+    """Command-line shape validation. Returns rc (`None` = shape is legal,
+    may proceed).
 
-    四道校验各是一个「不值得继续」的出口，全挤在调用点时复杂度 9 —— 而
-    它们判的是**同一个问题**（这次调用能不能跑），所以归一个函数。
+    The four checks are each an exit for "not worth continuing"; jamming
+    them all into the call site made complexity 9 -- and they all judge the
+    **same question** (can this invocation run), so they live in one
+    function.
     """
     phase = argv[0]
     if phase not in PHASES:
@@ -330,12 +361,12 @@ def _main(argv):
     return _run_cli(argv)
 
 
-GATE = meta("钩子入口",
-            "给别人的钩子体系调用的单一口：commit 重渲染 + 跑闸门；"
-            "push 只校验 + 三语 README 同批",
+GATE = meta("Hook entry",
+            "the single mouth called by other hook systems: commit re-renders + "
+            "runs gates; push verifies only + trilingual READMEs in one batch",
             knobs=("REFLECT_DOC",),
             runs_at="start-of-work",
-            off_reason="钩子入口由 git 调用，不挂 pre-commit 相位")
+            off_reason="the hook entry is invoked by git, not attached to the pre-commit phase")
 
 if __name__ == "__main__":
     sys.exit(_main(sys.argv[1:]))

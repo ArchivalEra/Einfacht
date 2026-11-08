@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""翻案闸门：**已被推翻的断言不许悄悄回来当现状。**
+"""Retraction gate: **a retracted assertion may not quietly return as the
+current state.**
 
-`retractions.json` 每条 = 一条已翻案的断言：
-  `text` 特征片段 · `why` 为什么错 · `evidence` 怎么复跑 · `fixed_in` 现在哪里说对了
+Each entry in `retractions.json` = one retracted assertion:
+  `text` the search snippet -- the assertion's signature fragment, matched
+  verbatim against document lines · `why` what made it wrong · `evidence` how
+  to replay the refutation · `fixed_in` where the corrected claim lives now
 
-判据：活状态文档里出现 `text` 的那一行**必须带更正标记**。这是唯一能在「翻过的句子
-重新出现」时报警的机制 —— 实测过的代价：一条更正过的断言在**同一个文件**里留了下来，
-而且在另一份文档里还有副本。散文靠自觉，这个靠闸门。
+Criterion: the line in a living-state document that contains `text` **must
+carry a correction marker**. This is the only mechanism that raises the alarm
+when "a retracted sentence reappears" -- a measured cost: one corrected
+assertion survived **in the same file**, and also had a copy in another
+document. Prose relies on good intentions; this relies on a gate.
 """
 import os
 import sys
@@ -20,20 +25,24 @@ from ledger import load_or_fatal  # noqa: E402
 from living import HIST_MARK, living_lines  # noqa: E402
 
 REQUIRED = ("id", "text", "why", "evidence", "fixed_in")
-# **不在模块级取值**：`knobs.docs_names()` 是唯一产地（登记表里的默认值）。
-# ⚠️ 曾在这里手写一份五份的字面量，与登记表的六份（多 PRINCIPLES.md）漂开了。
+# **Not read at module level as a knob**: `knobs.docs_names()` is the single
+# origin (the registry's default value).
+# Warning: a handwritten five-document literal once lived here and drifted from
+# the registry's six (it lacked PRINCIPLES.md).
 HIST_SECS = tuple(s for s in os.environ.get("REFLECT_HISTORY_SECS", "").split(",") if s)
 
 
 def _entry_field_problems(retractions):
-    """每条翻案条目的必填字段（缺一个 ⇒ 这条台账不可信）。"""
+    """Required fields of every retraction entry (one missing => the ledger
+    entry cannot be trusted)."""
     return [M("retractions.entry_missing_field", field=fld, entry=r.get("id"))
             for r in retractions
             for fld in REQUIRED if not r.get(fld)]
 
 
 def _resurfaced_problems(retractions, docs, hist):
-    """重现行：活状态里出现 `text` 的那一行**必须带更正标记**。"""
+    """Resurfacing: the living-state line containing `text` **must carry a
+    correction marker**."""
     out = []
     for r in retractions:
         text = r.get("text") or ""
@@ -48,22 +57,29 @@ def _resurfaced_problems(retractions, docs, hist):
 
 
 def problems(retractions, docs, hist_secs=None):
-    """返回问题清单（纯函数：自证要用）。`docs` = {文件名: 正文}。
+    """Return the problem list (pure function: the selftest needs that).
+    `docs` = {filename: body}.
 
-    只扫**活状态**（`zreflect/living.py` 的判定）：append-only 的历史章节用
-    `REFLECT_HISTORY_SECS` 声明后豁免 —— 那里的"当时如此"不是"现在如此"，
-    拿它跟现状比只会逼人毁掉记录。历史章节里的重现行**仍然要带标记**吗？
-    不用 —— 历史章节天然就是"当时"的记录；这个豁免正是从 Octave 迁来的纪律。
+    Only **living state** is scanned (`zreflect/living.py`'s judgment):
+    append-only history sections, once declared via `REFLECT_HISTORY_SECS`, are
+    exempt -- their "as it was then" is not "as it is now"; comparing it against
+    the present would only force people to destroy the record. Do resurfacings
+    inside history sections **still need a marker**? No -- a history section is
+    inherently a record of "then"; this exemption is the discipline migrated
+    from Octave.
 
-    两条规则各是一个具名 helper（字段完整性 / 重现行）：它们扫的是不同的
-    东西（台账自身 vs 文档），拼在一起只是让调用点看起来短。
+    Each of the two rules is its own named helper (field completeness /
+    resurfacing): they scan different things (the ledger itself vs the
+    documents); merging them only made the call site look shorter.
     """
     hist = HIST_SECS if hist_secs is None else hist_secs
     if retractions is None or "retractions" not in (retractions or {}):
-        # 零值守卫：结构都不对，就别谈「没有违规」。
+        # Zero-value guard: with the structure itself wrong, "no violations"
+        # is not even on the table.
         return [M("retractions.missing_key")]
     if not docs:
-        # 零值守卫：一份文档都没扫到 ⇒ 「没发现重现行」是空话。
+        # Zero-value guard: not one document scanned => "no resurfacing found"
+        # is an empty claim.
         return [M("retractions.no_docs")]
     entries = [r for r in (retractions.get("retractions") or [])
                if isinstance(r, dict)]
@@ -72,12 +88,14 @@ def problems(retractions, docs, hist_secs=None):
 
 
 def scanned_docs():
-    """本闸门要扫的文档名单（`knobs.docs_names()`，唯一产地）。"""
+    """The list of documents this gate scans (`knobs.docs_names()`, single
+    origin)."""
     return knobs.docs_names()
 
 
 def run(argv):
-    # 名字可配（issue #1 ②）：不写死，换仓库只改环境变量
+    # The name is configurable (issue #1, item 2): never hardcoded -- switching
+    # repos means changing only the environment variable.
     rp = repo(os.environ.get("REFLECT_RETRACTIONS", "retractions.json"))
     if not os.path.exists(rp):
         return fatal(M("retractions.file_missing", name=rp))
@@ -102,7 +120,7 @@ def _cases():
                              "fixed_in": "doc y"}]}
     doc_ok = "(record) this thing is green — retracted, see R-1\n"
     return [
-        # ① 正常不报
+        # (1) compliant input: nothing reported
         ("retractions.marked",
          lambda: problems(ok_r, {"A.md": doc_ok}) == []),
         ("retractions.assertion_absent",
@@ -112,7 +130,7 @@ def _cases():
         ("retractions.declared_history_section",
          lambda: problems(ok_r, {"A.md": "## 5 history\nthis thing is green.\n"},
                           hist_secs=("5",)) == []),
-        # ② 该报的必须报
+        # (2) what must be reported is reported
         ("★ retractions.resurfaced",
          lambda: [p.code for p in problems(
              ok_r, {"A.md": "this thing is green.\n"})] == ["retractions.resurfaced"]),
@@ -124,7 +142,7 @@ def _cases():
          lambda: [p.code for p in problems(
              {"retractions": [{"id": "R-2", "text": "t", "why": "w", "fixed_in": "f"}]},
              {"A.md": "x\n"})] == ["retractions.entry_missing_field"]),
-        # ③ 空输入必须报
+        # (3) empty input must be reported
         ("★ retractions.no_docs",
          lambda: [p.code for p in problems(ok_r, {})] == ["retractions.no_docs"]),
         ("★ retractions.missing_key",
@@ -136,7 +154,7 @@ def _cases():
     ]
 
 
-GATE = meta("翻案重现检测", "被推翻的断言不许悄悄回来当现状",
+GATE = meta("Retraction-resurfacing check", "a retracted assertion may not quietly return as the current state",
             knobs=("REFLECT_RETRACTIONS", "REFLECT_DOCS", "REFLECT_HISTORY_SECS"), name_dependent=True)
 
 if __name__ == "__main__":

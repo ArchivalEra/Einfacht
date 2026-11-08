@@ -1,119 +1,140 @@
 #!/usr/bin/env python3
-"""闸门平台：rc 契约 + 零值守卫 + 三档自证。
+"""Gate platform: the rc contract + zero-trust guards + three-tier self-proof.
 
-它解决的**不是**「没有检查」，而是**检查在输入消失时静默变绿**。真实踩过的三种：
+What it solves is **not** "having no checks" but **checks silently going green when
+their input disappears**. Three real incidents:
 
-  · 三个站点同时缺 `VERSION` ⇒ 一致性闸门报「完全一致」；
-  · 声明的集合是空的 ⇒ 出厂核对报 `verdict: "ok"`；
-  · 自检脚本 `0/0` ⇒ 算「全部通过」。
+  - Three sites all missing `VERSION` => the consistency gate reports "fully consistent";
+  - The declared set is empty => the factory check reports `verdict: "ok"`;
+  - A self-check script `0/0` => counted as "all passed".
 
-所以任何检查器都必须能回答两句话：**输入空了我报吗？**、**该报的我会报吗？**
-`require_nonempty()` 答第一句，`selftest()` 的三类用例答第二句。
+So every checker must be able to answer two questions: **do I report when the input
+is empty?** and **do I actually report what should be reported?**
+`require_nonempty()` answers the first; `selftest()`'s three case classes answer the
+second.
 
-**rc 契约（本平台的 interface，2026-10-07 起全仓唯一产地）**：
+**The rc contract (this platform's interface, the repo-wide single source since
+2026-10-07)**:
 
-  · `off()`    ⇒ 0，未启用（可插拔闸门的 off 态必须**明说**，不许静默）；
-  · `fatal()`  ⇒ 2，配置 / 环境坏（旋钮指向缺失、坏 JSON、规格结构坏、
-    仪器本身坏了）—— 配置性失败 ≠ 检查失败，混进 1 会让「发现问题」
-    与「配置坏了」不可区分；
-  · `finish()` ⇒ 1（有 problems）/ 0（绿）。标题在先、问题行在后，
-    **单个闸门的问题行统一 stderr** —— 此前 13 道闸门各手抄一份、已漂出两派
-    （stdout/stderr 混用、标题先后不一），这里收敛成一份。
+  - `off()`    => 0, not enabled (a pluggable gate's off state must **say so
+    explicitly**, never silently);
+  - `fatal()`  => 2, broken config / environment (knob points at something missing,
+    bad JSON, malformed spec, the instrument itself is broken) -- a configuration
+    failure != a check failure; merging it into 1 makes "found problems"
+    indistinguishable from "the config is broken";
+  - `finish()` => 1 (problems found) / 0 (green). Header first, problem lines after;
+    **a single gate's problem lines all go to stderr** -- previously the 13 gates
+    each hand-copied their own version and had drifted into two camps (mixed
+    stdout/stderr, header order varying); this consolidates them into one.
 
-  ⚠️ 上面这条只约束**单个闸门自己的判据输出**。**聚合方**（`registry --run
-  <相位>`）的输出是**运行报告**（哪些没跑 / 哪些红了 / 哪些配置坏了），不是
-  判据 —— 它整体走 **stdout**，理由见 `registry._main_run` 的注释。两者语义
-  不同，别把同一条约定硬套两层（第 16 轮的结论）。
+  ⚠️ The rule above only binds **a single gate's own criterion output**. An
+  **aggregator** (`registry --run <phase>`) prints a **run report** (what didn't run /
+  what went red / what had broken config), not criteria -- it goes entirely to
+  **stdout**; the reasoning is in `registry._main_run`'s comment. The two semantics
+  differ; don't force the same convention onto both layers (conclusion of round 16).
 
-自证期间纯函数保持安静（print 归 run()/顶层，issue #1 ③）。
+Pure functions stay quiet during self-proof (printing belongs to run()/top level,
+issue #1 ③).
 """
 import ast
 import json
 import os
 import sys
 
-_AST_CACHE: dict = {}   # key: 文件路径 → 解析好的 AST（或 None）
+_AST_CACHE: dict = {}   # key: file path -> parsed AST (or None)
 
-# 被检查的仓库根：默认是本包的上一级，可用 GATE_REPO 覆盖（测试夹具靠它）。
+# Root of the repo under audit: defaults to this package's parent, overridable via
+# GATE_REPO (test fixtures rely on it).
 GATE_REPO = os.environ.get("GATE_REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def repo(*parts):
-    """拼一个指向被检查仓库的绝对路径。"""
+    """Join an absolute path pointing into the audited repo."""
     return os.path.join(GATE_REPO, *parts)
 
 
 def repo_path(path, root=None):
-    """相对路径锚到 `root`（默认被检查仓根），绝对路径原样 —— 唯一产地。
+    """Anchor a relative path to `root` (default: the audited repo root); absolute
+    paths pass through unchanged -- the single source.
 
-    `p if os.path.isabs(p) else os.path.join(root, p)` 这个表达式此前在
-    check_ab / check_locks / check_pins / check_facts / facts 里逐字抄了
-    五遍（`i18n.pack_dir` 还有一份变体）。绝对/相对的边界判据只许有一处：
-    「以 / 开头就是用户的绝对路径」这条一旦在某一处漂掉，那道闸门就会把
-    用户的绝对 spec 路径拼到仓根下面，然后报「文件不存在」。
+    The expression `p if os.path.isabs(p) else os.path.join(root, p)` used to be
+    copied verbatim five times across check_ab / check_locks / check_pins /
+    check_facts / facts (plus a variant in `i18n.pack_dir`). The absolute/relative
+    boundary criterion may exist in exactly one place: if "starts with / means the
+    user's absolute path" drifts in even one copy, that gate will join the user's
+    absolute spec path onto the repo root and then report "file not found".
     """
     root = GATE_REPO if root is None else root
     return path if os.path.isabs(path) else os.path.join(root, path)
 
 
 def zdir():
-    """**工具自己**的 `zreflect/` 目录 —— 全仓唯一产地。
+    """The **tool's own** `zreflect/` directory -- the repo-wide single source.
 
-    用途是「扫我自己的源码」（发现式名录 / 幻影旋钮 / 代码覆盖）。这与
-    `GATE_REPO`（**被检查仓**根）是两件事：跨仓夹具里 `GATE_REPO` 指向临时
-    目录，但工具源码仍在套件里。
+    Purpose: "scan my own source" (discovery-based roster / phantom knobs / code
+    coverage). This is a different thing from `GATE_REPO` (the **audited** repo
+    root): in a cross-repo fixture `GATE_REPO` points at a temp directory while the
+    tool's source still lives in the suite.
 
-    ⚠️ 此前 `knobs._zdir()` / `registry._zdir()` / 各处的
-    `dirname(abspath(__file__))` 各自算一遍 —— 今天同值（靠巧合），
-    改任一处就会分裂。location 规则只该有一个产地。
+    ⚠️ Previously `knobs._zdir()` / `registry._zdir()` / assorted
+    `dirname(abspath(__file__))` calls each computed it -- equal today (by
+    coincidence); changing any one would split them. A location rule deserves one
+    source.
     """
     return os.path.dirname(os.path.abspath(__file__))
 
 
 def tool_repo():
-    """**工具仓**根（`zreflect/` 的上一级）—— 全仓唯一产地。
+    """The **tool repo** root (the parent of `zreflect/`) -- the repo-wide single source.
 
-    `i18n.pack_dir()` 的「未设 ⇒ 用套件自带包」锚的就是它。
+    `i18n.pack_dir()`'s "unset => use the suite's bundled packs" anchors here.
     """
     return os.path.dirname(zdir())
 
 
 def machine():
-    """懒取 `machine`（机器行协议）。
+    """Lazily fetch `machine` (the machine-line protocol).
 
-    ⚠️ **不能模块级 `import machine`**：`machine` 要 `from gate import module_meta`
-    来声明自己（registry 的收编要求），模块级导入就成环（实测 ImportError）。
-    这与 `i18n.py` 的懒导入同一个理由 —— 环只能靠「谁先谁后」打破，不能靠
-    在循环里各取一部分。
+    ⚠️ **Must not be a module-level `import machine`**: `machine` needs
+    `from gate import module_meta` to declare itself (a registry adoption
+    requirement), so a module-level import would be circular (observed ImportError).
+    Same reason as `i18n.py`'s lazy import -- a cycle can only be broken by ordering
+    "who goes first", not by each side grabbing a piece inside the loop.
     """
     import machine  # noqa: PLC0415
     return machine
 
 
 def require_nonempty(name, seq, what=None):
-    """零值守卫：收集阶段什么都没收到 ⇒ 报错，**不许当「干净」**。
+    """Zero-trust guard: if collection received nothing => error, **never treat it as
+    "clean"**.
 
-    这是本包最重要的一行。绝大多数「闸门假装通过」的事故，根因都是这里没守：
-    遍历一个不存在的目录得到空集，然后「没有发现违规」——两句都是真的，结论是错的。
+    The most important line in this package. The root cause of nearly all "a gate
+    pretended to pass" incidents is this guard missing: walking a nonexistent
+    directory yields an empty set, then "no violations found" -- both statements are
+    true, the conclusion is wrong.
 
-    `what` = 被收集物的称呼（默认走语言包 `gate.input_label`）。
+    `what` = a name for the collected thing (defaults to the language pack's
+    `gate.input_label`).
     """
     import i18n  # noqa: PLC0415
     if what is None:
         what = i18n.M("gate.input_label")
     items = list(seq)
     if not items:
-        # `FATAL:` 是机器契约前缀 —— 在**发射点**字面量（不进语言包）。
-        # `what` 可能是调用方给的 Message（如 `M("stale.scanned_docs")`）：
-        # 先 str() 拍平，否则 null 包里会渲染成嵌套的 `repr(Message)`。
+        # `FATAL:` is a machine-contract prefix -- a literal at the **emission
+        # point** (not in the language pack). `what` may be a caller-supplied
+        # Message (e.g. `M("stale.scanned_docs")`): str() it flat first, otherwise
+        # the null pack renders a nested `repr(Message)`.
         fatal_exit(i18n.M("gate.require_nonempty", name=name, what=str(what)))
     return items
 
 
 def guard_nonempty(name, seq, what=None):
-    """`require_nonempty` 的 rc 版：空 ⇒ 打印 FATAL、返回 2；非空 ⇒ None。
+    """The rc-returning form of `require_nonempty`: empty => print FATAL, return 2;
+    non-empty => None.
 
-    给「直接跑」的检查器用（它们要的是退出码，不是异常）。
+    For checkers that "run directly" (they want an exit code, not an exception).
     """
     try:
         require_nonempty(name, seq, what)
@@ -124,14 +145,16 @@ def guard_nonempty(name, seq, what=None):
 
 
 def off(notice):
-    """未启用：明说 + 退 0。
+    """Not enabled: say so explicitly + exit 0.
 
-    ⚠️ **off 与「真跑通过」必须可区分**（C2）：两者 rc 都是 0（off 不是失败，
-    hooks 的 `|| exit` 不该把它当红），但 off 在 stdout 打一行机器可读标记
-    `OFF: …` —— 执行面（`gate.run_phase`）据此把闸门分成 ran / off / failed
-    三档，而不是把「没跑」算进「绿」。此前 off 只打 stderr 的自由文本，
-    「全部闸门绿」实为「N 道通过 + M 道从未运行」不可见（本仓实测 8/13 道
-    off —— 与本仓立身要消灭的假绿同形）。
+    ⚠️ **off and "actually ran and passed" must be distinguishable** (C2): both have
+    rc 0 (off is not a failure; hooks' `|| exit` should not treat it as red), but off
+    prints a machine-readable `OFF: ...` marker line on stdout -- the executor
+    (`gate.run_phase`) uses it to split gates into ran / off / failed instead of
+    counting "didn't run" as green. off used to print only free text on stderr, so
+    "all gates green" was in reality "N passed + M never ran", invisible (observed in
+    this repo: 8 of 13 gates off -- the same shape as the fake green this repo exists
+    to eliminate).
     """
     print(machine().emit("off", notice))
     _maybe_hint()
@@ -139,46 +162,52 @@ def off(notice):
 
 
 def fatal(msg):
-    """配置 / 环境坏：FATAL + 退 2。"""
+    """Broken config / environment: FATAL + exit 2."""
     print(machine().emit("fatal", msg), file=sys.stderr)
     return 2
 
 
 def fatal_exit(msg):
-    """`fatal` 的**退出**形式（给那些没法 `return 2` 的调用点）。
+    """The **exiting** form of `fatal` (for call sites that cannot `return 2`).
 
-    ⚠️ **必须 `SystemExit(2)`，不是 `SystemExit(msg)`**：后者是 Python 的
-    「打印并退 1」约定 —— 于是打出 `FATAL:` 三个字母、退出码却是 **1**。
-    调用方（`registry._record`）按 rc 分类：1 = 判据红 / failed，
-    2 = 配置坏 / fatal。那四份 `raise SystemExit(machine().emit("fatal", …))`
-    全都在这里错位了：**配置事故被报成代码问题**，修法指向错误的文件。
+    ⚠️ **Must be `SystemExit(2)`, not `SystemExit(msg)`**: the latter is Python's
+    "print and exit 1" convention -- it prints the letters `FATAL:` while the exit
+    code is **1**. Callers (`registry._record`) classify by rc: 1 = criterion red /
+    failed, 2 = broken config / fatal. Those four copies of
+    `raise SystemExit(machine().emit("fatal", ...))` were all misaligned here:
+    **configuration accidents reported as code problems**, the fix pointing at the
+    wrong file.
 
-    实测：`gate.selftest('x', [])` 打 `FATAL: gate.selftest_empty_cases`，
-    rc 却是 1。
+    Observed: `gate.selftest('x', [])` printed `FATAL: gate.selftest_empty_cases`
+    with rc 1.
 
-    一处函数、四个调用点（`require_nonempty` / `selftest` /
-    `ledger._require_pairs` / `collect.parse_prev_values`）——
-    此前是四份手抄，四份都错。
+    One function, four call sites (`require_nonempty` / `selftest` /
+    `ledger._require_pairs` / `collect.parse_prev_values`) --
+    previously four hand copies, all four wrong.
     """
     print(machine().emit("fatal", msg), file=sys.stderr)
     raise SystemExit(2)
 
 
 def declares_itself(path):
-    """这个 `.py` 是不是**套件自己的**文件（模块级 `MODULE =` / `GATE =` 声明）。
+    """Is this `.py` one of the **suite's own** files (a module-level `MODULE =` /
+    `GATE =` declaration)?
 
-    **唯一产地**：「这是套件的一部分还是使用方的代码」这个判断，此前散在
-    各闸门里（`registry.modules()` 用 `MODULE` 认平台模块、`gates()` 用
-    `GATE` 认闸门），而 `check_lint` / `check_i18n` / `check_snapshots`
-    干脆**不判**，于是扫整个仓 —— 把使用方的 `examples/`、`scripts/` 一起
-    当自己的代码审。
+    **Single source**: the judgment "is this part of the suite or the consumer's
+    code" used to be scattered across gates (`registry.modules()` recognized
+    platform modules by `MODULE`, `gates()` recognized gates by `GATE`), while
+    `check_lint` / `check_i18n` / `check_snapshots` did **no** check at all and
+    scanned the whole repo -- auditing the consumer's `examples/` and `scripts/` as
+    if they were suite code.
 
-    实测代价：一个真项目接入后 `registry --run commit` 报 149 条 ruff、
-    59 条 i18n、3 条 snapshot，**全部指向那个项目自己的文件**。用户修不完
-    也理解不了 —— 那是套件的偏好强加给别人。
+    Observed cost: after one real project wired in, `registry --run commit` reported
+    149 ruff findings, 59 i18n findings, 3 snapshot findings, **all pointing at that
+    project's own files**. The user could neither fix nor understand them -- it was
+    the suite's preferences imposed on someone else.
 
-    判据：模块体里有 `MODULE = …` 或 `GATE = …` 赋值。本仓 36 个 .py
-    **全部**满足（做判据前验过），所以「只扫这些」不会漏掉套件自己。
+    Criterion: the module body contains a `MODULE = ...` or `GATE = ...` assignment.
+    All 36 .py files in this repo **satisfy** it (verified before making it a
+    criterion), so "scan only these" never misses the suite itself.
     """
     import ast  # noqa: PLC0415
     try:
@@ -196,56 +225,62 @@ def declares_itself(path):
 
 
 def suite_sources(base):
-    """`base` 下**属于套件**的 `.py` 的 `(相对名, 文本)`。
+    """`(relative name, text)` of `.py` files under `base` that **belong to the suite**.
 
-    与 `py_sources` 的区别：只收 `declares_itself()` 为真的文件。用户自己
-    在这个目录里放的 `measure_*.py`（数据模块，没有声明）不算套件代码。
+    Difference from `py_sources`: collects only files where `declares_itself()` is
+    true. A user's own `measure_*.py` placed in this directory (a data module, no
+    declaration) does not count as suite code.
     """
     return [(rel, src) for rel, src in py_sources(base)
             if declares_itself(os.path.join(base, rel))]
 
 
 def scanned_sources(base, configured=False):
-    """一道闸门该收哪些 `.py` —— **两条口径，按「旋钮是否显式配了」分**。
+    """Which `.py` files a gate should collect -- **two scopes, split on "was the knob
+    explicitly configured"**.
 
-    **唯一产地**：此前 `check_i18n.sources_for` 与 `check_snapshots.collect`
-    各写了一遍同一个三元判断（`py_sources if configured else suite_sources`），
-    两份措辞不同、判据相同 —— 本仓最忌讳的「必须一致的两份」。
+    **Single source**: `check_i18n.sources_for` and `check_snapshots.collect` each
+    wrote the same ternary once (`py_sources if configured else suite_sources`) --
+    two wordings, one criterion: exactly the "two copies that must agree" shape this
+    repo dreads.
 
-      · **未配**（默认面 = 套件自己）⇒ `suite_sources`：只审有声明的文件。
-        接进真实项目时，使用方的 `examples/` / `scripts/` 不是本体 —— 实测
-        一个真项目因此报 149 条 ruff / 59 条中文 / 3 条快照违规，全在它
-        自己的文件里。
-      · **配了**（用户指着说「审这里」）⇒ `py_sources`：全收。收窄会让
-        `REFLECT_I18N_ROOT=<你的目录>` 报 `scan_empty_dir` FATAL（实测），
-        等于把 opt-in 弄坏。
+      - **Unset** (default surface = the suite itself) => `suite_sources`: audit only
+        files with declarations. When wired into a real project, the consumer's
+        `examples/` / `scripts/` are not the core -- observed: one real project got
+        149 ruff / 59 CJK / 3 snapshot findings, all in its own files.
+      - **Set** (the user points and says "audit here") => `py_sources`: take
+        everything. Narrowing would make `REFLECT_I18N_ROOT=<your dir>` report a
+        `scan_empty_dir` FATAL (observed), i.e. breaking opt-in.
     """
     return py_sources(base) if configured else suite_sources(base)
 
 
 def py_sources(base):
-    """`base` 目录下所有 `.py` 的 `(文件名, 文本)`；读不了 ⇒ 跳过。
+    """`(filename, text)` of all `.py` under the `base` directory; unreadable => skip.
 
-    **唯一产地**：这段 `listdir` + `open(errors="replace")` 曾在**三处**
-    各写一遍 —— `knobs._py_sources`、`check_snapshots.collect`、
-    `check_i18n` 的收集循环。现在都调这里。
+    **Single source**: this `listdir` + `open(errors="replace")` block used to be
+    written out in **three** places -- `knobs._py_sources`,
+    `check_snapshots.collect`, and `check_i18n`'s collection loop. All call here now.
 
-    读不了 ⇒ 返回该文件跳过（不是整目录失败）：每个调用方自己判空 ——
-    「空」在它们眼里含义不同（幻影扫描当「没有可疑」、`used_codes` 当
-    「没有 code」、`envfile` 当「闸门坏了」）。
+    Unreadable => that file is skipped (not a whole-directory failure): each caller
+    judges emptiness itself -- "empty" means something different to each of them
+    (phantom scan: "nothing suspicious"; `used_codes`: "no codes"; `envfile`: "the
+    gate is broken").
 
-    ⚠️ `base` 必须显式传：上游默认目录不一样（工具仓的 `zreflect` vs
-    被检查仓的 `zreflect`），给默认会把这差别藏起来（实测）。
+    ⚠️ `base` must be passed explicitly: upstream defaults differ (the tool repo's
+    `zreflect` vs the audited repo's `zreflect`); providing a default would hide that
+    difference (observed).
     """
     import os  # noqa: PLC0415
     out = []
     if not os.path.isdir(base):
         return out
-    # ⚠️ **递归**：此前只 `listdir` 一层，于是 `REFLECT_I18N_ROOT=src` 这种
-    # 常见布局报「扫描面是空的」—— 而目录根本不空（实测：子代理的验收仓
-    # `src/mycli/cli.py` 里明摆着一句中文，判据却什么都没看到）。
-    # 名字用**相对 base 的路径**：否则 `a/util.py` 与 `b/util.py` 会互相覆盖，
-    # 报错时也说不清是哪个。
+    # ⚠️ **Recursive**: previously only one `listdir` level, so a common layout like
+    # `REFLECT_I18N_ROOT=src` reported "the scan surface is empty" -- while the
+    # directory was not empty at all (observed: in a subagent's acceptance repo,
+    # `src/mycli/cli.py` plainly held a line of Chinese and the criterion saw
+    # nothing). Names are **paths relative to base**: otherwise `a/util.py` and
+    # `b/util.py` overwrite each other and errors cannot say which one.
     for dirpath, dirnames, filenames in os.walk(base):
         dirnames[:] = sorted(d for d in dirnames
                              if d not in ("__pycache__", ".git"))
@@ -253,12 +288,12 @@ def py_sources(base):
             if not n.endswith(".py"):
                 continue
             p = os.path.join(dirpath, n)
-            # ⚠️ **统一成正斜杠**：这个 `rel` 会被三处当**文件名**比较
-            # （`check_i18n` 的 `name == "i18n.py"`、`criteria` 的
-            # `name == "gate.py"`、`knobs` 的幻影扫描）。Windows 上
-            # `relpath` 给 `zreflect\i18n.py` ⇒ 那些相等判断永不成立，
-            # 于是「文件级豁免」在 Windows 上整体失效（实测：CI 的
-            # Windows 腿把它算成未登记 shell 的同一类问题）。
+            # ⚠️ **Normalize to forward slashes**: three places compare this `rel`
+            # as a **filename** (`check_i18n`'s `name == "i18n.py"`, `criteria`'s
+            # `name == "gate.py"`, `knobs`' phantom scan). On Windows `relpath`
+            # yields `zreflect\i18n.py` => those equality checks never fire, so
+            # "file-level exemptions" fail wholesale on Windows (observed: CI's
+            # Windows leg classified it the same way as unregistered shell text).
             rel = os.path.relpath(p, base).replace(os.sep, "/")
             try:
                 with open(p, encoding="utf-8", errors="replace") as fh:
@@ -269,15 +304,18 @@ def py_sources(base):
 
 
 def resolve_spec(argv, knob, default):
-    """规格名解析：`--spec` 显式 > 旋钮 > 默认名。返回 `(名字, 是否显式指定)`。
+    """Spec name resolution: explicit `--spec` > knob > default name. Returns
+    `(name, was_explicit)`.
 
-    纯函数，三处闸门（ab / locks / pins）此前各抄一份**逐字相同**的实现，
-    只差各自的 `DEFAULT_SPEC` 常量 —— 那是三份会漂的拷贝（C4）。现在那三处只
-    传自己的默认名进来。
+    A pure function; three gates (ab / locks / pins) each used to carry a
+    **verbatim-identical** copy differing only in their `DEFAULT_SPEC` constants --
+    three copies destined to drift (C4). Those sites now just pass their own default
+    name in.
 
-    显式指定（argv / 旋钮）而文件不在 ⇒ 调用方必须 FATAL（配置了却不存在的
-    规格是「部署了 ≠ 在跑」家族，静默当「未启用」会掩盖坏配置）；
-    默认名不在 ⇒ 未启用退 0。
+    Explicitly specified (argv / knob) but the file is missing => the caller must
+    FATAL (a configured-but-absent spec is in the "deployed != running" family;
+    silently treating it as "not enabled" hides broken config);
+    default name absent => not enabled, exit 0.
     """
     for i, a in enumerate(argv):
         if a == "--spec":
@@ -289,9 +327,11 @@ def resolve_spec(argv, knob, default):
 
 
 def load_spec(path):
-    """读 JSON 规格，返回 (spec, 错误句)。错误句非 None ⇒ 调用方 `fatal()`。
+    """Read a JSON spec, returning (spec, error message). Error message non-None => the
+    caller calls `fatal()`.
 
-    返回错误而不是 raise：调用方要把旋钮名 / 路径放进自己的 FATAL 措辞。
+    Returns the error instead of raising: the caller needs to weave its own knob
+    name / path into its FATAL wording.
     """
     import i18n  # noqa: PLC0415
     try:
@@ -302,16 +342,18 @@ def load_spec(path):
 
 
 def finish(name, problems, ok):
-    """问题循环 + OK 行 —— rc 契约（1 = 发现问题 / 0 = 绿）的唯一产地。"""
+    """The problem loop + the OK line -- the single source of the rc contract
+    (1 = problems found / 0 = green)."""
     import i18n  # noqa: PLC0415
     if problems:
         print(i18n.M("gate.problems_header",
                      name=name, count=len(problems)), file=sys.stderr)
         for p in problems:
             print("  · " + p, file=sys.stderr)
-            # `.forged` 的**消费者**：渲染期把伪造行按住了（不是拒绝），
-            # 但「按住了」必须**可见** —— 否则文件名里带换行这件事永远没人知道，
-            # 用户只看到一个奇怪的 `\OFF:`。只说在一行里，不刷屏。
+            # The **consumer** of `.forged`: rendering neutralized forged lines
+            # (didn't reject them), but "neutralized" must be **visible** --
+            # otherwise nobody ever learns a filename contained a newline and the
+            # user sees only a strange `\OFF:`. Say it in one line; don't flood.
             forged = getattr(p, "forged", ())
             if forged:
                 print("  " + i18n.M("gate.forged_row_neutralised",
@@ -324,21 +366,23 @@ def finish(name, problems, ok):
 
 
 def _env_hint_off():
-    """`REFLECT_ENV_HINT` 显式关了吗 —— 走 `knobs.flag`（词汇表唯一产地）。
+    """Is `REFLECT_ENV_HINT` explicitly off -- goes through `knobs.flag` (the single
+    source of the flag vocabulary).
 
-    ⚠️ 此前这里 `.lower() == "off"`：与 `doc.accepts_principles` 的
-    `("1","true","yes")` 是**两套 flag 词汇表**（后者大小写敏感，实测
-    `TRUE` 不生效）。现在统一从 `knobs.flag` 走。
+    ⚠️ This used to be `.lower() == "off"`: a **second flag vocabulary** next to
+    `doc.accepts_principles`'s `("1","true","yes")` (the latter case-sensitive;
+    observed: `TRUE` didn't take effect). Now unified through `knobs.flag`.
     """
     import knobs  # noqa: PLC0415
     return knobs.flag("REFLECT_ENV_HINT") is False
 
 
 def _maybe_hint():
-    """把 env 提示打到 stderr（**绝不进 stdout** —— 那里有机器契约）。
+    """Print the env hint to stderr (**never stdout** -- that stream carries the
+    machine contract).
 
-    `REFLECT_ENV_HINT=off` 可整体关闭（本仓「不喜欢提示的仓」的出口；
-    提示本身是**人性化**，不是判据）。
+    `REFLECT_ENV_HINT=off` disables it entirely (the exit for repos that "don't like
+    hints"; the hint itself is **human courtesy**, not a criterion).
     """
     if _env_hint_off():
         return
@@ -348,7 +392,7 @@ def _maybe_hint():
 
 
 def env_carrier():
-    """仓里的 Einfacht.env 载体路径（钩子目录优先、仓库根次之），没有 ⇒ None。"""
+    """The repo's Einfacht.env carrier path (hooks dir first, repo root second); none => None."""
     name = (os.environ.get("REFLECT_ENV_FILE", "Einfacht.env").strip()
             or "Einfacht.env")
     for d in (repo("reflect-hooks"), repo()):
@@ -359,9 +403,10 @@ def env_carrier():
 
 
 def gate_knobs(module=None):
-    """调用方模块声明的 `GATE = meta(…, knobs=…)`（拿不到 ⇒ 空）。
+    """The caller module's declared `GATE = meta(..., knobs=...)` (unavailable => empty).
 
-    让 `env_hint()` 不必每个入口手写旋钮名 —— 声明已经有一份（单一产地）。
+    Lets `env_hint()` avoid hand-writing knob names at every entry -- the declaration
+    already holds one copy (single source).
     """
     import sys as _sys  # noqa: PLC0415
     mod = module if module is not None else _sys.modules.get("__main__")
@@ -372,56 +417,67 @@ def gate_knobs(module=None):
 
 
 def env_hint(consumed=(), module=None):
-    """**人性化提示**：喂了 env 的入口，在「带了 env 却没生效」时该怎么跑。
+    """**Human courtesy hint**: for env-fed entries, how to run when "env was provided
+    but didn't take effect".
 
-    `consumed` = 这个入口实际读的旋钮名（如 `("REFLECT_FACTS",)`）。
-    返回一行提示字符串，或 None（无需提示）。
+    `consumed` = the knob names this entry actually reads (e.g. `("REFLECT_FACTS",)`).
+    Returns a one-line hint string, or None (no hint needed).
 
-    什么时候提示（三类，都只在对用户**有帮助**时出现）：
+    When to hint (three classes, each only when **helpful** to the user):
 
-      1. 仓里**有** Einfacht.env，但本轮进程**一个旋钮都没设**（`consumed`
-         全不在环境里）—— 典型的手工裸跑：`python3 zreflect/check_x.py`
-         ⇒ 判据全部回落默认名，结果可能与钩子语境不同，而且**没有任何东西
-         会告诉用户**（issue #20② / #15 都栽在这上面）。
-      2. 仓里**有** Einfacht.env 且当前设置与它**不一致**？—— 不查（要看值
-         才能判，而值依赖 shell 语义）；只查「有没有设」，保持判据廉价可靠。
-      3. 仓里**没有** Einfacht.env ⇒ **不提示**（这类仓裸跑是正常用法，提示
-         只会变成噪音 —— 本仓「会误报的闸门最终被整闸关掉」的教训）。
+      1. The repo **has** an Einfacht.env but this process **set none of the knobs**
+         (none of `consumed` is in the environment) -- the classic bare manual run:
+         `python3 zreflect/check_x.py` => criteria all fall back to default names,
+         results may differ from the hook context, and **nothing tells the user**
+         (issue #20② / #15 both tripped here).
+      2. The repo **has** an Einfacht.env and current settings **disagree** with it?
+         -- Not checked (judging requires comparing values, and values depend on
+         shell semantics); only "is it set" is checked, keeping the criterion cheap
+         and reliable.
+      3. The repo **has no** Einfacht.env => **no hint** (bare runs are normal usage
+         for such repos; a hint would just be noise -- this repo's lesson that "a
+         gate with false positives eventually gets switched off entirely").
 
-    提示语集中在这里（一处措辞），各入口调它 —— 不再各写一份。
+    The hint wording lives here (one place), and every entry calls it -- no more
+    per-entry copies.
     """
     carrier = env_carrier()
     if not carrier:
-        return None                      # 无载体的仓：裸跑是正常用法，不吵
+        return None                      # repo without a carrier: bare runs are normal usage, don't nag
     if not consumed:
-        consumed = gate_knobs(module)     # 声明里的旋钮清单（零手写）
+        consumed = gate_knobs(module)     # the declared knob list (zero hand-writing)
     if not consumed:
         return None
-    # ⚠️ **「旋钮已设」不能一律静默**（#28）：钩子体系靠 source 载体把旋钮
-    # 放进环境 —— 接线正确的仓里「环境有旋钮」恒真，原来的第四档提示
-    # （有载体却没设旋钮 ⇒ 提示）在任何正常接线的仓里都不可达。
-    # 四档语义（比一次载体值，成本一次文件读）：
-    #   1. 无载体 ⇒ 静默（裸跑是正常用法）
-    #   2. 没设任何消费旋钮 ⇒ **提示**（载体在，但没人 source / 没 export）
-    #   3. 旋钮已设且值与载体**一致** ⇒ 载体已生效，静默
-    #   4. 旋钮已设但值与载体**不同**（或载体没写它）⇒ **提示**
-    #      （手动 export 可能漂 —— 这正是该吵的场景）
+    # ⚠️ **"Knob is set" must not be silently accepted across the board** (#28): the
+    # hook system relies on sourcing the carrier to put knobs into the environment
+    # -- in a correctly wired repo "knobs are in the environment" is always true, so
+    # the original fourth tier (carrier present but knobs unset => hint) was
+    # unreachable in any normally wired repo.
+    # Four-tier semantics (one carrier comparison; costs one file read):
+    #   1. No carrier => silent (bare runs are normal usage)
+    #   2. None of the consumed knobs set => **hint** (carrier present, but nobody
+    #      sourced / exported)
+    #   3. Knobs set and values **match** the carrier => carrier is in effect, silent
+    #   4. Knobs set but values **differ** from the carrier (or the carrier doesn't
+    #      mention them) => **hint** (manual exports can drift -- exactly the scene
+    #      worth nagging about)
     import check_envfile  # noqa: PLC0415
     try:
         with open(carrier, encoding="utf-8", errors="replace") as fh:
             exported = check_envfile.parse_exports(fh.read())
     except OSError:
-        exported = {}                    # 读不了载体：按「没写」处理（档案见 guard）
+        exported = {}                    # carrier unreadable: treat as "not written" (record in guard)
     set_kv = {k: os.environ[k].strip() for k in consumed
               if os.environ.get(k, "").strip()}
     if not set_kv:
-        # 第二档：载体在，但一个旋钮都没设 ⇒ 原本的提示场景
+        # Tier 2: carrier present, but not a single knob set => the original hint scene
         rel = os.path.relpath(carrier, GATE_REPO)
         import i18n  # noqa: PLC0415
         return i18n.M("gate.env_hint", file=rel)
     if all(exported.get(k) == v for k, v in set_kv.items()):
-        return None                      # 第三档：载体已生效，静默
-    # 第四档：至少一个旋钮被手动 export 且与载体不一致（或载体没写它）
+        return None                      # Tier 3: carrier is in effect, silent
+    # Tier 4: at least one knob manually exported and differing from the carrier
+    # (or absent from it)
     rel = os.path.relpath(carrier, GATE_REPO)
     import i18n  # noqa: PLC0415
     return i18n.M("gate.env_hint", file=rel)
@@ -429,48 +485,60 @@ def env_hint(consumed=(), module=None):
 
 def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit",
          off_reason=None):
-    """闸门声明行（registry 的 ast 提取目标）：名字 + 一句话 + 消费的旋钮。
+    """Gate declaration line (registry's ast extraction target): name + one sentence +
+    consumed knobs.
 
-    声明即登记 —— 手写名录会漂，这里只许写事实。
+    Declaring is registering -- a hand-written roster drifts; only facts may be
+    written here.
 
-    · `name_dependent=True` 标给「默认输入被换名自证改名」的闸门
-      （gates-selftest 的跨仓库节里必须红的那批）：标了会被两头拦 ——
-      夹具要求它真红，registry.problems 要求它真消费改名的默认名。
-    · `runs_at`（C1）**正面声明频率**：`"commit"`（每次提交跑，进 hooks /
-      CI）或 `"start-of-work"`（开工前手动跑 —— doctor 那种「查会死的东西」，
-      挂 pre-commit 频率错）。此前频率只能靠「文件名不叫 check_」这种**否定式
-      命名意外**表达，且执行面 glob 与它无关 ⇒ 改个名就把 doctor 变成每次
-      提交探测活进程的闸门，无人拦。现在频率是声明里的一个字段，执行面
-      （gate.run_phase）按它过滤 —— 名字不再是承重的。
+    - `name_dependent=True` marks gates whose "default input gets renamed by the
+      rename selftest" (the batch that must go red in gates-selftest's cross-repo
+      section): marked gates are caught from both ends -- the fixture demands they
+      really go red, and registry.problems demands they really consume the renamed
+      default name.
+    - `runs_at` (C1) **declares the frequency positively**: `"commit"` (run on every
+      commit; wired into hooks / CI) or `"start-of-work"` (run manually before
+      starting work -- the doctor kind of "checks things that could be dead";
+      hanging it on pre-commit is the wrong frequency). Previously frequency could
+      only be expressed by the **accident of negative naming** ("the file isn't named
+      check_"), and the executor's glob knew nothing of it => renaming would turn
+      doctor into a per-commit probe of live processes with nothing to stop it. Now
+      frequency is a field in the declaration and the executor (gate.run_phase)
+      filters on it -- the name is no longer load-bearing.
 
-    registry 从这些声明派生：执行清单（按 runs_at 过滤）、叙述
-    （AUTO:GATES）、红名单、自证清单。名字只用于 `check_*.py` 的文件约定
-    （描述性），不再承载语义。
+    registry derives from these declarations: the execution list (filtered by
+    runs_at), narration (AUTO:GATES), the red list, the selftest list. Names only
+    serve the `check_*.py` file convention (descriptive); they carry no semantics.
     """
     return {"name": name, "desc": desc, "knobs": tuple(knobs),
             "name_dependent": bool(name_dependent),
             "runs_at": str(runs_at),
-            # `off_reason`（第 12 轮）：本闸门**为什么会未启用**。会调 `off()`
-            # 的闸门必须写 —— 否则「off」就没有理由，「永久 off 的闸门」与
-            # 「本仓不用这套机制」不可区分（本仓真的有过 8/13 道 off 而「全绿」
-            # 不可见的历史）。理由必须 ≥8 字（同 `PINNED:` 的纪律）。
+            # `off_reason` (round 12): **why** this gate would be not-enabled. Any
+            # gate that can call `off()` must state it -- otherwise "off" has no
+            # reason, and "a permanently off gate" is indistinguishable from "this
+            # repo doesn't use that mechanism" (this repo really did have 8 of 13
+            # gates off while "all green" hid it). The reason must be >= 8 chars
+            # (same discipline as `PINNED:`).
             "off_reason": (None if off_reason is None else str(off_reason))}
 
 
 def module_meta(name, desc, selftest=True):
-    """平台模块声明行（C5）：registry 的 ast 提取目标。
+    """Platform module declaration line (C5): registry's ast extraction target.
 
-    闸门用 `GATE = meta(…)` 声明；**平台模块**（gate / runner / knobs /
-    registry / guard / ledger / render / facts …）用 `MODULE = module_meta(…)`
-    声明自己的存在与「有没有自证义务」。此前「该有自证」只能靠**文本猜测**
-    （扫 `_cases` 字面量）——「一个模块该有自证却没写」无人问；现在它是声明里
-    的一个字段：`selftest=True` ⇒ registry 要求它真能 `--selftest` 且被实跑。
+    Gates declare with `GATE = meta(...)`; **platform modules** (gate / runner /
+    knobs / registry / guard / ledger / render / facts ...) declare their existence
+    and "whether they owe a selftest" with `MODULE = module_meta(...)`. Previously
+    "should have a selftest" could only be **guessed from text** (scanning for
+    `_cases` literals) -- nobody asked when a module owed a selftest but had none;
+    now it is a field in the declaration: `selftest=True` => registry demands it
+    actually supports `--selftest` and is actually run.
     """
     return {"name": name, "desc": desc, "selftest": bool(selftest)}
 
 
 def raises(fn):
-    """「该报错的必须报错」—— 反向断言用。返回 True 表示它确实报了 SystemExit。"""
+    """"What should raise must raise" -- for reverse assertions. True means it did
+    raise SystemExit."""
     try:
         fn()
     except SystemExit:
@@ -480,7 +548,7 @@ def raises(fn):
 
 
 def _ast_for(fname):
-    """整文件 AST（按文件名缓存）。读不到 / 解析不了 ⇒ False（缓存负结果）。"""
+    """Whole-file AST (cached by filename). Unreadable / unparseable => False (negative results are cached)."""
     import ast as _ast  # noqa: PLC0415
     import linecache  # noqa: PLC0415
     tree = _AST_CACHE.get((fname,))
@@ -495,16 +563,19 @@ def _ast_for(fname):
 
 
 def _lambda_nodes(tree, lineno):
-    """起始行 == lineno 的**全部** Lambda 节点（按 col_offset 升序）。
+    """**All** Lambda nodes whose starting line == lineno (ascending by col_offset).
 
-    ⚠️ 为什么返回列表而不是单个：**同一行里可以有多条 lambda**（`return
-    [("a", lambda: …), ("b", lambda: …)]` 全在一行）—— 这时 code object 的
-    `co_firstlineno` 相同、`co_positions()` 也只给外层位置，**无法区分**是哪
-    一条。取 col_offset 最小的那条会让同行的其它断言全部按第一条判定
-    （实测踩到：`lambda: 1 == 2` 被同行的 `lambda: … or True` 带累判成恒真）。
+    ⚠️ Why a list rather than a single node: **one line can hold several lambdas**
+    (`return [("a", lambda: ...), ("b", lambda: ...)]` all on one line) -- then the
+    code objects share `co_firstlineno` and `co_positions()` only gives the outer
+    position, so there is **no way to tell which one**. Taking the smallest
+    col_offset would judge every other same-line assertion by the first one
+    (observed: `lambda: 1 == 2` was dragged into always-true by a same-line
+    `lambda: ... or True`).
 
-    因此返回同行全部候选；调用方对**每一条**都扫一遍，任一条恒真即报 ——
-    「同行内任一条断言恒真」本来就该被抓，多报不算误伤。
+    So return all candidates on the line; the caller scans **each** of them, and any
+    always-true one reports -- "any assertion on the line is always-true" deserves to
+    be caught anyway; over-reporting here is not a false positive.
     """
     import ast as _ast  # noqa: PLC0415
     nodes = [n for n in _ast.walk(tree)
@@ -513,7 +584,7 @@ def _lambda_nodes(tree, lineno):
 
 
 def _const_truthy(node):
-    """这个常量节点恒为真吗（`or True` / `or 1` 的右操作数形状）。"""
+    """Is this constant node always truthy (the right-operand shape of `or True` / `or 1`)?"""
     import ast as _ast  # noqa: PLC0415
     if not isinstance(node, _ast.Constant) or node.value is None:
         return False
@@ -521,7 +592,7 @@ def _const_truthy(node):
 
 
 def _const_falsy(node):
-    """这个常量节点恒为假吗（`and False` / `and 0` 的右操作数形状）。"""
+    """Is this constant node always falsy (the right-operand shape of `and False` / `and 0`)?"""
     import ast as _ast  # noqa: PLC0415
     if not isinstance(node, _ast.Constant) or node.value is None:
         return False
@@ -529,7 +600,7 @@ def _const_falsy(node):
 
 
 def _short_circuit_reason(node):
-    """这个 AST 节点构成恒真短路吗 ⇒ 原因消息；否则 None。"""
+    """Does this AST node constitute an always-true short circuit => reason message; else None."""
     import ast as _ast  # noqa: PLC0415
 
     import i18n  # noqa: PLC0415
@@ -542,8 +613,8 @@ def _short_circuit_reason(node):
             return i18n.M("gate.never_falsifiable_and")
     if isinstance(node, _ast.Compare) and len(node.comparators) == 1:
         left, right = node.left, node.comparators[0]
-        # 排除裸函数调用两次的**合法**纯函数性检验
-        # （`render_gates(gs) == render_gates(gs)` 证明渲染确定性）。
+        # Exclude the **legitimate** purity check of calling a bare function twice
+        # (`render_gates(gs) == render_gates(gs)` proves render determinism).
         if isinstance(left, _ast.Call) and isinstance(right, _ast.Call):
             return None
         if _ast.dump(left) == _ast.dump(right) and isinstance(
@@ -552,9 +623,10 @@ def _short_circuit_reason(node):
     return None
 
 
-# 内建函数白名单：它们**在 lambda 里内联逻辑**，不是委托 —— 生成器/实参就在
-# 这个 AST 里，恒真检测照样能扫（把内建也判成委托会误伤一半的断言，实测 6 条
-# 假阳性）。
+# Builtin whitelist: they **inline logic inside the lambda** rather than delegate --
+# the generator/arguments are right there in the AST, so always-true detection can
+# still scan them (classifying builtins as delegation would false-positive half the
+# assertions; observed: 6 false positives).
 _BUILTIN_OK = frozenset({
     "any", "all", "bool", "len", "sorted", "sum", "min", "max",
     "isinstance", "getattr", "hasattr", "str", "int", "set",
@@ -563,24 +635,25 @@ _BUILTIN_OK = frozenset({
 
 
 def _assertion_node(fn):
-    """定位这条断言对应的 lambda AST 节点。定位不到 ⇒ `[]`（不猜）。"""
+    """Locate the lambda AST node(s) for this assertion. Unlocatable => `[]` (no guessing)."""
     code = getattr(fn, "__code__", None)
     if code is None:
-        return []                                        # 非 Python 函数
+        return []                                        # not a Python function
     tree = _ast_for(code.co_filename)
     if not tree:
-        return []                                        # 读不到 / 解析不了
+        return []                                        # unreadable / unparseable
     return _lambda_nodes(tree, code.co_firstlineno)
 
 
 def _delegation_reason(nodes):
-    """**纯委托**（lambda 体就是一次非内建 Call）⇒ 断言逻辑住在被调用函数里，
-    本判据**看不见**它。
+    """**Pure delegation** (the lambda body is a single non-builtin Call) => the
+    assertion logic lives inside the called function, invisible to this criterion.
 
-    ⚠️ 此前这种情况返回 None（与「扫过且干净」不可区分），于是「提取成 helper」
-    就成了关掉恒真检测的合法手段（实测：helper 改成 `return True` 后自证
-    26 PASS / 0 FAIL 全绿）。现在把它**明说成未审计** —— 与「读不到就明说」
-    同一条纪律。
+    ⚠️ This used to return None (indistinguishable from "scanned and clean"), so
+    "extract into a helper" became a legitimate way to switch off always-true
+    detection (observed: after a helper was changed to `return True`, the selftest
+    went 26 PASS / 0 FAIL all green). It is now **declared explicitly as unaudited**
+    -- the same discipline as "say so when unreadable".
     """
     import i18n  # noqa: PLC0415
     for node in nodes:
@@ -593,7 +666,8 @@ def _delegation_reason(nodes):
 
 
 def _short_circuit_reason_of(nodes):
-    """扫恒真短路：`or <真值常量>` / `and <假值常量>` / `x == x`。"""
+    """Scan for always-true short circuits: `or <truthy constant>` / `and <falsy
+    constant>` / `x == x`."""
     for node in nodes:
         for n in ast.walk(node):
             reason = _short_circuit_reason(n)
@@ -603,66 +677,85 @@ def _short_circuit_reason_of(nodes):
 
 
 def never_falsifiable(fn):
-    """**恒真断言探测**（issue #23）：这条自证用例有证伪能力吗？
+    """**Always-true assertion detection** (issue #23): does this selftest case have
+    falsification power?
 
-    下游实测的事故：一条 `or True` 的断言在 `--selftest` 里永远是 PASS ——
-    `gates-selftest` 判的是「返回 0 + 打摘要行」，真断言与恒真断言在这个面上
-    完全同形。`AGENTS.md` 纪律 4 说「断言要能证伪」，但此前没有机器判据。
+    The incident observed downstream: an `or True` assertion was forever PASS in
+    `--selftest` -- `gates-selftest` judges "returned 0 + printed a summary line", on
+    which a real assertion and an always-true assertion are completely isomorphic.
+    `AGENTS.md` discipline 4 says "assertions must be falsifiable", but there was no
+    machine criterion for it.
 
-    判据（AST，零执行、零副作用）：**整文件解析 + 按 co_firstlineno 定位**
-    lambda 节点（不用 inspect.getsourcelines —— 它对列表里的 lambda 只给首行，
-    重建脆弱，实测三次失明）。找到节点后扫恒真短路：
+    Criterion (AST; zero execution, zero side effects): **parse the whole file +
+    locate** lambda nodes by co_firstlineno (not inspect.getsourcelines -- for a
+    lambda inside a list it only gives the first line, reconstruction is fragile;
+    observed blind three times). Once nodes are found, scan for always-true short
+    circuits:
 
-      · `or <真值常量>` / `and <假值常量>` —— 布尔被常量短路，永远 PASS/fail；
-      · `x == x` 型自我比较（**排除**裸函数调用两次的合法纯函数性检验）。
+      - `or <truthy constant>` / `and <falsy constant>` -- the boolean is short-
+        circuited by a constant, forever PASS/fail;
+      - `x == x`-style self-comparison (**excluding** the legitimate purity check of
+        calling a bare function twice).
 
-    返回原因字符串（不可证伪）或 None（看起来有牙）。
+    Returns a reason string (unfalsifiable) or None (looks like it has teeth).
 
-    ## 三条诚实边界（写明的缺口，别当成全覆盖）
+    ## Three honest boundaries (documented gaps; do not treat as full coverage)
 
-    1. **抓不到更隐蔽的恒真**（同一变量换写法）。静态形状判据只认显式短路与
-       自我比较；更强的保证是变异测试（每条断言注入破坏器），代价过大 —— 见
-       issue #23 的讨论。本判据的价值：把已知的几种无意识写法从「人工复查才
-       发现」变成「自证当场红」。
-    2. **「委托」只在 body 是**单次 `Call`** 时才报**（见 `_delegation_reason`）。
-       若 body 是 `Compare`/`BoolOp` 包着一次 helper 调用 —— 例如
-       `lambda: _nf_catches("x") is not None` —— 就**不算委托**，本判据扫不到
-       helper 内部。实测：第 22 轮我把 `never_falsifiable` 的自证写成那个形状，
-       四条断言在语义上确实有牙（变异测试 RED-OK），但**形态上**躲过了审计。
-       放宽判据会误伤大量「复合断言」，所以这里选择**明说缺口**而不是改宽。
-    3. **读不到源码文件时不猜**（`-c` 里的 lambda 没有 `co_filename` ⇒ 返回
-       None）。自证用例必须写在真文件里 —— 这是第 22 轮补 `never_falsifiable`
-       自证时踩到的（`python -c` 里测它永远 None）。
+    1. **More subtle always-true forms are not caught** (same variable, different
+       spelling). The static shape criterion only recognizes explicit short circuits
+       and self-comparisons; the stronger guarantee is mutation testing (inject a
+       breaker into every assertion) -- too costly; see the issue #23 discussion.
+       This criterion's value: it turns several known unconscious spellings from
+       "found in manual review" into "selftest goes red on the spot".
+    2. **"Delegation" is only reported when the body is a** single `Call`** (see
+       `_delegation_reason`). If the body is a `Compare`/`BoolOp` wrapping one
+       helper call -- e.g. `lambda: _nf_catches("x") is not None` -- it **does not
+       count as delegation**, and this criterion cannot see inside the helper.
+       Observed: in round 22 I wrote `never_falsifiable`'s own selftest in that
+       shape; the four assertions did have teeth semantically (mutation test
+       RED-OK) but **formally** dodged the audit. Loosening the criterion would
+       false-positive many "compound assertions", so the choice here is to **state
+       the gap** rather than widen the net.
+    3. **When the source file is unreadable, don't guess** (a lambda from `-c` has no
+       `co_filename` => returns None). Selftest cases must live in real files --
+       learned while adding `never_falsifiable`'s selftest in round 22 (testing it
+       inside `python -c` always yields None).
 
-    三段各是一个具名 helper（定位 / 委托 / 短路）：三段互不依赖，拼在一起时
-    73 行且「不猜」的三种出口散在中间。
+    The three stages are each a named helper (locate / delegate / short-circuit):
+    independent of each other; merged, 73 lines with the three "no guessing" exits
+    scattered in the middle.
     """
     nodes = _assertion_node(fn)
     if not nodes:
-        return None                                      # 定位不到 ⇒ 不猜
+        return None                                      # unlocatable => no guessing
     if len(nodes) > 1:
-        # 同一行有多条 lambda：code object 无法告诉我们是哪一条（co_firstlineno
-        # 相同、co_positions 只给外层位置）。**不确定就不猜** —— 宁可漏报也不
-        # 误伤（本仓 99% 的断言都独占一行）。
+        # Several lambdas on one line: the code object cannot tell us which one
+        # (same co_firstlineno, co_positions only gives the outer position).
+        # **When unsure, don't guess** -- prefer under-reporting over false
+        # positives (99% of this repo's assertions own their line).
         return None
     return _delegation_reason(nodes) or _short_circuit_reason_of(nodes)
 
 
 def _is_delegated(why):
-    """这条 `why` 是不是「委托断言」判据（而不是恒真短路）。
+    """Is this `why` the "delegated assertion" criterion (rather than an always-true
+    short circuit)?
 
-    ⚠️ 必须看 `.code`，不能看 `str(why)`：`why` 是一个 `Message`，它的 str 值
-    已被**当前语言**渲染 —— 在 `zh` 下变成中文，按英文 code 匹配就永远落空，
-    于是委托断言被当成恒真短路报出去（实测：`KeyError: 'label'`）。
+    ⚠️ Must look at `.code`, never `str(why)`: `why` is a `Message` whose str value
+    has already been rendered **in the current language** -- under `zh` it becomes
+    Chinese, matching against the English code never hits, and a delegated assertion
+    gets reported as an always-true short circuit (observed: `KeyError: 'label'`).
     """
     return getattr(why, "code", None) == "gate.never_falsifiable_delegated"
 
 
 def _run_safely(label, fn):
-    """执行断言体。返回 `(通过?, 失败行或 None)`。**异常不许冒出去**。
+    """Run the assertion body. Returns `(passed?, failure line or None)`. **Exceptions
+    must not escape**.
 
-    `SystemExit` 单独catch：自证用例里 `raises(...)` 这类断言会主动抛，
-    那是被测行为，不是自证失败；但它若真的漏到这一层，说明用例写错了。
+    `SystemExit` is caught separately: selftest assertions like `raises(...)`
+    deliberately raise -- that is the behavior under test, not a selftest failure;
+    but if it truly leaks to this layer, the case was written wrong.
     """
     import i18n  # noqa: PLC0415
     try:
@@ -675,23 +768,28 @@ def _run_safely(label, fn):
 
 
 def _case_verdict(label, fn):
-    """跑一条用例。返回 `(通过?, 委托?, 失败行或 None)`。
+    """Run one case. Returns `(passed?, delegated?, failure line or None)`.
 
-    ⚠️ **恒真断言探测**（issue #23）：一条 `or True` 的断言与真断言在
-    「返回 0 + 打摘要行」这个面上同形，必须单独判。
+    ⚠️ **Always-true assertion detection** (issue #23): an `or True` assertion and a
+    real assertion are isomorphic on the "returned 0 + printed a summary line"
+    surface and must be judged separately.
 
-    ⚠️ **「委托」可接受但必须可见**：断言体在 helper 里（搭临时夹具的场景没法
-    内联）。允许它，但要打成 `note |`（机器可读）并在摘要里单列计数 ——
-    不许静默当干净（此前返回 None，与「扫过且干净」不可区分，于是提取
-    helper 就成了关掉恒真检测的合法手段）。
+    ⚠️ **"Delegated" is acceptable but must be visible**: the assertion body lives in
+    a helper (scenarios building temp fixtures cannot inline it). Allowed, but
+    printed as `note |` (machine-readable) and counted separately in the summary --
+    never silently treated as clean (it used to return None, indistinguishable from
+    "scanned and clean", so extracting a helper became a legitimate way to switch off
+    always-true detection).
 
-    ⚠️ **委托仍然要跑**：此前委托分支直接 `return True`，于是委托给 helper
-    的断言**从不执行**，`False` 与 `True` 同形（实测：`_utf8_forced_case`
-    的修复被掏空后它返回 False，selftest 照样报「19 PASS / 0 FAIL」）。
-    「可接受但可见」说的是**恒真检测看不见它的内部**，不是「不用跑」。
+    ⚠️ **Delegated cases still run**: the delegated branch used to `return True`
+    directly, so assertions delegated to helpers **never executed** and `False` was
+    isomorphic to `True` (observed: after `_utf8_forced_case`'s fix was gutted it
+    returned False, yet the selftest still reported "19 PASS / 0 FAIL"). "Acceptable
+    but visible" means the always-true detection **cannot see its insides**, not
+    "don't run it".
 
-    三段（恒真判 / 委托分支 / 普通执行）各是一处：抽掉「执行 + 异常」之后
-    这里只剩分派。
+    The three stages (always-true judgment / delegated branch / normal execution) are
+    each one place: after extracting "execution + exceptions", only dispatch remains.
     """
     import i18n  # noqa: PLC0415
     why = never_falsifiable(fn)
@@ -699,7 +797,8 @@ def _case_verdict(label, fn):
         passed, failure = _run_safely(label, fn)
         return passed, True, failure
     if why:
-        # `fail | ` 是自证机器行前缀 —— 发射点字面量，不进语言包
+        # `fail | ` is the selftest machine-line prefix -- an emission-point literal,
+        # not in the language pack
         return False, False, i18n.M("gate.case_unfalsifiable",
                                     label=label, why=why)
     passed, failure = _run_safely(label, fn)
@@ -707,13 +806,17 @@ def _case_verdict(label, fn):
 
 
 def _print_banner(name, total, bad, delegated):
-    """摘要三行：委托计数（单列）/ 人读摘要 / 机器摘要行。
+    """The summary's three lines: delegated count (listed separately) / human summary /
+    machine summary line.
 
-    ⚠️ 委托**单列**在摘要里：它不算失败，但也不是「扫过且干净」——
-    静默算进 PASS 就是本仓最痛恨的假绿。
+    ⚠️ Delegated is **listed separately** in the summary: it is not a failure, but it
+    is also not "scanned and clean" -- silently counting it into PASS is the fake
+    green this repo hates most.
 
-    ⚠️ 机器摘要行（issue #3 ③）与检查器名无关、格式固定，runner/CI 直接 grep；
-    `=== ` 前缀与收尾 ` ===` 是发射点字面量（语言包值不许以 `^===` 开头）。
+    ⚠️ The machine summary line (issue #3 ③) is independent of the checker name and
+    has a fixed format; runner/CI grep it directly. The `=== ` prefix and trailing
+    ` ===` are emission-point literals (language pack values must not start with
+    `^===`).
     """
     import i18n  # noqa: PLC0415
     if delegated:
@@ -727,14 +830,17 @@ def _print_banner(name, total, bad, delegated):
 
 
 def _report_one(label, fn):
-    """跑一条并**当场报出**它的结局。返回 `(通过?, 是否委托, 失败行或 None)`。
+    """Run one case and **report its outcome on the spot**. Returns `(passed?,
+    delegated?, failure line or None)`.
 
-    四种结局各有一条输出路径，但「怎么报」与「报不报」必须分开：
+    The four outcomes each have an output path, but "how to report" and "whether to
+    report" must stay separate:
 
-      · 委托 + 通过  → `note | … | delegated`
-      · 委托 + 失败  → **`fail | …`**（此前这里是 `continue`，把结果整个丢掉）
-      · 恒真 / 异常  → `fail | <原因>`
-      · 普通         → `PASS | …` 或 `fail | …`
+      - delegated + passed  -> `note | ... | delegated`
+      - delegated + failed  -> **`fail | ...`** (this used to `continue`, discarding
+        the result entirely)
+      - always-true / exception -> `fail | <reason>`
+      - normal              -> `PASS | ...` or `fail | ...`
     """
     passed, was_delegated, failure = _case_verdict(label, fn)
     if was_delegated:
@@ -745,27 +851,31 @@ def _report_one(label, fn):
     if failure is not None:
         print(machine().emit("fail", failure))
         return False, False, failure
-    # 通过行是 `PASS | `，失败行是 `fail | ` —— 两种 kind，一张表
+    # The pass line is `PASS | `, the failure line is `fail | ` -- two kinds, one table
     print(machine().emit("pass" if passed else "fail", label))
     return passed, False, None
 
 
 def selftest(name, cases):
-    """跑三档用例。每个 case = (标签, callable) -> bool。
+    """Run the three tiers of cases. Each case = (label, callable) -> bool.
 
-    必须写齐三类：
-      ① 正常不报（阳性对照 —— 否则「总是报错」也能骗过自证）
-      ② 该报的必须报（反向断言 —— 否则这个检查器可能是装饰）
-      ③ 空输入必须报（零值守卫）
+    All three classes must be present:
+      (1) normal runs don't report (positive control -- otherwise "always errors"
+          can fool the selftest too)
+      (2) what should report does report (reverse assertion -- otherwise this
+          checker may be decoration)
+      (3) empty input reports (zero-trust guard)
 
-    三层各是一个具名 helper（单条判定 `_case_verdict` / 单条输出
-    `_report_one` / 摘要 `_print_banner`）：本函数只累计计数。
+    The three layers are each a named helper (per-case verdict `_case_verdict` /
+    per-case output `_report_one` / summary `_print_banner`): this function only
+    accumulates counts.
     """
     import i18n  # noqa: PLC0415
     if not cases:
-        # 0/0 洞（本文件开头记载的第三种事故）：空用例清单的自证什么都没查，
-        # 却打印「0 PASS / 0 FAIL」绿着退场 —— runner 的 grep 照样认它。
-        # 空清单是写自证时的形状错误，当场响，不许绿。
+        # The 0/0 hole (the third incident recorded at the top of this file): a
+        # selftest with an empty case list checks nothing, prints "0 PASS / 0 FAIL",
+        # and exits green -- the runner's grep still accepts it. An empty list is a
+        # shape error in writing the selftest; sound on the spot, never green.
         fatal_exit(i18n.M("gate.selftest_empty_cases", name=name))
     bad = delegated = 0
     for label, fn in cases:
@@ -777,21 +887,23 @@ def selftest(name, cases):
 
 
 def _force_utf8_streams():
-    """把 stdout/stderr 强制成 UTF-8（**Windows 上是必须的**）。
+    """Force stdout/stderr to UTF-8 (**mandatory on Windows**).
 
-    为什么：Windows 上 `sys.stdout.encoding` 默认是 `cp1252`（代码页），
-    而这个仓会打印**闸门名与描述**（`GATE = meta("A/B 闸门", …)`）。实测：
+    Why: on Windows `sys.stdout.encoding` defaults to `cp1252` (the code page), while
+    this repo prints **gate names and descriptions** (`GATE = meta("A/B gate", ...)`).
+    Observed:
 
         UnicodeEncodeError: 'charmap' codec can't encode characters
                             in position 25-26: character maps to <undefined>
 
-    —— 一条 `registry.py --gates` 就能把 CI 的 Windows 腿整片打红，而 Linux
-    上永远复现不了（UTF-8 是默认）。
+    -- one `registry.py --gates` could turn the CI Windows leg red wholesale, and it
+    never reproduces on Linux (UTF-8 is the default there).
 
-    ⚠️ 只在**真的支持 reconfigure** 的流上做（`io.StringIO` / 被重定向的
-    自定义流没有这个方法），失败就静默跳过 —— 这不是判据，是环境适配。
-    副作用是**全局**的（改的是 `sys.stdout`），所以只在 CLI 入口调：
-    `activate_or_fatal` 恰好是所有入口的必经点。
+    ⚠️ Only done on streams that **really support reconfigure** (`io.StringIO` /
+    redirected custom streams lack the method); on failure, skip silently -- this is
+    not a criterion, it is environment adaptation. The side effect is **global**
+    (it mutates `sys.stdout`), so it is only called at CLI entries:
+    `activate_or_fatal` happens to be the mandatory pass-through for all of them.
     """
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
@@ -800,27 +912,32 @@ def _force_utf8_streams():
         try:
             reconfigure(encoding="utf-8", errors="replace")
         except (ValueError, OSError):
-            continue                # 已经关了 / 不支持 —— 不猜
+            continue                # already closed / unsupported -- no guessing
 
 
 def activate_or_fatal(lang=None):
-    """进程级语言包激活点。成功返回 0；装配失败打印 FATAL 并返回 2。
+    """The process-level language-pack activation point. Returns 0 on success; on
+    assembly failure prints FATAL and returns 2.
 
-    `lang` 让**一个进程**装配指定的包（不传 = 读 `REFLECT_LANG`）。存在的理由：
-    有些入口的消费者与闸门不同 —— 比如使用方包一层把某段输出喂给人读，那一层
-    可以自己点名语言，而套件的闸门照旧只认 `REFLECT_LANG`。**「只影响那一个
-    进程」因此是结构性的**，不靠谁记得别乱用；套件不因此多一个旋钮。
+    `lang` lets **one process** assemble a specific pack (unset = read
+    `REFLECT_LANG`). Reason it exists: some entries serve consumers other than gates
+    -- e.g. a consumer wraps a layer to feed some output to humans; that layer can
+    name its own language while the suite's gates keep honoring only `REFLECT_LANG`.
+    **"Affects only that one process" is therefore structural**, not dependent on
+    someone remembering to behave; the suite gains no extra knob for it.
 
-    **必须在 `--selftest` 之前调用**（issue #26 复盘）：此前 `main_selftest_or`
-    先判 `--selftest` 再 `activate()`，于是 `REFLECT_LANG=zh <gate> --selftest`
-    把消息按 null 包渲染成裸 code，而 `REFLECT_LANG=de <gate> --selftest` 对一个
-    **不存在的包静默 rc=0** —— 与「设了但包不在 ⇒ FATAL rc 2，不静默回落」直接
-    矛盾（实测：render / ledger / runner / registry 四条入口全中）。
+    **Must be called before `--selftest` dispatch** (issue #26 retrospective):
+    `main_selftest_or` used to test `--selftest` before `activate()`, so
+    `REFLECT_LANG=zh <gate> --selftest` rendered messages as bare codes via the null
+    pack, while `REFLECT_LANG=de <gate> --selftest` **silently rc=0 on a nonexistent
+    pack** -- directly contradicting "set but pack missing => FATAL rc 2, never a
+    silent fallback" (observed: all four entries -- render / ledger / runner /
+    registry -- were hit).
 
-    收起成函数是为了让**不走 `main_selftest_or` 的入口**（render/ledger 的
-    `_selftest()`、registry 的 `__main__`、gate 自己的 `__main__`）不必各抄一份
-    activate+FATAL（此前 registry 抄了一份，gate 自己那份干脆没有 FATAL，
-    直接裸 traceback 退 1）。
+    It became a function so that **entries not going through `main_selftest_or`**
+    (render/ledger's `_selftest()`, registry's `__main__`, gate's own `__main__`)
+    need not each copy an activate+FATAL pair (registry had a copy; gate's own copy
+    had no FATAL at all -- a bare traceback exiting 1).
     """
     import i18n  # noqa: PLC0415
 
@@ -828,8 +945,9 @@ def activate_or_fatal(lang=None):
     try:
         i18n.activate(lang)
     except Exception as e:                               # noqa: BLE001
-        # 装配失败时进程默认仍是上一档 `Catalog`（通常是 null 包）⇒ M() 照样
-        # 渲染得出来（`MissingPack` 的 `str()` 本身就是 null 形状的 code）。
+        # On assembly failure the process still holds the previous-tier `Catalog`
+        # (usually the null pack) => M() still renders (`MissingPack`'s `str()` is
+        # itself a null-shaped code).
         print(machine().emit("fatal",
                            i18n.M("gate.pack_assembly_failed", error=e)),
               file=sys.stderr)
@@ -838,15 +956,17 @@ def activate_or_fatal(lang=None):
 
 
 def main_selftest_or(args, name, cases, run):
-    """`--selftest` 走自证，否则走 `run(args)`。每个检查器都用它收尾。
+    """`--selftest` runs the selftest; otherwise `run(args)`. Every checker ends with
+    this.
 
-    `cases` 可以是清单，也可以是**工厂 callable**（需要搭临时夹具的
-    自证 —— ab/locks/pins 体例 —— 传函数，由这里调用）。
+    `cases` can be a list or a **factory callable** (selftests that need to build a
+    temp fixture -- the ab/locks/pins style -- pass a function, invoked here).
 
-    **这里是语言包的进程级激活点**（issue #26）：`REFLECT_LANG` 未设 ⇒ null 包
-    （本体零语言）；设了但包不在 ⇒ `MissingPack` ⇒ FATAL rc 2（不做「没装就
-    回落」）。每个闸门都经这里 ⇒ 一处接线，全部受益。激活**先于** `--selftest`
-    分流，理由见 `activate_or_fatal`。
+    **This is the language pack's process-level activation point** (issue #26):
+    `REFLECT_LANG` unset => null pack (the core speaks no language); set but the pack
+    is missing => `MissingPack` => FATAL rc 2 (no "fall back if not installed").
+    Every gate passes through here => one wiring, everyone benefits. Activation
+    happens **before** the `--selftest` dispatch; reasoning in `activate_or_fatal`.
     """
     rc = activate_or_fatal()
     if rc:
@@ -857,12 +977,13 @@ def main_selftest_or(args, name, cases, run):
 
 
 def default_runner(f, repo_root=None):
-    """默认执行器：跑一个闸门文件，返回 `(rc, 合并后的输出)`。
+    """The default runner: executes one gate file, returns `(rc, merged output)`.
 
-    ⚠️ **stdout 与 stderr 必须合并**：本仓约定「问题行统一 stderr」，于是
-    rc=2 的闸门 stdout 可能是**空的**（原因全在 stderr）。只回 `p.stdout`
-    ⇒ 聚合方拿到 (2, "")，既不知道哪个文件坏了也不知道为什么
-    （实测：`REFLECT_SNAPSHOT_ROOT=/nonexistent` ⇒ stdout=''）。
+    ⚠️ **stdout and stderr must be merged**: this repo's convention is "problem lines
+    all on stderr", so a gate with rc=2 can have **empty** stdout (the reason is all
+    on stderr). Returning only `p.stdout` => the aggregator gets (2, ""), knowing
+    neither which file broke nor why (observed:
+    `REFLECT_SNAPSHOT_ROOT=/nonexistent` => stdout='').
     """
     import subprocess  # noqa: PLC0415
     p = subprocess.run([sys.executable, f], capture_output=True, text=True,
@@ -872,11 +993,13 @@ def default_runner(f, repo_root=None):
 
 
 def _empty_result():
-    """聚合结果的初始形状。`fail_out` 收**每个失败闸门的原始输出**。
+    """The initial shape of the aggregate result. `fail_out` keeps **each failed
+    gate's raw output**.
 
-    ⚠️ 聚合方只打文件名时，用户得自己重跑一遍才知道为什么红（实测：hook
-    只报 `FAILED check_facts.py`，而直接跑它才有
-    `facts.bare_number_unaccounted(line=9, …)`）。
+    ⚠️ When the aggregator prints only filenames, users must re-run the gate
+    themselves to learn why it went red (observed: the hook reported only
+    `FAILED check_facts.py`, while running it directly showed
+    `facts.bare_number_unaccounted(line=9, ...)`).
     """
     return {"ran": 0, "off": 0, "failed": 0, "fatal": 0, "error": 0,
             "off_list": [], "fail_list": [], "fatal_list": [], "error_list": [],
@@ -884,19 +1007,20 @@ def _empty_result():
 
 
 def _record(res, f, rc, out):
-    """按 rc 与 `OFF:` 标记把一道闸门归入五档之一。
+    """Classify one gate into one of five tiers by rc and the `OFF:` marker.
 
-    五档是**互不重叠的修法分类**：
+    The five tiers are **non-overlapping fix categories**:
 
-      rc=2   配置 / 环境坏        → 改配置
-      rc<0   被信号杀掉
-      rc>2   用了未约定的码        → 执行器层面坏了
-      rc=1   判据红                → 修问题
-      rc=0 + `OFF:` 标记           → 未启用（不是通过）
-      rc=0 干净                    → 跑过且通过
+      rc=2   broken config / environment -> fix the config
+      rc<0   killed by a signal
+      rc>2   an uncontracted code was used -> broken at the executor level
+      rc=1   criterion red               -> fix the problems
+      rc=0 + `OFF:` marker           -> not enabled (not a pass)
+      rc=0 clean                     -> ran and passed
 
-    ⚠️ rc<0 / rc>2 单列成 `error`：此前一律塞进 `failed`，于是「闸门报了个
-    问题」与「闸门被 SIGKILL」不可区分（review 实测 rc=3 / rc=-9 都落进 failed）。
+    ⚠️ rc<0 / rc>2 are listed separately as `error`: they used to be lumped into
+    `failed`, making "the gate reported a problem" indistinguishable from "the gate
+    was SIGKILLed" (review observed rc=3 / rc=-9 both landing in failed).
     """
     if rc == 2:
         res["fatal"] += 1
@@ -916,20 +1040,24 @@ def _record(res, f, rc, out):
 
 
 def run_phase(phase, gates, runner=None, repo_root=None):
-    """按相位跑一组闸门并**聚合 ran / off / failed**（C1+C2 的执行面）。
+    """Run a group of gates by phase and **aggregate ran / off / failed** (the
+    executor side of C1+C2).
 
-    这是 hooks / CI / runner 的**唯一执行入口** —— 取代此前散在 6 处的
-    `for g in zreflect/check_*.py` glob。`gates` = registry 派生的
-    (file, runs_at) 清单（调用方按 `phase` 过滤，或传全集由这里过滤）。
+    This is the **single execution entry** for hooks / CI / runner -- replacing the
+    `for g in zreflect/check_*.py` glob previously scattered across 6 sites.
+    `gates` = registry-derived (file, runs_at) list (the caller filters by `phase`,
+    or passes everything and this filters).
 
-    为什么聚合三档而不是只看 rc：off 与「跑过且通过」rc 都是 0，只看 rc
-    会把「没跑」算进「绿」（本仓实测 8/13 道 off）。这里读子进程 stdout 的
-    `OFF:` 机器标记把 off 单列，于是「全绿」永远附带「其中 N 道 off（没查）」。
-    `runner` 可注入（自证用假执行器）。
+    Why aggregate three tiers instead of only reading rc: off and "ran and passed"
+    both have rc 0; reading only rc counts "didn't run" as green (observed in this
+    repo: 8 of 13 gates off). This reads the `OFF:` machine marker from the child
+    process's stdout to list off separately, so "all green" always carries "N of them
+    off (not checked)". `runner` is injectable (selftests use a fake executor).
 
-    返回 `{ran, off, failed, fatal, off_list, fail_list, fatal_list}`。
+    Returns `{ran, off, failed, fatal, off_list, fail_list, fatal_list}`.
 
-    分类逻辑在 `_record`（五档互不重叠，见其文档）：本函数只做过滤与遍历。
+    The classification logic lives in `_record` (five non-overlapping tiers; see its
+    docstring): this function only filters and iterates.
     """
     run = runner or (lambda f: default_runner(f, repo_root))
     res = _empty_result()
@@ -942,23 +1070,27 @@ def run_phase(phase, gates, runner=None, repo_root=None):
     return res
 
 
-# `selftest=False` 的**真实含义**：本模块**没有 `--selftest` 入口**（它提供
-# `selftest()` 本身，自举会打架）。**这不等于它的逻辑没有自证**——它的逻辑
-# 住在 `registry._cases()` 里：`finish` / `meta` / `run_phase` / `default_runner`
-# / `zdir` / `tool_repo` / `never_falsifiable`（经 `_nf_catches`）都有实质断言。
-# 此前描述只写「提供 selftest，自己不消费」—— 读起来像「没有自证义务」，
-# 与事实不符（第 23 轮对齐）。
+# The **real meaning** of `selftest=False`: this module **has no `--selftest`
+# entry** (it provides `selftest()` itself; bootstrapping both would collide).
+# **This does not mean its logic has no self-proof** -- its logic lives in
+# `registry._cases()`: `finish` / `meta` / `run_phase` / `default_runner` / `zdir` /
+# `tool_repo` / `never_falsifiable` (via `_nf_catches`) all have substantive
+# assertions. The description used to say only "provides selftest, doesn't consume
+# it itself" -- which reads like "no selftest obligation", contradicting the facts
+# (aligned in round 23).
 MODULE = module_meta(
-    "闸门平台",
-    "rc 契约 + 零值守卫 + 三档自证 + 相位执行器（无 --selftest 入口：自举会打架；"
-    "逻辑自证住在 registry._cases）",
+    "gate platform",
+    "rc contract + zero-trust guards + three-tier self-proof + phase executor "
+    "(no --selftest entry: bootstrapping would collide; "
+    "logic self-proof lives in registry._cases)",
     selftest=False)
 
 
 if __name__ == "__main__":
     import i18n  # noqa: PLC0415
-    # 此前这里裸 `i18n.activate()`：包不在 ⇒ MissingPack **traceback rc=1**，
-    # 而不是 rc 契约的 FATAL rc=2（实测踩到）。走同一个激活入口。
+    # This used to be a bare `i18n.activate()`: pack missing => MissingPack
+    # **traceback rc=1** instead of the rc contract's FATAL rc=2 (observed). Goes
+    # through the same activation entry now.
     rc = activate_or_fatal()
     if rc:
         sys.exit(rc)

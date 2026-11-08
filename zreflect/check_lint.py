@@ -1,37 +1,44 @@
 #!/usr/bin/env python3
-"""静态机器检查闸门（**可插拔**）：ruff 的 C901/F/E9/B，判据在 `ruff.toml`。
+"""Static machine-check gate (**pluggable**): ruff's C901/F/E9/B, criteria in `ruff.toml`.
 
-## 它替换掉的是什么
+## What it replaces
 
-`gitroll-dispositions.json` 的 `_summary` 曾写着：
+The `_summary` of `gitroll-dispositions.json` once said:
 
     ruff --select=C901,F,E9,B --config lint.mccabe.max-complexity=15
-    ⇒ All checks passed
+    => All checks passed
 
-**实测 159 errors**（134 F841 / 13 F401 / 4 C901）。原因不是扫描器变了，而是
-那条命令**从来没有被任何闸门执行过** —— 它只是被人手工跑过一次，结论就写进了
-台账。这正是本仓立身要消灭的形状：一句「已清」配一个没人复跑的命令。
+**Measured reality: 159 errors** (134 F841 / 13 F401 / 4 C901). The reason was not
+a changed scanner: that command had **never been executed by any gate** -- it was
+run by hand exactly once and the conclusion was written into the ledger. This is
+precisely the shape this repo exists to eliminate: an "all clear" paired with a
+command nobody re-runs.
 
-更具体的代价（见 `retractions.json` R-004 / R-005）：
+More concrete damage (see `retractions.json` R-004 / R-005):
 
-  · `facts.py --render-doc`（AGENTS.md 的首要命令之一）**直接崩**
-    `UnboundLocalError` —— `ruff F823` 早就报过，没人跑 ruff。
-  · 134 个 `F841` 是「解包 7 个变量只用 2 个」的机械残渣，全部来自上一轮
-    「复杂度拆分」的重构。
+  - `facts.py --render-doc` (one of AGENTS.md's headline commands) **crashed**
+    with `UnboundLocalError` -- `ruff F823` had flagged it long before; nobody ran
+    ruff.
+  - The 134 `F841`s were mechanical debris of "unpack 7 variables, use 2", all
+    left over from the previous round of "complexity-splitting" refactoring.
 
-## 为什么是 off 可以接受的
+## Why `off` is acceptable
 
-`ruff` 是**外部工具**，不是本仓依赖。没装它的仓不该因为这个闸门而红 ——
-所以「ruff 不存在」时明说未启用（`OFF:`），执行面单列一档，不冒充通过。
-但**装了就必须过**：CI 里 `pip install 'ruff==0.17.3'` 之后这个闸门会真跑。
+`ruff` is an **external tool**, not a dependency of this repo. A repo without it
+installed should not go red over this gate -- so when ruff is absent the gate
+says so explicitly (`OFF:`), and the execution surface lists it as its own
+disposition instead of passing it off as a success. But **if installed, it must
+pass**: in CI, after `pip install 'ruff==0.17.3'`, this gate really runs.
 
-## 诚实边界
+## Honesty boundaries
 
-  · 它跑的是 `ruff.toml` 里那一组**本仓选定的**规则（C901/F/E9/B）。全量
-    ruff 默认规则集有 716 条 —— 绝大多数是风格项，本仓明确不接受那种打分游戏
-    （见 `gitroll-dispositions.json` 的 `accepted_rules`）。
-  · 它不解析 ruff 的输出做二次判断：rc 非 0 = 红，原样转述它的清单。
-    任何「按规则名过滤」都会变成第二个会漂的产地。
+  - It runs the rule set **selected by this repo** in `ruff.toml` (C901/F/E9/B).
+    ruff's full default set has 716 rules -- mostly style items; this repo
+    explicitly declines that scoring game (see `accepted_rules` in
+    `gitroll-dispositions.json`).
+  - It does not parse ruff's output for a second opinion: rc != 0 = red, and its
+    findings list is relayed verbatim. Any "filter by rule name" would become a
+    second origin that drifts.
 """
 from __future__ import annotations
 
@@ -49,15 +56,19 @@ CONFIG = "ruff.toml"
 
 
 def suite_files(repo_root=None):
-    """**套件自己的** `.py` 路径（`declares_itself()` 为真的那些）。
+    """Paths of the **suite's own** `.py` files (those for which `declares_itself()`
+    is true).
 
-    ⚠️ 此前跑 `ruff check .` —— **整个仓**。接进真实项目时，使用方的
-    `examples/` / `scripts/` 会被当本体来审：实测一个真项目接入后
-    `registry --run commit` 报 **149 条** ruff，全部指向它自己的文件。
-    用户既修不完，也不理解为什么别人的套件在挑他的代码。
+    Warning: this previously ran `ruff check .` -- the **whole repo**. When wired
+    into a real project, the host's `examples/` / `scripts/` got audited as if
+    they were the suite: observed on a real integration, `registry --run commit`
+    reported **149** ruff findings, all pointing at the host's own files. The user
+    could neither fix them all nor understand why someone else's suite was nitpicking
+    their code.
 
-    「套件代码」的判据是**声明**（`MODULE = …` / `GATE = …`），不是目录名 ——
-    发现式，与 `registry.modules()` / `gates()` 同一口径。
+    The criterion for "suite code" is a **declaration** (`MODULE = ...` /
+    `GATE = ...`), not a directory name -- discovery-based, the same yardstick as
+    `registry.modules()` / `gates()`.
     """
     root = repo_root or gate.GATE_REPO
     out = []
@@ -73,9 +84,11 @@ def suite_files(repo_root=None):
 
 
 def ruff_argv(files=None):
-    """跑 ruff 的 argv（`sys.executable -m ruff`，跨平台且与 pip 装的那个一致）。
+    """The argv for running ruff (`sys.executable -m ruff`: cross-platform and
+    identical to the pip-installed one).
 
-    `files` 给了就只查那些；不给 ⇒ **套件自己的文件**（不是整个仓）。
+    With `files` given, only those are checked; without it, **the suite's own
+    files** (not the whole repo).
     """
     targets = list(files) if files is not None else suite_files()
     if not targets:
@@ -86,20 +99,23 @@ def ruff_argv(files=None):
 
 
 def _has_located_finding(out):
-    """ruff 的输出里有没有**定位行**（`path:line:col: CODE message`）。
+    """Whether ruff's output contains a **located finding line**
+    (`path:line:col: CODE message`).
 
-    判据：至少一行同时含 `.py:` 与行号风格的冒号 —— 那才是「发现了问题」。
-    没有定位行的非零退出是工具/配置事故。
+    Criterion: at least one line carrying both `.py:` and line-number-style
+    colons -- that is what "a problem was found" means. A nonzero exit without
+    any located line is a tool/config incident.
     """
     return any(".py:" in ln or '.py"' in ln
                for ln in (out or "").splitlines())
 
 
 def problems(out, rc):
-    """纯函数：ruff 的输出 + rc → 问题清单（空 = 干净）。自证用。
+    """Pure function: ruff output + rc -> problem list (empty = clean). For the selftest.
 
-    `rc` 非 0 但输出为空 ⇒ **必须报**（零值守卫）：那是「工具坏了」而
-    「没有问题」无法区分的形状。
+    `rc` nonzero with empty output => **must be reported** (zero-value guard):
+    that is the shape where "the tool is broken" and "no problems" are
+    indistinguishable.
     """
     lines = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
     if rc == 0:
@@ -113,12 +129,14 @@ def problems(out, rc):
 
 
 def run(argv=None):
-    """两条「明说未启用」，一条「真跑」。
+    """Two "explicitly not enabled" paths and one "really runs" path.
 
-    没有 `ruff.toml` ⇒ `off`（**不是** fatal）：那是「这个仓没选这套判据」的
-    正常形态 —— 一个只有 `zreflect/` 被拷过去的外仓不该因为这个闸门而红。
-    但配置存在而工具没装 ⇒ 也 `off`（外部工具，不是本仓依赖）；配置在、
-    工具在、ruff 报错 ⇒ **fatal**（那是配置事故，不许静默）。
+    No `ruff.toml` => `off` (**not** fatal): that is the normal shape of "this
+    repo did not select this rule set" -- a foreign repo into which only
+    `zreflect/` was copied should not go red over this gate. But config present
+    while the tool is missing => also `off` (external tool, not a repo
+    dependency); config present, tool present, ruff errors out => **fatal**
+    (a config incident must not stay silent).
     """
     conf = os.path.join(gate.GATE_REPO, CONFIG)
     if not os.path.isfile(conf):
@@ -135,10 +153,12 @@ def run(argv=None):
         return fatal(M("lint.tool_broken", error=e))
     out = (p.stdout or "") + (p.stderr or "")
     if p.returncode != 0 and not _has_located_finding(out):
-        # ⚠️ **没有定位行的非零退出 ≠ 判据红**：那是 ruff 自己起不来
-        # （`ruff.toml` 语法坏 / 参数不认 / 版本不对）—— 配置事故，FATAL rc=2。
-        # 此前一律走 `problems()` 变成 `lint.no_output` + rc=1，调用方会去
-        # 修代码，而问题是判据文件本身。
+        # Warning: **a nonzero exit with no located line is not a red criterion**:
+        # ruff itself failed to start (broken `ruff.toml` syntax / unrecognized
+        # flag / wrong version) -- a config incident, FATAL rc=2. Previously this
+        # always went through `problems()`, becoming `lint.no_output` + rc=1, so
+        # the caller would go fix code when the actual problem was the criteria
+        # file itself.
         detail = [ln for ln in out.splitlines() if ln.strip()]
         return fatal(M("lint.config_broken", path=CONFIG,
                        detail=(detail[-1][:200] if detail else "")))
@@ -147,7 +167,8 @@ def run(argv=None):
 
 
 def subprocess_ruff_probe():
-    """`ruff` 不在 PATH 时，试试 `python -m ruff`（pip 装在解释器里的那种）。"""
+    """When `ruff` is not on PATH, try `python -m ruff` (the pip-into-the-
+    interpreter kind)."""
     try:
         p = subprocess.run([sys.executable, "-m", "ruff", "--version"],
                            capture_output=True, text=True, timeout=60,
@@ -157,26 +178,29 @@ def subprocess_ruff_probe():
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
-# ── 自证 ──────────────────────────────────────────────────────────────────────
+# -- self-verification --------------------------------------------------------
 
 def _cases():
     return [
-        # ① 正常不报
+        # (1) compliant input: nothing reported
         ("lint.clean_is_clean", lambda: problems("", 0) == []),
-        # ② 该报的必须报
+        # (2) what must be reported is reported
         ("★ lint.finding_is_reported",
          lambda: [p.code for p in problems(
              "zreflect/x.py:3:1: F841 Local variable `y` is unused", 1)]
          == ["lint.finding"]),
-        # ③ 空输入必须报 —— rc≠0 却**没有任何定位行**（工具坏了 / 参数错）
+        # (3) empty input must be reported -- rc != 0 with **no located line at
+        # all** (tool broken / bad flag)
         ("★ lint.silent_failure_is_loud",
          lambda: [p.code for p in problems("error: unrecognized argument", 2)]
          == ["lint.no_output"]),
-        # 良性输出不被误报：rc=0 就是干净，哪怕有警告行（如 deprecated 提示）
+        # Benign output is not falsely reported: rc=0 means clean, warnings
+        # included (e.g. deprecation notices)
         ("lint.warning_with_rc0_is_clean",
          lambda: problems("warning: config deprecated", 0) == []),
-        # **配置事故与判据红必须可区分**（rc=2 vs rc=1）：
-        # 有定位行 ⇒ 发现了问题；没有 ⇒ ruff 自己起不来（`ruff.toml` 语法坏）。
+        # **A config incident and a red criterion must be distinguishable**
+        # (rc=2 vs rc=1): a located line => a problem was found; none => ruff
+        # itself failed to start (broken `ruff.toml` syntax).
         ("\u2605 lint.located_finding_detected",
          lambda: _has_located_finding(
              "zreflect/x.py:3:1: F841 Local variable `y` is unused")),
@@ -196,11 +220,13 @@ def _activate_and_run():
     return rc or run(sys.argv[1:])
 
 
-GATE = meta("静态机器检查",
-            "ruff 的 C901/F/E9/B，判据在 ruff.toml —— 「已清」必须由每次提交复跑，"
-            "不是一次手工跑完写进台账（R-004）",
-            off_reason="本机没装 ruff（外部工具，不是本仓依赖）⇒ 明说未启用；"
-                       "CI 里 pip 装了它，那道会真跑")
+GATE = meta("Static machine check",
+            "ruff's C901/F/E9/B, criteria in ruff.toml -- the 'all clear' must be"
+            " re-established by every commit, not handwritten into the ledger"
+            " from a single manual run (R-004)",
+            off_reason="ruff not installed on this machine (external tool, not a"
+                       " repo dependency) => explicitly not enabled; CI pip-installs"
+                       " it, and there the gate really runs")
 
 
 if __name__ == "__main__":
