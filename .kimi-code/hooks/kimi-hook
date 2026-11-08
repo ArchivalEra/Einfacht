@@ -1,0 +1,44 @@
+#!/bin/sh
+# kimi-hook —— 仓库级薄壳（AGENTS.md「使用方自己加一层薄壳读它的 stdout」）。
+# 不注册进任何用户级 config：kimi-code 的 [[hooks]] 是用户级的，会把本仓的
+# 注入洒进机器上每一个会话（实测污染 10 个外仓会话）。这个壳只在**本仓**、
+# 由人或仓内脚本显式调用；stdin 收 kimi-code 风格的 payload（只需 cwd），
+# stdout 就是「接着上一轮」段。别的复制这份，把自己的仓根换上即可。
+#
+# 用法（各跑各的）：
+#   printf '%s' '{"cwd":"/path/to/repo"}' | .kimi-code/hooks/kimi-hook
+#   REFLECT_LANG=zh python3 zreflect/next.py .          # 等价的手跑路径
+input=$(cat)
+cwd=$(printf '%s' "$input" | python3 -c 'import json,sys
+d = json.load(sys.stdin)
+c = d.get("cwd", "")
+if not c:
+    sys.exit(1)
+print(c)' 2>/dev/null) || exit 0  # 无 cwd / 坏 payload：不猜，静默退出
+
+REPO=$cwd
+while [ -n "$REPO" ] && [ "$REPO" != "/" ]; do
+  if [ -d "$REPO/zreflect" ] && { [ -d "$REPO/.git" ] || [ -f "$REPO/.git" ]; }; then
+    break
+  fi
+  REPO=$(dirname "$REPO")
+done
+[ -d "$REPO/zreflect" ] || exit 0
+
+EINFACHT_PLUGIN_DIR="$REPO/reflect-hooks" . "$REPO/reflect-hooks/einfacht-env.sh"
+export EINFACHT_HOOK_REPO="$REPO"
+
+python3 -c '
+import os
+import sys
+
+sys.path.insert(0, os.environ["EINFACHT_HOOK_REPO"] + "/zreflect")
+from gate import activate_or_fatal
+
+rc = activate_or_fatal()
+if rc:
+    sys.exit(rc)
+import next
+
+print("\n".join(next.section(os.environ["EINFACHT_HOOK_REPO"])))
+'
