@@ -14,7 +14,6 @@
 !/README.md
 !/README.zh.md
 !/README.de.md
-!/KIMICODE-README!.md
 !/STATE.md
 !/gates-selftest.sh
 !/gitroll-dispositions.json
@@ -30,7 +29,6 @@
 !/skills/
 !/docs/
 !/.github/
-!/.kimi-code/
 
 # ---- build / runtime noise: ignored even inside whitelisted dirs ----
 __pycache__/
