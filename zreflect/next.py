@@ -327,7 +327,12 @@ def _format(last, pending):
 
 
 def main(argv=None):
-    """`python3 zreflect/next.py [repo]` -> prints the whole section (for human inspection, not for hook assembly)."""
+    """`python3 zreflect/next.py [repo]` -> prints the whole section (for human inspection, not for hook assembly).
+
+    The `__main__` block activates the language pack first
+    (`gate.activate_or_fatal`): `REFLECT_LANG=zh` must render zh, and a set
+    but missing pack must FATAL rc 2 -- rc 0 with bare codes was the measured
+    failure (issue #31)."""
     import sys  # noqa: PLC0415
     repo = (argv or sys.argv[1:] or ["."])[0]
     sys.stdout.write("\n".join(section(os.path.abspath(repo))) + "\n")
@@ -372,6 +377,12 @@ def _cases():
         # 01-example.md).
         ("★ next.resolved_question_is_dropped",
          lambda: _resolved_question_dropped()),
+        # **The manual entry must activate the language pack**: without the
+        # `activate_or_fatal` pass-through, `REFLECT_LANG=zh python3
+        # zreflect/next.py` exited 0 with bare codes -- documented usage that
+        # did not work (measured: issue #31).
+        ("★ next.manual_entry_activates_pack",
+         lambda: _manual_entry_activates_pack()),
         # 3. Empty input must be reported: a nonexistent repo root
         ("★ next.nonexistent_root_is_loud",
          lambda: _nonexistent_root_loud()),
@@ -495,6 +506,28 @@ def _log_command_shape_ok():
     return False
 
 
+def _manual_entry_activates_pack():
+    """The manual (non-`--selftest`) `__main__` branch **must pass through
+    `activate_or_fatal` before `main()`** (issue #31).
+
+    Read the shape from the source (no subprocess): without that pass-through
+    `REFLECT_LANG=zh python3 zreflect/next.py` exited 0 with bare codes --
+    installed but not activated. Both halves are pinned: the call exists in
+    the `__main__` block, and the manual exit actually waits on its rc.
+    """
+    import inspect  # noqa: PLC0415
+    import sys as _sys  # noqa: PLC0415
+    src = inspect.getsource(_sys.modules[__name__])
+    lines = src.splitlines()
+    try:
+        start = lines.index('if __name__ == "__main__":')
+    except ValueError:
+        return False
+    block = "\n".join(lines[start:])
+    return ("activate_or_fatal" in block
+            and "sys.exit(rc or main())" in block)
+
+
 def _section_budget_holds():
     """Many commits + many open questions + dirty worktree => pending items present and the section <= `SECTION_MAX`."""
     import shutil
@@ -556,7 +589,14 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv:
         import next as _mod  # noqa: PLC0415
         sys.exit(_mod._selftest())
-    sys.exit(main())
+    # The manual branch must activate the pack itself: AGENTS.md documents
+    # `REFLECT_LANG=zh python3 zreflect/next.py` as an interface, and without
+    # this point it exited 0 with bare codes (issue #31) -- "no error, wrong
+    # answer". `main_selftest_or` already covers the --selftest branch; the
+    # other branch takes the harness.py entry shape.
+    from gate import activate_or_fatal  # noqa: PLC0415
+    rc = activate_or_fatal()
+    sys.exit(rc or main())
 
 from gate import module_meta  # noqa: E402
 
