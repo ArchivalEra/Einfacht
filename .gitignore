@@ -1,3 +1,42 @@
+# Strict whitelist mode: everything is ignored by default; only the entry
+# patterns below may be tracked. A new file must opt in here — this is the
+# point: nothing can sneak into a judged position by accident.
+
+# ---- ignore everything ----
+/*
+
+# ---- tracked top-level files ----
+!/.gitignore
+!/AGENTS.md
+!/FACTS.json
+!/LICENSE
+!/PRINCIPLES.md
+!/README.md
+!/README.zh.md
+!/README.de.md
+!/STATE.md
+!/gates-selftest.sh
+!/gitroll-dispositions.json
+!/icon.svg
+!/maintaince.md
+!/retractions.json
+!/ruff.toml
+
+# ---- tracked directories (their own rules below) ----
+!/zreflect/
+!/reflect-hooks/
+!/questions/
+!/skills/
+!/docs/
+!/.github/
+
+# ---- build / runtime noise: ignored even inside whitelisted dirs ----
 __pycache__/
 *.pyc
+.mypy_cache/
+.ruff_cache/
 .DS_Store
+
+# ---- editor / OS noise (defense in depth) ----
+*.swp
+*~
