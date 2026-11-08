@@ -121,6 +121,31 @@ python3 reflect-hooks/install.py --chain          # 接钩子
 旋钮全在 `zreflect/knobs.py` 登记，名字型旋钮（`REFLECT_DOCS` / `REFLECT_READMES`
 / `REFLECT_QUESTIONS` …）在那个仓的 `Einfacht.env` 里改，不改代码。
 
+## 本仓只读锁（owner 会话写锁）
+
+本仓是**套件仓**：别的 agent 对它的产出一律走 issue 反哺（如 #31、#32），**不许
+直写**。为此宿主侧挂了两层锁（实现全在 `~/.kimi-code/hooks/`，不进判据面 ——
+`host_agnostic` 原则不动）：
+
+- **钩子层**：`.git/einfacht-lock.json` 记 `owner_session`。kimi-code 的
+  PreToolUse 钩子对**非 owner 会话**只放行读形 Bash（ls/cat/grep/
+  `git status|log|diff`…，禁止重定向与写形命令）和本仓外目标；Edit/Write 一律
+  rc 2 拒绝并说明原因。fail-closed：锁文件在就拦，不在就谁也不拦。
+- **OS 层**：`chmod -R a-w` 兜底那些不走 kimi-code 钩子的进程。advisory 级 ——
+  同用户进程能 chmod 回来，挡的是误写与莽撞，不是对抗。
+
+owner 侧管理（`einfacht-lock.sh`，四件事）：
+
+```bash
+~/.kimi-code/hooks/einfacht-lock.sh claim <session_id>  # 接管 owner（或首次上锁）
+~/.kimi-code/hooks/einfacht-lock.sh seal                # 加 OS 层（收工时）
+~/.kimi-code/hooks/einfacht-lock.sh open                # 暂时解除 OS 层（自己要写时）
+~/.kimi-code/hooks/einfacht-lock.sh release             # 全放（锁文件一并删）
+```
+
+**别的 agent 想改本仓**：开 issue，带复现与根因（file:line），由 owner 会话裁决
+后落补丁。直接写入会被拒并记录在 `~/.kimi-code/hooks/einfacht-lock.log`。
+
 ## 不懂就问
 
 **如果非无人值守目标处于进行状态，则不懂就问**（只有无人值守时才许自行推断补齐）。
