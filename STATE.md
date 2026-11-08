@@ -68,24 +68,24 @@ Python 代码 [[py_lines]] 行。
 
 | key | value | measured at | replay cmd |
 |---|---|---|---|
-| `md_files` | **9** | 2026-11-08T11:25:40+0800 | `python3 zreflect/facts.py --count -files .md` |
-| `md_lines` | **2809** | 2026-11-08T11:25:40+0800 | `python3 zreflect/facts.py --count -md` |
-| `principle.assertion_lifecycle` | **ok** | 2026-11-08T11:25:40+0800 | `python3 zreflect/check_retractions.py` |
-| `principle.declared_not_globbed` | **ok** | 2026-11-08T11:25:40+0800 | `python3 zreflect/registry.py --gates` |
-| `principle.falsifiable` | **ok** | 2026-11-08T11:25:40+0800 | `python3 zreflect/registry.py --selftest` |
-| `principle.host_agnostic` | **ok** | 2026-11-08T11:25:40+0800 | `python3 -c "import os,sys;w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR','hook'+'SpecificOutput'];bad=[(d,f) for d in ('zreflect','reflect-hooks') for r,_,fs in os.walk(d) for f in fs if f.endswith(('.py','.sh')) and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)"` |
-| `principle.machine_rows` | **ok** | 2026-11-08T11:25:40+0800 | `python3 zreflect/machine.py --selftest` |
-| `principle.no_retired_names` | **ok** | 2026-11-08T11:25:40+0800 | `python3 zreflect/check_stale.py` |
-| `principle.number_once` | **ok** | 2026-11-08T11:25:40+0800 | `python3 zreflect/check_facts.py` |
-| `principle.off_is_visible` | **ok** | 2026-11-08T11:25:40+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry, criteria;gs=registry.gates()[0];p=criteria.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)"` |
-| `principle.only_measured` | **ok** | 2026-11-08T11:25:40+0800 | `python3 -c "import json,sys;d=json.load(open('FACTS.json', encoding='utf-8'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
-| `principle.open_questions_settle` | **ok** | 2026-11-08T11:25:40+0800 | `python3 zreflect/check_questions.py` |
-| `principle.selfcert_harness` | **ok** | 2026-11-08T11:25:40+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)"` |
-| `principle.snapshot_hygiene` | **ok** | 2026-11-08T11:25:40+0800 | `python3 zreflect/check_snapshots.py` |
-| `principle.three_readmes` | **ok** | 2026-11-08T11:25:40+0800 | `python3 zreflect/check_readme_sync.py` |
-| `principle.zero_language` | **ok** | 2026-11-08T11:25:40+0800 | `python3 zreflect/check_i18n.py` |
-| `py_files` | **35** | 2026-11-08T11:25:40+0800 | `python3 zreflect/facts.py --count -files .py` |
-| `py_lines` | **18803** | 2026-11-08T11:25:40+0800 | `python3 zreflect/facts.py --count -lines .py` |
+| `md_files` | **10** | 2026-11-08T11:41:32+0800 | `python3 zreflect/facts.py --count -files .md` |
+| `md_lines` | **689** | 2026-11-08T11:41:32+0800 | `python3 zreflect/facts.py --count -md` |
+| `principle.assertion_lifecycle` | **ok** | 2026-11-08T11:41:32+0800 | `python3 zreflect/check_retractions.py` |
+| `principle.declared_not_globbed` | **ok** | 2026-11-08T11:41:32+0800 | `python3 zreflect/registry.py --gates` |
+| `principle.falsifiable` | **ok** | 2026-11-08T11:41:32+0800 | `python3 zreflect/registry.py --selftest` |
+| `principle.host_agnostic` | **ok** | 2026-11-08T11:41:32+0800 | `python3 -c "import os,sys;w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR','hook'+'SpecificOutput'];bad=[(d,f) for d in ('zreflect','reflect-hooks') for r,_,fs in os.walk(d) for f in fs if f.endswith(('.py','.sh')) and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)"` |
+| `principle.machine_rows` | **ok** | 2026-11-08T11:41:32+0800 | `python3 zreflect/machine.py --selftest` |
+| `principle.no_retired_names` | **ok** | 2026-11-08T11:41:32+0800 | `python3 zreflect/check_stale.py` |
+| `principle.number_once` | **ok** | 2026-11-08T11:41:32+0800 | `python3 zreflect/check_facts.py` |
+| `principle.off_is_visible` | **ok** | 2026-11-08T11:41:32+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry, criteria;gs=registry.gates()[0];p=criteria.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)"` |
+| `principle.only_measured` | **ok** | 2026-11-08T11:41:32+0800 | `python3 -c "import json,sys;d=json.load(open('FACTS.json', encoding='utf-8'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
+| `principle.open_questions_settle` | **ok** | 2026-11-08T11:41:32+0800 | `python3 zreflect/check_questions.py` |
+| `principle.selfcert_harness` | **ok** | 2026-11-08T11:41:32+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)"` |
+| `principle.snapshot_hygiene` | **ok** | 2026-11-08T11:41:32+0800 | `python3 zreflect/check_snapshots.py` |
+| `principle.three_readmes` | **ok** | 2026-11-08T11:41:32+0800 | `python3 zreflect/check_readme_sync.py` |
+| `principle.zero_language` | **ok** | 2026-11-08T11:41:32+0800 | `python3 zreflect/check_i18n.py` |
+| `py_files` | **35** | 2026-11-08T11:41:32+0800 | `python3 zreflect/facts.py --count -files .py` |
+| `py_lines` | **18803** | 2026-11-08T11:41:32+0800 | `python3 zreflect/facts.py --count -lines .py` |
 
 18 facts.
 <!-- /AUTO:FACTS -->
