@@ -264,8 +264,12 @@ def _open_question_names(repo):
     if not os.path.isdir(d):
         return []
     names = [n for n in sorted(os.listdir(d)) if n.endswith(".md")]
+    # Terminal states come from check_questions.CLOSED_STATUS (single origin,
+    # issue #38): wontfix is as closed as resolved -- a decision not to do a
+    # thing must not be re-raised every turn.
+    import check_questions  # noqa: PLC0415
     return [n for n in names if _question_status(_read_question(d, n))
-            != "resolved"][:MAX_LISTED]
+            not in check_questions.CLOSED_STATUS][:MAX_LISTED]
 
 
 def _read_question(d, name):
@@ -377,6 +381,10 @@ def _cases():
         # 01-example.md).
         ("★ next.resolved_question_is_dropped",
          lambda: _resolved_question_dropped()),
+        # wontfix is a terminal state too (issue #38): a decision not to do a
+        # thing must not be re-raised every turn.
+        ("★ next.wontfix_question_is_dropped",
+         lambda: _wontfix_question_dropped()),
         # **The manual entry must activate the language pack**: without the
         # `activate_or_fatal` pass-through, `REFLECT_LANG=zh python3
         # zreflect/next.py` exited 0 with bare codes -- documented usage that
@@ -408,6 +416,31 @@ def _resolved_question_dropped():
         os.makedirs(q)
         with open(os.path.join(q, "01-done.md"), "w", encoding="utf-8") as fh:
             fh.write("# done\n\n**Status:** resolved\n")
+        with open(os.path.join(q, "02-open.md"), "w", encoding="utf-8") as fh:
+            fh.write("# open\n\n**Status:** ready-for-agent\n")
+        names = _open_question_names(d)
+        return names == ["02-open.md"]
+    finally:
+        import shutil  # noqa: PLC0415
+        shutil.rmtree(d, True)
+
+
+def _wontfix_question_dropped():
+    """**A wontfix question must not appear under "what is next"** (issue #38).
+
+    wontfix is a legal terminal state: the user decided not to do the thing.
+    next.py used to filter `!= "resolved"` with its own closed-set, so the
+    decision was re-raised every turn. The fixture has one wontfix and one
+    open: only the open one may be listed. Never use the real repo -- same
+    reason as _resolved_question_dropped.
+    """
+    import tempfile  # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        q = os.path.join(d, "questions")
+        os.makedirs(q)
+        with open(os.path.join(q, "01-wontfix.md"), "w", encoding="utf-8") as fh:
+            fh.write("# wontfix\n\n**Status:** wontfix\n")
         with open(os.path.join(q, "02-open.md"), "w", encoding="utf-8") as fh:
             fh.write("# open\n\n**Status:** ready-for-agent\n")
         names = _open_question_names(d)

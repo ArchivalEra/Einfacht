@@ -2,9 +2,9 @@
  "knobs.dead_default": "`%(file)s` 定义了 `%(name)s` 却**从不使用** —— 声明了默认值但不生效，比没有更坏（让人以为配好了）",
  "knobs.declared_not_read": "`%(file)s` 声明消费 %(knobs)s，但源码里读不到这些旋钮 —— 声明与实现不符（AUTO:GATES 表会撒谎）",
  "knobs.module_only": "knobs 是模块（被各闸门消费）；--selftest 看自证。",
- "knobs.pack_extra_keys": "语言包 %(lang)s 有 %(reference)s 里没有的键（另一侧缺失 ⇒ 那边会看到裸 code）：%(keys)s",
- "knobs.pack_missing_code": "本体会发 `code` 里这些在 %(lang)s 包里没有（%(count)d 条）—— 那个语言的用户会看到裸 code：%(codes)s",
- "knobs.pack_missing_keys": "语言包 %(lang)s 缺少 %(reference)s 里有的键（设了 %(lang)s 的用户会看到裸 code）：%(keys)s",
+ "knobs.pack_extra_keys": "语言包 %(lang)s 有 %(reference)s（参照包）里没有的键（键集不一致 ⇒ 若 %(lang)s 是声明服务的语言，那边读者会看到裸 code；不在 REFLECT_LANGS 里的包是套件自证样本，键集差异不阻塞）：%(keys)s",
+ "knobs.pack_missing_code": "本体会发 `code` 里这些在 %(lang)s 包里没有（%(count)d 条）—— %(lang)s 是声明服务的语言（REFLECT_LANGS），该语言的读者会看到裸 code：%(codes)s",
+ "knobs.pack_missing_keys": "语言包 %(lang)s 缺少参照包 %(reference)s 里有的键（%(count)d 条）—— %(lang)s 在声明服务的集合里（REFLECT_LANGS），缺键处会渲染成裸 code：%(keys)s",
  "knobs.pack_placeholder_mismatch": "语言包 %(lang)s 的 `%(key)s` 占位符名与 %(reference_lang)s 侧不一致（%(reference_lang)s: %(expected_params)s / %(lang)s: %(actual_params)s）—— 渲染会 KeyError",
  "knobs.pack_sync_empty": "语言包目录里一个语言包都没有（%(pack_dir)s）—— 设了 REFLECT_I18N 就得指到真有包的目录：装一个，或把这个旋钮撤掉（撤掉就用套件自带的那份）",
  "knobs.pack_unreadable": "语言包 %(lang)s 读不了（%(error)s）—— 坏包不许被当成「没装」跳过",
@@ -26,6 +26,7 @@
  "knobs.sem.reflect_instruments": "量法登记位；空 = 该规则明说未启用",
  "knobs.sem.reflect_invariants": "声明式不变量规格；空 = 明说未启用",
  "knobs.sem.reflect_lang": "输出语言包名（如 zh/en）；空 = null 包（本体零语言）",
+ "knobs.sem.reflect_langs": "本仓声明服务的语言包名（REFLECT_LANGS，逗号分隔）；未设 = 每个已装包都算（向后兼容）。设了 ⇒ 只对声明集合判完备性，其余目录是套件自证样本",
  "knobs.sem.reflect_locks": "锁定源清单闸门的规格名",
  "knobs.sem.reflect_measure_module": "采集模块名（换仓只改 env 一行；空 = 用占位 measure_example）",
  "knobs.sem.reflect_naked_min": "裸数字阈值（小于它的整数不查）",
@@ -38,9 +39,9 @@
  "knobs.sem.reflect_replay_timeout": "逐字执行器的默认超时秒数",
  "knobs.sem.reflect_retired": "退役组件名清单；空 = 该规则明说未启用",
  "knobs.sem.reflect_retractions": "翻案台账",
+ "knobs.sem.reflect_snapshot_root": "快照闸门扫描的源码目录；空 = 只扫套件自己的 zreflect/（要审你的代码就填你的目录名）",
  "knobs.sem.reflect_stale_days": "测龄报警天数；空 = 该规则明说未启用",
  "knobs.sem.reflect_world": "world 声明（验证对象清单）；缺文件 = 未启用",
  "knobs.sem.reflect_world_line": "world 线覆盖（CI / 特殊跑法）",
- "knobs.usage": "用法：knobs.py [--list|--selftest]（--list = 列出全部 REFLECT_* 旋钮：种类 / 默认值 / 语义）",
- "knobs.sem.reflect_snapshot_root": "快照闸门扫描的源码目录；空 = 只扫套件自己的 zreflect/（要审你的代码就填你的目录名）"
+ "knobs.usage": "用法：knobs.py [--list|--selftest]（--list = 列出全部 REFLECT_* 旋钮：种类 / 默认值 / 语义）"
 }

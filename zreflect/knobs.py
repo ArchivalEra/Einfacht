@@ -135,6 +135,13 @@ REGISTRY = {
                               _Semantic("knobs.sem.reflect_no_principles")),
     "REFLECT_LANG": ("value", "",
                      _Semantic("knobs.sem.reflect_lang")),
+    # Languages this repo **declares it serves** (issue #35): unset = every
+    # installed pack counts (back-compat); set = only these are judged by
+    # pack_coverage/pack_sync -- the other directories are suite self-evidence
+    # samples, not commitments. Naming follows the plural-list knob lineage
+    # (REFLECT_READMES / REFLECT_DOCS).
+    "REFLECT_LANGS": ("list", "",
+                      _Semantic("knobs.sem.reflect_langs")),
     "REFLECT_I18N": ("dir", "",
                      _Semantic("knobs.sem.reflect_i18n")),
     "REFLECT_I18N_ROOT": ("dir", "",
@@ -233,6 +240,26 @@ def docs_names():
     raw = os.environ.get("REFLECT_DOCS", "").strip()
     if not raw:
         raw = REGISTRY["REFLECT_DOCS"][1]         # default from the registry
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def served_langs():
+    """The languages this repo **declares it serves** (`REFLECT_LANGS`, issue #35).
+
+    Unset ⇒ empty list = "every installed pack counts" (the back-compat default:
+    judgment surface unchanged for repos that never set the knob). Set ⇒ only
+    these languages are judged by `pack_coverage_problems` / `pack_sync_problems`;
+    the other pack directories are **suite self-evidence samples** -- a single-
+    pack repo (e.g. `REFLECT_LANG=zh` with en/de copies present only for
+    check_i18n) no longer has to write translations nobody reads.
+
+    ⚠️ "Served" is not "maintained" -- the rejected alternative name implied a
+    promise about translation workload, while declaring a service language is a
+    promise about **readers**.
+    """
+    raw = os.environ.get("REFLECT_LANGS", "").strip()
+    if not raw:
+        return []                                  # unset = no narrowing
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
@@ -821,6 +848,22 @@ def pack_coverage_problems(codes=None, loader=None, discovery=None):
         langs = list((discovery or installed_langs)())
     except PacksUnreadable as e:
         return [M("knobs.pack_unreadable", lang="*", error=e)]
+    served = served_langs()
+    if served:
+        # Issue #35: only declared service languages carry the completeness
+        # promise. Other installed packs are self-evidence samples -- a missing
+        # key there has no reader to show a bare code to, so demanding it
+        # fabricated a victim (issue #35's measured cost: one zh-only repo
+        # writing "Chinese German" nobody reads, gate green).
+        missing_service = [l for l in served if l not in langs]
+        out = []
+        if missing_service:
+            # A declared service language with no pack installed IS a real
+            # break: the declared reader would see bare codes.
+            return [M("knobs.pack_missing_code", lang=l,
+                      count=len(codes) or 1,
+                      codes="*") for l in sorted(missing_service)]
+        langs = [l for l in langs if l in served]
     if not codes or not langs:
         return []                       # zero packs / zero codes: no comparable sides
     out = []
@@ -862,6 +905,15 @@ def pack_sync_problems(loader=None, discovery=None):
         langs = list((discovery or installed_langs)())
     except PacksUnreadable as e:
         return [M("knobs.pack_unreadable", lang="*", error=e)]
+    served = served_langs()
+    if served:
+        # Issue #35: key-set agreement is only promised **between service
+        # languages**. Non-service packs are self-evidence samples; demanding
+        # they match invented a reader that does not exist.
+        served_present = [l for l in served if l in langs]
+        if served_present:
+            langs = served_present
+        # (declared-but-absent is pack_coverage_problems' report, not this one)
     tables, err = _load_tables(langs, load)
     if err:
         return err
@@ -1241,6 +1293,24 @@ def _cases_sync_coverage():
              loader=lambda l: ({"a.b": "x", "c.d": "y"} if l == "en"
                                else {"a.b": "x"}))
          ] == ["knobs.pack_missing_code"]),
+        # Issue #35 three tiers, via REFLECT_LANGS. Each case sets/clears the
+        # knob inline and restores the environment in finally -- no `or True`
+        # tricks (the falsifiability scanner rejects them, and rightly so).
+        ("★ knobs.coverage_served_unset_judges_all", lambda: _served_case(
+            None, ["knobs.pack_missing_code"])),
+        # (2) set => only the declared service languages are judged: en keeps
+        # its promise (both keys present), zh (non-service) missing c.d is NOT
+        # reported -- no fabricated victim.
+        ("★ knobs.coverage_served_narrows_judgement", lambda: _served_case(
+            "en", [])),
+        # (2b) control for (2): the same call with the knob unset reports zh --
+        # proving (2)'s silence came from the narrowing, not from the fixture.
+        ("★ knobs.coverage_served_narrowing_is_from_knob", lambda: _served_case(
+            None, ["knobs.pack_missing_code"])),
+        # (3) declared service language with no pack installed => a REAL red
+        # (the declared reader would see bare codes).
+        ("★ knobs.coverage_served_absent_is_red", lambda: _served_case(
+            "de,en", ["knobs.pack_missing_code"])),
         # **Unreadable directory ≠ no packs installed** (AGENTS discipline 7: if it
         # can't be read, say so; never fabricate a 0).
         # `installed_langs()` used to `return []` on OSError, collapsing broken
@@ -1385,6 +1455,30 @@ def _docs_scanned_by_gates():
     stale = list(check_stale.scanned_docs())
     retr = list(check_retractions.scanned_docs())
     return stale if stale == retr else []          # sides disagree ⇒ empty (guaranteed red)
+
+
+def _served_case(knob_value, expect_codes):
+    """Shared body for the four REFLECT_LANGS coverage cases (issue #35).
+
+    Sets the knob (or clears it), runs one coverage call over a two-pack
+    fixture, restores the environment, and compares the problem codes with the
+    expectation. `expect_codes=[]` = silent (non-service gaps have no reader);
+    non-empty = the declared reader really would see bare codes.
+    """
+    import os  # noqa: PLC0415
+    prev = os.environ.pop("REFLECT_LANGS", None)
+    if knob_value is not None:
+        os.environ["REFLECT_LANGS"] = knob_value
+    try:
+        codes = [p.code for p in pack_coverage_problems(
+            codes={"a.b", "c.d"}, discovery=lambda: ("zh", "en"),
+            loader=lambda l: ({"a.b": "x", "c.d": "y"} if l == "en"
+                              else {"a.b": "x"}))]
+        return codes == expect_codes
+    finally:
+        os.environ.pop("REFLECT_LANGS", None)
+        if prev is not None:
+            os.environ["REFLECT_LANGS"] = prev
 
 
 def _cases():

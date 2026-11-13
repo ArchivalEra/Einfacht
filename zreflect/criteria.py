@@ -65,6 +65,12 @@ ALLOWED_SHELL = (
     # one-line exec)
     "reflect-hooks/pre-commit",
     "reflect-hooks/pre-push",
+    # Assessment recorder template (issue #41): a sourced shell helper -- the
+    # record/declare/finish trio and its selftest are shell-shaped by nature
+    # (consumers source it from their CI steps); output goes to stdout, the
+    # consumer decides where it lands (host_agnostic preserved: no CI platform
+    # name appears here or in the template).
+    "reflect-hooks/quality-record.sh",
 )
 
 

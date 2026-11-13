@@ -2,9 +2,9 @@
  "knobs.dead_default": "`%(file)s` definiert `%(name)s`, nutzt es aber **nie** — ein deklarierter Standardwert ohne Wirkung ist schlimmer als keiner (man glaubt, es sei konfiguriert)",
  "knobs.declared_not_read": "`%(file)s` deklariert, %(knobs)s zu konsumieren, aber der Quelltext liest diese Knöpfe nie — Deklaration widerspricht der Implementierung (die AUTO:GATES-Tabelle würde lügen)",
  "knobs.module_only": "knobs ist ein Modul (von den Toren konsumiert); führe --selftest für seinen Selbsttest aus.",
- "knobs.pack_extra_keys": "das Paket %(lang)s hat Schlüssel, die in %(reference)s fehlen (die andere Seite zeigt dann nackte Codes): %(keys)s",
- "knobs.pack_missing_code": "der Kern emittiert Codes, die im Paket %(lang)s fehlen (davon %(count)d) — Nutzer dieser Sprache würden nackte Codes sehen: %(codes)s",
- "knobs.pack_missing_keys": "im Paket %(lang)s fehlen Schlüssel, die in %(reference)s vorhanden sind (Nutzer von %(lang)s würden nackte Codes sehen): %(keys)s",
+ "knobs.pack_extra_keys": "Paket %(lang)s hat Schluessel, die %(reference)s (Referenzpaket) nicht hat -- Schluesselmengen weichen ab: ist %(lang)s eine deklarierte Serviersprache (REFLECT_LANGS), saehen deren Leser nackte Codes; Pakete ausserhalb von REFLECT_LANGS sind Selbsttest-Proben, Schluesseldrift blockiert nicht: %(keys)s",
+ "knobs.pack_missing_code": "Diese Codes fehlen im %(lang)s-Paket (%(count)d) -- %(lang)s ist eine deklarierte Serviersprache (REFLECT_LANGS), ihre Leser saehen nackte Codes: %(codes)s",
+ "knobs.pack_missing_keys": "Paket %(lang)s fehlen %(count)d Schluessel des Referenzpakets %(reference)s -- %(lang)s steht in der deklarierten Serviermenge (REFLECT_LANGS), dort wuerden nackte Codes erscheinen: %(keys)s",
  "knobs.pack_placeholder_mismatch": "die Platzhalternamen von `%(key)s` im Paket %(lang)s unterscheiden sich von %(reference_lang)s (%(reference_lang)s: %(expected_params)s / %(lang)s: %(actual_params)s) — das Rendern würde KeyError geben",
  "knobs.pack_sync_empty": "das Sprachpaket-Verzeichnis enthält überhaupt kein Paket (%(pack_dir)s) — wenn REFLECT_I18N gesetzt ist, muss es auf ein Verzeichnis zeigen, das tatsächlich Pakete hat: installiere eines, oder lösche den Knopf (Löschen heißt: die mit dem Toolkit gelieferten Pakete verwenden)",
  "knobs.pack_unreadable": "das Paket %(lang)s konnte nicht gelesen werden (%(error)s) — ein kaputtes Paket darf nicht wie nicht installiert übersprungen werden",
@@ -26,6 +26,7 @@
  "knobs.sem.reflect_instruments": "Registerplatz für Messverfahren; leer = diese Regel ist ausdrücklich aus",
  "knobs.sem.reflect_invariants": "deklarative Invarianten-Spezifikation; leer = ausdrücklich aus",
  "knobs.sem.reflect_lang": "Name des Ausgabe-Sprachpakets (z. B. zh/en); leer = Nullpaket (der Kern spricht keine Sprache)",
+ "knobs.sem.reflect_langs": "Sprachen, die dieses Repo bedient (REFLECT_LANGS, kommagetrennt); nicht gesetzt = jedes installierte Paket zaehlt (kompatibel). Gesetzt = nur die deklarierte Menge wird auf Vollstaendigkeit geprueft; andere Verzeichnisse sind Selbsttest-Proben",
  "knobs.sem.reflect_locks": "Spezifikationsname für das Tor der gesperrten Quellen",
  "knobs.sem.reflect_measure_module": "Name des Sammelmoduls (Repo umziehen ändert eine env-Zeile; leer = der Platzhalter measure_example)",
  "knobs.sem.reflect_naked_min": "Schwelle für nackte Zahlen (Ganzzahl-Literale darunter werden nicht geprüft)",
@@ -38,9 +39,9 @@
  "knobs.sem.reflect_replay_timeout": "Standard-Timeout in Sekunden für den wörtlichen Ausführer",
  "knobs.sem.reflect_retired": "Liste pensionierter Komponentennamen; leer = diese Regel ist ausdrücklich aus",
  "knobs.sem.reflect_retractions": "das Widerrufsregister",
+ "knobs.sem.reflect_snapshot_root": "Quellverzeichnis für das Snapshot-Tor; leer = nur zreflect/ des Suites scannen (eigenen Code prüfen: Verzeichnisnamen angeben)",
  "knobs.sem.reflect_stale_days": "Alarm für Messalter in Tagen; leer = diese Regel ist ausdrücklich aus",
  "knobs.sem.reflect_world": "Welt-Deklaration (Liste zu prüfender Dinge); fehlende Datei = aus",
  "knobs.sem.reflect_world_line": "Überschreibung der Welt-Zeile (CI / spezielle Laufmodi)",
- "knobs.usage": "Aufruf: knobs.py [--list|--selftest] (--list = alle REFLECT_*-Schalter: Art / Standard / Bedeutung)",
- "knobs.sem.reflect_snapshot_root": "Quellverzeichnis für das Snapshot-Tor; leer = nur zreflect/ des Suites scannen (eigenen Code prüfen: Verzeichnisnamen angeben)"
+ "knobs.usage": "Aufruf: knobs.py [--list|--selftest] (--list = alle REFLECT_*-Schalter: Art / Standard / Bedeutung)"
 }

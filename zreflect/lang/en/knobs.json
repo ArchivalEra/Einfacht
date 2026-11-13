@@ -2,9 +2,9 @@
  "knobs.dead_default": "`%(file)s` defines `%(name)s` but **never uses it** — a declared default that has no effect is worse than none (it makes people think it is configured)",
  "knobs.declared_not_read": "`%(file)s` declares it consumes %(knobs)s but the source never reads those knobs — declaration disagrees with implementation (the AUTO:GATES table would lie)",
  "knobs.module_only": "knobs is a module (consumed by the gates); run --selftest for its self-test.",
- "knobs.pack_extra_keys": "pack %(lang)s has keys absent from %(reference)s (the other side then shows bare codes): %(keys)s",
- "knobs.pack_missing_code": "the core emits codes that are absent from the %(lang)s pack (%(count)d of them) — users on that language would see bare codes: %(codes)s",
- "knobs.pack_missing_keys": "pack %(lang)s is missing keys present in %(reference)s (users on %(lang)s would see bare codes): %(keys)s",
+ "knobs.pack_extra_keys": "Pack %(lang)s has keys absent from %(reference)s (the reference pack) -- key sets disagree: if %(lang)s is a declared service language (REFLECT_LANGS), its readers would see bare codes; packs outside REFLECT_LANGS are self-evidence samples, key-set drift does not block: %(keys)s",
+ "knobs.pack_missing_code": "These codes the source emits are missing from the %(lang)s pack (%(count)d) -- %(lang)s is a declared service language (REFLECT_LANGS), its readers would see bare codes: %(codes)s",
+ "knobs.pack_missing_keys": "Pack %(lang)s lacks %(count)d keys present in reference pack %(reference)s -- %(lang)s is in the declared service set (REFLECT_LANGS), those spots would render as bare codes: %(keys)s",
  "knobs.pack_placeholder_mismatch": "pack %(lang)s's `%(key)s` placeholder names differ from %(reference_lang)s (%(reference_lang)s: %(expected_params)s / %(lang)s: %(actual_params)s) — rendering would KeyError",
  "knobs.pack_sync_empty": "the language-pack directory holds no pack at all (%(pack_dir)s) — if REFLECT_I18N is set it must point at a directory that actually has packs: install one, or unset the knob (unsetting means: use the packs that ship with the toolkit)",
  "knobs.pack_unreadable": "pack %(lang)s could not be read (%(error)s) — a broken pack must not be skipped as if uninstalled",
@@ -26,6 +26,7 @@
  "knobs.sem.reflect_instruments": "measurement-method registry slot; empty = that rule is explicitly off",
  "knobs.sem.reflect_invariants": "declarative invariants spec; empty = explicitly off",
  "knobs.sem.reflect_lang": "output language pack name (e.g. zh/en); empty = null pack (the core speaks no language)",
+ "knobs.sem.reflect_langs": "Languages this repo declares it serves (REFLECT_LANGS, comma-separated); unset = every installed pack counts (back-compat). Set = only the declared set is judged for completeness; other directories are self-evidence samples",
  "knobs.sem.reflect_locks": "spec name for the locked-sources gate",
  "knobs.sem.reflect_measure_module": "collector module name (re-homing a repo changes one env line; empty = the placeholder measure_example)",
  "knobs.sem.reflect_naked_min": "bare-number threshold (integer literals below it are not checked)",
@@ -38,9 +39,9 @@
  "knobs.sem.reflect_replay_timeout": "default timeout in seconds for the verbatim executor",
  "knobs.sem.reflect_retired": "list of retired component names; empty = that rule is explicitly off",
  "knobs.sem.reflect_retractions": "the retractions ledger",
+ "knobs.sem.reflect_snapshot_root": "source dir scanned by the snapshot gate; empty = scan only the suite's own zreflect/ (name your dir to audit your own code)",
  "knobs.sem.reflect_stale_days": "measurement-age alarm in days; empty = that rule is explicitly off",
  "knobs.sem.reflect_world": "world declaration (list of things to verify); missing file = off",
  "knobs.sem.reflect_world_line": "world line override (CI / special run modes)",
- "knobs.usage": "usage: knobs.py [--list|--selftest] (--list = every REFLECT_* knob: kind / default / meaning)",
- "knobs.sem.reflect_snapshot_root": "source dir scanned by the snapshot gate; empty = scan only the suite's own zreflect/ (name your dir to audit your own code)"
+ "knobs.usage": "usage: knobs.py [--list|--selftest] (--list = every REFLECT_* knob: kind / default / meaning)"
 }
