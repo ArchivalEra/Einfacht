@@ -95,3 +95,19 @@ jobs:
             REFLECT_LANG=$lang python zreflect/harness.py
           done
         shell: bash
+
+      # ── 第五档：shellcheck（外部验证既有 shell 面，issue #41 落实轮）──
+      # 判据边界写在 `.shellcheckrc`：SC1007（CDPATH= 环境赋值）/SC1090（非静态
+      # source 是插件契约）/SC2016（夹具字面量故意单引号）/SC2034（自证形状）
+      # 四类豁免逐类留痕。它不是新 lint 规则——是对 5 个 shell 文件的独立复核；
+      # 套件判据面（zreflect/*.py 的 ALLOWED_SHELL 白名单）不受影响。
+      - name: shellcheck（5 个 shell 面，白名单在 .shellcheckrc）
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck gates-selftest.sh \
+                     reflect-hooks/einfacht-env.sh \
+                     reflect-hooks/pre-commit \
+                     reflect-hooks/pre-push \
+                     reflect-hooks/quality-record.sh
+        shell: bash
