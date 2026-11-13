@@ -979,7 +979,7 @@ def _key_set_problems(lang, ref_lang, ref, other):
     only_other = sorted(set(other) - set(ref))
     if only_ref:
         out.append(M("knobs.pack_missing_keys", lang=lang, reference=ref_lang,
-                     keys=", ".join(only_ref[:8])))
+                     keys=", ".join(only_ref[:8]), count=len(only_ref)))
     if only_other:
         out.append(M("knobs.pack_extra_keys", lang=lang, reference=ref_lang,
                      keys=", ".join(only_other[:8])))

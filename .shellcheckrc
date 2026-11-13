@@ -1,0 +1,27 @@
+# ShellCheck 项目级白名单（issue #41 落实轮，2026-11-13）。
+# 五个 shell 面（gates-selftest.sh / reflect-hooks/{einfacht-env.sh,pre-commit,
+# pre-push,quality-record.sh}）扫过：15 findings 全部落入以下四类**有意形状**，
+# 非缺陷；逐类理由留痕于此，新 shell 文件进来时按同口径审。
+#
+# SC1007 "Remove space after ="
+#   本仓惯用 $(CDPATH= cd -- "$(dirname -- "$0")" && pwd)：CDPATH= 是
+#   环境赋值（让 cd 忽略 CDPATH，防意外跳转），不是赋值残留。语义有自证：
+#   CDPATH=/nonexistent cd -- /tmp 仍正常。5 个文件里 4 处全属此形状。
+#
+# SC1090 "can't follow non-constant source"
+#   einfacht-env.sh 按插件契约从变量路径 source（EINFACHT_PLUGIN_DIR 或 $0
+#   推导），quality-record.sh 自证 re-source 自身以清参重入。两处都是
+#   非静态路径是功能，不是疏忽。
+#
+# SC2016 "expressions don't expand in single quotes"
+#   einfacht-env.sh 生成夹具脚本时故意用单引号——写进去的就是字面量
+#   $(dirname -- "$0")，让夹具在运行时自己求值。改双引号反而错。
+#
+# SC2034 "out appears unused"
+#   quality-record.sh 自证捕获子 shell stdout 用于失败信息展示（head -1），
+#   变量在错误路径下被引用；正常路径下不读是设计。
+
+disable=SC1007
+disable=SC1090
+disable=SC2016
+disable=SC2034
