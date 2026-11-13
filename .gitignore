@@ -29,6 +29,7 @@
 !/skills/
 !/docs/
 !/.github/
+!/.shellcheckrc
 
 # ---- build / runtime noise: ignored even inside whitelisted dirs ----
 __pycache__/
