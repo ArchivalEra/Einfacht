@@ -1250,6 +1250,11 @@ CASES = [
     # always-red (only in repos that have a local carrier -- CI stayed green).
     ("★ facts.host_env_carrier_not_copied",
      lambda: _host_env_carrier_not_copied()),
+    # A private-phase gate (runs_at not in BUILTIN_PHASES) must not enter a
+    # fixture: its enabling knob (REFLECT_PHASES) lives in the env file #34
+    # excludes -- gate without its living condition = unknown_phase FATAL.
+    ("★ facts.private_phase_gate_not_copied",
+     lambda: _private_phase_gate_not_copied()),
     # **Real-project shape**: a repo with build.sh / src / an existing README must
     # also complete the run. There was a time when "any .sh in the repo => the whole
     # chain FATAL"; this is that regression's guard.
@@ -1356,11 +1361,23 @@ def _copy_suite_into(d):
     dst_z = os.path.join(d, "zreflect")
     os.makedirs(dst_z)
     # The roster anchors on the suite dir too (explicit zdir passed -- discovery
-    # unchanged, only the anchor moves to the suite's physical location)
+    # unchanged, only the anchor moves to the suite's physical location).
+    # ⚠️ Only **built-in-phase gates** are copied (issue #37): discovery collects
+    # every file with a `GATE = meta(...)` line, including the host's own
+    # private-phase gates (runs_at="lab" etc.). Copying one drags a gate into the
+    # fixture whose enabling knob (REFLECT_PHASES) lives in the env file that
+    # #34 just excluded -- gate present, its living condition absent =>
+    # `registry.unknown_phase` FATAL => all bootstrap selftests structurally red.
+    # A private phase is the host's own execution surface; a fresh repo's
+    # bootstrap must not inherit it (same principle as the host wiring note
+    # below).
     _gs, _missing = registry.gates(src_z)
     mods, _missing2 = registry.modules(src_z)
-    roster = sorted({os.path.basename(g["file"]) for g in _gs}
-                    | {os.path.basename(m["file"]) for m in mods})
+    builtin = set(registry.BUILTIN_PHASES)
+    roster = sorted(
+        {os.path.basename(g["file"]) for g in _gs
+         if (g.get("runs_at") or "commit") in builtin}
+        | {os.path.basename(m["file"]) for m in mods})
     for rel in roster:
         src = os.path.join(src_z, rel)
         if os.path.isfile(src):
@@ -1536,6 +1553,51 @@ def _host_env_carrier_not_copied():
         return (not os.path.isfile(os.path.join(hooks, "Einfacht.env"))
                 and os.path.isfile(os.path.join(hooks, "gate.py"))
                 and os.path.isfile(os.path.join(hooks, "einfacht-env.sh")))
+    finally:
+        shutil.rmtree(d, True)
+
+
+def _private_phase_gate_not_copied():
+    """A private-phase gate must not enter a fixture (issue #37).
+
+    The red-test shape: a file declaring `GATE = meta(..., runs_at="lab")` IS
+    collected by discovery, but copying it drags a gate whose enabling knob
+    (REFLECT_PHASES) lives in the env file #34 excluded -- gate present, its
+    living condition absent => `registry.unknown_phase` FATAL. Three tiers:
+    (a) every GATE declaration in the fixture declares a built-in phase (the
+    filter is the phase, not "copy nothing" -- parsed by AST, so literals in
+    comments/docstrings do not count); (b) built-in-phase gates and platform
+    modules ARE copied (the copy happened); (c) this repo itself keeps its
+    own files untouched (filter, not deletion).
+    """
+    import ast  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    builtin = ("commit", "start-of-work")
+    d = tempfile.mkdtemp()
+    try:
+        _copy_suite_into(d)
+        fixture_z = os.path.join(d, "zreflect")
+        for f in sorted(os.listdir(fixture_z)):
+            if not f.endswith(".py"):
+                continue
+            tree = ast.parse(open(os.path.join(fixture_z, f),
+                                  encoding="utf-8", errors="replace").read())
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name)
+                        and node.func.id == "meta"):
+                    continue
+                kw = {k.arg: k.value for k in node.keywords}
+                runs = kw.get("runs_at")
+                if isinstance(runs, ast.Constant) and runs.value not in builtin:
+                    return False                 # (a) non-built-in phase copied
+        has_platform = (os.path.isfile(os.path.join(fixture_z, "gate.py"))
+                        and os.path.isfile(os.path.join(fixture_z,
+                                                        "check_facts.py")))
+        repo_z = os.path.dirname(os.path.abspath(__file__))
+        return (has_platform                          # (b) copy did happen
+                and os.path.isfile(os.path.join(repo_z, "gate.py")))  # (c) kept
     finally:
         shutil.rmtree(d, True)
 

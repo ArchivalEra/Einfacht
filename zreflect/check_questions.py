@@ -10,6 +10,19 @@ Rules and rationale:
 
   - `Settling:` must be a **repo-relative path** or a directly runnable command;
     never "see some note" -- a settler pointing at prose is no settler at all.
+  - **A `Settling:` must be a command, not a claim** (issue #36): "根目录文件数=18"
+    inside the prose is invisible to this gate -- it judges the first token
+    (a path must exist) and the two-outcome shape, nothing else. Prose
+    describing the expected state is a claim no criterion can verify; the
+    ticket's settler must BE the verifier (rc-decidable).
+  - **A whitelist is not a claim's coverage** (issue #36, four specimen classes
+    of half-a-criterion): (1) a whitelist lists fewer items than the claim --
+    the gate green-lights the delta; (2)/(3) a ported criterion missing its
+    predicate body or its case registration silently half-runs; (4) a filter
+    emptying the input set runs, passes, and checks nothing. If a gate does
+    not cover a claimed surface it must **say so** (off_is_visible: not
+    applicable must be stated, not silent) -- and a coverage declaration
+    itself needs a judgment, or the silence just moved into the declaration.
   - The two outcomes must yield **different exit codes / distinguishable output**,
     otherwise the settler can falsify nothing.
   - **A question whose settler does not exist yet is a legal question** -- in that
@@ -33,6 +46,12 @@ from i18n import M  # noqa: E402
 
 VALID_STATUS = ("needs-triage", "needs-info", "ready-for-agent",
                 "ready-for-human", "wontfix", "resolved")
+# Terminal states: once a question carries one of these, consumers stop listing
+# it as pending. **Single origin** (issue #38): next.py used to keep its own
+# closed-set ("!= resolved"), so wontfix -- a legal terminal state -- was
+# re-raised every turn. Consumers import CLOSED_STATUS / is_closed; nobody
+# re-lists the states.
+CLOSED_STATUS = ("wontfix", "resolved")
 # Domain words that must appear in a question body (vocabulary of the convention
 # docs -- data, not user-visible messages, hence **not** in the language pack).
 # Assembled from code points: this file sits inside check_i18n's scan surface, so
@@ -99,7 +118,22 @@ def status_of(text):
 
 
 def is_resolved(text):
-    return status_of(text) == "resolved"
+    """Terminal-state check. **All closed states, not just "resolved"** (issue #38).
+
+    wontfix is a legal terminal state (VALID_STATUS member): a question closed
+    as "we decided not to do this" is just as closed as one closed with an
+    answer. next.py used to filter `!= "resolved"` with its own copy of the
+    closed-set -- a wontfix ticket was re-raised every turn, i.e. the user was
+    asked to redo the same decision forever. The set lives here (single
+    origin, R-017 lineage); callers ask via is_closed / is_resolved, never by
+    re-listing states.
+    """
+    return status_of(text) in CLOSED_STATUS
+
+
+def is_closed(text):
+    """Same set as `is_resolved` (alias so callers can name intent)."""
+    return is_resolved(text)
 
 
 def _status_problems(name, text):
@@ -218,6 +252,20 @@ def _cases():
              exists=lambda p: False) == []),
         ("questions.resolved_also_compliant", lambda: problems(
             {"questions/03.md": _q(status="resolved")}, exists=lambda p: True) == []),
+        # wontfix is a legal terminal state too (issue #38): the gate accepts it
+        # (no "unknown status") -- a decision not to do a thing is a conclusion.
+        ("questions.wontfix_also_compliant", lambda: problems(
+            {"questions/09.md": _q(status="wontfix")}, exists=lambda p: True) == []),
+        # The closed-set has exactly two members and lives in one place: both
+        # terminal states are closed, every non-terminal state is open. This is
+        # the four-state table from issue #38 (resolved/wontfix/needs-info/
+        # ready-for-agent), pinned on the single origin.
+        ("★ questions.closed_status_table", lambda:
+            is_resolved(_q(status="resolved")) is True
+            and is_resolved(_q(status="wontfix")) is True
+            and is_resolved(_q(status="needs-info")) is False
+            and is_resolved(_q(status="ready-for-agent")) is False
+            and is_closed(_q(status="wontfix")) is True),
         # (2) what must be reported is reported
         ("★ questions.missing_settling",
          lambda: [p.code for p in problems(
