@@ -144,6 +144,22 @@ file:line），由 owner 会话裁决后落补丁，**不许直写**。
 
 直写先撞 EACCES；绕过 chmod 硬写视为越界。
 
+## 落库通道：**永久**走「本地修改 → 报告 → 站长落库」
+
+**PlumHelper（只读）是节点侧 gh 凭据的终态，不是过渡。** ArchivalEra 的
+token 不再下发，全网不存在节点写路径：`git push` 任何分支都 403（实测
+2026-11-13，`denied to PlumHelper`），PR 分支同样推不上去。**不要等待凭据
+恢复，不要重试 push，不要试图获取写权限** —— 这些不是故障，是设计。
+
+交付流程（三步，无第四步）：
+
+1. 本地完成修改，闸门全绿（`registry --run commit` + `harness.py`）；
+2. 把变更内容报告给 wo-u-maintainer（diff 摘要 / finding 清单 / 证据）；
+3. 站长侧代为落库（合入 main），合并后本地 `git pull` 对齐。
+
+判据状态照常写进报告（`ran/off/failed` 计数与名单、CI run 链接），站长据此
+裁决。本地 commit 照常做——commit 不经 gh，不受只读影响；只有 push 走不通。
+
 ## 不懂就问
 
 **如果非无人值守目标处于进行状态，则不懂就问**（只有无人值守时才许自行推断补齐）。
