@@ -1,5 +1,4 @@
 {
- "replay.all_skipped": "all %(count)d facts declare replay=False with no witness and no calibration ⇒ this gate checked nothing — keep at least one replayable fact; for expensive facts attach a witness (issue #5) so their provenance is checked on every commit; if the whole repo does not apply, set REFLECT_REPLAY=off and say so (a blanket exemption is not a pass)",
  "replay.bad_timeout": "REFLECT_REPLAY_TIMEOUT=%(value)r is not a number ⇒ using the default %(default).0fs",
  "replay.calibrate_command_failed": "`%(key)s` instrument calibration **command failed** (rc=%(return_code)s): `%(command)s` — the calibration command itself is dead (a calibration must be cheap, harmless, read-only)",
  "replay.calibrate_mismatch": "`%(key)s` instrument calibration mismatch: calibrate=%(actual)s vs expected=%(expected)s — the instrument is distorted (command succeeds, value is stable, replay always \"passes\", yet it may not be measuring what you think; first prove the instrument can see X using a known sample that contains X, then count)",
@@ -13,11 +12,10 @@
  "replay.off": "Replay gate: REFLECT_REPLAY=off ⇒ this gate is disabled (stated, not pretended as checked — for the few entries that need build artifacts use replay=False individually, do not turn off the whole gate)",
  "replay.ok": "Replay gate: OK (%(count)d facts replayed verbatim; stdout matches the ledger%(skipped)s%(witnessed)s%(calibrated)s)",
  "replay.ok_calibrated": ", %(count)d calibrated",
- "replay.ok_skipped": ", %(count)d declared replay=False and were not run",
  "replay.ok_witnessed": ", %(count)d witnessed",
  "replay.principle_is_off": "principle `%(key)s` came back **off** (not enabled): %(detail)s — off is not a pass. Command: %(command)s",
  "replay.principle_said_nothing": "principle `%(key)s` answered with **nothing** (empty stdout) — that cannot be told apart from 'never ran'. Command: %(command)s",
- "replay.skip_without_reason": "fact `%(key)s` sets `replay: false` with no `replay_why` -- a skip is an off state: it must say why (build artifact / different every run), otherwise a fact that silently stopped being checkable looks the same as one that passes",
+ "replay.skip_is_gone": "fact `%(key)s` sets `replay: false` -- there is no opt-out tier any more: a fact that cannot be re-run in this environment belongs in HISTORY, not in the ledger. An opt-out with a prose reason is indistinguishable from a fact that silently stopped being checked",
  "replay.timeout": "`%(key)s` replay **timed out** (%(seconds).0fs): `%(command)s` — entries that need to start services or build should set replay=False, do not treat a timeout as data. Note: after a reboot the first cold-start run may time out (cold filesystem; it usually returns in a second once caches are warm) — rerun once before judging, or raise REFLECT_REPLAY_TIMEOUT",
  "replay.title": "Replay gate",
  "replay.too_deep": "replay nesting too deep (depth %(depth)d, limit %(limit)d) — commands in the ledger form a cycle: some principle's cmd triggers replay again. Fix the ledger; do not raise the limit",

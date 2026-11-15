@@ -24,10 +24,11 @@ The principles (all paid for over there; collectors must obey them):
      payloads, timestamp-like values) store **one real sampled
      measurement**, paired with a `*_stable` stability flag key pair (the
      consumer side has two tiers: the stable tier is judged verbatim, the
-     unstable tier structurally), or with explicit `replay=False`;
-     **bare storage is forbidden** -- bare storage keeps the replay gate red
-     forever, until the whole gate gets muted with `REFLECT_REPLAY=off`,
-     which is the real unsupervised state.)
+     unstable tier structurally). **There is no opt-out**: a value that cannot
+     be re-run in this environment does not enter the ledger at all -- it goes
+     to HISTORY. (A `replay=False` tier existed until it measured to zero
+     users; its "reason" was prose nothing could verify, so "stopped being
+     checkable" and "passes" looked identical.)
   3. **Say so when you cannot read it**: artifact missing (different machine
      / disk not mounted) => `unavailable(what, why)`, and let the caller
      decide whether to warn or skip. **Never invent a number** -- 0 is a
@@ -60,12 +61,12 @@ executes it verbatim at the repo root (bash + `pipefail`, so pipes no longer
 swallow errors), and its stdout, stripped of leading/trailing whitespace,
 must **equal** the ledger value -- so it may only print a **bare value**; "a
 whole line containing the value" is human-readable but machine-undecidable.
-Measurement methods that need a service or a built artifact are outside
-replay: `fact(value, cmd, source, replay=False)` opts out explicitly, and
-each repo's own higher-level gate takes over.
+Measurement methods that need a service or a built artifact are **outside the
+ledger**: there is no opt-out flag, because an opt-out with a prose reason is
+indistinguishable from a fact that silently stopped being checked.
 (issue #5: expensive facts must not land in the **never-rechecked** tier --
 attach a cheap witness
-`fact(value, cmd, source, replay=False, witness=..., witness_expect=...)`:
+`fact(value, cmd, source, witness=..., witness_expect=...)`:
 the value is not re-played verbatim, but the **provenance/context** ("the
 tool/inputs that produced it are the ones I think they are") really runs at
 every commit, with the same criterion as the bare-value contract. Both must

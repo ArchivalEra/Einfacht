@@ -132,7 +132,7 @@ def changed_keys(old_facts, new_facts):
     return out
 
 
-def fact(value, cmd, source, note="", replay=True, replay_why=None,
+def fact(value, cmd, source, note="",
          witness=None, witness_expect=None,
          calibrate=None, calibrate_expect=None, kind="value"):
     """Make one fact: value + re-run command + source (+ optional note).
@@ -145,15 +145,15 @@ def fact(value, cmd, source, note="", replay=True, replay_why=None,
     gate will read it as a mismatch. This contract is the premise for "re-runnable"
     being judgeable at all.
 
-    Entries that start services / need build artifacts and cannot run in this
-    environment at all: write `replay=False` **plus `replay_why`** -- the replay
-    gate skips them but reports a skip with no stated reason, because a skip is
-    an off state and "silently stopped being checkable" must not look like "it
-    passed". It also alarms when **every entry is exempted** (exemption has a
-    roster, it is not silent).
+    **There is no opt-out.** A fact that cannot be re-run in this environment
+    does not belong in the ledger -- it belongs in HISTORY. A "skip with a
+    reason" tier existed until it was measured to have zero users: the reason
+    was prose nothing could verify, so "this fact stopped being checkable" and
+    "this fact passes" looked identical in the report. If a value needs a build
+    artifact, either bring the artifact into the check or drop the fact.
 
-    **Third tier: witness (issue #5)** -- an expensive fact with `replay=False`
-    can carry a **cheap witness**: `witness` (a cheap, harmless, read-only
+    **Third tier: witness (issue #5)** -- an expensive fact can carry a
+    **cheap witness**: `witness` (a cheap, harmless, read-only
     command) + `witness_expect` (the expected stdout). Witness is **orthogonal**
     to `replay`: the expensive fact's value is not re-run verbatim, but its
     **provenance/context** ("the tool/input that produced it is the one I think
@@ -188,7 +188,7 @@ def fact(value, cmd, source, note="", replay=True, replay_why=None,
     d = {"value": value, "cmd": cmd, "source": source,
          "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
          "first_seen": time.strftime("%Y-%m-%d")}
-    _fill_optional(d, note, replay, replay_why, witness, witness_expect,
+    _fill_optional(d, note, witness, witness_expect,
                    calibrate, calibrate_expect, kind)
     return d
 
@@ -206,7 +206,7 @@ def _require_pairs(*pairs):
             fatal_exit(M("ledger.shape_incomplete", name=name))
 
 
-def _fill_optional(d, note, replay, replay_why, witness, witness_expect,
+def _fill_optional(d, note, witness, witness_expect,
                    calibrate, calibrate_expect, kind):
     """Fill the optional fields into the entry, only when given.
 
@@ -217,10 +217,6 @@ def _fill_optional(d, note, replay, replay_why, witness, witness_expect,
     """
     if note:
         d["note"] = note
-    if not replay:
-        d["replay"] = False
-        if replay_why:
-            d["replay_why"] = replay_why
     if witness is not None:
         d["witness"] = witness
         d["witness_expect"] = witness_expect

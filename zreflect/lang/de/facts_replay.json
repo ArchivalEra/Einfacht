@@ -1,5 +1,4 @@
 {
- "replay.all_skipped": "alle %(count)d Fakten deklarieren replay=False ohne Zeugen und ohne Kalibrierung ⇒ dieses Tor hat nichts geprüft — halte mindestens einen wiederholbaren Fakt; für teure Fakten hänge einen Zeugen an (issue #5), damit ihre Herkunft bei jedem Commit geprüft wird; wenn das ganze Repo nicht zutrifft, setze REFLECT_REPLAY=off und sage es (eine pauschale Befreiung ist kein Bestehen)",
  "replay.bad_timeout": "REFLECT_REPLAY_TIMEOUT=%(value)r ist keine Zahl ⇒ Standard %(default).0fs wird verwendet",
  "replay.calibrate_command_failed": "`%(key)s` Instrumenten-Kalibrierung **Befehl fehlgeschlagen** (rc=%(return_code)s): `%(command)s` — der Kalibrierungsbefehl selbst ist tot (eine Kalibrierung muss billig, harmlos, schreibgeschützt sein)",
  "replay.calibrate_mismatch": "`%(key)s` Instrumenten-Kalibrierung passt nicht: calibrate=%(actual)s vs erwartet=%(expected)s — das Instrument ist verzerrt (Befehl gelingt, Wert stabil, Wiederholung \"besteht\" immer, und doch misst es vielleicht nicht, was du denkst; beweise zuerst mit einer bekannten Probe, die X enthält, dass das Instrument X sieht, dann zähle)",
@@ -13,11 +12,10 @@
  "replay.off": "Wiederholungs-Tor: REFLECT_REPLAY=off ⇒ dieses Tor ist abgeschaltet (gesagt, nicht als geprüft ausgegeben — für die wenigen Einträge, die Build-Artefakte brauchen, nutze einzeln replay=False, schalte nicht das ganze Tor ab)",
  "replay.ok": "Wiederholungs-Tor: OK (%(count)d Fakten wörtlich neu ausgeführt; stdout entspricht dem Register%(skipped)s%(witnessed)s%(calibrated)s)",
  "replay.ok_calibrated": ", %(count)d kalibriert",
- "replay.ok_skipped": ", %(count)d mit replay=False deklariert und nicht ausgeführt",
  "replay.ok_witnessed": ", %(count)d mit Zeugen",
  "replay.principle_is_off": "Prinzip `%(key)s` kam **aus** zurück (nicht aktiviert): %(detail)s — aus ist kein Bestehen. Befehl: %(command)s",
  "replay.principle_said_nothing": "Prinzip `%(key)s` hat **nichts** gesagt (stdout leer) — das ist nicht von 'nie gelaufen' zu unterscheiden. Befehl: %(command)s",
- "replay.skip_without_reason": "Fakt `%(key)s` setzt `replay: false` ohne `replay_why` -- ein Überspringen ist ein Off-Zustand: es muss begründet werden (Build-Artefakt / bei jedem Lauf anders), sonst sieht ein still nicht mehr prüfbarer Fakt aus wie ein bestandener",
+ "replay.skip_is_gone": "Fakt `%(key)s` setzt `replay: false` -- eine Ausnahmeklasse gibt es nicht mehr: ein Fakt, der in dieser Umgebung nicht wiederholbar ist, gehört nach HISTORY, nicht ins Register. Eine Ausnahme mit Prosa-Begründung ist von einem still nicht mehr geprüften Fakt nicht unterscheidbar",
  "replay.timeout": "`%(key)s` Wiederholung **Zeitüberschreitung** (%(seconds).0fs): `%(command)s` — Einträge, die Dienste starten oder bauen müssen, sollten replay=False setzen; behandle eine Zeitüberschreitung nicht als Daten. Hinweis: nach einem Neustart kann der erste Kaltstart-Lauf eine Zeitüberschreitung haben (kaltes Dateisystem; sobald die Caches warm sind, kehrt es meist in einer Sekunde zurück) — führe vor dem Urteil einmal erneut aus, oder erhöhe REFLECT_REPLAY_TIMEOUT",
  "replay.title": "Wiederholungs-Tor",
  "replay.too_deep": "Replay-Verschachtelung zu tief (Tiefe %(depth)d, Grenze %(limit)d) — die Befehle im Register bilden einen Zyklus: das Kommando eines Prinzips löst erneut Replay aus. Register korrigieren; Grenze nicht erhöhen",

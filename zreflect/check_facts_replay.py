@@ -101,14 +101,14 @@ def _replay_one(k, raw_entry, run, seconds, out, stats):
     """
     entry = raw_entry if isinstance(raw_entry, dict) else {"value": raw_entry}
     cmd = str(entry.get("cmd") or "").strip()
+    # **There is no "skip" tier.** A fact that cannot be re-run does not belong
+    # in the ledger -- it belongs in HISTORY. An exemption flag with a reason
+    # field is still an exemption: the reason is prose nothing can verify, which
+    # makes "this fact stopped being checkable" indistinguishable from "it
+    # passes". Measured before removal: this repo's own ledger had zero
+    # `replay: false` entries, so the tier had no users -- only a door.
     if entry.get("replay") is False:
-        # **A skip is an off state**: it must say why, exactly like a gate that
-        # can go off. Silence here is the cheapest place to hide a fact that
-        # stopped being checkable -- and the docstring always claimed "an
-        # exemption with a roster and a stated reason" while nothing checked it.
-        if not str(entry.get("replay_why") or "").strip():
-            out.append(M("replay.skip_without_reason", key=k))
-        stats["skipped"] += 1
+        out.append(M("replay.skip_is_gone", key=k))
         return
     if not cmd:
         out.append(M("replay.no_cmd", key=k))
@@ -264,7 +264,7 @@ def _run_probes(f, run, seconds, out, stats):
 
 
 def replay_all(ledger, runner=None):
-    """Replay entry by entry, returning {problems, ok, attempts, skipped}. **Side effects flow only through runner**.
+    """Replay entry by entry, returning {problems, ok, attempts}. **Side effects flow only through runner**.
 
     `runner(cmd) -> (rc, stdout)` is injectable (the selftest uses a fake
     runner -- once the real shell enters the selftest, the selftest depends on
@@ -273,13 +273,13 @@ def replay_all(ledger, runner=None):
     if _depth() >= _MAX_DEPTH:
         return {"problems": [M("replay.too_deep", depth=_depth(),
                                limit=_MAX_DEPTH)],
-                "ok": 0, "attempts": 0, "ran": 0, "skipped": 0,
+                "ok": 0, "attempts": 0, "ran": 0,
                 "witness_attempts": 0, "witnessed": 0,
                 "calibrate_attempts": 0, "calibrated": 0}
     run = runner or run_cmd
     out = []
     f = facts_of(ledger)
-    stats = {"ok": 0, "attempts": 0, "ran": 0, "skipped": 0,
+    stats = {"ok": 0, "attempts": 0, "ran": 0,
              "witness_attempts": 0, "witnessed": 0,
              "calibrate_attempts": 0, "calibrated": 0}
     if not f:
@@ -293,9 +293,6 @@ def replay_all(ledger, runner=None):
     if stats["attempts"] and stats["ran"] == 0:
         out.append(M("replay.none_ran", attempts=stats["attempts"]))
     _run_probes(f, run, seconds, out, stats)
-    if not stats["attempts"] and stats["skipped"] and not stats["witness_attempts"] \
-            and not stats["calibrate_attempts"]:
-        out.append(M("replay.all_skipped", count=stats["skipped"]))
     stats["problems"] = out
     return stats
 
@@ -319,11 +316,10 @@ def run(argv):
     if not os.path.exists(p):
         return fatal(M("replay.ledger_missing", name=name))
     r = replay_all(load_or_fatal(p))
-    tail = str(M("replay.ok_skipped", count=r["skipped"])) if r["skipped"] else ""
     wtail = str(M("replay.ok_witnessed", count=r["witnessed"])) if r["witnessed"] else ""
     ctail = str(M("replay.ok_calibrated", count=r["calibrated"]) if r["calibrated"] else "")
     return finish(M("replay.title"), r["problems"],
-                  M("replay.ok", count=r["ok"], skipped=tail,
+                  M("replay.ok", count=r["ok"],
                     witnessed=wtail, calibrated=ctail))
 
 
@@ -332,19 +328,17 @@ LED = {"facts": {"n": {"value": 12, "cmd": "c"}}}
 
 
 
+CMDBY = lambda c: (0, {"ca": "1", "cb": "2"}.get(c, c))   # a runner that answers per command
+
+
 def _cases_fixture():
     """Build the fixture ledgers + rendering closures. Returns a dict, fed to the three group functions."""
     multi = {"facts": {"a": {"value": 1, "cmd": "ca"},
-                       "b": {"value": 2, "cmd": "cb", "replay": False,
-                             "replay_why": "needs a build artifact"}}}
-    wit = {"facts": {"expensive": {"value": "bench-42", "cmd": "run-bench",
-                                    "replay": False,
-                                    "replay_why": "benchmark needs the built artifact",
+                       "b": {"value": 2, "cmd": "cb"}}}
+    wit = {"facts": {"expensive": {"value": "bench-42", "cmd": "echo bench-42",
                                     "witness": "echo tool-ok",
                                     "witness_expect": "tool-ok"}}}
-    cal = {"facts": {"objcheck": {"value": "fma-present", "cmd": "scan-artifact",
-                                   "replay": False,
-                                   "replay_why": "artifact scan needs a build",
+    cal = {"facts": {"objcheck": {"value": "fma-present", "cmd": "echo fma-present",
                                    "calibrate": "echo known-positive",
                                    "calibrate_expect": "known-positive"}}}
     # Criteria of the kind "the message must point at the repair" (re-test
@@ -400,8 +394,8 @@ def _cases_replay_ok(fx):
         ("replay.ok_string_value",
          lambda: replay_all({"facts": {"s": {"value": "v1", "cmd": "c"}}},
                             runner=lambda c: (0, " v1\n"))["problems"] == []),
-        ("replay.ok_skip_declared",
-         lambda: replay_all(multi, runner=lambda c: (0, "1"))["problems"] == []),
+        ("replay.ok_two_facts",
+         lambda: replay_all(multi, runner=CMDBY)["problems"] == []),
     ]
 
 
@@ -452,7 +446,7 @@ def _cases_replay_failures(fx):
 
 
 def _cases_replay_empty(fx):
-    """(3) empty input must be reported: empty ledger / not one cmd ran / all skipped."""
+    """(3) empty input must be reported: an empty ledger, or not one cmd ran."""
     codes, params = fx["codes"], fx["params"]
     two = {"facts": {"a": {"value": 1, "cmd": "x"},
                      "b": {"value": 2, "cmd": "y"}}}
@@ -465,23 +459,20 @@ def _cases_replay_empty(fx):
              "replay.none_ran"]
          and params(two, lambda c: (1, ""),
                     "replay.none_ran")[0]["attempts"] == 2),
-        # A skip is an off state: without a reason it is indistinguishable from
-        # a fact that silently stopped being checkable.
-        ("\u2605 replay.skip_without_reason",
+        # **There is no skip tier any more.** `replay: false` is now simply red:
+        # a fact that cannot be re-run belongs in HISTORY, not in the ledger.
+        # A reason field would not help -- prose cannot be verified, so "stopped
+        # being checkable" would keep looking like "passes".
+        ("\u2605 replay.skip_is_gone",
          lambda: codes({"facts": {"a": {"value": 1, "cmd": "x",
                                         "replay": False}}},
-                       lambda c: (0, "1"))
-         == ["replay.skip_without_reason", "replay.all_skipped"]),
-        ("replay.skip_with_reason_ok",
+                       lambda c: (0, "1")) == ["replay.skip_is_gone"]),
+        # ... and a reason does not rescue it: the field must not come back.
+        ("\u2605 replay.skip_reason_does_not_rescue",
          lambda: codes({"facts": {"a": {"value": 1, "cmd": "x",
                                         "replay": False,
                                         "replay_why": "needs a build"}}},
-                       lambda c: (0, "1")) == ["replay.all_skipped"]),
-        ("\u2605 replay.all_skipped",
-         lambda: codes({"facts": {"a": {"value": 1, "cmd": "x",
-                                        "replay": False,
-                                        "replay_why": "artifact only"}}},
-                       lambda c: (0, "1")) == ["replay.all_skipped"]),
+                       lambda c: (0, "1")) == ["replay.skip_is_gone"]),
     ]
 
 
@@ -504,18 +495,22 @@ def _cases_witness(fx):
     return [
     # (3) witness tier (issue #5)
     ("replay.witness_ok",
-     lambda: replay_all(wit, runner=lambda c: (0, "tool-ok"))["problems"] == []),
+     lambda: replay_all(wit, runner=lambda c: (0, "bench-42" if c == "echo bench-42" else "tool-ok"))["problems"] == []),
     ("replay.witness_counted",
      lambda: replay_all(wit, runner=lambda c: (0, "tool-ok"))["witnessed"] == 1),
+    # the fact's own replay must stay green so the probe's verdict is the only
+    # thing under test (a shared runner would fail the fact first)
     ("★ replay.witness_mismatch",
-     lambda: codes(wit, lambda c: (0, "tool-CHANGED"))
-     == ["replay.witness_mismatch"]),
+     lambda: codes(wit, lambda c: (0, "bench-42") if c == "echo bench-42"
+                  else (0, "tool-CHANGED")) == ["replay.witness_mismatch"]),
     ("★ replay.witness_command_failed",
-     lambda: codes(wit, lambda c: (1, "")) == ["replay.witness_command_failed"]),
+     lambda: codes(wit, lambda c: (0, "bench-42") if c == "echo bench-42"
+                  else (1, "")) == ["replay.witness_command_failed"]),
     ("★ replay.witness_timeout",
-     lambda: codes(wit, lambda c: (None, "")) == ["replay.witness_timeout"]),
+     lambda: codes(wit, lambda c: (0, "bench-42") if c == "echo bench-42"
+                  else (None, "")) == ["replay.witness_timeout"]),
     ("replay.witness_satisfies_guard",
-     lambda: "replay.all_skipped" not in
+     lambda: "replay.skip_is_gone" not in
      codes(wit, lambda c: (0, "tool-ok"))),
     ]
 
@@ -527,17 +522,20 @@ def _cases_calibrate(fx):
     return [
     # (4) instrument calibration tier (issue #6 (1))
     ("replay.calibrate_ok",
-     lambda: replay_all(cal, runner=lambda c: (0, "known-positive"))["problems"] == []),
+     lambda: replay_all(cal, runner=lambda c: (0, "fma-present") if c == "echo fma-present" else (0, "known-positive"))["problems"] == []),
     ("replay.calibrate_counted",
-     lambda: replay_all(cal, runner=lambda c: (0, "known-positive"))["calibrated"] == 1),
+     lambda: replay_all(cal, runner=lambda c: (0, "fma-present") if c == "echo fma-present" else (0, "known-positive"))["calibrated"] == 1),
     ("★ replay.calibrate_mismatch",
-     lambda: codes(cal, lambda c: (0, "wrong")) == ["replay.calibrate_mismatch"]),
+     lambda: codes(cal, lambda c: (0, "fma-present") if c == "echo fma-present"
+                  else (0, "wrong")) == ["replay.calibrate_mismatch"]),
     ("★ replay.calibrate_command_failed",
-     lambda: codes(cal, lambda c: (1, "")) == ["replay.calibrate_command_failed"]),
+     lambda: codes(cal, lambda c: (0, "fma-present") if c == "echo fma-present"
+                  else (1, "")) == ["replay.calibrate_command_failed"]),
     ("★ replay.calibrate_timeout",
-     lambda: codes(cal, lambda c: (None, "")) == ["replay.calibrate_timeout"]),
+     lambda: codes(cal, lambda c: (0, "fma-present") if c == "echo fma-present"
+                  else (None, "")) == ["replay.calibrate_timeout"]),
     ("replay.calibrate_satisfies_guard",
-     lambda: "replay.all_skipped" not in
+     lambda: "replay.skip_is_gone" not in
      codes(cal, lambda c: (0, "known-positive"))),
     ]
 

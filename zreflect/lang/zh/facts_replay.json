@@ -1,5 +1,4 @@
 {
- "replay.all_skipped": "全部 %(count)d 条事实都声明 replay=False 且无见证、无校准 ⇒ 本闸门什么都没查 —— 至少留一条能复跑的；贵事实挂 witness（issue #5）让它的来源每提交被核；整仓都不适用就设 REFLECT_REPLAY=off 明说（全豁免不是通过）",
  "replay.bad_timeout": "REFLECT_REPLAY_TIMEOUT=%(value)r 不是数 ⇒ 用默认 %(default).0fs",
  "replay.calibrate_command_failed": "`%(key)s` 仪器校准**命令报错**（rc=%(return_code)s）：`%(command)s` —— 校准命令本身死了（校准要便宜、无害、只读）",
  "replay.calibrate_mismatch": "`%(key)s` 仪器校准不符：calibrate=%(actual)s vs 期望=%(expected)s —— 仪器失真（命令成功、值稳定、复跑永远通过，而它量的可能根本不是想量的；先用已知含 X 的样本证明仪器看得见 X，再计数）",
@@ -13,11 +12,10 @@
  "replay.off": "复跑闸门：REFLECT_REPLAY=off ⇒ 本闸门未启用（明说，不假装查过 —— 个别要构建产物的条目请用 replay=False 逐个退出，别关整道闸）",
  "replay.ok": "复跑闸门：OK（%(count)d 条事实逐字复跑，stdout 与台账一致%(skipped)s%(witnessed)s%(calibrated)s）",
  "replay.ok_calibrated": "，校准 %(count)d 条",
- "replay.ok_skipped": "，%(count)d 条声明 replay=False 未跑",
  "replay.ok_witnessed": "，见证 %(count)d 条",
  "replay.principle_is_off": "原则 `%(key)s` 的判定处**未启用**（off）状态：%(detail)s —— off 不是通过。命令：%(command)s",
  "replay.principle_said_nothing": "原则 `%(key)s` 的判定命令**什么都没说**（stdout 空）—— 无法区分「跑过且通过」与「根本没跑」。命令：%(command)s",
- "replay.skip_without_reason": "事实 `%(key)s` 设了 `replay: false` 却没有 `replay_why` —— 跳过就是 off 态：必须说明理由（需要构建产物 / 每次运行都不同），否则「悄悄不再被检查」和「通过」长得一样",
+ "replay.skip_is_gone": "事实 `%(key)s` 设了 `replay: false` —— 已无豁免档：本环境跑不了的事实归 HISTORY，不进台账。带散文理由的豁免与「悄悄不再被检查」在报告里长得一模一样",
  "replay.timeout": "`%(key)s` 复跑**超时**（%(seconds).0fs）：`%(command)s` —— 要起服务/要构建的条目应写 replay=False，别拿超时当数据。注：重启后冷启动首跑可能超时（文件系统冷，热缓存后往往秒回）—— 重跑一次再判，或调大 REFLECT_REPLAY_TIMEOUT",
  "replay.title": "复跑闸门",
  "replay.too_deep": "复跑嵌套太深（深度 %(depth)d，上限 %(limit)d）—— 台账里的 cmd 形成了环：某条原则的命令又触发了复跑。改台账，别加深上限",
