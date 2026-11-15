@@ -82,6 +82,7 @@ KNOB = "REFLECT_I18N_ROOT"
 # characters as literals would make this gate scan its own source (they are
 # exactly the range endpoints) --
 # actually hit once (it reported two fake violations on the endpoint chars).
+import i18n  # noqa: E402
 from i18n import CJK_LO, han  # noqa: E402
 
 PINNED_MARK = "PINNED:"
@@ -310,13 +311,86 @@ def _non_literal_code_problems(name, tree):
     return out
 
 
+def _plain_english_problems(name, src, tree):
+    """**Source must read as English**: no non-ASCII prose outside the protocol marks.
+
+    Line-level, not node-level: docstrings and comments are prose too, and a
+    node-level scan used to skip both. `★` / `·` / `ℹ` / `⚠️` / `→` are
+    machine-row prefixes (`machine.ROWS`), so they are exempt by `i18n.PROSE_MARKS`
+    -- ASCII-fying them would break a contract, not clean up prose.
+
+    ⚠️ **Exemption surfaces must respect one another** (the same lesson family 3
+    learned): this gate's own fixtures deliberately contain CJK — built from
+    codepoints, placed in PINNED declarations, docstrings, and `_cases()` labels.
+    Those are the *inputs* of the other four families, not prose that leaked.
+    Scanning them here made every fixture-based case fail, which is the criterion
+    reporting the gate's test data instead of the gate's source.
+    """
+    exempt_lines = _fixture_scope_lines(tree) | _pinned_lines(tree) | _docstring_lines(tree)
+    out = []
+    for lineno, line in enumerate(src.splitlines(), 1):
+        if lineno in exempt_lines or i18n.prose_exempt(line):
+            continue
+        hits = i18n.non_ascii_prose(line)
+        if hits:
+            out.append(M("i18n_cover.non_ascii_prose", file=name, lineno=lineno,
+                         chars="".join(sorted({c for c, _ in hits})),
+                         text=line.strip()[:60]))
+    return out
+
+
+def _fixture_scope_lines(tree):
+    """Line span of `_cases()` plus the same-file helpers it references, and of any
+    codepoint-constructed fixture constant (`_CJ4`, `PINNED_FN`, ...)."""
+    spans = set()
+    bodies = _cases_scope(tree)
+    for body in bodies:
+        for node in ast.walk(body):
+            lo = getattr(node, "lineno", None)
+            hi = getattr(node, "end_lineno", lo)
+            if lo:
+                spans.update(range(lo, (hi or lo) + 1))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, (ast.BinOp, ast.Call)):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id.isupper():
+                    spans.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
+    return spans
+
+
+def _pinned_lines(tree):
+    """Lines covered by a `PINNED:` declaration (language-fixed by design)."""
+    spans = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        doc = ast.get_docstring(node) or ""
+        if PINNED_MARK in doc:
+            spans.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
+    return spans
+
+
+def _docstring_lines(tree):
+    """Lines occupied by docstrings (prose is allowed to quote the thing it documents)."""
+    spans = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            body = getattr(node, "body", [])
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+                    and isinstance(body[0].value.value, str):
+                first = body[0].value
+                spans.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
+    return spans
+
+
 def problems(paths):
     """Pure function: return the problem list (empty = zero-language). `paths` = [(name, source text)].
 
     `paths` is injectable => self-proofs use fake sources, zero file I/O.
 
-    Four parts (each a helper): `_doc_nodes` / `_msg_consts` / `_exempt_ids` /
-    `_bare_text_problems`. This function only orchestrates -- 111 lines -> 15.
+    Five parts (each a helper): `_doc_nodes` / `_msg_consts` / `_exempt_ids` /
+    `_bare_text_problems` / `_plain_english_problems`. This function only
+    orchestrates -- 111 lines -> 15.
     """
     if not paths:
         return [M("i18n_cover.empty_scan")]
@@ -341,6 +415,7 @@ def problems(paths):
         out += _bare_text_problems(name, tree, src)
         out += _fixture_literal_problems(name, tree)
         out += _non_literal_code_problems(name, tree)
+        out += _plain_english_problems(name, src, tree)
     return out
 
 
@@ -629,15 +704,49 @@ def _cases_bare_text(fx):
     return [
         ("i18n_cover.good_fixture",
          lambda: problems([("good.py", fx["good"])]) == []),
+        # Two codes now: the CJK literal is bare text **and** non-ASCII prose in
+        # the scanned source. Asserting only the first would keep passing after
+        # the second family stopped firing -- the failure mode this repo calls
+        # "a criterion that cannot go red".
         ("★ i18n_cover.bare_text",
          lambda: [x.code for x in problems([("bare.py", fx["bare"])])
-                  ] == ["i18n_cover.bare_text"]),
+                  ] == ["i18n_cover.bare_text", "i18n_cover.non_ascii_prose"]),
         ("★ i18n_cover.bare_text_in_label",
          lambda: [x.code for x in problems([("label.py", fx["label"])])
                   ] == ["i18n_cover.bare_text"]),
         ("★ i18n_cover.parse_error",
          lambda: [x.code for x in problems([("bad.py", "def (")])]
          == ["i18n_cover.parse_error"]),
+    ]
+
+
+def _cases_plain_english():
+    """5. Source must read as English: typographic characters in prose are reported,
+    while the protocol marks machine rows depend on are not (ASCII-fying those
+    would break a contract)."""
+    arrow = chr(0x21D2)      # rightwards double arrow
+    dash = chr(0x2014)       # em dash
+    star = chr(0x2605)       # a machine-row prefix, not prose
+    return [
+        # red path: a typographic arrow inside a comment
+        ("\u2605 i18n_cover.non_ascii_prose",
+         lambda: [p.code for p in problems(
+             [("a.py", "# x " + arrow + " y\n")])] == ["i18n_cover.non_ascii_prose"]),
+        # red path: an em dash in a comment (comments are source prose too)
+        ("\u2605 i18n_cover.prose_in_comment",
+         lambda: [p.code for p in problems(
+             [("a.py", "# a " + dash + " b\n")])] == ["i18n_cover.non_ascii_prose"]),
+        # green path: docstrings are exempt -- quoting the thing being documented
+        # in its original script is legitimate
+        ("i18n_cover.docstring_may_quote",
+         lambda: problems([("a.py", "def f():\n    \"\"\"a " + dash + " b\"\"\"\n")]) == []),
+        # green path: the protocol mark is exempt -- reporting it would push the
+        # next maintainer to ASCII-fy a machine row
+        ("i18n_cover.protocol_mark_exempt",
+         lambda: problems([("a.py", "CASES = [\"" + star + " case\"]\n")]) == []),
+        # green path: plain ASCII
+        ("i18n_cover.plain_ascii_ok",
+         lambda: problems([("a.py", "# a plain english comment\n")]) == []),
     ]
 
 
@@ -648,7 +757,7 @@ def _cases_pinned():
          lambda: problems([("r.py", PINNED_FN)]) == []),
         ("★ i18n_cover.undeclared_pinned_still_fires",
          lambda: [p.code for p in problems([("r.py", BARE_FN)])
-                  ] == ["i18n_cover.bare_text"]),
+                  ] == ["i18n_cover.bare_text", "i18n_cover.non_ascii_prose"]),
         ("★ i18n_cover.pinned_needs_reason",
          lambda: [p.code for p in problems([("r.py", PINNED_BARE)])]
          == ["i18n_cover.bare_text"]),
@@ -720,12 +829,13 @@ def _cases_input_guards():
 
 
 def _cases():
-    """Assemble the six fixture-assertion groups. **Assembly only** -- the criteria live in the group functions."""
+    """Assemble the seven fixture-assertion groups. **Assembly only** -- the criteria live in the group functions."""
     fx = _fixtures()
     return (_cases_bare_text(fx)
             + _cases_pinned()
             + _cases_fixture_literal()
             + _cases_code_literal()
+            + _cases_plain_english()
             + _cases_end_to_end()
             + _cases_input_guards())
 

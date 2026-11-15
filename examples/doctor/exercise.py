@@ -1,8 +1,8 @@
 """Exercise all three doctor probe kinds: http, port-free, docker.
 
 http and port-free are exercised for real (a local server we start, and a port
-we bind then release). docker is exercised only when the CLI exists — a
-capability probe, not a required dependency — and the example states which
+we bind then release). docker is exercised only when the CLI exists -- a
+capability probe, not a required dependency -- and the example states which
 path it took, so a missing docker never passes silently as "covered".
 """
 import json
@@ -79,7 +79,7 @@ try:
         run(no_such, 1)
         print("doctor example ok (http + port-free + docker inspected)")
     else:
-        print("doctor example ok (http + port-free; docker CLI absent — "
+        print("doctor example ok (http + port-free; docker CLI absent -- "
               "docker probe not exercised on this machine)")
 finally:
     server.shutdown()

@@ -48,6 +48,7 @@ from gate import (  # noqa: E402
     machine,  # noqa: E402
     main_selftest_or,
     meta,
+    off,
     repo,
 )
 from i18n import M  # noqa: E402
@@ -142,22 +143,32 @@ def problems_push(changed, langs):
     return out
 
 
+def _push_mode(argv, langs):
+    """Read the change set and judge the push criterion."""
+    src = argv[1] if len(argv) > 1 else "-"
+    if src == "-":
+        lines = sys.stdin.read().splitlines()
+    elif not os.path.exists(src):
+        print(machine().emit("fatal", M("readme.changed_file_missing", name=src)),
+              file=sys.stderr)
+        return 2
+    else:
+        lines = open(src, encoding="utf-8", errors="replace").read().splitlines()
+    changed = {l.strip().strip('"') for l in lines if l.strip()}
+    probs = problems_push(changed, langs)
+    return finish(M("readme.title"), probs,
+                  M("readme.ok_push", count=len(langs)))
+
+
 def run(argv):
     langs = lang_names()
+    if not langs:
+        # `REFLECT_READMES=` (explicitly empty) is a decision, not a mistake:
+        # this repo has no README group. Say so and stand down -- reporting a
+        # missing file here would diagnose a stated intent as an absent file.
+        return off(M("readme.off_empty_group"))
     if argv and argv[0] == "--changed":
-        src = argv[1] if len(argv) > 1 else "-"
-        if src == "-":
-            lines = sys.stdin.read().splitlines()
-        elif not os.path.exists(src):
-            print(machine().emit("fatal", M("readme.changed_file_missing", name=src)),
-                  file=sys.stderr)
-            return 2
-        else:
-            lines = open(src, encoding="utf-8", errors="replace").read().splitlines()
-        changed = {l.strip().strip('"') for l in lines if l.strip()}
-        probs = problems_push(changed, langs)
-        return finish(M("readme.title"), probs,
-                      M("readme.ok_push", count=len(langs)))
+        return _push_mode(argv, langs)
     files = {}
     for name in langs:
         p = repo(name)
@@ -262,15 +273,49 @@ def _cases_push():
     ]
 
 
+def _cases_knob():
+    """(3) Unset vs explicitly empty: two different intents, never collapsed."""
+    import knobs  # noqa: PLC0415
+
+    def names(value):
+        """`readme_names()` under one environment: `value=None` = unset."""
+        saved = os.environ.get("REFLECT_READMES")
+        try:
+            if value is None:
+                os.environ.pop("REFLECT_READMES", None)
+            else:
+                os.environ["REFLECT_READMES"] = value
+            return knobs.readme_names()
+        finally:
+            if saved is None:
+                os.environ.pop("REFLECT_READMES", None)
+            else:
+                os.environ["REFLECT_READMES"] = saved
+
+    return [
+        # unset => the registry default, not an empty group
+        ("readme.unset_uses_registry_default",
+         lambda: names(None) == knobs.REGISTRY["REFLECT_READMES"][1].split(",")),
+        # explicitly empty => a real answer, not "fall back to three"
+        ("\u2605 readme.explicit_empty_is_empty_group",
+         lambda: names("") == [] and names("  ") == []),
+        ("readme.single_entry_honoured",
+         lambda: names("README.md") == ["README.md"]),
+    ]
+
+
 def _cases():
-    """One group per criterion (structure / push set): they read different
-    inputs and govern different things."""
-    return _cases_structure() + _cases_push()
+    """One group per criterion (structure / push set / knob intent): they read
+    different inputs and govern different things."""
+    return _cases_structure() + _cases_push() + _cases_knob()
 
 
 GATE = meta("Trilingual README gate",
             "language versions are three copies of one assertion: structural cross-links + same-batch on every push",
-            knobs=("REFLECT_READMES",), name_dependent=True)
+            knobs=("REFLECT_READMES",), name_dependent=True,
+            off_reason="a repo that sets REFLECT_READMES to an empty list states "
+                       "it has no README group; unset is different and uses the "
+                       "registry default")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_readme_sync", _cases, run))

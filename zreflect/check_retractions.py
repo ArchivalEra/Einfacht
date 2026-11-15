@@ -118,7 +118,7 @@ def _cases():
     ok_r = {"retractions": [{"id": "R-1", "text": "this thing is green",
                              "why": "actually red", "evidence": "run x",
                              "fixed_in": "doc y"}]}
-    doc_ok = "(record) this thing is green — retracted, see R-1\n"
+    doc_ok = "(record) this thing is green -- retracted, see R-1\n"
     return [
         # (1) compliant input: nothing reported
         ("retractions.marked",

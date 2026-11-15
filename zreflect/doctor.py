@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Start-of-work preflight doctor (**small plugin**, issue #10): process / port liveness.
 
-"All file invariants green" ≠ "the environment is still alive" — two real
+"All file invariants green" != "the environment is still alive" -- two real
 incidents (Octave-Full-Wasm HISTORY §5.86 / §5.83): after a machine reboot
 the acceptance site and the build container both vanished; every file-level
 invariant held true, but the acceptance baseline was unusable, and a whole
 round was wasted before anyone noticed; in another repo a dev server had
-taken the experiment port, the probe connected to someone else's page ⇒
+taken the experiment port, the probe connected to someone else's page =>
 misjudged as "the new build won't come up". git, gates, and witnesses all
 govern files and artifacts; service processes, container state, and port
-occupancy fall under no mechanism — this plugin fills that gap: roll call
+occupancy fall under no mechanism -- this plugin fills that gap: roll call
 **before work starts**.
 
 Policy is **data** (same pattern as #7); the mechanism provides only the
@@ -23,7 +23,7 @@ engine + contract:
       { "kind": "docker", "container": "o113",
         "state": "running", "why": "build lane" },
       { "kind": "port-free", "port": 8868,
-        "why": "experiment-exclusive port — occupied ⇒ probe misjudges" } ] }
+        "why": "experiment-exclusive port -- occupied => probe misjudges" } ] }
 
 Both kinds of assertion are needed: "must be alive" (http / docker) and
 "must be free" (port-free). Output obeys the **stdout bare-value contract**:
@@ -32,22 +32,22 @@ Everything is **harmless**: read-only GET / `docker inspect` / connect probe.
 
 **Every probe must carry a timeout** (`REFLECT_DOCTOR_TIMEOUT`,
 default 2 seconds): connect against a dead port waits until the end of
-time — that is the probe's own failure mode and must be decoupled from
+time -- that is the probe's own failure mode and must be decoupled from
 the thing being probed (the same lesson as "probes stay off the boot path").
 
 **Not wired into pre-commit** (the issue says so): it checks **things that
 die**, the wrong frequency for a commit hook, and it would slow every
-commit. So this file is **not** a `check_*.py` — the discovery roster
+commit. So this file is **not** a `check_*.py` -- the discovery roster
 (`for g in zreflect/check_*.py`) never scans it, and pre-commit doesn't
 run it; `gates-selftest.sh` names it once to prove it can go red (same
 plugin pattern as einfacht-env.sh). Run by hand before work starts:
 
     python3 zreflect/doctor.py
 
-Pluggable: `REFLECT_DOCTOR` unset and the default `doctor.json` absent ⇒
+Pluggable: `REFLECT_DOCTOR` unset and the default `doctor.json` absent =>
 state plainly that it is off, return 0. Explicitly configured but pointing
-at a missing file ⇒ FATAL, exit 2 (a dangling pointer is not "disabled").
-Liveness is a transient fact ⇒ **not entered into the ledger replay**
+at a missing file => FATAL, exit 2 (a dangling pointer is not "disabled").
+Liveness is a transient fact => **not entered into the ledger replay**
 (running it fresh at each start of work is enough; the ledger's bare-value
 contract can't hold things that die).
 
@@ -55,13 +55,13 @@ contract can't hold things that die).
 probing, no content validation (content is governed by existing gates /
 acceptance); "which services must be alive, which ports must be exclusive"
 is **policy**, configured per repo (spec data). Zero-value guards: empty
-list / missing kind / missing why / unknown kind ⇒ all reported (an unknown
+list / missing kind / missing why / unknown kind => all reported (an unknown
 criterion = silent pass).
 
 Usage (run directly, cwd=repo root):
     python3 zreflect/doctor.py [--selftest]
 Exit codes: 0=all alive (or disabled) / 1=some DOWN / 2=configuration or
-environment broken (a malformed spec shape ≠ a failed check).
+environment broken (a malformed spec shape != a failed check).
 """
 from __future__ import annotations
 
@@ -77,13 +77,13 @@ import machine  # noqa: E402
 from gate import fatal, load_spec, main_selftest_or, meta, off, repo  # noqa: E402
 from i18n import M  # noqa: E402
 
-# Derived from the knob registry (single source of truth) — a handwritten
+# Derived from the knob registry (single source of truth) -- a handwritten
 # literal would drift from it (the most expensive kind of debt in this repo).
 DEFAULT_SPEC = knobs.REGISTRY["REFLECT_DOCTOR"][1]
 DEFAULT_TIMEOUT = 2.0
 
 
-# —— Pure criteria (selftest can inject fake responses; return (satisfied?, reason)) ——
+# ---- Pure criteria (selftest can inject fake responses; return (satisfied?, reason)) ----
 
 def _http_verdict(status, headers, check):
     """Does the HTTP response satisfy the criteria. Header keys are lowercased."""
@@ -110,7 +110,7 @@ def _port_free_verdict(connect_succeeded):
             "" if not connect_succeeded else M("doctor.port_in_use"))
 
 
-# —— Real transports (thin layer; the selftest never runs them, the selftest must be network- and docker-free) ——
+# ---- Real transports (thin layer; the selftest never runs them, the selftest must be network- and docker-free) ----
 
 def _http_probe(check, timeout):
     try:
@@ -160,7 +160,7 @@ def label(check):
     return "%s:%s" % (check.get("kind"), target)
 
 
-# —— Spec validation (pure functions: zero-value guards + shape criteria) ——
+# ---- Spec validation (pure functions: zero-value guards + shape criteria) ----
 
 def _http_shape_problems(c):
     """Field criteria for an http check (missing url / non-int expect_status / expect_headers shape)."""
@@ -208,7 +208,7 @@ _KIND_SHAPE = {
 def spec_problems(checks):
     """Pure function: list of spec-shape problems (empty = shape is valid).
 
-    issue #22 remediation: split along "one layer of criteria = one function" —
+    issue #22 remediation: split along "one layer of criteria = one function" --
     each kind's field criteria became its own function (one `_KIND_SHAPE` table),
     the main function does only the generic parts (non-object / missing kind /
     unknown kind / missing why) + dispatch. Message wording and order preserved.
@@ -235,7 +235,7 @@ def spec_problems(checks):
     return out
 
 
-# —— Orchestration (probe injectable: selftest uses fake probes, no network / docker) ——
+# ---- Orchestration (probe injectable: selftest uses fake probes, no network / docker) ----
 
 def _timeout():
     raw = os.environ.get("REFLECT_DOCTOR_TIMEOUT", "").strip()
@@ -250,7 +250,7 @@ def _timeout():
 
 def down_labels(checks, probe=None, timeout=None):
     """Returns the list of DOWN labels (empty = all alive). Every probe carries
-    a timeout (timeout=None ⇒ read the knob / default)."""
+    a timeout (timeout=None => read the knob / default)."""
     probe = probe or _dispatch
     t = _timeout() if timeout is None else timeout
     downs = []
@@ -265,12 +265,12 @@ def _dispatch(check, timeout):
     return _PROBES[check["kind"]](check, timeout)
 
 
-# —— Entry ——
+# ---- Entry ----
 
 def _spec_path():
     """Resolution order: explicit knob > default name. Explicitly configured
-    but pointing at a missing file ⇒ return that path (run FATALs on the
-    spot); unset and the default name absent ⇒ None (disabled)."""
+    but pointing at a missing file => return that path (run FATALs on the
+    spot); unset and the default name absent => None (disabled)."""
     name = os.environ.get("REFLECT_DOCTOR", "").strip()
     if name:
         return repo(name)
@@ -288,7 +288,7 @@ def _timeout_problem():
     except ValueError:
         return M("doctor.bad_timeout", value=raw)
     # Range checked explicitly; no `raise ValueError` as control flow (`float()`
-    # already handles "not a number"; this is only "a number but not positive" —
+    # already handles "not a number"; this is only "a number but not positive" --
     # an independent failure cause that shouldn't borrow the exception channel)
     if value <= 0:
         return M("doctor.bad_timeout", value=raw)
@@ -298,8 +298,8 @@ def _timeout_problem():
 def _load_checks():
     """Load the spec and take `checks`. Returns `(checks, done_rc)`.
 
-    `done_rc is not None` ⇒ the caller **must return it directly** (it may be 0;
-    `off` is 0). `None` ⇒ keep judging below.
+    `done_rc is not None` => the caller **must return it directly** (it may be 0;
+    `off` is 0). `None` => keep judging below.
 
     ⚠️ "rc non-zero" must not be used here as the "already handled" signal:
     `off()`'s rc is **0** (off is not a failure). When this was written as
@@ -483,7 +483,7 @@ def _cases_misc(fx):
     return [
     ("★ doctor.down_label_names_the_target",
      # Pin only what the **case name claims** (label names the target); `detail`
-     # is a pass-through from the fixture probe — pinning the whole dict would
+     # is a pass-through from the fixture probe -- pinning the whole dict would
      # make this assertion go red whenever the fixture's wording changes.
      lambda: [p.code for p in down_labels([good[1]], probe=down_probe)
               ] == ["doctor.down_label"]
@@ -495,7 +495,7 @@ def _cases_misc(fx):
 
 
 def _cases():
-    """Assemble the five groups of fixture assertions. **Assemble only** — the criteria live in the group functions."""
+    """Assemble the five groups of fixture assertions. **Assemble only** -- the criteria live in the group functions."""
     fx = _cases_fixture()
     return (
     _cases_spec(fx)
@@ -507,12 +507,12 @@ def _cases():
 
 
 GATE = meta("start-of-work doctor",
-            "process / port liveness (probes things that can die ⇒ "
+            "process / port liveness (probes things that can die => "
             "runs_at=start-of-work, not in pre-commit)",
             knobs=("REFLECT_DOCTOR", "REFLECT_DOCTOR_TIMEOUT"),
             runs_at="start-of-work",
             off_reason="this repo has no doctor.json spec: no process/port "
-                       "liveness is checked ⇒ state it is off")
+                       "liveness is checked => state it is off")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],

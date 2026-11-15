@@ -24,8 +24,8 @@ holds only criteria.
     trailing_newline_problems    files must end with a newline (the gap between `py_lines`'s two measuring methods)
     off_reason_problems          gates that can off must declare a reason (three-way + truthfulness + location)
     reason_bases_agree           filename locations inside reasons match the env plugin's convention (C4)
-    path_rule_problems           "the tool's zreflect/" may have exactly one source (C4 ⑧)
-    dependency_coverage_problems consumed platform functions must have assertions (C4 ⑨)
+    path_rule_problems           "the tool's zreflect/" may have exactly one source (C4 (8))
+    dependency_coverage_problems consumed platform functions must have assertions (C4 (9))
 
 ## Interface
 
@@ -966,7 +966,7 @@ def dependency_coverage_problems(zdir=None, sources=None):
             for m, f in _untested_consumed(consumed, consumers, asserted)]
 
 
-# ── Selftest: criteria belong to their own subject under test ─────────────────
+# -- Selftest: criteria belong to their own subject under test -----------------
 
 def _dead_interface_case():
     """Plant a zero-consumer public function => must report; add an external reference
@@ -1477,10 +1477,10 @@ def _cases_self_checks():
         # **has substantive assertions** in `registry._cases()`. A description
         # that just says "no selftest" = a disclaimer.
         # Machine criterion for "strictly check surplus interfaces": a public
-        # function with zero consumers ⇒ must report.
+        # function with zero consumers => must report.
         ("★ registry.dead_interface_detected",
          lambda: _dead_interface_case()),
-        # All-Python guard: an unregistered .sh ⇒ must report (build a fake one
+        # All-Python guard: an unregistered .sh => must report (build a fake one
         # to prove the guard has teeth)
         ("★ registry.unexpected_shell_detected",
          lambda: _unexpected_shell_case()),

@@ -3,14 +3,14 @@
 
 Three rules, each tied to a real incident:
 
-  · Block disagrees with the ledger — someone hand-edited the block (or
+  · Block disagrees with the ledger -- someone hand-edited the block (or
     edited the ledger and forgot to re-render);
-  · Bare numbers in prose — a number hand-copied into prose starts rotting
+  · Bare numbers in prose -- a number hand-copied into prose starts rotting
     the moment it is written (threshold configurable via `REFLECT_NAKED_MIN`;
-    fenced code blocks / inline code are exempt — re-run commands in docs
+    fenced code blocks / inline code are exempt -- re-run commands in docs
     naturally contain numbers, and treating those as bare numbers is a false
     positive, issue #3 (4));
-  · Citation of a nonexistent key — the key was renamed/deleted and the
+  · Citation of a nonexistent key -- the key was renamed/deleted and the
     citation became, in place, an assertion with no provenance.
 """
 import os
@@ -26,7 +26,7 @@ from knobs import a_pack_lang  # noqa: E402
 from ledger import facts_of, load_or_fatal, value_of  # noqa: E402
 
 # How prose cites a number: `[[key]]`. Deliberately a shape that cannot be
-# natural language — so "is there a citation" is **decidable**, without
+# natural language -- so "is there a citation" is **decidable**, without
 # regex-guessing at prose.
 from living import (
     CITE_RE,  # noqa: E402
@@ -40,7 +40,7 @@ INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 
 
 def _bare_min():
-    """Bare-number threshold (issue #3 (4)): configurable via `REFLECT_NAKED_MIN`; bad value ⇒ default + warning."""
+    """Bare-number threshold (issue #3 (4)): configurable via `REFLECT_NAKED_MIN`; bad value => default + warning."""
     raw = os.environ.get("REFLECT_NAKED_MIN", "").strip()
     if not raw:
         return BARE_MIN
@@ -56,7 +56,7 @@ def _number_lines(doc_text):
     """Lines the bare-number criterion scans (issue #3 (4)): **fenced code blocks and inline code are exempt**.
 
     Returns [(line number, line with inline code stripped)]; line numbers keep
-    the **original numbering** — diagnostics must line up with the
+    the **original numbering** -- diagnostics must line up with the
     human-readable document. The fence open/close lines themselves are not
     scanned.
     """
@@ -78,7 +78,7 @@ def _number_lines(doc_text):
 # "hand-copied measured values" and must not be reported. If the reverse
 # criterion (whitelist-style) did not exclude them, prose would instantly be
 # flooded by version numbers/ports/dates and eventually be `--accept`ed away
-# wholesale — worse than not checking at all (the repeatedly observed fate of
+# wholesale -- worse than not checking at all (the repeatedly observed fate of
 # this repo: "a gate with false positives eventually gets switched off
 # entirely").
 _SHAPE_PATTERNS = (
@@ -92,7 +92,7 @@ _SHAPE_PATTERNS = (
     r"[\w./-]+/\d+",                  # path segments /113/
     # Thousands separators (#27 (1)): `6,757,104` is **one number**. Without
     # this entry it gets split into the three fake tokens 6 / 757 / 104, and
-    # the latter two get reported as "bare numbers without provenance" —
+    # the latter two get reported as "bare numbers without provenance" --
     # numbers that do not exist anywhere in the original text, so they cannot
     # be matched against the document during triage (downstream observed).
     r"\d{1,3}(,\d{3})+",
@@ -100,7 +100,7 @@ _SHAPE_PATTERNS = (
 
 
 def _shape_exempt(token):
-    """Does this number's **position** fall under the shape whitelist (version/identifier/date/path…)?"""
+    """Does this number's **position** fall under the shape whitelist (version/identifier/date/path...)?"""
     return any(re.fullmatch(pat, token) for pat in _SHAPE_PATTERNS)
 
 
@@ -127,18 +127,18 @@ def _has_provenance(token, line):
         return True
     # Bare sha: allowed only when the line has sha/hash/commit context (that
     # is check_stale's job; a contextless 8-digit number is a measured value,
-    # not a sha — observed pitfall: 99887766 was wrongly allowed by the pure
+    # not a sha -- observed pitfall: 99887766 was wrongly allowed by the pure
     # hex whitelist).
     if (re.fullmatch(r"[0-9a-f]{7,64}", token)
             and _SHA_NEAR.search(line)):
         return True
-    return bool(CITE_RE.search(line))    # a [[key]] on the same line ⇒ counts as citation-style provenance
+    return bool(CITE_RE.search(line))    # a [[key]] on the same line => counts as citation-style provenance
 
 
 def _unaccounted_numbers(facts, bare_min, nlines):
     """Reverse criterion (issue #24): numbers in prose with **no provenance** at or above the threshold.
 
-    Previously only "a ledger value was hand-copied" was checked — a number
+    Previously only "a ledger value was hand-copied" was checked -- a number
     that had **never entered the ledger** was unknown to the gate
     (`AGENTS.md` said "check_facts blocks bare numbers in prose", stated
     without reservation). Downstream observed: a v4 protocol document
@@ -146,10 +146,10 @@ def _unaccounted_numbers(facts, bare_min, nlines):
     least 3 of them wrong.
 
     Criterion (whitelist-style): scan the prose (outside fences/inline code,
-    already stripped by `_number_lines`); every integer token ≥ bare_min must
+    already stripped by `_number_lines`); every integer token >= bare_min must
     have one of these **provenances**, otherwise report:
 
-      · immediately followed by `[[key]]` (same line) — citation-style
+      · immediately followed by `[[key]]` (same line) -- citation-style
         provenance;
       · hits the shape whitelist (version string / identifier / date / path /
         bare sha / percentage / capacity);
@@ -162,7 +162,7 @@ def _unaccounted_numbers(facts, bare_min, nlines):
     known = _known_values(facts)
     out = []
     # First strip "shape strings" from the whole line (dates/times/versions/
-    # capacities/percentages/paths/identifiers) — otherwise `2026-10-31`
+    # capacities/percentages/paths/identifiers) -- otherwise `2026-10-31`
     # yields the fake token `2026` (`-` is not in \w, and per-token matching
     # cannot prevent it; observed pitfall).
     strip_re = re.compile("|".join(_SHAPE_PATTERNS))
@@ -239,13 +239,13 @@ def problems(ledger, doc_text, bare_min=None):
 def _docs_to_scan(argv):
     """The list of documents to scan.
 
-    `argv[0]` given ⇒ scan only that one (explicit wins).
-    Otherwise ⇒ **all of `REFLECT_DOCS`**, not just `REFLECT_DOC`.
+    `argv[0]` given => scan only that one (explicit wins).
+    Otherwise => **all of `REFLECT_DOCS`**, not just `REFLECT_DOC`.
 
     ⚠️ Previously only `REFLECT_DOC` was scanned (by default the single
-    `STATE.md`), so bare numbers written into a README were **never caught** —
+    `STATE.md`), so bare numbers written into a README were **never caught** --
     even though the `REFLECT_DOCS` knob had existed all along, defaulting to
-    six documents (STATE / AGENTS / PRINCIPLES / README×3). A repo's "living
+    six documents (STATE / AGENTS / PRINCIPLES / READMEx3). A repo's "living
     state documents" number six, and the criterion checked one: that is fake
     green (subagent acceptance observed: write 4242 into a README and
     `facts.ok(count=17)` still goes green).
@@ -272,7 +272,7 @@ def run(argv):
     for doc in docs:
         p = gate.repo_path(doc)
         if not os.path.exists(p):
-            # A document named in the roster is absent ⇒ report (`REFLECT_DOCS`
+            # A document named in the roster is absent => report (`REFLECT_DOCS`
             # is a declaration, not a suggestion). But an explicit `argv[0]`
             # keeps the original hard FATAL (that is the caller pointing at
             # the wrong path).
@@ -288,7 +288,7 @@ def run(argv):
             probs += problems(led, text)
         else:
             # Documents without a machine block (README / AGENTS / PRINCIPLES
-            # etc.): **only bare numbers and copied values are checked** — no
+            # etc.): **only bare numbers and copied values are checked** -- no
             # block is required, because the block belongs only to the
             # document `REFLECT_DOC` names (the `--render-doc` target).
             # ⚠️ Previously these documents were **not scanned at all**, so
@@ -296,7 +296,7 @@ def run(argv):
             # (subagent acceptance observed: write 4242 into a README and
             # `facts.ok` still goes green).
             # ⚠️ Only the **blacklist** is checked (a ledger value hand-copied
-            # without a citation), not "any bare number ≥ threshold" —
+            # without a citation), not "any bare number >= threshold" --
             # README / AGENTS naturally teem with technical numbers (HTTP
             # 404 / port 3000 / version numbers), and applying the living
             # state document's whitelist threshold would report 25 noise
@@ -308,7 +308,7 @@ def run(argv):
             # README **teach users how to write** citations (`` [[key]] ``
             # itself appears in the explanation text), which is not a bad
             # citation. The bad-citation criterion applies only to the
-            # living state document named by `REFLECT_DOC` — a
+            # living state document named by `REFLECT_DOC` -- a
             # `[[nonexistent key]]` there really is a mis-point.
             probs += _copied_fact_problems(facts_of(led), _number_lines(text),
                                            _bare_min())
@@ -324,7 +324,7 @@ LED = {"facts": {"count": {"value": 4752, "cmd": "c"}}}
 def _cases_fixture():
     """Fixture: fake document prose + fake ledger + language-pack probe (the setup section of the old `_cases`, moved in verbatim)."""
     # The fixtures' document prose is **English** (it is scanned input, not
-    # output of the core — a Chinese sample like "speed is 4752 times" would
+    # output of the core -- a Chinese sample like "speed is 4752 times" would
     # make the zero-language gate treat the fixture as a message). The
     # criteria themselves are language-agnostic: bare numbers / citations /
     # the shape whitelist all look only at token shape.
@@ -337,7 +337,7 @@ def _cases_fixture():
 
     # Criteria of the kind "the diagnostic must say how to fix it" cannot be
     # verified against the null pack (the null pack only has code + params).
-    # So read a **real shipped zh pack from disk** — injecting a fake table
+    # So read a **real shipped zh pack from disk** -- injecting a fake table
     # only proves "the template I wrote renders the words I wrote" (circular
     # reasoning); reading the real pack turns "the migration lost no
     # semantics" into a falsifiable claim (the zh pack stores, by contract,
@@ -346,18 +346,18 @@ def _cases_fixture():
     # pack (which is precisely the product's main scenario, "pick one from a
     # set of packs"). It used to hard-code zh, and under
     # `REFLECT_I18N=<a directory with only en>` this selftest went straight
-    # red (observed: 17 PASS / 1 FAIL) — the criterion is "rendering
+    # red (observed: 17 PASS / 1 FAIL) -- the criterion is "rendering
     # fidelity"; which language is irrelevant.
-    # With no pack installed at all ⇒ these cases cannot exist (zero packs is
+    # With no pack installed at all => these cases cannot exist (zero packs is
     # a **legal state**: the user picked no language), `a_pack_lang()` returns
-    # None ⇒ the real-pack criteria below take the **conditional short
+    # None => the real-pack criteria below take the **conditional short
     # circuit** (vacuously true when absent; a pack being installed means it
-    # must be complete — a broken pack still goes red, verified).
+    # must be complete -- a broken pack still goes red, verified).
     pack_lang = a_pack_lang()
     real_pack = load_pack(pack_lang) if pack_lang else {}
 
     def pack_placeholders(code):
-        """The set of placeholder names for a code in that pack (missing entry ⇒ empty set, assertion goes red on the spot)."""
+        """The set of placeholder names for a code in that pack (missing entry => empty set, assertion goes red on the spot)."""
         import re  # noqa: PLC0415
         return set(re.findall(r"%\((\w+)\)", real_pack.get(code, "")))
 
@@ -395,7 +395,7 @@ def _cases_core(fx):
      lambda: problems(LED, "see [[count]] = 99887766\n"
                       + render_block(LED)) == []),
     # reverse: a number ending a sentence is still a number (`\b` before the
-    # period) — without this the regex silently waved through "9999."
+    # period) -- without this the regex silently waved through "9999."
     ("★ facts.bare_number_sentence_period",
      lambda: codes(LED, "measured 99887766.\n" + render_block(LED))
      == ["facts.bare_number_unaccounted"]),
@@ -444,14 +444,14 @@ def _cases_pack(fx):
     ("facts.pack_entry_wired",
      # The real pack's "no provenance" entry must exist and must **accept the
      # exact two params this code actually sends** (delete the code / break a
-     # placeholder name ⇒ this case goes red). The assertion uses only ASCII
-     # anchors (code name + placeholder names) — Chinese anchors would turn
+     # placeholder name => this case goes red). The assertion uses only ASCII
+     # anchors (code name + placeholder names) -- Chinese anchors would turn
      # themselves into "natural language inside the core", exactly the shape
      # the zero-language gate exists to eliminate; whether the semantics
      # still say "how to fix" is covered by pack diff review.
      # **Conditional criterion**: a pack installed means it must be complete
-     # (delete the entry / break a placeholder ⇒ this case goes red);
-     # zero packs (legal state: the user installed no language) ⇒ nothing to
+     # (delete the entry / break a placeholder => this case goes red);
+     # zero packs (legal state: the user installed no language) => nothing to
      # verify, vacuously true.
      # A real repo always has packs, so in a real environment this case is
      # always genuinely exercised.
@@ -468,22 +468,22 @@ def _cases_misc(fx):
     ("★ facts.bare_number_outside_fence",
      lambda: codes(LED, "```\n4752\n```\nspeed is 4752 times\n"
                     + render_block(LED)) == ["facts.copied_value"]),
-    # Thousands separators (#27 (1)): `6,757,104` is **one number** — it must
+    # Thousands separators (#27 (1)): `6,757,104` is **one number** -- it must
     # not be split into the three fake tokens 6/757/104 (the 757 produced by
     # splitting does not exist in the original text, so triage cannot match
     # it against the document).
     # Normal: no report (a [[py_lines]] citation is present) + a false
     # positive must go red (after removing the citation the thousands number
     # itself still is not reported, but other bare numbers in the same
-    # passage are — so this case only asserts "the thousands number never
+    # passage are -- so this case only asserts "the thousands number never
     # appears").
     ("★ facts.thousands_separator_is_one_number",
      # Thousands separators (#27 (1)): `6,757,104` is **one number** and the
-     # whole thing is stripped by the shape whitelist — it must not be split
+     # whole thing is stripped by the shape whitelist -- it must not be split
      # into 6/757/104 (the 757 produced by splitting does not exist in the
      # original text). Forward: the thousands line yields no fake tokens;
      # reverse: the line's genuine bare number (99887766) must be reported,
-     # and only it — proving what got stripped is "the entire thousands
+     # and only it -- proving what got stripped is "the entire thousands
      # number", not "the number chopped up and waved through".
      lambda: problems(LED, "release 6,757,104 B\n" + render_block(LED)) == []
      and codes(LED, "release 6,757,104 B and 99887766 measured\n"
@@ -495,7 +495,7 @@ def _cases_misc(fx):
 
 
 def _cases():
-    """Assemble the four fixture groups. **Assembly only** — the criteria live in the group functions."""
+    """Assemble the four fixture groups. **Assembly only** -- the criteria live in the group functions."""
     fx = _cases_fixture()
     return (
     _cases_core(fx)

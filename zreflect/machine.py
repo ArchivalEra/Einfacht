@@ -298,7 +298,7 @@ def reject(value):
     return None
 
 
-# ── Self-proof ────────────────────────────────────────────────────────────────
+# -- Self-proof ----------------------------------------------------------------
 
 def _try_reject(value):
     """`reject` must flag this value (used for reverse assertions)."""

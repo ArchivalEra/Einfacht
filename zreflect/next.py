@@ -343,7 +343,7 @@ def main(argv=None):
     return 0
 
 
-# ── Self-proof ────────────────────────────────────────────────────────────────
+# -- Self-proof ----------------------------------------------------------------
 #
 # This module **has** a self-proof entry (`selftest=True`): its criterion is
 # "when the collector cannot read something, does it pretend it did?" -- the

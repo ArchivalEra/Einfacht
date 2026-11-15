@@ -5,7 +5,7 @@
 
 This used to be `gates-selftest.sh` (287 lines of shell). What it did was
 **pure orchestration**: walk the roster, run subprocesses, judge rc, judge
-the machine summary line. Python does all three more naturally, and —
+the machine summary line. Python does all three more naturally, and --
 
 **the shell version bypassed this repo's zero-language regime wholesale**:
 the 38 Chinese strings it `echo`ed were hardcoded literals, and `check_i18n`
@@ -16,14 +16,14 @@ indefinitely, unintercepted (caught in review: it printed Chinese even with
 
 After the move to Python, all of its text goes through `M()`, under the
 same regime as every other gate. **This also eliminated almost all of the
-shell vocabulary copies** — only `einfacht-env.sh` remains (it must be
+shell vocabulary copies** -- only `einfacht-env.sh` remains (it must be
 shell), and its summary-line shape is checked by actually running it in
 `run_plugins()`.
 
 ## Why "discovery" and not a "roster"
 
 A handwritten roster always drifts. Add a new checker and forget to
-register it, and that checker becomes "a checker nobody watches" — while
+register it, and that checker becomes "a checker nobody watches" -- while
 the roster itself stays green and tells you everything is fine. So here it
 is the other way around: **registration is discovered**, not remembered
 (rosters are always derived from `registry`'s declaration lines).
@@ -37,7 +37,7 @@ is the other way around: **registration is discovered**, not remembered
 
 ## Honest boundary
 
-  · The plugins section runs **the user's** `.sh` — their output is not
+  · The plugins section runs **the user's** `.sh` -- their output is not
     subject to the zero-language regime (user-made scripts are their own
     business); only their rc and machine summary line are judged here.
   · The `configurable` section builds a temporary fixture repo and runs real
@@ -60,7 +60,7 @@ from i18n import M  # noqa: E402
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Machine summary line: the criterion lives in `machine.is_summary()` (single
-# source of truth). A byte-identical regex used to live here too — three
+# source of truth). A byte-identical regex used to live here too -- three
 # copies would drift (there is another one in reflect-hooks/gate.py).
 
 # Selftest advertisement marker: present = this file claims it can be proven
@@ -84,11 +84,11 @@ def _tail(text, n=3):
     """Lines to relay on failure: **prefer** `fail |` / `FATAL:` lines; fall
     back to the last n lines only if none are found.
 
-    ⚠️ This used to always take the last 3 lines — but a selftest's layout is
+    ⚠️ This used to always take the last 3 lines -- but a selftest's layout is
     "fail lines first, summary line last", so what got relayed was always the
     **summary** like "=== 28 PASS / 1 FAIL ===", with no way to see which case
     went red. Observed: CI's Windows leg reported only `28 PASS / 1 FAIL`,
-    with no way to know which case — the whole section had to be re-run.
+    with no way to know which case -- the whole section had to be re-run.
     """
     all_lines = [ln for ln in (text or "").splitlines() if ln.strip()]
     notable = [ln for ln in all_lines
@@ -139,7 +139,7 @@ def run_gates(repo, listing=None):
     """Run a group of gates' selftests. Returns `(ok, n, bad, lines)`.
 
     `listing` is injectable (selftest uses a fake listing, no dependence on
-    the real repo); None ⇒ derived from `registry`.
+    the real repo); None => derived from `registry`.
     """
     listing = _derive_listing(repo) if listing is None else listing
     n = bad = 0
@@ -151,7 +151,7 @@ def run_gates(repo, listing=None):
         if not passed:
             bad += 1
     if n == 0:
-        # Zero-value guard: not a single gate discovered ⇒ fail (empty input is not a pass).
+        # Zero-value guard: not a single gate discovered => fail (empty input is not a pass).
         lines.append(str(M("harness.no_gates_found")))
         return False, n, bad + 1, lines
     if bad:
@@ -244,7 +244,7 @@ def run_configurable(repo):
 def _configurable_fixture(repo, tmp, registry):
     """Build a **qualified external repo**: all three doc sections present, carriers present under renamed names.
 
-    Returns `(env, gates)` — `env` is the environment with renamed knobs,
+    Returns `(env, gates)` -- `env` is the environment with renamed knobs,
     `gates` is the list to run.
     """
     fr = getattr(registry, "FIXTURE_RENAMES", {})
@@ -253,7 +253,7 @@ def _configurable_fixture(repo, tmp, registry):
 
     open(os.path.join(tmp, "a.py"), "w", encoding="utf-8").write("x = 1\n")
     # Machine block markers must be **placed by hand once first** (block not
-    # found ≠ block is correct).
+    # found != block is correct).
     open(os.path.join(tmp, fx_doc), "w", encoding="utf-8").write(
         "# T\n\nrefs [[py_files]] [[md_files]].\n\n"
         "<!-- AUTO:FACTS -->\n<!-- /AUTO:FACTS -->\n"
@@ -264,7 +264,7 @@ def _configurable_fixture(repo, tmp, registry):
     open(os.path.join(tmp, "RETRACT.json"), "w", encoding="utf-8").write('{"schema":1,"retractions":[]}\n')
     os.makedirs(os.path.join(tmp, "cases"), exist_ok=True)
     open(os.path.join(tmp, "cases", "02-y.md"), "w", encoding="utf-8").write(
-        "# e2\n\n**Status:** ready-for-agent\n\n**Settling:** `python3 a.py` —— rc=0 A; rc=7 B\n")
+        "# e2\n\n**Status:** ready-for-agent\n\n**Settling:** `python3 a.py` ---- rc=0 A; rc=7 B\n")
     for f in ("R1", "R2", "R3"):
         open(os.path.join(tmp, f + ".md"), "w", encoding="utf-8").write(
             "# %s\n\n[R1](R1.md) [R2](R2.md) [R3](R3.md)\n" % f)
@@ -300,7 +300,7 @@ def _default_names_go_red(repo, gates, tmp):
     """Under default names, the gates named by `--red-need` **must go red**. Returns `(ok, the ones that didn't)`.
 
     ⚠️ The environment must be **clean**: give it only `GATE_REPO`, no renamed
-    knobs — using the fixture's `env` means still running renamed, and this
+    knobs -- using the fixture's `env` means still running renamed, and this
     criterion can never hold (observed).
     """
     clean = {k: v for k, v in os.environ.items() if not k.startswith("REFLECT_")}
@@ -325,7 +325,7 @@ def _configurable_impl(repo, tmp, registry):
 
     Three sections (each a helper): `_configurable_fixture` /
     `_renamed_all_green` / `_default_names_go_red`. This function only
-    orchestrates — 85 lines → 20.
+    orchestrates -- 85 lines → 20.
     """
     env, gates = _configurable_fixture(repo, tmp, registry)
     lines = []
@@ -357,13 +357,13 @@ def _configurable_impl(repo, tmp, registry):
 
 # End-to-end zero-language probes: these entry points **all produce
 # user-visible text**.
-# With no language pack installed they must emit only codes — not one CJK
+# With no language pack installed they must emit only codes -- not one CJK
 # character allowed.
 # ⚠️ Probes only pick entry points that **don't put user data into the
 # output**.
 #
 # `zreflect/next.py` can't be a probe: it lists the **subjects** of unpushed
-# commits — commit subjects are natural language written by the author
+# commits -- commit subjects are natural language written by the author
 # (Chinese), which is **user data**, emitted verbatim as parameter values
 # beyond `%(count)s`. The zero-language regime governs **templates** (`M()`'s
 # phrasing), not data.
@@ -372,7 +372,7 @@ def _configurable_impl(repo, tmp, registry):
 # subject).
 #
 # Its templates are covered by `check_i18n`'s `null_pack_output_has_no_cjk`
-# (that case **feeds fixed parameters only**, never touching git state) — so
+# (that case **feeds fixed parameters only**, never touching git state) -- so
 # it hasn't left the criteria surface, it just got the right test method.
 ZERO_LANG_PROBES: tuple = (
     ("zreflect/gate.py", []),
@@ -381,13 +381,13 @@ ZERO_LANG_PROBES: tuple = (
     # ones that **neither consume configuration nor emit PINNED text**. Two
     # lessons from practice:
     #
-    #   · `facts.py --check` — depends on `REFLECT_DOCS`/`REFLECT_DOC` to
+    #   · `facts.py --check` -- depends on `REFLECT_DOCS`/`REFLECT_DOC` to
     #     decide which docs to audit. With them cleared it uses the default
-    #     roster, which doesn't match this repo's actual configuration ⇒
+    #     roster, which doesn't match this repo's actual configuration =>
     #     permanently red, and that red has nothing to do with language.
-    #   · `facts.py --render` — the output `PREAMBLE` is **fixed Chinese**
+    #   · `facts.py --render` -- the output `PREAMBLE` is **fixed Chinese**
     #     (`PINNED:`: the machine block is audited byte-for-byte; following
-    #     the language would make `--check` never converge) ⇒ permanent CJK
+    #     the language would make `--check` never converge) => permanent CJK
     #     leak report.
     #
     # `registry --red-need` is a pure filename list: zero configuration
@@ -410,7 +410,7 @@ def run_zero_language(repo):
     This one is a **behavioral** criterion: really run it, really look at the
     output.
 
-    ⚠️ The environment **must** have no `REFLECT_LANG` — what's judged is
+    ⚠️ The environment **must** have no `REFLECT_LANG` -- what's judged is
     exactly the "no language pack requested" path.
     """
     import i18n  # noqa: PLC0415
@@ -469,7 +469,7 @@ def main(argv):
                           lambda: run_zero_language(repo))
 
 
-# ── selftest ─────────────────────────────────────────────────────────────────
+# -- selftest -----------------------------------------------------------------
 
 def _fixture(files, listing=None):
     """Build a fixture repo and run `run_gates`. Returns (ok, n, bad, lines)."""
@@ -512,7 +512,7 @@ def _cases():
              listing=["zreflect/check_nosummary.py"])[0]),
         ("★ harness.missing_file_is_red",
          lambda: not _fixture({}, listing=["zreflect/check_gone.py"])[0]),
-        # (3) empty input must be reported — zero-value guard
+        # (3) empty input must be reported -- zero-value guard
         ("★ harness.no_gates_at_all_is_red",
          lambda: not _fixture({}, listing=[])[0]),
         # The summary-line criterion itself has teeth (criterion lives in machine.is_summary)

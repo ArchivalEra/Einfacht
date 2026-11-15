@@ -99,10 +99,53 @@ def han(text):
     return any(CJK_LO <= ord(c) <= CJK_HI for c in (text or ""))
 
 
+# -- Plain-English criterion (source must be readable as English) -------------
+#
+# `han()` answers "is there Chinese here"; it does **not** answer "is this text
+# English". A sentence written entirely with typographic symbols and digits
+# (`=> rc=0 => ok`) contains no Han character and passed -- so "the source is
+# English" had no criterion at all, only a convention that drifts.
+#
+# The marks below are **protocol**, not prose: they are emitted as machine-row
+# prefixes and judged by `machine.ROWS`, so translating or ASCII-fying them
+# would break a contract. Everything else outside ASCII is prose that leaked a
+# typographic character in, and is reported.
+PROSE_MARKS = ("\u2605", "\u00b7", "\u2139", "\u26a0", "\ufe0f",
+               "\u2192", "\u2190", "\u2194", "\u2026", "\u00a7")
+
+
+def non_ascii_prose(text):
+    """Return `[(char, offset)]` for non-ASCII characters that are **not** protocol marks."""
+    return [(c, i) for i, c in enumerate(text or "")
+            if ord(c) > 127 and c not in PROSE_MARKS]
+
+
+# Substrings whose non-ASCII is **the criterion itself**: a detector of Chinese
+# history headings cannot be written in ASCII, and neither can the quoted
+# Chinese vocabulary a gate is documented against. Matched as substrings of the
+# stripped line so a reformat (trailing comma, quote style) does not silently
+# re-arm the finding; deleting the vocabulary re-arms it, which is correct.
+PROSE_EXEMPT = (
+    "历史|退役|留档|曾经的|当年的|当时的|之前那份|此前|当时|收口前",
+    "|已翻案|更正|是错的|误读|推翻|曾写|已作废|不再成立",
+    'heading.startswith("## 附")',
+    "sha|hash|校验|指纹",
+    # check_i18n.py: the sentence terminators a PINNED reason is cut at -- a
+    # CJK full stop is data here, not prose. Spelled by codepoint so this
+    # exemption table does not itself contain the character it exempts.
+    "for sep in (" + chr(0x3002),
+)
+
+
+def prose_exempt(line):
+    """Whether this line carries non-ASCII as the criterion itself (see `PROSE_EXEMPT`)."""
+    return any(mark in line for mark in PROSE_EXEMPT)
+
+
 _MAX_VALUE = 40            # max characters shown per value in the null pack (long commands must not flood the screen)
 
 
-# ── Value objects ────────────────────────────────────────────────────────────
+# -- Value objects ------------------------------------------------------------
 
 class MissingPack(Exception):
     """A language pack failed to load (missing / broken / illegal shape). The caller converts this to FATAL rc 2.
@@ -223,7 +266,7 @@ class Message(str):
         # ⚠️ **Sanitize after rendering**: a clean template does not mean a clean
         # rendered result -- params (filenames, document lines, exception text)
         # are runtime data; 144 call sites feed them into templates as `%s`, and
-        # 58 templates start with a placeholder (`%(name)s: …`). Observed: when a
+        # 58 templates start with a placeholder (`%(name)s: ...`). Observed: when a
         # file named `"evil\nOFF: gate not configured"` was scanned, the render
         # produced a forged `OFF:` line and `run_phase` classified the whole
         # gate as off.
@@ -258,7 +301,7 @@ def _fmt_value(v):
     """
     s = repr(v)
     if len(s) > _MAX_VALUE:
-        s = s[:_MAX_VALUE - 1] + "…" + s[-1] if s[-1] in "\"'" else s[:_MAX_VALUE] + "…"
+        s = s[:_MAX_VALUE - 1] + "..." + s[-1] if s[-1] in "\"'" else s[:_MAX_VALUE] + "..."
     return s
 
 
@@ -310,7 +353,7 @@ def _validate(table, lang):
                               value=value[:40])
 
 
-# ── Pack location and reading (the repo-wide single resolution point) ───────
+# -- Pack location and reading (the repo-wide single resolution point) -------
 
 def pack_dir():
     """Absolute path of the language pack directory -- the **repo-wide single resolution point**. Three conventions:
@@ -409,7 +452,7 @@ def load_pack(lang):
     return table
 
 
-# ── Entry points: the current Catalog (process default) and scope ───────────
+# -- Entry points: the current Catalog (process default) and scope -----------
 
 NULL = object()                 # sentinel for "explicitly ask for the null pack" (distinct from "not passed")
 _DEFAULT = [Catalog.null()]     # process default (`activate` writes it; `bind` does not touch it)
@@ -491,7 +534,7 @@ def activate(lang=None, tables=None):
     return cat.lang
 
 
-# ── Self-proof ───────────────────────────────────────────────────────────────
+# -- Self-proof ---------------------------------------------------------------
 
 def _raises(fn):
     """This call must raise MissingPack (used by negative assertions)."""
@@ -560,7 +603,7 @@ def _cases_null(fx):
     """See `_cases()`: 7 cases in this group."""
     said = fx["said"]
     return [
-    # ① Normal case does not report -- null-pack shape
+    # (1) Normal case does not report -- null-pack shape
     ("i18n.null_no_params",
      lambda: _as_null(lambda: str(M("gate.title.facts"))
                      == "gate.title.facts")),
@@ -579,7 +622,7 @@ def _cases_null(fx):
     # The `NULL` sentinel means the same thing at all three entries: `bind` /
     # `resolve` / `activate`.
     ("★ i18n.null_sentinel_consistent", lambda: _null_consistent()),
-    # ③ Empty input must report
+    # (3) Empty input must report
     ("★ i18n.empty_code",
      lambda: _as_null(lambda: str(M("")) == "")),
     ]
@@ -592,7 +635,7 @@ def _cases_pack(fx):
     ("i18n.pack_applied",
      lambda: with_en(lambda: str(M("replay.no_cmd", key="f.py"))
                      == "`f.py` has no replay command")),
-    # ② The cases that must report, report
+    # (2) The cases that must report, report
     ("★ i18n.pack_empty",
      lambda: _raises(lambda: _validate(empty, "xx"))),
     ("★ i18n.pack_masquerades_contract",
@@ -634,7 +677,7 @@ def _cases_catalog(fx):
     # only block attribute assignment, not in-place dict mutation (observed:
     # `cat.table[...]=...` succeeded and every render was wrong).
     ("★ i18n.catalog_data_immutable", lambda: _catalog_immutable()),
-    # **Construction gate**: `Catalog(…)` cannot be built externally -- that
+    # **Construction gate**: `Catalog(...)` cannot be built externally -- that
     # would bypass `_validate` inside `load()` (the contract-string defense)
     # and let a translation masquerading as `OFF:` actually render (observed).
     ("★ i18n.catalog_construct_sealed", lambda: _construct_sealed()),
@@ -741,16 +784,16 @@ def _pack_dir_rules_ok():
     prev = os.environ.get("REFLECT_I18N")
     try:
         env = os.environ
-        # ① Unset => the tool's bundled pack directory (cross-repo fixtures depend on it)
+        # (1) Unset => the tool's bundled pack directory (cross-repo fixtures depend on it)
         env.pop("REFLECT_I18N", None)
         if not os.path.isdir(pack_dir()):
             return False
-        # ② Absolute path => as-is (no prefix is ever joined)
+        # (2) Absolute path => as-is (no prefix is ever joined)
         probe = os.path.abspath(os.sep)
         env["REFLECT_I18N"] = probe
         if pack_dir() != probe:
             return False
-        # ③ Relative path => the **audited repo root**. The two repo roots must
+        # (3) Relative path => the **audited repo root**. The two repo roots must
         #    be **genuinely separated** for this to be verifiable: with
         #    GATE_REPO unset they hold the same value, so a wrong convention
         #    also passes (stepped on).

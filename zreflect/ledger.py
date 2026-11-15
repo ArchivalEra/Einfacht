@@ -3,9 +3,9 @@
 
 Re-measurement has two silent rot modes, each paired with one guard:
 
-  · **dropped entry** — the input is gone ⇒ the fact silently **disappears**.
+  · **dropped entry** -- the input is gone => the fact silently **disappears**.
     Guard: `dropped_keys()`.
-  · **changed value** — the input changed, or was measured wrong ⇒ the fact
+  · **changed value** -- the input changed, or was measured wrong => the fact
     silently **becomes a different number**. Guard: `changed_keys()`.
 
 The changed-value mode is nastier: if a gate only spot-checks a few shas,
@@ -30,7 +30,7 @@ class Unreadable(RuntimeError):
 
     **This is a different thing from "no ledger"**: the latter is the normal
     shape of a fresh repo (an empty table is returned when `missing_ok=True`),
-    the former is a configuration accident — it must reach FATAL rc=2 and
+    the former is a configuration accident -- it must reach FATAL rc=2 and
     must never surface as a bare traceback (that would escape this repo's rc
     contract, and a traceback with rc=0 is even worse: the caller believes
     it succeeded).
@@ -39,7 +39,7 @@ class Unreadable(RuntimeError):
 
 def load(path, missing_ok=False):
     """Read JSON. With `missing_ok=True` a **missing file returns an empty
-    table** — for "a new repo's first run": the ledger doesn't exist yet, and
+    table** -- for "a new repo's first run": the ledger doesn't exist yet, and
     `facts.py`'s two guards (dropped / changed) must be able to handle "there
     is no previous version". **The default remains a hard error**: the caller
     must explicitly say it accepts a missing ledger, so a mistyped path isn't
@@ -47,7 +47,7 @@ def load(path, missing_ok=False):
 
     ⚠️ Bad JSON / permissions / encoding always raise `Unreadable` (not a bare
     `JSONDecodeError`): the caller converts that into FATAL rc=2. Previously
-    everything bubbled to the top — observed: `facts.py --check` printed a
+    everything bubbled to the top -- observed: `facts.py --check` printed a
     traceback for a broken ledger with **rc=0**, and the caller believed it
     had been audited.
     """
@@ -68,7 +68,7 @@ def load_or_fatal(path, name=None):
     Gates use this instead of a bare `load()`: a broken ledger is a
     **configuration accident** and must take the FATAL tier, not surface as a
     traceback (Python would exit 1, and rc=1 in `registry --run` means
-    "criterion red" — a completely different fix: fix the configuration vs
+    "criterion red" -- a completely different fix: fix the configuration vs
     fix the problem).
 
     Observed: a `{ broken` FACTS.json made `check_facts.py` print a traceback
@@ -102,7 +102,7 @@ def value_of(entry):
     """A fact's **value**. Tolerates both the dict shape and the bare-value shape.
 
     (Originally `_value`: consumed as an interface by check_facts /
-    check_facts_replay / check_stale — the underscore-private name was private
+    check_facts_replay / check_stale -- the underscore-private name was private
     in name only, promoted on 2026-10-07.)
     """
     return entry.get("value") if isinstance(entry, dict) else entry
@@ -112,14 +112,14 @@ def short_value(v, n=24):
     """Shrink a value to one line (a 64-char sha keeps only its first 16), for the "changed value" hint."""
     s = v if isinstance(v, str) else str(v)
     if len(s) == 64:
-        return s[:16] + "…"
-    return s if len(s) <= n else s[:n] + "…"
+        return s[:16] + "..."
+    return s if len(s) <= n else s[:n] + "..."
 
 
 def changed_keys(old_facts, new_facts):
     """Which keys' **values** this re-measurement would change. Returns `[(key, old value, new value)]`.
 
-    ⚠️ **Compares `value` only**, not `cmd`/`source`/`note` — those describe
+    ⚠️ **Compares `value` only**, not `cmd`/`source`/`note` -- those describe
     "how to replay", and editing them is normal doc maintenance. If those also
     had to be explicitly accepted, the guard would turn into noise and end up
     being waved through wholesale by `--accept-changes`, dead as a guard.
@@ -145,17 +145,17 @@ def fact(value, cmd, source, note="", replay=True,
     ⚠️ **The bare-value contract of `cmd` (issue #2 (1))**: `check_facts_replay.py`
     **runs it verbatim** (cwd = repo root, bash + `pipefail`) and compares **stdout
     stripped of leading/trailing whitespace** against `value`. So `cmd` must
-    **print only the value itself** — printing "the whole line containing the
+    **print only the value itself** -- printing "the whole line containing the
     value" is readable by humans but not judgeable by machines, and the replay
     gate will read it as a mismatch. This contract is the premise for "re-runnable"
     being judgeable at all.
 
     Entries that start services / need build artifacts and cannot run in this
     environment at all: write `replay=False` explicitly (the replay gate skips
-    them, and alarms when **every entry is exempted** — exemption has a roster,
+    them, and alarms when **every entry is exempted** -- exemption has a roster,
     it is not silent).
 
-    **Third tier: witness (issue #5)** — an expensive fact with `replay=False`
+    **Third tier: witness (issue #5)** -- an expensive fact with `replay=False`
     can carry a **cheap witness**: `witness` (a cheap, harmless, read-only
     command) + `witness_expect` (the expected stdout). Witness is **orthogonal**
     to `replay`: the expensive fact's value is not re-run verbatim, but its
@@ -163,8 +163,8 @@ def fact(value, cmd, source, note="", replay=True,
     it is") is **really run at every commit**, under the same bare-value
     contract (`stdout.strip() == witness_expect`).
 
-    **Fourth tier: instrument calibration (issue #6 (1))** — the replay contract
-    catches "the command died" (rc≠0), but not **silent instrument drift**: the
+    **Fourth tier: instrument calibration (issue #6 (1))** -- the replay contract
+    catches "the command died" (rc!=0), but not **silent instrument drift**: the
     command succeeds, the value is stable, the re-run "passes" forever, yet what
     it measures is not the thing at all (`grep -c X` exits successfully with 0
     when the instrument does not recognize X). A `cmd` that claims "whether the
@@ -172,7 +172,7 @@ def fact(value, cmd, source, note="", replay=True,
     command run against the sample) + `calibrate_expect` (the sample's known
     output). Orthogonal to `replay` / `witness`, **really run at every commit**,
     under the same bare-value contract. The `witness` / `calibrate` pairs must
-    **each be given together** — giving only one is an incomplete shape, and
+    **each be given together** -- giving only one is an incomplete shape, and
     the collector rejects it on the spot (a half assertion is easier to catch
     than a silent absence).
 
@@ -180,10 +180,10 @@ def fact(value, cmd, source, note="", replay=True,
     it is the record of "when it was measured", used for rendering the
     "measured at" column and for fact age, and **must never be treated as a
     measurement input** (collect.py principle 2: otherwise `--check` never
-    converges — it is an output, not an input).
+    converges -- it is an output, not an input).
     `first_seen` (issue #6 (1)) is likewise stamped at collection time:
     `measure()` keeps the old date while the value is unchanged and takes today
-    when the value changes — the always-the-same detection ("is this cmd
+    when the value changes -- the always-the-same detection ("is this cmd
     measuring, or always returning the same number?") depends on it.
     """
     _require_pairs((witness, witness_expect, "witness"),
@@ -197,7 +197,7 @@ def fact(value, cmd, source, note="", replay=True,
 
 
 def _require_pairs(*pairs):
-    """Paired parameters must be given **together** — one alone is an incomplete
+    """Paired parameters must be given **together** -- one alone is an incomplete
     shape, rejected on the spot.
 
     A half assertion is easier to catch than a silent absence: an entry with
@@ -241,7 +241,7 @@ def _fill_optional(d, note, replay, witness, witness_expect,
 def age_days(entry):
     """Days since this fact's collection time (non-negative float, issue #3 (2)).
 
-    `measured_at` missing / unparseable ⇒ None — if it can't be read, say so;
+    `measured_at` missing / unparseable => None -- if it can't be read, say so;
     guessing 0 is not allowed (0 would be read as "just measured", a false
     assertion).
     """
@@ -255,8 +255,8 @@ def age_days(entry):
     return (datetime.now(timezone.utc) - when).total_seconds() / 86400.0
 
 
-# ── Self-verification (three tiers: clean reports nothing / what must report
-#    reports / empty input reports) ─────────────────────────────────────────────
+# -- Self-verification (three tiers: clean reports nothing / what must report
+#    reports / empty input reports) ---------------------------------------------
 def _cases_guards():
     """(1) Dropped-entry / changed-value guards: clean reports nothing + what
     must report reports + a fresh start is legal."""
@@ -286,14 +286,17 @@ def _cases_guards():
 
 
 def _cases_shapes():
-    """Appendix: ledger shapes — the three interfaces `facts_of` / `short_value`
+    """Appendix: ledger shapes -- the three interfaces `facts_of` / `short_value`
     / `value_of`."""
     return [
         ("ledger.facts_of_both_shapes",
          lambda: facts_of({"facts": {"a": 1}}) == {"a": 1}
          and facts_of({"a": 1}) == {"a": 1}),
+        # ASCII ellipsis, not U+2026: this value is rendered into a **machine
+        # row** (`guard.changed_row`), and a machine row may not carry
+        # typographic characters (see `i18n.non_ascii_prose`).
         ("ledger.short_value_sha",
-         lambda: short_value("a" * 64) == "a" * 16 + "\u2026"),
+         lambda: short_value("a" * 64) == "a" * 16 + "..."),
         # Steady state: `value_of` tolerates both the dict shape and the bare value
         ("ledger.value_of_both_shapes",
          lambda: value_of({"value": 3}) == 3 and value_of(7) == 7),
@@ -323,7 +326,7 @@ def _cases_measurement():
 
 def _cases_probes():
     """(3) Witness / (4) instrument calibration (issue #5 / #6 (1)): paired
-    fields — one alone must raise."""
+    fields -- one alone must raise."""
     from gate import raises  # noqa: PLC0415
     return [
         ("ledger.witness_fields",
@@ -356,7 +359,7 @@ def _cases():
 
 def _selftest():
     from gate import activate_or_fatal, selftest  # noqa: PLC0415
-    # Activation **precedes** self-verification: a pack set but absent ⇒
+    # Activation **precedes** self-verification: a pack set but absent =>
     # FATAL rc 2 (this entry previously never activated, so with
     # REFLECT_LANG=de a nonexistent pack was silently accepted).
     rc = activate_or_fatal()

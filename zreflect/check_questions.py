@@ -236,7 +236,7 @@ def run(argv):
                   M("questions.ok", count=len(files), open=n_open))
 
 
-def _q(status="ready-for-agent", settling="zreflect/facts.py — rc=0 ⇒ stands; rc=2 ⇒ did not catch it"):
+def _q(status="ready-for-agent", settling="zreflect/facts.py -- rc=0 => stands; rc=2 => did not catch it"):
     return "# 01: sample\n\n**Status:** %s\n\n**Settling:** %s\n" % (status, settling)
 
 
@@ -248,7 +248,7 @@ def _cases():
          lambda: problems(ok, exists=lambda p: True) == []),
         ("questions.none_first_deliverable",
          lambda: problems({"questions/02.md": _q(
-             settling=_NOT_EXISTS + " — the " + _FIRST_DELIVERABLE + " is to build it")},
+             settling=_NOT_EXISTS + " -- the " + _FIRST_DELIVERABLE + " is to build it")},
              exists=lambda p: False) == []),
         ("questions.resolved_also_compliant", lambda: problems(
             {"questions/03.md": _q(status="resolved")}, exists=lambda p: True) == []),
@@ -288,12 +288,12 @@ def _cases():
          == ["questions.none_without_first_deliverable"]),
         ("★ questions.missing_status",
          lambda: [p.code for p in problems(
-             {"questions/07.md": "**Settling:** x.py —— rc=0 ⇒ a；rc=1 ⇒ b"},
+             {"questions/07.md": "**Settling:** x.py ---- rc=0 => a；rc=1 => b"},
              exists=lambda p: True)] == ["questions.missing_status"]),
         # (2) UX (issue #15 B1): a wrapped Settling must still yield the full criterion
         ("questions.settling_wrapped",
-         lambda: "rc=7" in (field("**Status:** x\n**Settling:** run:\nrc=0 ⇒ A；"
-                                 "rc=7 ⇒ B\n", "Settling") or "")),
+         lambda: "rc=7" in (field("**Status:** x\n**Settling:** run:\nrc=0 => A；"
+                                 "rc=7 => B\n", "Settling") or "")),
         # (3) empty input must be reported
         ("★ questions.empty",
          lambda: [p.code for p in problems({}, exists=lambda p: True)]

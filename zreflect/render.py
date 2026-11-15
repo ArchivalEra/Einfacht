@@ -34,7 +34,7 @@ PREAMBLE = [
 
 def _fmt(v):
     if isinstance(v, str) and len(v) == 64:
-        return "`%s…`" % v[:16]
+        return "`%s...`" % v[:16]
     return "**%s**" % (v if isinstance(v, str) else str(v))
 
 
@@ -63,7 +63,7 @@ def render_block(ledger):
         for k in sorted(f):
             e = f[k] if isinstance(f[k], dict) else {"value": f[k]}
             lines.append("| `%s` | %s | %s | `%s` |"
-                         % (k, _fmt(e.get("value")), e.get("measured_at", "—"),
+                         % (k, _fmt(e.get("value")), e.get("measured_at", "--"),
                             e.get("cmd", "?")))
         lines += ["", "%d facts." % len(f)]
     lines.append(BLOCK_END)
@@ -126,7 +126,7 @@ def _cases():
         ("render.keys_in_block",
          lambda: all(k in render_block(full) for k in ("a", "s"))),
         ("render.raw_value", lambda: "**4752**" in render_block(full)),
-        ("render.sha_truncated", lambda: "`" + "b" * 16 + "…`" in render_block(full)),
+        ("render.sha_truncated", lambda: "`" + "b" * 16 + "...`" in render_block(full)),
         ("render.block_pure",
          lambda: render_block(full) == render_block(full)),
         ("render.prose_only_outside_block",

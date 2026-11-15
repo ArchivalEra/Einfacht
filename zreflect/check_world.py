@@ -3,12 +3,12 @@
 
 In multi-line repos (several independently maintained product lines sharing
 one set of gates and one verification environment), verification gates read
-"**whichever world happens to be deployed**" — three real incidents
+"**whichever world happens to be deployed**" -- three real incidents
 (Octave-Full-Wasm, 2026-10-07):
 
   1. After cherry-picking a commit onto wasm64-NEXT, a gate went red: NEXT's
      plugin roster was being checked against the site deployed by
-     IllegalPerformance — the gate wasn't broken; it faithfully compared the
+     IllegalPerformance -- the gate wasn't broken; it faithfully compared the
      world that happened to be deployed in the environment, and that world
      belonged to another line;
   2. The same shape went red again on master: master's verification target
@@ -18,7 +18,7 @@ one set of gates and one verification environment), verification gates read
      table flipped).
 
 Root cause (in seam language): a seam exists, but it is **four parallel
-half-seams** — different names, different defaults, different coverage
+half-seams** -- different names, different defaults, different coverage
 (some gates read env, some hardcode a container, some read "latest");
 nothing forces the gates to align with "this line's world" when switching
 lines.
@@ -26,17 +26,17 @@ lines.
 World declaration (**data, not code**, same pattern as #7):
 
     { "lines": {
-        "wasm64-NEXT": { "site": "/…/next-base/site",
-                          "artifacts": "/…/next-base/w64-artifacts",
+        "wasm64-NEXT": { "site": "/.../next-base/site",
+                          "artifacts": "/.../next-base/w64-artifacts",
                           "container": "o113",
                           "fork_pin_ref": "upstream/octave" } },
       "active": "wasm64-NEXT",
       "stamps": {
-        "container": { "value": "sha256:…",
+        "container": { "value": "sha256:...",
                         "cmd": "docker inspect --format '{{.Image}}' o113" },
-        "site":     { "value": "sha256:…",
-                        "cmd": "find /…/site -type f | sort | xargs sha256sum | sha256sum" },
-        "scripts":  { "value": "sha256:…",
+        "site":     { "value": "sha256:...",
+                        "cmd": "find /.../site -type f | sort | xargs sha256sum | sha256sum" },
+        "scripts":  { "value": "sha256:...",
                         "cmd": "sha256sum relink.sh link-web.sh | sha256sum" } } }
 
 The gate does three things:
@@ -44,39 +44,39 @@ The gate does three things:
   · **Resolve the current line** (unified interface): `REFLECT_WORLD_LINE`
     (override for CI / special run modes) > current branch name (if the
     branch is a line in the roster) > `active` (a human's decision). Other
-    gates obtain their verification target via `resolve_line()` — replacing
+    gates obtain their verification target via `resolve_line()` -- replacing
     four ambient knobs; the gate's deep-module nature is unchanged, what
     gets hidden is "how the world resolves";
-  · **Branch audit**: the branch is a line in the roster yet ≠ `active` ⇒ red
+  · **Branch audit**: the branch is a line in the roster yet != `active` => red
     (the shape of incidents 1/2: a human switched branches without running
     the line-switch script, active still points at the other line);
   · **Stamp audit**: each stamp's `cmd` is replayed verbatim (bare-value
-    contract — `run_cmd` grafts the replay gate directly), stdout ≠ `value`
-    ⇒ red (the shape of incident 3: the container runs another line's
+    contract -- `run_cmd` grafts the replay gate directly), stdout != `value`
+    => red (the shape of incident 3: the container runs another line's
     script, artifacts got contaminated).
 
 **Switching lines = running a script that this gate audits**: after the
 script finishes its three steps (submodule update + re-provision + cp
 scripts) it **writes out** the world declaration (active + stamps), and
-this gate audits declaration vs environment at commit time — turning the
+this gate audits declaration vs environment at commit time -- turning the
 "three-step line switch" from verbal discipline into a witnessed act
 (same grafting approach as doctor/witness).
 
-Pluggable: `REFLECT_WORLD` unset and the default `world.json` absent ⇒
+Pluggable: `REFLECT_WORLD` unset and the default `world.json` absent =>
 state plainly that it is off, return 0. **Single-line repos neither benefit
-nor suffer** (one world = the status-quo behavior — a boundary the issue
+nor suffer** (one world = the status-quo behavior -- a boundary the issue
 states explicitly; what this bites is the shape "several independently
 maintained lines sharing one verification environment").
 
 Honest boundary (stated in the issue, not hidden):
 
-  · **No automatic line selection is proposed** — which line counts as
+  · **No automatic line selection is proposed** -- which line counts as
     current is a human's decision (the `active` field); the machine only
     ensures declaration and environment agree;
   · Cross-engine reproducibility (relaxed_madd makes BLAS results vary in
-    the last digit — IEEE-compliant yet irreproducible) is a separate topic,
+    the last digit -- IEEE-compliant yet irreproducible) is a separate topic,
     orthogonal to this item's "verifying the wrong world"; don't conflate;
-  · A stamp's `cmd` is written by the repo itself — same trust boundary as
+  · A stamp's `cmd` is written by the repo itself -- same trust boundary as
     the replay gate (the repo produces it and reviews it itself).
 
 Usage (run directly, cwd=repo root):
@@ -106,14 +106,14 @@ WORLD_RAW = os.environ.get("REFLECT_WORLD", "").strip()
 LINE_OVERRIDE = os.environ.get("REFLECT_WORLD_LINE", "").strip()
 
 # Required fields of a line (the four-piece set of the shape suggested by
-# issue #13; extra fields are allowed to pass through verbatim — each line's
+# issue #13; extra fields are allowed to pass through verbatim -- each line's
 # custom verification-target fields are read by consumer gates via
 # resolve_line()).
 LINE_FIELDS = ("site", "artifacts", "container", "fork_pin_ref")
 
 
 def current_branch():
-    """Current git branch name (detached HEAD / not a repo ⇒ empty string =
+    """Current git branch name (detached HEAD / not a repo => empty string =
     takes no part in line selection; CI override goes through
     REFLECT_WORLD_LINE)."""
     try:
@@ -132,9 +132,9 @@ def resolve_line(spec, branch, override=None):
 
     Resolution order: override (CI / special run modes) > branch name (if the
     branch is a line in the roster) > active (a human's decision). Other gates
-    consume their verification target through this — replacing four ambient
+    consume their verification target through this -- replacing four ambient
     knobs with different names, different defaults, different coverage.
-    Unresolvable ⇒ (None, None) (the shapes the caller should report are
+    Unresolvable => (None, None) (the shapes the caller should report are
     reported by spec_problems; not re-judged here).
     """
     lines = spec.get("lines") if isinstance(spec, dict) else None
@@ -177,8 +177,8 @@ def _active_problems(active, lines):
 
 
 def _branch_problems(branch, active, lines, override):
-    """Branch audit: the branch is a line yet ≠ active ⇒ red (line switch
-    without running the line-switch script — the shape of incidents 1/2).
+    """Branch audit: the branch is a line yet != active => red (line switch
+    without running the line-switch script -- the shape of incidents 1/2).
     When an override is present it is CI's explicit choice; don't guess for
     the human."""
     if (branch and branch in lines and active
@@ -232,7 +232,7 @@ def _one_stamp_problem(name, st, run):
 
 def stamp_problems(spec, runner=None):
     """Stamp audit (side effects only through runner): each stamp's cmd is
-    replayed verbatim, stdout must equal the declared value — the bare-value
+    replayed verbatim, stdout must equal the declared value -- the bare-value
     contract grafts the replay gate directly onto the criteria (`run_cmd` /
     `_q`).
 
@@ -251,8 +251,8 @@ def stamp_problems(spec, runner=None):
 
 def _spec_path():
     """Explicit knob > default name. Explicitly configured but pointing at a
-    missing file ⇒ return that path (run FATALs on the spot); unset and the
-    default name absent ⇒ None (disabled)."""
+    missing file => return that path (run FATALs on the spot); unset and the
+    default name absent => None (disabled)."""
     if WORLD_RAW:
         return repo(WORLD_RAW)
     p = repo("world.json")
@@ -400,7 +400,7 @@ def _cases_shape(fx):
 
 
 def _cases():
-    """Assemble the 3 groups of fixture assertions. **Assemble only** — the criteria live in the group functions."""
+    """Assemble the 3 groups of fixture assertions. **Assemble only** -- the criteria live in the group functions."""
     fx = _cases_fixture()
     return (
     _cases_resolve(fx)
@@ -414,7 +414,7 @@ GATE = meta("world gate",
             "multi-line repo's shared validation environment",
             knobs=("REFLECT_WORLD", "REFLECT_WORLD_LINE"),
             off_reason="a single-line repo does not need it: spec not "
-                       "configured ⇒ state it is off")
+                       "configured => state it is off")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_world", _cases(), run))

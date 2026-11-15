@@ -2,21 +2,21 @@
 """env file gate (**pluggable module**, issue #8): guards the hooks' REFLECT_* carrier.
 
 Hooks load Einfacht.env through the pluggable einfacht-env.sh
-(default name; REFLECT_ENV_FILE can swap it) — that is the
+(default name; REFLECT_ENV_FILE can swap it) -- that is the
 persistent carrier of issue #8: inside hook context, "whoever
 remembers to export" does not count.
 This gate guards the carrier's **silent rot**, all members of the
-"deployed ≠ running" family:
+"deployed != running" family:
 
-  · a knob name mistyped by one character ⇒ silently ignored by
-    every program, the value never reaches the hooks — the most
+  · a knob name mistyped by one character => silently ignored by
+    every program, the value never reaches the hooks -- the most
     dangerous kind: everything keeps running as usual;
-  · a file knob pointing at a missing file ⇒ the hook's [ -f ]
+  · a file knob pointing at a missing file => the hook's [ -f ]
     guard silently skips, and the machine block quietly goes
     stale from that moment on;
-  · an empty value / a file with nothing but comments left ⇒
+  · an empty value / a file with nothing but comments left =>
     looks configured while nothing was ever loaded;
-  · broken sh syntax ⇒ the hook dies loudly only at commit
+  · broken sh syntax => the hook dies loudly only at commit
     time (set -e), with an error pointing nowhere clear.
 
 **The roster is registration-based** (since 2026-10-07, Phase 2): the
@@ -24,18 +24,18 @@ criteria data = the REGISTRY in `zreflect/knobs.py` (name → kind /
 default / semantics); this file's handwritten FILE_KNOBS list is
 retired. The audit is bidirectional:
 
-  · an exported name not in the registry ⇒ typo / phantom
+  · an exported name not in the registry => typo / phantom
     (configured yet silently inert);
   · a REFLECT_* token appearing in the zreflect/*.py scan surface
-    that is **not** in the registry ⇒ phantom knob / typo
-    (docstring nominations don't count, registration does — the
+    that is **not** in the registry => phantom knob / typo
+    (docstring nominations don't count, registration does -- the
     structural fix for the REFLECT_AB/REFLECT_PINS phantom incident);
   · REFLECT_* names appearing in the trilingual READMEs (the
-    REFLECT_READMES list) ⊆ registry (doc-side phantom defense,
+    REFLECT_READMES list) subset of registry (doc-side phantom defense,
     runs in selftest).
 
 Pluggable: Einfacht.env absent (neither the hooks directory nor the
-repo root has it) ⇒ state plainly that it is off, return 0 (hooks
+repo root has it) => state plainly that it is off, return 0 (hooks
 fall back to plain environment variables + the default name).
 
 Honest boundary: existence is only checked for paths **relative to
@@ -66,9 +66,9 @@ ENV_FILE = (os.environ.get("REFLECT_ENV_FILE", "Einfacht.env")
 _EXPORT_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 # The explicit parentheses only spell out the precedence (`^a|b$` alternation
 # binds loosest anyway); behavior is character-for-character identical to
-# `^["\']|["\']$` — strips only a leading/trailing quote, keeps inner quotes.
+# `^["\']|["\']$` -- strips only a leading/trailing quote, keeps inner quotes.
 _QUOTES_RE = re.compile(r'^(?:["\'])|(?:["\'])$')
-# Knob token: REFLECT_ + uppercase. **The left boundary is required** — without
+# Knob token: REFLECT_ + uppercase. **The left boundary is required** -- without
 # it, the retraction example text (a `ZCODE_` prefix + one token) gets sliced
 # mid-word into a fake token, and each trilingual README audit reports one
 # false positive apiece (hit in practice). ⚠️ Neither this comment nor the
@@ -82,14 +82,14 @@ from knobs import _TOKEN_RE  # noqa: E402  (single source; this file used to kee
 def known_knobs(py_dir=None):
     """Discovery scan: the full set of REFLECT_* tokens appearing in zreflect/*.py.
 
-    Used for auditing (not the roster itself — the roster is knobs.REGISTRY):
+    Used for auditing (not the roster itself -- the roster is knobs.REGISTRY):
     a token that appears in the scan surface but is missing from the registry
     = phantom / typo, reported by this gate. `py_dir` is injectable
-    (selftest uses a fake source tree — if real files entered the selftest,
+    (selftest uses a fake source tree -- if real files entered the selftest,
     the selftest would depend on the machine).
 
     ⚠️ **The default directory is the checked repo's zreflect** (`repo("zreflect")`),
-    not the tool's own — this gate guards **the checked repo's** carrier, not
+    not the tool's own -- this gate guards **the checked repo's** carrier, not
     the tool itself. `knobs._py_sources()` is the shared read loop, but the
     base is passed explicitly here: the two default directories coincide in
     production but differ under fixtures (that difference must be kept, not
@@ -107,7 +107,7 @@ def _known_knobs_scans_repo():
 
     The criterion tests **behavior**: place a phantom knob in a fixture repo,
     and `known_knobs()` must see it. The tool's own zreflect lacks that token
-    ⇒ if the default directory drifts to the tool side, this goes red.
+    => if the default directory drifts to the tool side, this goes red.
     """
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
@@ -136,8 +136,8 @@ def _known_knobs_scans_repo():
 def parse_exports(text):
     """Parse the effective exports of an env file (pure function: the selftest needs it).
 
-    Returns {name: value}. Comment lines / blank lines are skipped — a
-    file with only comments left ⇒ empty dict (the "looks configured"
+    Returns {name: value}. Comment lines / blank lines are skipped -- a
+    file with only comments left => empty dict (the "looks configured"
     silent rot is reported by the caller). Values get quote stripping
     only, no variable expansion (the existence criteria don't need the
     expanded values).
@@ -154,7 +154,7 @@ def parse_exports(text):
 def _phantom_token_problems(scanned, registry):
     """REFLECT_* tokens that appear in the scan surface but not in the registry (phantom / typo).
 
-    The typo sample must be constructed by the caller via concatenation —
+    The typo sample must be constructed by the caller via concatenation --
     this file is itself inside the scan surface, so a hardcoded literal
     would sweep the typo into the scan surface and the guard would be dead.
     """
@@ -193,7 +193,7 @@ def _export_problems(name, value, registry, file_exists, dir_exists):
     #
     # ⚠️ **Each of the two codes gets its own `M(...)` call**: written as
     # `M("a" if is_dir else "b")`, the `knobs.used_codes()` regex only catches
-    # the first ⇒ the other doesn't exist in front of `pack_coverage`. The
+    # the first => the other doesn't exist in front of `pack_coverage`. The
     # language pack lacks it, the user sees a bare code, and the audit stays
     # green anyway (observed: this very case is what the newly added
     # `i18n_cover.code_not_literal` caught).
@@ -252,11 +252,11 @@ def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     p = _find_env_file()
     if p is None:
-        # ⚠️ C3: the off early-return **only skips the carrier checks** — roster
+        # ⚠️ C3: the off early-return **only skips the carrier checks** -- roster
         # self-consistency (phantom knobs / README phantoms) has nothing to do
         # with whether the carrier exists; it moved to knobs.py and is funneled
         # through registry.problems() (while it was welded here, this repo had
-        # no Einfacht.env ⇒ it never executed; hit in practice).
+        # no Einfacht.env => it never executed; hit in practice).
         return off(M("envfile.off", name=ENV_FILE))
     try:
         with open(p, encoding="utf-8", errors="replace") as fh:
@@ -267,7 +267,7 @@ def run(argv=None):
     if not scanned:
         return fatal(M("envfile.scan_empty", path=repo("zreflect")))
     # Syntax check (instrument): sh -n parses only, never executes. A syntax
-    # error ⇒ a problem to report; can't run at all ⇒ the instrument broke
+    # error => a problem to report; can't run at all => the instrument broke
     # (syntax_ok=None, reported as such).
     syntax = None
     try:
@@ -279,7 +279,7 @@ def run(argv=None):
     # Criteria inside the carrier: export-name typo / file knob pointing at a
     # missing target / empty value / sh syntax.
     # (README phantoms and the "tool-repo scan surface" phantoms belong to
-    # knobs.py; this gate's scan covers the **checked repo's** zreflect/ —
+    # knobs.py; this gate's scan covers the **checked repo's** zreflect/ --
     # only it can see typos in the downstream repo's own code, a scan surface
     # distinct from knobs'; both copies stay.)
     probs = problems(exports, REGISTRY,
@@ -306,7 +306,7 @@ def _cases_fixture():
                 "REFLECT_QUESTIONS": "questions",
                 "REFLECT_NAKED_MIN": "100"}
     # The typo sample is built by concatenation: this file is inside the scan
-    # surface and gets scanned by known_knobs() — a hardcoded literal would
+    # surface and gets scanned by known_knobs() -- a hardcoded literal would
     # sweep the typo into the scan surface and the guard would be dead.
     typo = "REFLECT_" + "DOCSS"
     return {'good_files': good_files, 'fe': fe, 'de': de, 'registry': registry, 'good_env': good_env, 'typo': typo}
@@ -340,7 +340,7 @@ def _cases_knobs(fx):
      lambda: any(getattr(p,"code","") == "envfile.file_missing" and p.params.get("target") == "README.missing.md" for p in problems(
          {"REFLECT_READMES": "README.md,README.missing.md"},
          registry, fe, de, syntax_ok=True, scanned=registry.keys()))),
-    # ⚠️ There used to be an "audit" case asserting `repo("zreflect") == knobs._zdir()` —
+    # ⚠️ There used to be an "audit" case asserting `repo("zreflect") == knobs._zdir()` --
     # **that was wrong**: it only asserted a configuration fact (GATE_REPO wasn't
     # overridden) and had **nothing to do** with where `known_knobs` actually scans.
     # Observed: after changing known_knobs' default directory to `knobs._zdir()`
@@ -414,7 +414,7 @@ def _cases_syntax(fx):
 
 
 def _cases():
-    """Assemble the 3 groups of fixture assertions. **Assemble only** — the criteria live in the group functions."""
+    """Assemble the 3 groups of fixture assertions. **Assemble only** -- the criteria live in the group functions."""
     fx = _cases_fixture()
     return (
     _cases_knobs(fx)
@@ -429,7 +429,7 @@ GATE = meta("env-file gate",
             knobs=("REFLECT_ENV_FILE",),
             off_reason="a repo without an env carrier (all knobs at their "
                        "defaults) does not need it: spec not configured "
-                       "⇒ state it is off")
+                       "=> state it is off")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],

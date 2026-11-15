@@ -128,8 +128,35 @@ fatal=0**. If not, check `--init` output for `already exists, left alone`
 `measure_example()` directly. Unset = the suite is measured -- then the numbers
 in `STATE.md` are **about Einfacht**, not about your project.
 
-Name-type knobs (`REFLECT_DOCS` / `REFLECT_READMES` / `REFLECT_QUESTIONS` ...)
-are set in that repo's `Einfacht.env`, never in code.
+## Where configuration lives: three places, three scopes
+
+⚠️ **`Einfacht.env` is not "the config file"** -- it is the **hook carrier**.
+`reflect-hooks/einfacht-env.sh` sources it, so `pre-commit` / `pre-push` see its
+values. Running a gate directly (`python3 zreflect/facts.py --check`,
+`registry.py --run commit`, CI steps) **never reads it**. Put a knob only there
+and it silently does nothing outside hook context.
+
+| Place | Takes effect in | Use for |
+|---|---|---|
+| `reflect-hooks/Einfacht.env` | hook context only (pre-commit / pre-push, via `einfacht-env.sh`) | knobs the hooks must honour, e.g. `REFLECT_LANG`, `REFLECT_DOC` |
+| process environment / CI `env:` | every direct invocation | knobs CI and manual runs must honour, e.g. `REFLECT_READMES`, `REFLECT_PHASES`, `REFLECT_MEASURE_MODULE` |
+| `zreflect/knobs.py` `REGISTRY` | the default for everything | declarations: name, kind, default, meaning -- never a per-repo value |
+
+Policy data is a **fourth** thing and is neither: `ab.json`, `doctor.json`,
+`invariants.json`, `locks.json`, `pins.json`, `retractions.json`, `secrets.json`,
+`world.json`, `questions/`. Those are per-repo files that gates read; they hold
+policy, not mechanism.
+
+Knob names are declared once in `REGISTRY` (`python3 zreflect/knobs.py --list`);
+a token that appears in `zreflect/*.py` but not in the registry is a reported
+phantom. Name-type knobs are never written into code.
+
+**Unset and explicitly empty are different intents.** Unset = "I did not
+decide, use the registry default". `REFLECT_READMES=` (empty) = "this repo has
+no README group" -- the gate says so and stands down instead of reporting
+`README.zh.md` missing, which would diagnose a stated intent as an absent file.
+`REFLECT_DOCS=` deliberately keeps the collapsing behaviour: a repo must have a
+state document, so an empty document group is meaningless rather than an answer.
 
 ## This repo's protocol: wiring and no-direct-writes
 

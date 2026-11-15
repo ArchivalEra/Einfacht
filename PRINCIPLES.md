@@ -12,27 +12,30 @@
 所有纪律都是这个问题的推论。它们不是风格偏好 —— 每一条都对应一次真实的
 事故：某个断言在没有任何东西拦得住的情况下腐烂了，而周围的一切看起来都是绿的。
 
-## 一条纪律算不算「硬」的决定规则
+## 元规则（机器渲染，不许手改）
 
-**有机器判据 = 硬纪律。没有 = 建议，且必须显式标 ADVISORY。**
+「什么样的东西才配进下面那张纪律表」也是数据：`zreflect/doc.py` 的 `META` 表。
+它们曾经是这里的散文，而散文会烂——没有任何东西拿它和别的东西对账。
 
-这条规则本身是可执行的：每条原则的「判据」列就是一条**命令**，它被
-`check_facts_replay.py` 在每次提交逐字执行（rc=0 通过、stdout 必须为空）。
-「跑不跑得过」不是文档说的，是每次提交算出来的。
+元规则**按构造不可能有判据**（「这条断言可证伪吗」机器 settle 不了），
+所以每条带 `why`（教会我们它的那次事故）与可选的 `witness`
+（证明那类事故仍可能发生的命令，不复跑）。
 
-为什么要这条规则：本仓此前把 19 条硬坑写在 `AGENTS.md` 的散文里，其中 4 条
-**根本没有判据**。它们与有判据的 15 条长得一模一样，读者无从分辨哪条会被拦、
-哪条只是希望。**让建议冒充硬规矩，是防腐最大的敌人** —— 因为人会按「反正会被
-拦住」去依赖它。
+<!-- AUTO:META -->
+> Rendered by `zreflect/facts.py --render-doc` from the `META` table in `zreflect/doc.py`; **do not hand-edit**.
+> These decide what may enter the rule table. They have no judging command by construction -- a `witness` (where one exists) shows the accident class is still possible; it is not replayed.
 
-## 三条底层假定
+| id | meta rule | why | witness |
+|---|---|---|---|
+| `agreement_needs_reconciler` | two things that must agree will disagree unless a reconciler re-runs on every commit | A 'must stay in sync' with no reconciler is not a discipline, it is a wish. | `python3 zreflect/registry.py --run commit` |
+| `hard_needs_criterion` | a rule is hard only if it has a machine criterion; without one it is advisory and must say ADVISORY | This repo once carried 19 hard rules as prose in `AGENTS.md`, 4 of them with no criterion at all. They looked identical to the 15 that were enforced -- a reader could not tell which would be caught and which was a wish. Letting advice impersonate a hard rule is the single biggest corruption risk: people rely on it because they assume something stops them. | `python3 zreflect/check_facts_replay.py` |
+| `numbers_rot_immediately` | a number starts rotting the moment it is written: produce it once in the ledger, reference it as [[key]], never hand-copy | Code changes and a hand-copied number becomes a lie, and nobody remembers to come back and fix it. | `python3 zreflect/check_facts.py` |
+| `one_off_decisions_do_not_land` | a one-off decision ('why this round changed this way') is not recorded in a document; it belongs to the commit message | The state document says only what is true now; the rule table accepts only what can still overturn today's design. | - |
+| `ran_is_not_passed` | 'the scan ran' and 'the scan ran and passed' are different statements; traversing a directory that does not exist yields an empty set and a true 'no violations found' | Both sentences were true and the conclusion was wrong. | - |
+| `style_is_not_a_rule` | style preferences (naming, comment density, file layout) do not enter the rule table; they are held by 'match the code around you' | A criterion can only guard what is mechanically decidable. Writing style into the table turns the table into noise, and noise is where a real rule goes to hide. | - |
 
-1. **数字从写下的那一刻起就开始腐烂。** 代码一增减，手抄的数字就是假话，而没人
-   会记得回来改它。所以数字只生产一次（台账），文档只引用（`[[键名]]`）。
-2. **「跑过了」与「跑过且通过」不是一件事。** 遍历一个不存在的目录得到空集，
-   然后「没有发现违规」—— 两句话都是真的，结论是错的。
-3. **两份必须一致的东西，一定会不一致。** 除非有一个每次都能复跑的对账器。
-   没有对账器的「必须一致」不是纪律，是愿望。
+6 meta rules -- the admission criteria for the table below.
+<!-- /AUTO:META -->
 
 ## 纪律表（机器渲染，不许手改）
 
@@ -47,6 +50,7 @@
 |---|---|---|
 | `assertion_lifecycle` | a retracted claim must not quietly return as current state | `python3 zreflect/check_retractions.py` |
 | `declared_not_globbed` | predicates are declarations, not filenames: the execution surface reads registry --run <phase> | `python3 zreflect/registry.py --gates` |
+| `doc_references_real` | a document must not point at a symbol that does not exist | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;d=doc.dangling_references();[print('dangling=%d %s.%s@%s' % (len(d),m,s_,f)) for f,m,s_ in d] or print('dangling=0');sys.exit(1 if d else 0)"` |
 | `falsifiable` | claims must be falsifiable: always-true shortcuts are swept by AST and any hit fails | `python3 zreflect/registry.py --selftest` |
 | `host_agnostic` | the suite's source recognizes no host's directory names / config formats (host wiring belongs to the consumer) | `python3 -c "import os,sys;w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR','hook'+'SpecificOutput'];bad=[(d,f) for d in ('zreflect','reflect-hooks') for r,_,fs in os.walk(d) for f in fs if f.endswith(('.py','.sh')) and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)"` |
 | `machine_rows` | machine rows are defined in one place, machine.ROWS; the shell side has a behavior reconciler | `python3 zreflect/machine.py --selftest` |
@@ -60,18 +64,16 @@
 | `three_readmes` | the three-language READMEs are three copies of one assertion: change one, change all three in the same batch | `python3 zreflect/check_readme_sync.py` |
 | `zero_language` | zero language in the core: user-visible messages go through M(code); machine contracts are untranslatable by construction | `python3 zreflect/check_i18n.py` |
 
-14 principles — each with a judging command that **really runs**.
+15 principles -- each with a judging command that **really runs**.
 <!-- /AUTO:RULES -->
 
 ## 怎么用这张表
 
-- 想知道「这条规矩是谁在守」⇒ 看「判据」列。
+- 「这条规矩是谁在守」⇒ 看「判据」列。
 - 判据列写 `module.function` 而不是 `file.py` 的，说明守它的是平台模块里的一个
-  函数，它的自证住在 `registry._cases()`（本仓对「纯函数被消费但自身零断言」的
-  处置，见 `registry.dependency_coverage_problems`）。
-- 标 **ADVISORY** 的条目**不会被任何闸门拦**。它们是有理由的建议，理由写在
-  「为什么」列。若某条 ADVISORY 后来变得可判据化，做法是**加判据**、
-  把 `advisory` 换成 `gate` —— 不是把它挪进建议区。
+  函数，它的自证住在 `registry._cases()`。
+- **表里没有「软」条目。** 一条规矩要么有判据进这张表，要么不进——
+  没有中间态，因此也没有可以挂「建议」的标记位。
 
 ## 没写进表里的东西
 

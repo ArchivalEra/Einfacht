@@ -3,7 +3,7 @@
 
 What it blocks is the mechanism's own biggest empty promise (issue #2 (1)):
 the README opens with "this should be a re-runnable assertion", but the
-mechanism as shipped had **nowhere that executes the `cmd`** — when a cmd
+mechanism as shipped had **nowhere that executes the `cmd`** -- when a cmd
 rots (path moved, tool renamed, command starts erroring), it goes, bad name
 and all, straight into the living state document via `--render-doc`, and
 every gate stays green as if nothing happened. "Re-runnable" stops being a
@@ -13,27 +13,27 @@ Criteria (`cmd` runs verbatim, cwd = repo root):
 
   · **Bare-value contract**: stdout stripped of leading/trailing whitespace
     must **equal** the value (`str(value)`). Printing only "the whole line
-    containing the value" ⇒ readable by humans, not judgeable by machines
-    ⇒ judged a mismatch.
-  · **rc ≠ 0 ⇒ report**: a bad command is not "the value changed", it is
+    containing the value" => readable by humans, not judgeable by machines
+    => judged a mismatch.
+  · **rc != 0 => report**: a bad command is not "the value changed", it is
     "the re-run mechanism itself died".
-  · **Timeout ⇒ report** (default 10s, overridable via
+  · **Timeout => report** (default 10s, overridable via
     `REFLECT_REPLAY_TIMEOUT`): a command wired into pre-commit must not wait
     forever for a result.
-  · **No `cmd` ⇒ report**: a fact without a re-run command is prose.
+  · **No `cmd` => report**: a fact without a re-run command is prose.
   · Pipes **no longer swallow errors**: with bash use `bash -o pipefail -c`
     (the "fails but green" shape where `cat is gone | wc -l` prints 0 with
     rc=0 is exactly what this gate must redden). Without bash it falls back
-    to /bin/sh and says so in the output — criteria strength varying with the
+    to /bin/sh and says so in the output -- criteria strength varying with the
     environment must never happen silently.
 
-Three zero-value guards: empty ledger ⇒ report; not a single cmd ran
-successfully (all rc≠0/timeout) ⇒ report; every fact declares
-`replay: false` **and has no witness, no calibration** ⇒ report (full
+Three zero-value guards: empty ledger => report; not a single cmd ran
+successfully (all rc!=0/timeout) => report; every fact declares
+`replay: false` **and has no witness, no calibration** => report (full
 exemption is not a "pass", it is "this gate checked nothing"; expensive
-facts carrying witness / calibrate are still checked — issue #5/#6).
+facts carrying witness / calibrate are still checked -- issue #5/#6).
 
-Third tier: **witness** (issue #5) — an expensive fact with `replay=False`
+Third tier: **witness** (issue #5) -- an expensive fact with `replay=False`
 can carry a cheap witness (`witness` + `witness_expect`, both required
 together; incomplete shapes are rejected on the spot by `ledger.fact()`).
 Witness is **orthogonal** to `replay`: the value itself is not re-run
@@ -41,12 +41,12 @@ verbatim, but its **provenance/context** ("the tool/input that produced it
 is the one I think it is") is **really run at every commit**, under the same
 bare-value contract (`stdout.strip() == witness_expect`). "Expensive" is
 precisely where a cheap re-check matters most: the artifact did not change,
-but the tool producing it did — that can slip all the way to the most
+but the tool producing it did -- that can slip all the way to the most
 expensive end-to-end regression before exploding. The witness catches it at
 commit time.
 
-Fourth tier: **instrument calibration** (issue #6 (1)) — the replay contract
-catches "the command died" (rc≠0), but not **silent instrument drift**: the
+Fourth tier: **instrument calibration** (issue #6 (1)) -- the replay contract
+catches "the command died" (rc!=0), but not **silent instrument drift**: the
 command succeeds, the value is stable, the re-run "passes" forever, yet what
 it measures is not the thing at all (`grep -c X` exits successfully with 0
 when the instrument does not recognize X). A `cmd` that claims "whether the
@@ -58,20 +58,20 @@ under the same bare-value contract.
 Boundary (stated explicitly in issue #2 (1), don't overdo it): replay should
 cover only facts that **need no build artifacts**. The ones that start
 services or compile binaries opt out explicitly with
-`fact(value, cmd, source, replay=False)` — that is an exemption with a
+`fact(value, cmd, source, replay=False)` -- that is an exemption with a
 roster and a stated reason, not silence; the whole gate also keeps a
 repo-wide exit via `REFLECT_REPLAY=off` (same precedent as `REFLECT_RETIRED`:
 **state that it is not enabled, don't pretend it was checked**).
 Another class needs no build artifacts but is **different on every run**
-(random padding lengths, GREASE payloads, timestamps — issue #4 (5)): store
+(random padding lengths, GREASE payloads, timestamps -- issue #4 (5)): store
 **one measured sample** + a pair of `*_stable` stability marker keys
 (consumers split into two tiers: stable judged verbatim, unstable judged
-structurally), or set `replay=False` explicitly — **bare storage is
+structurally), or set `replay=False` explicitly -- **bare storage is
 forbidden**: bare storage = this fact is red forever = noise = eventually
-the whole gate gets switched off. A value that changes ≠ it cannot enter the
+the whole gate gets switched off. A value that changes != it cannot enter the
 ledger; you must first declare how it changes.
 
-⚠️ This gate executes **commands from this repo's own ledger** — the trust
+⚠️ This gate executes **commands from this repo's own ledger** -- the trust
 boundary is the same as the pre-commit scripts themselves. The ledger is a
 file the repo produces and reviews itself; editing the ledger = an
 edit-build-script-level commitment, not a runtime input.
@@ -114,7 +114,7 @@ def _replay_one(k, raw_entry, run, seconds, out, stats):
         return
     if rc != 0:
         # `stdout` has by now had stderr appended by `run_cmd` (see its
-        # comment) — put it into the message, otherwise "the command crashed"
+        # comment) -- put it into the message, otherwise "the command crashed"
         # leaves you guessing.
         out.append(M("replay.command_failed", key=k, return_code=rc,
                      command=cmd, detail=quote(stdout.strip()[:200])))
@@ -127,14 +127,14 @@ def _judge_ok(k, entry, cmd, stdout, out, stats):
     """The judgment after rc==0: principle entries check for a "stance", numeric entries check bare-value equality.
 
     ⚠️ The principle-entry contract is **both conditions together** (a
-    directional mistake was made here once — exactly the thing this repo was
+    directional mistake was made here once -- exactly the thing this repo was
     founded to kill: recreating fake green inside a mechanism built to kill
     fake green):
 
-      · stdout **non-empty** — a gate that really ran takes a stance
-        (`ok(…)` or `OFF: …`); a command that says nothing cannot be
+      · stdout **non-empty** -- a gate that really ran takes a stance
+        (`ok(...)` or `OFF: ...`); a command that says nothing cannot be
         distinguished between "ran and passed" and "never ran at all".
-      · stdout **contains no `OFF:` line** — that is "not enabled", not
+      · stdout **contains no `OFF:` line** -- that is "not enabled", not
         "passed".
 
     rc-only judging launders off into green (this repo's history: "8 of 13
@@ -170,7 +170,7 @@ def _judge_ok(k, entry, cmd, stdout, out, stats):
 # itself can trigger a replay (`registry --run commit` reaches this gate;
 # so does `gates-selftest.sh`), you get an `A → B → A` cycle. Without a
 # guard it spawns child processes without end until OOM
-# (observed: `principle.only_measured`'s cmd was this very file — re-running
+# (observed: `principle.only_measured`'s cmd was this very file -- re-running
 # itself).
 #
 # Two guards, both required:
@@ -179,8 +179,8 @@ def _judge_ok(k, entry, cmd, stdout, out, stats):
 #     `replay.nested` (returning silently would amount to "the nested layer
 #     says everything is fine");
 #   · **Cross-process**: the child inherits the `EINFACHT_REPLAY_DEPTH`
-#     environment variable; above the cap ⇒ the whole gate reports
-#     `replay.too_deep` (not a silent skip — a cycle is a configuration
+#     environment variable; above the cap => the whole gate reports
+#     `replay.too_deep` (not a silent skip -- a cycle is a configuration
 #     error that needs a human to fix the ledger, not runtime noise).
 _DEPTH_ENV = "EINFACHT_REPLAY_DEPTH"
 _MAX_DEPTH = 2          # top level (1) → sub-gate (2) at most; deeper is a cycle
@@ -198,10 +198,10 @@ def _probe_failure(kind, key, rc, seconds, command, got, want):
 
     ⚠️ The `i18n` contract requires codes to be literals (composed codes make
     the language-pack directory impossible to prove complete), and in the
-    language packs "witness" and "calibrate" are two different sentences —
+    language packs "witness" and "calibrate" are two different sentences --
     stuffing the noun into a parameter would break template word order in
     non-Chinese languages. So this is an `if/else`, not
-    `"replay.%s_…" % kind`.
+    `"replay.%s_..." % kind`.
     """
     if rc is None:
         return (M("replay.witness_timeout", key=key, seconds=seconds,
@@ -236,7 +236,7 @@ def _run_probe(kind, key, entry, run, seconds):
 
 
 def _one_probe(kind, ok_key, key, entry, run, seconds, out, stats):
-    """A single probe: no such kind ⇒ skip; present ⇒ count one attempt, run it, keep the books."""
+    """A single probe: no such kind => skip; present => count one attempt, run it, keep the books."""
     if not str(entry.get(kind) or "").strip():
         return
     stats[kind + "_attempts"] += 1
@@ -249,7 +249,7 @@ def _one_probe(kind, ok_key, key, entry, run, seconds, out, stats):
 
 def _run_probes(f, run, seconds, out, stats):
     """Probe tier (#5 witness / #6 (1) instrument calibration): orthogonal to
-    replay — an expensive fact's provenance / instrument really runs each
+    replay -- an expensive fact's provenance / instrument really runs each
     commit, under the same bare-value contract."""
     for kind, ok_key in (("witness", "witnessed"), ("calibrate", "calibrated")):
         for key in sorted(f):
@@ -261,7 +261,7 @@ def replay_all(ledger, runner=None):
     """Replay entry by entry, returning {problems, ok, attempts, skipped}. **Side effects flow only through runner**.
 
     `runner(cmd) -> (rc, stdout)` is injectable (the selftest uses a fake
-    runner — once the real shell enters the selftest, the selftest depends on
+    runner -- once the real shell enters the selftest, the selftest depends on
     the machine). The pure function stays quiet: not one print here.
     """
     if _depth() >= _MAX_DEPTH:
@@ -296,11 +296,11 @@ def replay_all(ledger, runner=None):
 
 def run(argv):
     import knobs  # noqa: PLC0415
-    # Go through `knobs.flag` (the single place of origin) — the previous
+    # Go through `knobs.flag` (the single place of origin) -- the previous
     # `.lower() == "off"` was a second vocabulary.
     if knobs.flag("REFLECT_REPLAY") is False:
         return off(M("replay.off"))
-    # Parsing lives in exactly one place (runner.timeout_with_status) — this
+    # Parsing lives in exactly one place (runner.timeout_with_status) -- this
     # used to probe again with its own float(), so the same bad value was
     # silent in the runner and warned here (observed: an empty string got two
     # different treatments).
@@ -339,21 +339,21 @@ def _cases_fixture():
                                    "calibrate": "echo known-positive",
                                    "calibrate_expect": "known-positive"}}}
     # Criteria of the kind "the message must point at the repair" (re-test
-    # guidance / cold-start hint) cannot be verified against the null pack —
+    # guidance / cold-start hint) cannot be verified against the null pack --
     # the null pack only has code + params, no sentences. So read a **real
     # shipped zh pack from disk** (`zreflect/lang/zh/facts_replay.json`) and
     # treat the rendered result as the assertion surface.
     #
     # Why read the real pack instead of injecting a fake table: injecting a
     # fake table only proves "the template I wrote renders the words I
-    # wrote" — circular reasoning. Reading the real pack turns "the migration
+    # wrote" -- circular reasoning. Reading the real pack turns "the migration
     # lost no semantics" into a falsifiable claim: if the cold-start hint
     # fell out of the zh pack, this selftest goes red on the spot. (The zh
     # pack stores, by contract, the **verbatim removed text**, so it doubles
     # as evidence of migration fidelity.)
     # ⚠️ Likewise must not hard-code `zh` (see the same note in check_facts):
     # installing exactly one pack is the product's main scenario. Use the
-    # **first installed pack**; none at all ⇒ the case cannot exist, stated
+    # **first installed pack**; none at all => the case cannot exist, stated
     # openly.
     pack_lang = a_pack_lang()
     real_pack = load_pack(pack_lang) if pack_lang else {}
@@ -362,7 +362,7 @@ def _cases_fixture():
         return [p.code for p in replay_all(ledger, runner=runner)["problems"]]
 
     def said(ledger, runner):
-        """The text rendered under that language pack (zero packs ⇒ empty list; criterion see pack_entry_wired)."""
+        """The text rendered under that language pack (zero packs => empty list; criterion see pack_entry_wired)."""
         if not pack_lang:
             return []
         with bind(Catalog.load(pack_lang, {pack_lang: real_pack})):
@@ -383,7 +383,7 @@ def _cases_fixture():
 
 
 def _cases_replay_ok(fx):
-    """(1) normal: no report — trailing newline / surrounding whitespace stripped / explicit skip."""
+    """(1) normal: no report -- trailing newline / surrounding whitespace stripped / explicit skip."""
     multi = fx["multi"]
     return [
         ("replay.ok_trailing_newline",
@@ -403,17 +403,17 @@ def _cases_replay_failures(fx):
     `timeout_cold_start_hint`) are **conditional criteria**: a language pack
     installed means the message must carry the ASCII anchors
     (`--accept-changes` / `REFLECT_REPLAY_TIMEOUT`); zero packs is a legal
-    state with no sentences to verify — stated openly, not faked as a pass.
+    state with no sentences to verify -- stated openly, not faked as a pass.
     """
     _hint_has, params = fx["hint_has"], fx["params"]
     codes, pack_lang = fx["codes"], fx["pack_lang"]
     return [
         ("\u2605 replay.mismatch_repair_hint",
          # The real pack's "mismatch" message must still carry the repair
-         # anchors: `--accept-changes` (ASCII — the decidable part of the
+         # anchors: `--accept-changes` (ASCII -- the decidable part of the
          # repair) + `facts.py` (the re-test command). Pure Chinese semantic
          # anchors would turn themselves into "natural language inside the
-         # core" — exactly the shape the zero-language gate exists to
+         # core" -- exactly the shape the zero-language gate exists to
          # eliminate.
          lambda: codes(LED, lambda c: (0, "13")) == ["replay.mismatch"]
          and params(LED, lambda c: (0, "13"), "replay.mismatch")[0]["key"] == "n"
@@ -429,8 +429,8 @@ def _cases_replay_failures(fx):
                     "replay.command_failed")[0]["return_code"] == 1),
         ("\u2605 replay.timeout_cold_start_hint",
          # The cold-start hint's semantic anchor: the `REFLECT_REPLAY_TIMEOUT`
-         # knob name (ASCII) must still be in the template — delete the
-         # cold-start sentence (which originally carried the knob name) ⇒
+         # knob name (ASCII) must still be in the template -- delete the
+         # cold-start sentence (which originally carried the knob name) =>
          # this case goes red.
          lambda: codes(LED, lambda c: (None, ""))
          == ["replay.timeout", "replay.none_ran"]
@@ -521,7 +521,7 @@ def _cases_calibrate(fx):
 
 
 def _cases():
-    """Assemble the three fixture groups. **Assembly only** — the criteria live in the group functions."""
+    """Assemble the three fixture groups. **Assembly only** -- the criteria live in the group functions."""
     fx = _cases_fixture()
     return (
         _cases_replay(fx)
@@ -534,7 +534,7 @@ def _cases():
 GATE = meta("Replay gate", "ledger cmds re-run verbatim (bare-value contract: stdout must equal the value)",
             knobs=("REFLECT_FACTS", "REFLECT_REPLAY", "REFLECT_REPLAY_TIMEOUT"),
             name_dependent=True,
-            # ⚠️ This used to say "stated as not enabled when unset" — **a
+            # ⚠️ This used to say "stated as not enabled when unset" -- **a
             # lie**: it runs when unset, and only an explicit
             # `REFLECT_REPLAY=off` turns it off (all three states observed).
             # Replay now carries the "principles force-run at every commit"

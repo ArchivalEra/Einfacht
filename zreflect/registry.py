@@ -1,40 +1,40 @@
 #!/usr/bin/env python3
-"""registry — the data plane of the discovered rosters: gate list / plugin list / red list.
+"""registry -- the data plane of the discovered rosters: gate list / plugin list / red list.
 
-"Registration is discovered, not remembered" — this repo long since made the
+"Registration is discovered, not remembered" -- this repo long since made the
 **set** of gates discovered (`for g in zreflect/check_*.py` in hooks / runner /
 CI), but the **narrative** of the set was still hand-written: STATE.md
 hand-wrote "N gates" and named them one by one (observed drift: the day
-ab/locks/pins merged, the list was short three gates and no gate could stop it —
+ab/locks/pins merged, the list was short three gates and no gate could stop it --
 the hand-written "ten" miscounted even the count); gates-selftest.sh hand-wrote
 the red list (6 gates actually red under default names, only 4 in the list);
 plugins and doctor relied on name-calling. This module turns the narrative into
 data:
 
   · `gates()`: ast-parses each check_*.py's module-level declaration line
-        GATE = gate.meta("name", "one line", knobs=(…), name_dependent=…)
-    — **declaration is registration**; gate modules are not imported (no side
-    effects, no execution cost). A check_*.py without a declaration line ⇒ the
+        GATE = gate.meta("name", "one line", knobs=(...), name_dependent=...)
+    -- **declaration is registration**; gate modules are not imported (no side
+    effects, no execution cost). A check_*.py without a declaration line => the
     roster does not take it (problems reports; render refuses to render);
   · `red_need()`: the gates that **must go red** in the rename self-evidence
     (the ones whose default names carry the load). The name_dependent flag is
-    registered explicitly — a machine cannot derive "the off-state short
+    registered explicitly -- a machine cannot derive "the off-state short
     circuit" (an instrument gate is off by default, so the default names it
     consumes never get used; consumption alone cannot assert red), but the
     registration is blocked on both ends: the fixture demands it really goes
     red, and `problems()` demands it really consumes the renamed default names;
   · `plugins()`: reflect-hooks/*.sh carrying the selftest marker (discovered) +
-    named special cases (doctor.py — the reason lives next to the data).
+    named special cases (doctor.py -- the reason lives next to the data).
 
 Consumers: `facts.py --render-doc` renders the AUTO:GATES machine block (same
-precedent as AUTO:FACTS — the hand-written list retires, and `check_facts` /
+precedent as AUTO:FACTS -- the hand-written list retires, and `check_facts` /
 `--check` automatically blocks drift); gates-selftest.sh consumes `--red-need`
 and `--plugins` (the hand-written red list and the name-calling of plugins and
 doctor retire).
 
 Honesty boundary: this module only **narrates** rosters and never executes
 gates; whether a gate can go red is forever proven by gates-selftest.sh actually
-running — the judgments of narration and execution each stay on their own side;
+running -- the judgments of narration and execution each stay on their own side;
 do not mix them.
 """
 from __future__ import annotations
@@ -59,9 +59,9 @@ GATES_END = "<!-- /AUTO:GATES -->"
 # Which default names the rename self-evidence's fixture renames (the rename
 # surface of gates-selftest.sh's cross-repo section).
 # Roster discipline same as knobs: only register default names the fixture really
-# renames — this is the judgment data of the red-list reconciliation.
+# renames -- this is the judgment data of the red-list reconciliation.
 # C4 reconciliation (3): `FIXTURE_RENAMES` is the **single producer** of
-# "original name -> fixture name" — gates-selftest.sh's fixture derives the file
+# "original name -> fixture name" -- gates-selftest.sh's fixture derives the file
 # names it creates from `--fixture-renames`, no longer hand-writing two lists
 # that would drift (the fixture's names and this table used to be two
 # hand-written copies with no reconciler).
@@ -79,16 +79,16 @@ RENAMED_DEFAULTS = tuple(FIXTURE_RENAMES)
 # Known phases (C1): gates declare their own run frequency. The execution plane
 # (gate.run_phase) filters on it.
 #   commit        runs on every commit (pre-commit / pre-push / CI)
-#   start-of-work run manually before starting work (doctor — checks things that
+#   start-of-work run manually before starting work (doctor -- checks things that
 #                 die; attaching it to commit frequency would be wrong)
-# ⚠️ issue #21: welding the phase list **here** would force downstream forks —
+# ⚠️ issue #21: welding the phase list **here** would force downstream forks --
 # consumers have their own phases (the S26 repo's lab: *.lab.py only runs when
 # the experiment directory is present). The knob `REFLECT_PHASES` appends custom
 # phases (comma-separated, appended after the two built-ins); the core two
-# cannot be removed or shadowed — phases are the shared vocabulary of the
+# cannot be removed or shadowed -- phases are the shared vocabulary of the
 # execution plane and declarations, and arbitrary renaming would silently orphan
 # existing runs_at declarations. problems() still blocks unknown phases: a
-# declared runs_at not in the list ⇒ red.
+# declared runs_at not in the list => red.
 BUILTIN_PHASES = ("commit", "start-of-work")
 
 
@@ -116,11 +116,11 @@ def phases_problems():
     return out
 
 def modules(zdir=None):
-    """Platform-module roster (C5): ast-parses `MODULE = module_meta(…)` declaration lines.
+    """Platform-module roster (C5): ast-parses `MODULE = module_meta(...)` declaration lines.
 
     Returns (declared, undeclared): `declared` = [{file, name, desc, selftest}];
     `undeclared` = .py files that are **neither gates nor __init__ yet carry no
-    MODULE declaration** — a platform module must declare itself (even with
+    MODULE declaration** -- a platform module must declare itself (even with
     selftest=False it must positively say "I don't use self-evidence"),
     otherwise "should have self-evidence but doesn't" goes unasked (guessing
     `_cases` from text cannot guess "should have existed").
@@ -142,11 +142,11 @@ def modules(zdir=None):
         # module at `zreflect/measure_myproject.py`, `--render-doc` went FATAL
         # on the spot:
         #
-        #     · these .py files are neither gates … nor declared platform
+        #     · these .py files are neither gates ... nor declared platform
         #       modules: zreflect/measure_myproject.py
         #
         # The user has no way to know their data module needs
-        # `MODULE = module_meta(...)` — that is a discipline of **this repo for
+        # `MODULE = module_meta(...)` -- that is a discipline of **this repo for
         # its own code** ("should have self-evidence but doesn't" goes unasked),
         # not something to impose on a consumer's data file.
         if n.startswith("measure_"):
@@ -164,7 +164,7 @@ def modules(zdir=None):
 
 def selftest_modules(zdir=None):
     """Roster of modules with a self-evidence obligation (C5, declaration-driven):
-    modules declared via `MODULE = module_meta(…, selftest=True)` — gates (GATE
+    modules declared via `MODULE = module_meta(..., selftest=True)` -- gates (GATE
     declarations) are not counted (run_gates covers them). Returns (mods,
     missing): `mods` = those that should run selftests; `missing` = declared
     selftest=True but without a --selftest entry (written but never run =
@@ -189,13 +189,13 @@ def selftest_modules(zdir=None):
 
 
 def gates(zdir=None):
-    """The discovered gate roster: **declared means a gate** — ast-parses the
-    module-level `GATE = gate.meta(…)` lines of zreflect/*.py, independent of
+    """The discovered gate roster: **declared means a gate** -- ast-parses the
+    module-level `GATE = gate.meta(...)` lines of zreflect/*.py, independent of
     file names (C1).
 
     Returns (gates, missing). gates = [{file, name, desc, knobs,
     name_dependent, runs_at}]; missing = files **named check_ without a
-    declaration line** (problems reports; render refuses — the shape of "named
+    declaration line** (problems reports; render refuses -- the shape of "named
     like a gate but forgot to declare").
     """
     d = zdir if zdir is not None else gate.zdir()
@@ -212,20 +212,20 @@ def gates(zdir=None):
         if meta:
             out.append(meta)
         elif n.startswith("check_"):
-            # Named check_ but no declaration ⇒ forgot the declaration (the roster
+            # Named check_ but no declaration => forgot the declaration (the roster
             # doesn't take it; render refuses).
             # Non-check_ without a declaration = platform module
-            # (gate/knobs/registry/…), not a gate.
+            # (gate/knobs/registry/...), not a gate.
             missing.append(rel)
     return out, missing
 
 
 def _decl_call(node, attr, func):
-    """Is `node` a declaration line shaped `<attr> = <func>(…)`? If so ⇒ that call node.
+    """Is `node` a declaration line shaped `<attr> = <func>(...)`? If so => that call node.
 
-    Both equivalent spellings are recognized: meta(…) (bare imported name) and
-    gate.meta(…) (attribute). Not a declaration line / the call is not `func`
-    ⇒ None (the caller keeps scanning the next line).
+    Both equivalent spellings are recognized: meta(...) (bare imported name) and
+    gate.meta(...) (attribute). Not a declaration line / the call is not `func`
+    => None (the caller keeps scanning the next line).
     """
     if not (isinstance(node, ast.Assign) and len(node.targets) == 1
             and isinstance(node.targets[0], ast.Name)
@@ -240,7 +240,7 @@ def _decl_call(node, attr, func):
 
 
 def _module_meta(call, rel):
-    """`MODULE = module_meta(…)` → {file, name, desc, selftest}."""
+    """`MODULE = module_meta(...)` → {file, name, desc, selftest}."""
     st = True
     for kw in call.keywords:
         if kw.arg == "selftest":
@@ -252,7 +252,7 @@ def _module_meta(call, rel):
 
 
 def _gate_meta(call, rel):
-    """`GATE = gate.meta(…)` → {file, name, desc, knobs, name_dependent, runs_at,
+    """`GATE = gate.meta(...)` → {file, name, desc, knobs, name_dependent, runs_at,
     off_reason}."""
     knobs, name_dep, runs_at, off_reason = (), False, "commit", None
     for kw in call.keywords:
@@ -274,8 +274,8 @@ def _gate_meta(call, rel):
 
 
 def _declaration(path, rel, attr="GATE", func="meta"):
-    """ast-extract the declaration line from a file (default `GATE = meta(…)`;
-    C5 uses `MODULE = module_meta(…)`). None if absent.
+    """ast-extract the declaration line from a file (default `GATE = meta(...)`;
+    C5 uses `MODULE = module_meta(...)`). None if absent.
 
     `attr` / `func` are swappable (one parser serves both declaration kinds:
     gates and platform modules).
@@ -301,10 +301,10 @@ def runnable(phase="commit", zdir=None):
     """The list of gates that **should run** for a phase (C1: the execution plane's
     single producer).
 
-    `phase="commit"` ⇒ what runs on every commit (hooks / CI);
-    `phase="start-of-work"` ⇒ what runs manually before starting work (doctor).
-    Returns [{file, name, runs_at, …}]. The declaration surface
-    (GATE = meta(…, runs_at=…)) is the single producer — the execution plane no
+    `phase="commit"` => what runs on every commit (hooks / CI);
+    `phase="start-of-work"` => what runs manually before starting work (doctor).
+    Returns [{file, name, runs_at, ...}]. The declaration surface
+    (GATE = meta(..., runs_at=...)) is the single producer -- the execution plane no
     longer globs file names.
     """
     gs, _missing = gates(zdir)
@@ -316,7 +316,7 @@ def _touches_renamed(g):
     self-evidence?"""
     for k in g["knobs"]:
         kind, dflt, _ = REGISTRY.get(k, ("", "", ""))
-        # The nested ternary is split into explicit branches (GitRoll #141) — a
+        # The nested ternary is split into explicit branches (GitRoll #141) -- a
         # list splits on commas, a default counts as one, none means none.
         # Semantics unchanged.
         if kind == "list":
@@ -331,7 +331,7 @@ def _touches_renamed(g):
 
 
 def _missing_declaration_problems(missing):
-    """Named check_ but no GATE declaration line — forgetting the declaration means
+    """Named check_ but no GATE declaration line -- forgetting the declaration means
     the narrative drifts."""
     if not missing:
         return []
@@ -339,7 +339,7 @@ def _missing_declaration_problems(missing):
 
 
 def _phase_problems(gs):
-    """runs_at must be a known phase — frequency is a declared field; a wrong value
+    """runs_at must be a known phase -- frequency is a declared field; a wrong value
     makes the execution plane miss the gate."""
     out = []
     for g in gs:
@@ -351,7 +351,7 @@ def _phase_problems(gs):
 
 
 def _name_dependent_problems(gs):
-    """Flagged name_dependent yet consumes no renamed default name — the flag is
+    """Flagged name_dependent yet consumes no renamed default name -- the flag is
     wrong."""
     out = []
     for g in gs:
@@ -361,7 +361,7 @@ def _name_dependent_problems(gs):
 
 
 def _empty_gate_problems(gs, missing):
-    """The roster as a whole is empty — the zero-value guard: empty input is not a
+    """The roster as a whole is empty -- the zero-value guard: empty input is not a
     pass."""
     if not gs and not missing:
         return [M("registry.empty_roster")]
@@ -383,7 +383,7 @@ def _selftest_roster_problems(mods, mods_missing):
 
 
 def _undeclared_module_problems(undeclared):
-    """C5: platform modules must declare themselves (MODULE = module_meta(…)),
+    """C5: platform modules must declare themselves (MODULE = module_meta(...)),
     otherwise "should have self-evidence but doesn't" goes unasked (guessing
     _cases from text cannot guess "should have existed")."""
     if undeclared is None:
@@ -394,11 +394,11 @@ def _undeclared_module_problems(undeclared):
 
 
 def _knob_problems(knob_problems, gs):
-    """Roster self-consistency (C3): phantom knobs / README phantoms — independent of
+    """Roster self-consistency (C3): phantom knobs / README phantoms -- independent of
     whether any carrier exists.
 
     It used to be welded behind check_envfile.run()'s "carrier exists"
-    precondition, and this repo has no Einfacht.env ⇒ never executed (observed
+    precondition, and this repo has no Einfacht.env => never executed (observed
     hit). The roster's home closes here.
     """
     if knob_problems is None:
@@ -413,7 +413,7 @@ def _knob_problems(knob_problems, gs):
                          # C4 reconciliation (4): **every code the source uses
                          # must be in every installed pack** (the zh↔en set
                          # difference cannot see "both sides missing the same
-                         # thing" — that is the silent degradation)
+                         # thing" -- that is the silent degradation)
                          + knobs.pack_coverage_problems()
                          # DEFAULT_* defined but never used (gates pretending a
                          # default is configured)
@@ -427,19 +427,19 @@ def problems(gs, missing, mods=None, mods_missing=None,
     self-evidence.
 
     `mods` / `mods_missing` / `knob_problems` are injectable (fixtures for
-    self-evidence); None ⇒ read the real repo now.
+    self-evidence); None => read the real repo now.
 
-    · named check_ without a GATE declaration line ⇒ report (forgot the
+    · named check_ without a GATE declaration line => report (forgot the
       declaration = the narrative drifts);
-    · runs_at is not a known phase ⇒ report (frequency is a declared field; a
+    · runs_at is not a known phase => report (frequency is a declared field; a
       wrong value makes the execution plane miss the gate);
-    · flagged name_dependent yet consumes no renamed default ⇒ report (the flag
+    · flagged name_dependent yet consumes no renamed default => report (the flag
       is wrong);
-    · self-evidence written but no --selftest entry ⇒ report (written but never
+    · self-evidence written but no --selftest entry => report (written but never
       run = decoration);
-    · roster self-consistency (phantom knobs / README phantoms) ⇒ report (C3,
+    · roster self-consistency (phantom knobs / README phantoms) => report (C3,
       carrier-independent);
-    · the roster as a whole is empty ⇒ report (zero-value guard).
+    · the roster as a whole is empty => report (zero-value guard).
     """
     out = []
     out += phases_problems()
@@ -522,7 +522,7 @@ def plugins(hooks_dir=None):
     """The **plugin** list the self-evidence names: scripts under `reflect-hooks/`
     carrying `--selftest`.
 
-    Discovered: both `.sh` and `.py` are collected — after the full Python
+    Discovered: both `.sh` and `.py` are collected -- after the full Python
     migration the entry point is `.py`, but `einfacht-env.sh` must remain shell
     forever (it gets `source`d to export environment variables), so both exist.
     The judgment is "does the file contain `--selftest`", not the extension.
@@ -552,7 +552,7 @@ def render_gates(gs):
 
     PINNED: this block's text **always uses a fixed language** (issue #26, D''s
     insight), never following `REFLECT_LANG`. Reason: it is written into
-    `STATE.md` and reconciled byte-for-byte by `facts.py --check` — if it
+    `STATE.md` and reconciled byte-for-byte by `facts.py --check` -- if it
     followed the language, `REFLECT_LANG=de --render-doc` followed by
     `REFLECT_LANG=zh --check` would necessarily go red, and **the same commit
     would give different results in different language environments** (the same
@@ -564,13 +564,13 @@ def render_gates(gs):
              ("> This block is rendered by `zreflect/facts.py --render-doc` from the "
              "discovered roster (declaration lines in zreflect/registry.py); "
              "**do not hand-edit**."),
-             ("> The execution plane (hooks / CI) reads `registry --run <phase>` — "
+             ("> The execution plane (hooks / CI) reads `registry --run <phase>` -- "
              "the phase is a declared field (`runs_at`), not a file name."),
              "",
              # ⚠️ "Reason it may be disabled" is a **declaration** (static), not
              # **runtime state**. Runtime off is seen via `registry --run
-             # <phase>` — rendering it into this block would make the AUTO block
-             # change on every run ⇒ no convergence (this repo's cardinal sin;
+             # <phase>` -- rendering it into this block would make the AUTO block
+             # change on every run => no convergence (this repo's cardinal sin;
              # see the PINNED note).
              "| Gate | Phase | What it guards | Knobs consumed | Why it may be off |",
              "|---|---|---|---|---|"]
@@ -578,21 +578,21 @@ def render_gates(gs):
         lines.append("| `%s`（%s） | %s | %s | %s | %s |"
                      % (os.path.basename(g["file"]), g["name"],
                         g.get("runs_at", "commit"), g["desc"],
-                        ", ".join("`%s`" % k for k in g["knobs"]) or "—",
-                        g.get("off_reason") or "—"))
+                        ", ".join("`%s`" % k for k in g["knobs"]) or "--",
+                        g.get("off_reason") or "--"))
     off_capable = sum(1 for g in gs if g.get("off_reason"))
     lines += ["",
-              "%d gates (derived from the discovered roster — a hand-written list "
+              "%d gates (derived from the discovered roster -- a hand-written list "
               "drifts; adding a gate = landing one declaration line, and it grows "
               "here automatically); %d of them **may be disabled** (the last column "
-              "is a **declared** justification, not runtime state — who is off "
+              "is a **declared** justification, not runtime state -- who is off "
               "right now is seen via `registry --run <phase>`)."
               % (len(gs), off_capable), GATES_END]
     return "\n".join(lines)
 
 
 def _arg_after(argv, flag):
-    """The optional value of `--flag [value]` (absent / starts with `-` ⇒ default
+    """The optional value of `--flag [value]` (absent / starts with `-` => default
     commit)."""
     i = argv.index(flag)
     return (argv[i + 1] if len(argv) > i + 1
@@ -604,12 +604,12 @@ def _emit_gate_output(text):
     lines**, the rest dropped.
 
     ⚠️ The truncation rule is "stop after the first problem line", but the `ℹ `
-    diagnostic lines must **not lose a single one** — they are the only sentence
+    diagnostic lines must **not lose a single one** -- they are the only sentence
     that can save the user. Observed: after one bootstrap, registry reported 3
     red, and `check_facts.py`'s diagnostic right after the problem line was
     `ℹ gate.env_hint(file='Einfacht.env')` ("source it first, then run by
     hand"). The old rule dropped it entirely, so the user, seeing "missing
-    README.zh.md", went and created that file — right symptom, wrong cause, and
+    README.zh.md", went and created that file -- right symptom, wrong cause, and
     creating it only made the red worse.
     """
     lines = [ln.rstrip() for ln in (text or "").splitlines() if ln.strip()]
@@ -630,7 +630,7 @@ def _main_run(argv):
     """The execution plane: run all gates of one phase and aggregate ran / off /
     failed (C1+C2).
 
-    hooks / CI call only this line — the glob retires, and the predicate has one
+    hooks / CI call only this line -- the glob retires, and the predicate has one
     home: gates().
     """
     phase = _arg_after(argv, "--run")
@@ -642,10 +642,10 @@ def _main_run(argv):
     # error / failed lists). This does **not** conflict with `gate.finish()`'s
     # "problem lines go to stderr": that rule only binds a single gate's own
     # judgment output; what is printed here is a **run report** (who didn't run /
-    # who went red / whose config broke) — a status snapshot, not a judgment.
+    # who went red / whose config broke) -- a status snapshot, not a judgment.
     # Reasons: (a) both consumers (CI, hook) only look at rc (`|| exit 1`) and
     # never parse stdout; (b) callers that capture only stdout (`$(...)` /
-    # pipes) must be able to see **which file** broke — with stderr-only output
+    # pipes) must be able to see **which file** broke -- with stderr-only output
     # they would see `fatal=1` with no idea who (observed in round 10).
     res = run_phase(phase, gs)
     print(M("registry.phase_summary", phase=phase, ran=res["ran"],
@@ -656,7 +656,7 @@ def _main_run(argv):
     # ⚠️ These three lists are printed **to stdout as well**: aggregators often
     # capture only stdout (`$(...)` / pipes); with stderr-only they would see
     # `fatal=1` without knowing which file broke (observed in review). The
-    # problem **cause** remains in the gate's own stderr — what's added here is
+    # problem **cause** remains in the gate's own stderr -- what's added here is
     # "who".
     for f in res.get("fatal_list", ()):
         print(M("registry.phase_fatal", file=f))
@@ -694,7 +694,7 @@ def _main_selftest_modules():
 # which mean **the roster itself is broken**.
 #
 # ⚠️ This distinction came from practice: after the user creates `Einfacht.env`
-# per the docs, the `off_reason` ("this repo has no Einfacht.env") goes stale —
+# per the docs, the `off_reason` ("this repo has no Einfacht.env") goes stale --
 # the judgment **is correct**, but treating it as fatal makes `registry --gates`
 # / `--run commit` / pre-commit **permanently red**, and the only way out is to
 # delete the file the docs told them to create. That is a **self-set trap**, not
@@ -724,7 +724,7 @@ def _main_gates():
 def _main_lists(argv):
     """The three list prints: `--red-need` / `--runnable` / `--all-runnable`.
 
-    Returns rc; none of these flags ⇒ None (the caller keeps probing).
+    Returns rc; none of these flags => None (the caller keeps probing).
     """
     if "--red-need" in argv:
         print(" ".join(red_need()))
@@ -747,7 +747,7 @@ def _main_lists(argv):
 def _main_listings(argv):
     """The two per-line listings: `--plugins` / `--fixture-renames`.
 
-    Returns rc; none of these flags ⇒ None (the caller keeps probing).
+    Returns rc; none of these flags => None (the caller keeps probing).
     """
     if "--plugins" in argv:
         print("\n".join(plugins()))
@@ -763,7 +763,7 @@ def _main_listings(argv):
 
 def _usage():
     """The usage line. A **function, not a module constant**: the language pack is
-    only `activate()`d inside the `main_selftest_or` entry; a module-level `M(…)`
+    only `activate()`d inside the `main_selftest_or` entry; a module-level `M(...)`
     would be frozen on the null pack at import time."""
     return M("registry.usage")
 
@@ -793,7 +793,7 @@ def _phase_tiers_ok():
               "off.py": (0, "OFF: x"),
               "ok.py": (0, "")}
     # The first run's (basic four-tier shape) return value only confirms it doesn't
-    # explode — GitRoll #104 "assigned but never used": explicitly bind `_`,
+    # explode -- GitRoll #104 "assigned but never used": explicitly bind `_`,
     # turning the intent from implicit to explicit.
     _ = run_phase("commit", list(script), runner=lambda f: script[f])
     script["err.py"] = (3, "boom")          # an unagreed code / killed by signal
@@ -828,7 +828,7 @@ def _captures_stderr():
                      "sys.stderr.write('FATAL: probe\\n')\n"
                      "sys.exit(2)\n")
         rc, out = default_runner(p, d)
-        # Writes to stderr only ⇒ stdout empty; if the executor returns only
+        # Writes to stderr only => stdout empty; if the executor returns only
         # stdout, out is the empty string
         return rc == 2 and "FATAL: probe" in out
     finally:
@@ -838,13 +838,13 @@ def _captures_stderr():
 
 
 def _render_shows_off_reason():
-    """A fake gate declaring `off_reason` ⇒ that text must appear in the AUTO block."""
+    """A fake gate declaring `off_reason` => that text must appear in the AUTO block."""
     gs = [{"file": "zreflect/check_probe.py", "name": "probe",
            "desc": "probe gate", "knobs": (), "runs_at": "commit",
            "off_reason": "a declared justification long enough"}]
     body = render_gates(gs)
     # ⚠️ **No Chinese literals** (this file is inside the zero-language gates'
-    # scan surface — observed hit on bare_text). Judge the machine-readable
+    # scan surface -- observed hit on bare_text). Judge the machine-readable
     # parts instead: the off_reason text must appear at end of line, and the
     # line's column count must match the header.
     return ("a declared justification long enough" in body
@@ -852,13 +852,13 @@ def _render_shows_off_reason():
 
 
 def _render_off_reason_dash():
-    """No `off_reason` declared ⇒ that cell is `—` (not the empty string, not None)."""
+    """No `off_reason` declared => that cell is `--` (not the empty string, not None)."""
     gs = [{"file": "zreflect/check_probe.py", "name": "probe",
            "desc": "probe gate", "knobs": (), "runs_at": "commit",
            "off_reason": None}]
     row = [ln for ln in render_gates(gs).splitlines()
            if ln.startswith("| `check_probe.py`")][0]
-    return row.rstrip().endswith("| — |") and "None" not in row
+    return row.rstrip().endswith("| -- |") and "None" not in row
 
 
 def _streams_documented():
@@ -871,7 +871,7 @@ def _streams_documented():
         r = r.read()
     except OSError:
         return False
-    # ⚠️ Anchors are plain ASCII fragments of the two normative sentences — this
+    # ⚠️ Anchors are plain ASCII fragments of the two normative sentences -- this
     # file is inside the zero-language gates' scan surface, so no natural-language
     # fixture is written as a literal here (the CJK code-point assembly this
     # check once used broke when the sources were de-language-fied; the anchors
@@ -890,26 +890,26 @@ def _streams_documented():
 
 
 def _plugin_discovery_ok():
-    """Plugin discovery: directory present ⇒ the env plugin must be found; directory
-    absent ⇒ an empty list is also correct."""
+    """Plugin discovery: directory present => the env plugin must be found; directory
+    absent => an empty list is also correct."""
     import os  # noqa: PLC0415
     d = repo("reflect-hooks")
     found = plugins()
     if not os.path.isdir(d):
-        return found == []          # no plugin directory installed ⇒ empty list is correct
+        return found == []          # no plugin directory installed => empty list is correct
     return ("reflect-hooks/einfacht-env.sh" in found
             and "zreflect/doctor.py" not in found)
 
 
 def _nf_catches(which):
     """Test `never_falsifiable` with **lambdas in a real file** (it locates the AST by
-    line number; a lambda in `-c` has no source file ⇒ it goes blind).
+    line number; a lambda in `-c` has no source file => it goes blind).
 
     Four shapes, one each:
-      · `or_true`      — `or True` (the boolean is short-circuited by a constant)
-      · `and_false`    — `and False`
-      · `self_compare` — `x == x`
-      · `real`         — a real assertion (must return None)
+      · `or_true`      -- `or True` (the boolean is short-circuited by a constant)
+      · `and_false`    -- `and False`
+      · `self_compare` -- `x == x`
+      · `real`         -- a real assertion (must return None)
     """
     from gate import never_falsifiable  # noqa: PLC0415
     y = 1                                                # used by self_compare
@@ -923,10 +923,10 @@ def _nf_catches(which):
 
 
 def _nf_no_source():
-    """No `co_filename` (a lambda in `-c`, builtins) ⇒ must return None (no guessing).
+    """No `co_filename` (a lambda in `-c`, builtins) => must return None (no guessing).
 
     This pins boundary (c): `never_falsifiable` relies on `ast` to locate the
-    **real file**; if it can't be read it says so rather than guessing — not
+    **real file**; if it can't be read it says so rather than guessing -- not
     "always true" and not "clean".
     """
     from gate import never_falsifiable  # noqa: PLC0415
@@ -951,7 +951,7 @@ def _gate_desc_states_selftest():
             # Anchors are **all ASCII**: `registry._cases` (where the selftest
             # lives) + `--selftest` (why there is no entry). No Chinese literals
             # (this file is in the zero-language gates' scan surface, and
-            # code-point assembly is error-prone — 0x72EC was once mistyped as
+            # code-point assembly is error-prone -- 0x72EC was once mistyped as
             # the wrong character).
             return ("registry._cases" in d) and ("--selftest" in d) \
                 and ("selftest" in d)
@@ -988,7 +988,7 @@ def _cases_fixture(d):
     """Build a fake roster. `d` comes from `_cases()` (which owns mkdtemp and cleanup)."""
     # The fixture's declaration data uses **ASCII names**: they are inputs
     # extracted by ast (they enter the AUTO:GATES machine block), not core
-    # output — Chinese fixtures would be adopted by the zero-language gates.
+    # output -- Chinese fixtures would be adopted by the zero-language gates.
     open(os.path.join(d, "check_ok.py"), "w", encoding="utf-8").write(
         'GATE = gate.meta("gate_a", "blocks_a", knobs=("REFLECT_FACTS",),'
         ' name_dependent=True)\n')
@@ -1008,7 +1008,7 @@ def _cases_fixture(d):
 
     def real_files():
         # ⚠️ `_zdir()` (the **tooling repo's** zreflect), not `d` (the temporary
-        # fixture directory) — this assertion compares "real roster vs real
+        # fixture directory) -- this assertion compares "real roster vs real
         # disk", unrelated to the fixture.
         return {"zreflect/" + n for n in os.listdir(gate.zdir())
                 if n.startswith("check_") and n.endswith(".py")}
@@ -1050,7 +1050,7 @@ def _cases_discovery_real(fx):
          and len(FIXTURE_RENAMES) >= 7),
         # The plugin directory **may not exist** (a deployment copying only
         # `zreflect/`): then there is no plugin to discover, and that is not a
-        # failure. Present means it must be found — the assertion splits on
+        # failure. Present means it must be found -- the assertion splits on
         # "directory present or not".
         ("registry.plugin_discovery", lambda: _plugin_discovery_ok()),
     ]
@@ -1069,7 +1069,7 @@ def _cases_discovery_reports(fx):
              undeclared=[])] == ["registry.name_dependent_wrong"]),
         # In the next two cases an empty roster and "an empty list is not a pass"
         # are present simultaneously (gs=[] necessarily triggers the zero-value
-        # guard), so use `any(code == …)` instead of whole-list equality — the
+        # guard), so use `any(code == ...)` instead of whole-list equality -- the
         # assertion still pins exactly that one.
         ("\u2605 registry.selftest_no_entry",
          lambda: any(p.code == "registry.selftest_no_entry" for p in problems(
@@ -1077,7 +1077,7 @@ def _cases_discovery_reports(fx):
              mods_missing=["zreflect/y.py"],
              knob_problems=[]))),
         # The CLI's per-line name-calling must be producible too (otherwise it is
-        # "written but never run" decoration — this repo's discipline).
+        # "written but never run" decoration -- this repo's discipline).
         ("\u2605 registry.selftest_no_entry_cli",
          lambda: [m.code for m in cli_selftest_missing_lines(
              ["zreflect/y.py"])] == ["registry.selftest_no_entry_cli"]
@@ -1089,7 +1089,7 @@ def _cases_discovery_reports(fx):
              undeclared=["zreflect/orphan_mod.py"]))),
         # **The aggregator's output goes to stdout as a whole**, which does not
         # conflict with "a single gate's problem lines go to stderr".
-        # This pins "the two ends' semantics are written apart" — the judgment is
+        # This pins "the two ends' semantics are written apart" -- the judgment is
         # that both wordings exist.
         ("registry.aggregator_streams_documented",
          lambda: _streams_documented()),
@@ -1100,7 +1100,7 @@ def _cases_discovery(fx):
     """See `_cases()`: 16 cases in this group.
 
     (a) Real-repo roster / (b) roster diseases are each a named group: the former
-    reads the fixture's real roster, the latter builds malformed declarations —
+    reads the fixture's real roster, the latter builds malformed declarations --
     mixed together, a reader cannot tell which input an assertion uses.
     """
     return (_cases_discovery_real(fx) + _cases_discovery_reports(fx)
@@ -1121,12 +1121,12 @@ def _cases_render(fx):
      and "gate_a" in render_gates(gs)
      and GATES_BEGIN in render_gates(gs) and GATES_END in render_gates(gs)),
     # **`off_reason` must be rendered into the AUTO block** (so the reader sees at
-    # a glance which gates may be disabled and why) — and it is a
+    # a glance which gates may be disabled and why) -- and it is a
     # **declaration**, not runtime state (the latter would change the block every
     # run and never converge).
     ("★ registry.render_gates_shows_off_reason",
      lambda: _render_shows_off_reason()),
-    # A gate without a declaration must render `—` in that cell (no empty string,
+    # A gate without a declaration must render `--` in that cell (no empty string,
     # no "None")
     ("registry.render_gates_off_reason_dash",
      lambda: _render_off_reason_dash()),
@@ -1158,12 +1158,12 @@ def _cases_phase(fx):
      lambda: _phase_tiers_ok()),
     # **stderr must be captured**: this repo's convention is "problem lines go to
     # stderr", so an rc=2 gate's stdout may be empty (the reason lives entirely
-    # in stderr). `_default` used to return only `p.stdout` ⇒ aggregators got
+    # in stderr). `_default` used to return only `p.stdout` => aggregators got
     # (2, "") and the FATAL was treated as "ran". This pins the **default
     # executor**'s behavior (an injected runner cannot test it).
     ("★ registry.run_phase_captures_stderr",
      lambda: _captures_stderr()),
-    # issue #21: the phase knob — downstream custom phases (like S26's lab) no
+    # issue #21: the phase knob -- downstream custom phases (like S26's lab) no
     # longer fork PHASES
     ("registry.phases_extra_appended",
      lambda: _with_phases("lab")[0] == ("commit", "start-of-work", "lab")),
@@ -1179,18 +1179,18 @@ def _env_hint_case(which):
     """`gate.env_hint()`'s **five tiers** of behavior (after the #28 fix: the carrier
     value joins the decision).
 
-    1. `no_carrier`   — no carrier ⇒ None (a bare run stays quiet)
-    2. `carrier_bare` — carrier present, knob unset ⇒ **hint** (nobody sourced it)
-    3. `carrier_live` — knob set, value **matches** the carrier ⇒ None (the
+    1. `no_carrier`   -- no carrier => None (a bare run stays quiet)
+    2. `carrier_bare` -- carrier present, knob unset => **hint** (nobody sourced it)
+    3. `carrier_live` -- knob set, value **matches** the carrier => None (the
        carrier has taken effect)
-    4. `carrier_drift` — knob set, value **differs** from the carrier ⇒ **hint**
+    4. `carrier_drift` -- knob set, value **differs** from the carrier => **hint**
        (a manual export drifted)
-    5. `carrier_off`  — `REFLECT_ENV_HINT=off` ⇒ the print layer emits nothing
+    5. `carrier_off`  -- `REFLECT_ENV_HINT=off` => the print layer emits nothing
 
     ⚠️ The judgment's semantic precondition is a "controlled process
     environment": in hook contexts the carrier gets sourced into the
     environment, and once the knob is set, `carrier_bare` would be permanently
-    red (#29 observed: upstream's own `REFLECT_FACTS=x registry --selftest` ⇒ 1).
+    red (#29 observed: upstream's own `REFLECT_FACTS=x registry --selftest` => 1).
     Isolating the test from its own process's inputs is self-evidence's job: all
     relevant knobs are temporarily popped and restored in finally.
     """
@@ -1207,7 +1207,7 @@ def _env_hint_case(which):
                  encoding="utf-8").write("export REFLECT_FACTS=FACTS.json\n")
         if which == "carrier_off":
             # The silence of `off` happens at the **print layer** (`_maybe_hint`),
-            # not in `env_hint` — `env_hint()` still computes the sentence; nobody
+            # not in `env_hint` -- `env_hint()` still computes the sentence; nobody
             # prints it. Test the print layer.
             os.environ["REFLECT_ENV_HINT"] = "off"
             import contextlib  # noqa: PLC0415
@@ -1223,7 +1223,7 @@ def _env_hint_case(which):
         hint = gate.env_hint(consumed=("REFLECT_FACTS",))
         if which in ("carrier_bare", "carrier_drift"):
             return hint is not None          # must **hint**
-        return hint is None                  # no carrier / already live ⇒ must stay silent
+        return hint is None                  # no carrier / already live => must stay silent
     finally:
         gate.GATE_REPO = saved
         if saved_off is not None:
@@ -1241,7 +1241,7 @@ def _cases_hint(fx):
     """See `_cases()`: the environment hint's (env_hint) silence conditions."""
     return [
         # ⚠️ These two used to be **vacuously true**: `env_hint(...) is None or
-        # env_carrier() is not None` — as long as the repo had `Einfacht.env`,
+        # env_carrier() is not None` -- as long as the repo had `Einfacht.env`,
         # the second clause always held (make `env_hint` always return a line and
         # the assertion still passed; observed). Now all three tiers by
         # **carrier presence** are tested.
@@ -1249,11 +1249,11 @@ def _cases_hint(fx):
          lambda: _env_hint_case("no_carrier")),
         ("★ registry.env_hint_fires_with_carrier",
          lambda: _env_hint_case("carrier_bare")),
-        # #28: the carrier has taken effect (values match) ⇒ silent — only a
+        # #28: the carrier has taken effect (values match) => silent -- only a
         # correctly wired repo stays quiet
         ("registry.env_hint_silent_when_carrier_live",
          lambda: _env_hint_case("carrier_live")),
-        # #28: a manual export drifted from the carrier ⇒ must hint (exactly the
+        # #28: a manual export drifted from the carrier => must hint (exactly the
         # scenario that should be loud)
         ("★ registry.env_hint_fires_on_drift",
          lambda: _env_hint_case("carrier_drift")),
@@ -1268,13 +1268,13 @@ def _cases_hint(fx):
 
 
 def _cases_gate_hosted(fx):
-    """`gate.py`'s judgments **are hosted here** — it declares `selftest=False`
+    """`gate.py`'s judgments **are hosted here** -- it declares `selftest=False`
     (it provides `selftest` itself; bootstrapping would fight itself), so its
     logic selftest can only live elsewhere. The only legal hosting in this repo."""
     return [
         # **`never_falsifiable`'s selftest** (round 22): it is the core guard of
         # `gate.selftest()` (from `gate.py:36`), catching "vacuously true
-        # assertions" — previously the **whole repo had zero self-evidence** for
+        # assertions" -- previously the **whole repo had zero self-evidence** for
         # it. "The detector's detector" was never tested: when it fails, every
         # assertion silently loses its teeth.
         ("★ registry.never_falsifiable_catches_or_true",
@@ -1287,25 +1287,25 @@ def _cases_gate_hosted(fx):
         # "always report" would also fool the self-test)
         ("registry.never_falsifiable_allows_real",
          lambda: _nf_catches("real") is None),
-        # Boundary (c): "can't read the source" ⇒ no guessing (returns None, neither
+        # Boundary (c): "can't read the source" => no guessing (returns None, neither
         # "always true" nor "clean")
         ("★ registry.never_falsifiable_no_source_no_guess",
          lambda: _nf_no_source() is None),
         # **`gate.py`'s `selftest=False` must state its real meaning** (round 23):
         # it does not mean "no self-evidence obligation", only "no `--selftest`
         # entry (bootstrapping would fight itself)". The description used to say
-        # only "provides selftest, doesn't consume it itself" — reads like a
+        # only "provides selftest, doesn't consume it itself" -- reads like a
         # disclaimer.
         ("★ registry.gate_module_meta_states_where_selftest_lives",
          lambda: _gate_desc_states_selftest()),
         # The two `gate` functions just named by the dependency-chain judgment
         # (many consumers, zero assertions of their own)
         ("★ registry.guard_nonempty_returns_2",
-         # empty ⇒ rc 2 (FATAL); non-empty ⇒ None
+         # empty => rc 2 (FATAL); non-empty => None
          lambda: gate.guard_nonempty("x", []) == 2
          and gate.guard_nonempty("x", [1]) is None),
         ("★ registry.load_spec_returns_error_not_raise",
-         # broken path ⇒ (None, error sentence); no exception (the caller wants to
+         # broken path => (None, error sentence); no exception (the caller wants to
          # compose its own wording)
          lambda: _load_spec_ok()),
     ]
@@ -1315,7 +1315,7 @@ def _cases_gate_hosted(fx):
 
 
 def _cases():
-    """Assemble the six fixture groups. **Assembly only** — the judgments live in the
+    """Assemble the six fixture groups. **Assembly only** -- the judgments live in the
     group functions."""
     import atexit  # noqa: PLC0415
     import shutil  # noqa: PLC0415
@@ -1339,7 +1339,7 @@ if __name__ == "__main__":
     # The finish goes uniformly through `main_selftest_or`: it first activates the
     # language pack (`activate_or_fatal`), then splits into `--selftest` and
     # `main()`. This used to hand-copy its own activate+FATAL, while gate's own
-    # `__main__` was a third variant (no FATAL at all) — three copies of the same
+    # `__main__` was a third variant (no FATAL at all) -- three copies of the same
     # thing; the wording was bound to drift.
     sys.exit(main_selftest_or(sys.argv[1:],
                               M("gate.title.registry"),

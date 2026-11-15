@@ -6,10 +6,10 @@ Usage
     python3 zreflect/facts.py --allow-drop         # allow drops this run (dropped keys are printed)
     python3 zreflect/facts.py                      # measure once (numeric facts + principle verdict commands)
     python3 zreflect/facts.py --accept-changes     # allow rewrites this run (old value -> new value is printed)
-    python3 zreflect/facts.py --accept-changes=k1,k2  # accept only the listed keys; other rewrites still refused (issue #3 ①)
+    python3 zreflect/facts.py --accept-changes=k1,k2  # accept only the listed keys; other rewrites still refused (issue #3 (1))
     python3 zreflect/facts.py --render-doc [file]  # write the machine block into a doc (default STATE.md)
     python3 zreflect/facts.py --check [file]       # does the block in the doc match the ledger
-    python3 zreflect/facts.py --get key            # print only that key's value (consumer exit, issue #4 ④)
+    python3 zreflect/facts.py --get key            # print only that key's value (consumer exit, issue #4 (4))
     python3 zreflect/facts.py show [key]           # print one fact
     python3 zreflect/facts.py --selftest           # self-proof: both guards must be able to go red
 
@@ -59,7 +59,7 @@ def _doc():
     return doc.state_name()
 
 
-# ══ Your part ══════════════════════════════════════════════════════════════════
+# == Your part ==================================================================
 _COUNT_CMD = "python3 zreflect/facts.py --count"
 
 
@@ -191,7 +191,7 @@ def measure_example():
     # Smaller numbers are everywhere; auditing them is all noise => not audited.
     facts["py_lines"] = fact(lines_py, "%s -lines .py" % _COUNT_CMD, "repo",
                              M("facts.note.bare_number_demo"))
-    # ⑥ Block exclusion mode (issue #4 ⑥): md_lines counts lines **outside blocks** --
+    # (6) Block exclusion mode (issue #4 (6)): md_lines counts lines **outside blocks** --
     # machine blocks are rendered into these docs; counting them => the value goes
     # stale on every render => the replay perpetually fails
     # (while check_facts compares "block <-> ledger", both go stale together => all green).
@@ -227,7 +227,7 @@ def measure_example():
     return facts
 
 
-# ══ No need to change anything below ═══════════════════════════════════════════
+# == No need to change anything below ===========================================
 def _has_principles_doc():
     """Does this repo accept the suite's principles? -- The **declaration** lives in
     `doc.accepts_principles()`; this only forwards (the decision exists in one place)."""
@@ -239,7 +239,7 @@ def _doc_names():
     """Names of docs that carry machine blocks (derived from `_block_homes`'s
     ownership mapping, not a hand-written list).
 
-    ⚠️ **Must respect `REFLECT_NO_PRINCIPLES`** (#27②): `doc.accepts_principles()`
+    ⚠️ **Must respect `REFLECT_NO_PRINCIPLES`** (#27(2)): `doc.accepts_principles()`
     honors the opt-out, but this used to return both docs unconditionally => a repo
     without a principles doc hit FATAL `doc_missing_check` on `--check`, and
     `gate._prepare(push)` hardcodes `facts.py --check` without doc names =>
@@ -258,6 +258,7 @@ def _block_homes(ledger):
 
         AUTO:FACTS -> STATE.md        ledger render, the **single source of the numbers**
         AUTO:GATES -> STATE.md        discovery-based roster render, the **single source of gate narration**
+        AUTO:META  -> PRINCIPLES.md   meta-rule render, the admission criteria for RULES
         AUTO:RULES -> PRINCIPLES.md   discipline table render, the **single source of the rules narration**
 
     Why the discipline block gets its own doc: discipline is "unchanging design
@@ -277,12 +278,13 @@ def _block_homes(ledger):
     homes = [(_doc(), [(BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
                        (registry.GATES_BEGIN, registry.GATES_END,
                         registry.render_gates(gs))])]
-    # The principles block follows the same opt-out as `_doc_names()` (#27②): a repo
+    # The principles block follows the same opt-out as `_doc_names()` (#27(2)): a repo
     # that does not adopt principles never touches PRINCIPLES.md, render or check --
     # if one place honors the opt-out and the other doesn't, it only half-works.
     if _has_principles_doc():
         homes.append((doc.PRINCIPLES,
-                      [(doc.RULES_BEGIN, doc.RULES_END, doc.render_rules())]))
+                      [(doc.META_BEGIN, doc.META_END, doc.render_meta()),
+                       (doc.RULES_BEGIN, doc.RULES_END, doc.render_rules())]))
     return homes, None
 
 
@@ -475,7 +477,7 @@ def check_doc(path_rel, ledger):
 
 
 def _age_human(entry):
-    """Human wording for `measured_at` (issue #3 ②): today / N days ago / unrecorded."""
+    """Human wording for `measured_at` (issue #3 (2)): today / N days ago / unrecorded."""
     d = age_days(entry)
     if d is None:
         return M("facts.age.unrecorded")
@@ -551,7 +553,7 @@ def _own_code_hint():
 
 
 def _carry_first_seen(facts, old):
-    """Instrument lifecycle (issue #6 ①): keys whose value did not change keep the old
+    """Instrument lifecycle (issue #6 (1)): keys whose value did not change keep the old
     `first_seen` (changed values / new keys get today stamped by `ledger.fact()`) --
     constancy detection (the pluggable gate `check_instruments.py`) depends on it.
     """
@@ -677,7 +679,7 @@ def _guarded_write(argv, old, facts):
         for x in problems:
             print(machine().emit("fatal", x), file=sys.stderr)
         return 2
-    # Blind-write guard (issue #20 ②): check the target before writing -- covered by
+    # Blind-write guard (issue #20 (2)): check the target before writing -- covered by
     # gitignore => FATAL; repo has an Einfacht.env but the knob is unset this run =>
     # warn (the two sources have diverged at this moment).
     fatal_w, warn_w = guard.write_target_problems(
@@ -692,7 +694,7 @@ def _guarded_write(argv, old, facts):
 
 def get_value(ledger, key):
     """Fetch a ledger value by key -- the **official read-only exit** for consumers in
-    any language (issue #4 ④).
+    any language (issue #4 (4)).
 
     Consumers (CI, test processes in other languages) must go through
     `facts.py --get KEY`, **never parse FACTS.json themselves**: the classic
@@ -752,7 +754,7 @@ def _load_or_die():
     next step**."""
     out = _out()
     if not os.path.exists(out):
-        # issue #20 ② addendum 2: the old hint "run a measurement at the repo root
+        # issue #20 (2) addendum 2: the old hint "run a measurement at the repo root
         # first" is exactly the action that wrote a stray file -- hint text is part
         # of the "default-value source" too, and must not teach people to step on the
         # rake. Now says "first check where REFLECT_FACTS points".
@@ -918,12 +920,17 @@ def _init_skeleton(root, state):
             "# PRINCIPLES\n\n"
             "> design rules that do not change. Each one is a **runnable\n"
             "> command**, replayed by `check_facts_replay` on every commit.\n\n"
+            "## Meta rules (rendered, do not hand-edit)\n\n"
+            "What may enter the rule table, plus why. Data lives in `META` in\n"
+            "`zreflect/doc.py`; this block is reconciled by `facts.py --check`.\n\n"
+            + doc.META_BEGIN + "\n" + doc.META_END + "\n\n"
+            "## Discipline table (rendered, do not hand-edit)\n\n"
             + doc.RULES_BEGIN + "\n" + doc.RULES_END + "\n"),
         "retractions.json": '{"schema": 1, "retractions": []}\n',
         "README.md": (
             "# " + os.path.basename(root) + "\n\n"
             "> the project's human-facing docs. `check_readme_sync` treats the\n"
-            "> README trio as three copies of one assertion — if you add\n"
+            "> README trio as three copies of one assertion -- if you add\n"
             "> `README.zh.md` / `README.de.md`, keep all three in step.\n"),
         "AGENTS.md": (
             "# AGENTS.md\n\n"
@@ -989,7 +996,7 @@ def _init_questions_dir(root):
             "# Example open question\n\n"
             "**Status:** ready-for-agent\n\n"
             "**Settling:** `python3 -c \"raise SystemExit(1)\"` "
-            "— rc=0 settles A; rc=1 settles B\n\n"
+            "-- rc=0 settles A; rc=1 settles B\n\n"
             "Replace this with a real open question, or delete it\n"
             "once you have some.\n")
 
@@ -1209,7 +1216,7 @@ def _tmp_doc(content, name="doc.md"):
 
 
 CASES = [
-    # ③ Empty input must be reported (the guard's decision wiring is proven in
+    # (3) Empty input must be reported (the guard's decision wiring is proven in
     #    zreflect/guard.py's selftest; the drop / rewrite pure functions live in
     #    ledger.py's selftest -- each in its own home)
     ("★ facts.check_doc_no_markers",
@@ -1218,13 +1225,13 @@ CASES = [
      lambda: check_doc(os.path.join(_tmp_doc("", "x.md"), "..",
                                     "no_such_%d.md" % os.getpid()),
                        {"facts": {"a": 1}}) == 2),
-    # ② Human-readable fact age (issue #3 ②)
+    # (2) Human-readable fact age (issue #3 (2))
     ("facts.age_unrecorded",
      lambda: _age_human({"value": 1}).code == "facts.age.unrecorded"),
     ("facts.age_today",
      lambda: _age_human({"measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}).code
      == "facts.age.today"),
-    # ④ The official read-only exit (issue #4 ④)
+    # (4) The official read-only exit (issue #4 (4))
     ("facts.get_dict_shape",
      lambda: get_value({"facts": {"n": {"value": 12, "cmd": "c"}}}, "n") == (True, 12)),
     ("facts.get_bare_shape",
@@ -1262,7 +1269,7 @@ CASES = [
     # also complete the run. There was a time when "any .sh in the repo => the whole
     # chain FATAL"; this is that regression's guard.
     ("★ facts.real_repo_shaped_bootstraps", lambda: _real_repo_shaped()),
-    # **The opt-out also applies to --check / --render-doc** (#27②): a repo with
+    # **The opt-out also applies to --check / --render-doc** (#27(2)): a repo with
     # `REFLECT_NO_PRINCIPLES=1` must not be blocked by FATAL `doc_missing_check` --
     # the same opt-out behaved differently in doc.accepts_principles (honored) vs
     # _doc_names/_block_homes (formerly not), exactly the "one rule, two sources"
@@ -1427,7 +1434,7 @@ def fixture_env(extra=None):
 
     Copying this dict literal five times is how the `GATE_REPO` omission survived
     in two of them: `harness` sets `GATE_REPO` to *this* repo when it runs
-    selftests, while a fixture is a *different* repo — leave it in and the child
+    selftests, while a fixture is a *different* repo -- leave it in and the child
     audits this repo instead of the fixture (observed: the corrupt-ledger case
     passed alone and failed under `harness`). One source, so it cannot drift again.
     """

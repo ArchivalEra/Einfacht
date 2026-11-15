@@ -34,7 +34,7 @@ second.
   differ; don't force the same convention onto both layers (conclusion of round 16).
 
 Pure functions stay quiet during self-proof (printing belongs to run()/top level,
-issue #1 ③).
+issue #1 (3)).
 """
 import ast
 import json
@@ -429,7 +429,7 @@ def env_hint(consumed=(), module=None):
          (none of `consumed` is in the environment) -- the classic bare manual run:
          `python3 zreflect/check_x.py` => criteria all fall back to default names,
          results may differ from the hook context, and **nothing tells the user**
-         (issue #20② / #15 both tripped here).
+         (issue #20(2) / #15 both tripped here).
       2. The repo **has** an Einfacht.env and current settings **disagree** with it?
          -- Not checked (judging requires comparing values, and values depend on
          shell semantics); only "is it set" is checked, keeping the criterion cheap
@@ -813,7 +813,7 @@ def _print_banner(name, total, bad, delegated):
     is also not "scanned and clean" -- silently counting it into PASS is the fake
     green this repo hates most.
 
-    ⚠️ The machine summary line (issue #3 ③) is independent of the checker name and
+    ⚠️ The machine summary line (issue #3 (3)) is independent of the checker name and
     has a fixed format; runner/CI grep it directly. The `=== ` prefix and trailing
     ` ===` are emission-point literals (language pack values must not start with
     `^===`).

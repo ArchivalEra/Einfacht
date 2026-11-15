@@ -36,7 +36,7 @@ IGNORE = shutil.ignore_patterns(
     ".git", "__pycache__", ".mypy_cache", ".ruff_cache", "Einfacht.env")
 # ``posix`` means the payload shells out to ``sh`` or a Unix-only binary.
 # Windows cannot run those, and a silent pass there would claim coverage the
-# platform never exercised — so a skip is reported and counted, never green.
+# platform never exercised -- so a skip is reported and counted, never green.
 POSIX = "posix"
 PLATFORMS = ("posix", "windows")
 
@@ -321,7 +321,7 @@ def _list(root):
     manifests, problems = discover(root)
     _print_problems(problems)
     for name, spec in manifests.items():
-        print("%s — %s" % (name, spec.get("description", "")))
+        print("%s -- %s" % (name, spec.get("description", "")))
     return 2 if problems else 0
 
 
