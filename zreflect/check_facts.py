@@ -217,37 +217,43 @@ def _copied_fact_problems(facts, nlines, bare_min):
 # accumulates (measured: 55 hand-written lines of mechanism narration, including
 # four `issue #N` references and a paragraph about a hand-written roster that had
 # drifted -- prose in a rendered document is drift waiting to happen).
-STATE_ALLOWED_HEADING = "# "
-
-
-# Both measured documents render everything they say. Only the title and one
-# short pointer block are allowed outside the machine blocks.
-HAND_WRITTEN_INTRO_LINES = 8
-# Only these documents render everything they say.
-RENDERED_DOCS = frozenset({"STATE.md", "PRINCIPLES.md"})
+#
+# Both measured documents render everything they say. What may live outside the
+# machine blocks, and nothing else:
+#   * the H1 title line
+#   * blank lines
+#   * a **block-quote intro** (`> ...`) directly after the title
+# A line-count window was the earlier shape and it was wrong the same way every
+# line-count cap is wrong: it handed out 8 legal lines of rubbish. Shape-based
+# means the intro is prose you can read at the top and the rest is rendered.
+# Derived, not hand-written: the two documents that carry machine blocks are
+# exactly the ones that render everything. A literal set here would be a second
+# source for a value `knobs`/`doc` already own.
+def rendered_docs():
+    """The two documents that render everything: the state document (whose name
+    is the `REFLECT_DOC` default) and the principles document (a constant)."""
+    import doc  # noqa: PLC0415
+    return frozenset({knobs.REGISTRY["REFLECT_DOC"][1], doc.PRINCIPLES})
 
 
 def hand_written_problems(doc_text, name="STATE.md"):
-    """Lines of a fully rendered doc that are **not** part of a machine block.
+    """Lines of a fully rendered doc that are narration rather than render.
 
-    Allowed outside blocks: the title, blank lines, and the short intro at the
-    top. Anything else is hand-written narration in a document whose whole
-    purpose is to render. Measured: STATE.md carried 55 such lines, four of them
-    `issue #N` references and one a paragraph about a hand-written roster that
-    had drifted.
+    `doc_text` is the prose **outside** the machine blocks (callers pass
+    `render.prose_of(...)`, the single owner of that split -- re-implementing the
+    block scan here would be a second source for "what counts as a block").
+
+    Measured: STATE.md carried 55 such lines, four `issue #N` references and a
+    paragraph about a hand-written roster that had drifted.
     """
-    out, inside = [], False
+    out = []
     for lineno, line in enumerate(doc_text.splitlines(), 1):
         stripped = line.strip()
-        if stripped.startswith("<!-- AUTO:"):
-            inside = True
+        if not stripped:
             continue
-        if stripped.startswith("<!-- /AUTO:"):
-            inside = False
+        if stripped.startswith("# "):          # the title
             continue
-        if inside or not stripped:
-            continue
-        if lineno <= HAND_WRITTEN_INTRO_LINES:
+        if stripped.startswith(">"):           # the intro block-quote
             continue
         out.append(M("facts.hand_written_in_state", name=name, lineno=lineno,
                      text=stripped[:60]))
@@ -266,7 +272,6 @@ def problems(ledger, doc_text, bare_min=None, name="STATE.md"):
         # Zero-value guard: an empty ledger is not "no violations", it is
         # "nothing was measured".
         return [M("facts.empty_ledger")]
-    out_hand = hand_written_problems(doc_text, name)
     if BLOCK_BEGIN not in doc_text or BLOCK_END not in doc_text:
         return [M("facts.no_block_markers",
                   begin=BLOCK_BEGIN, end=BLOCK_END)]
@@ -281,7 +286,7 @@ def problems(ledger, doc_text, bare_min=None, name="STATE.md"):
     out += _copied_fact_problems(f, nlines, bm)
     # Reverse criterion (issue #24): numbers that never entered the ledger need provenance too.
     out += _unaccounted_numbers(f, bm, nlines)
-    return out + out_hand
+    return out
 
 
 def _docs_to_scan(argv):
@@ -364,8 +369,8 @@ def run(argv):
         # line there is narration that will drift. PRINCIPLES.md carries
         # `AUTO:RULES`, not `AUTO:FACTS`, so this cannot live inside the block
         # branch above. README / AGENTS are prose by design and stay out.
-        if os.path.basename(doc) in RENDERED_DOCS:
-            probs += hand_written_problems(text, doc)
+        if os.path.basename(doc) in rendered_docs():
+            probs += hand_written_problems(prose_of(text), doc)
     return finish(M("facts.title"), probs,
                   M("facts.ok", count=len(facts_of(led)), docs=scanned))
 
@@ -460,17 +465,22 @@ def _cases_core(fx):
     # machine blocks is drift waiting to happen (measured: 55 such lines,
     # including four `issue #N` references).
     ("★ facts.hand_written_in_state",
-     lambda: [p.code for p in problems(
-         LED, good + "\n- hand written rubbish\n")] == ["facts.hand_written_in_state"]),
-    # ... but a document of nothing but rendered blocks must stay green:
-    # otherwise the criterion forbids the shape it exists to enforce.
-    ("facts.state_fully_rendered_ok",
-     lambda: problems(LED, good) == []),
+     lambda: [p.code for p in hand_written_problems("- rubbish\n")]
+     == ["facts.hand_written_in_state"]),
+    # ... the allowed shapes stay green: otherwise the criterion forbids what it
+    # exists to enforce (a title + a block-quote intro are prose you can read).
+    ("facts.title_and_intro_are_allowed",
+     lambda: hand_written_problems("# T\n\n> intro\n> more\n") == []),
+    # the earlier line-count window let 7 lines of rubbish through; shape does not
+    ("\u2605 facts.no_line_count_loophole",
+     lambda: [p.code for p in hand_written_problems(
+         "# T\n\n> i\n" + "- junk\n" * 7)]
+     == ["facts.hand_written_in_state"] * 7),
     # PRINCIPLES.md is on the same surface: hand-written rules next to the
     # rendered table would be a second place of origin for the rules.
     ("\u2605 facts.hand_written_in_principles",
-     lambda: [p.code for p in problems(
-         LED, good + "\n## extra rules\n", name="PRINCIPLES.md")]
+     lambda: [p.code for p in hand_written_problems("## extra rules\n",
+                                                    name="PRINCIPLES.md")]
      == ["facts.hand_written_in_state"]),
     ("★ facts.no_block_markers",
      lambda: codes(LED, "a document with no block at all")

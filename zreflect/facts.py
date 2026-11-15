@@ -893,17 +893,14 @@ def _init_skeleton(root, state):
     return {
         state: (
             "# " + state + "\n\n"
-            "> live state: only what is true **now**. Cite numbers by\n"
-            "> key (double-bracket form), never hand-copy them.\n\n"
-            "## Now\n\n"
-            "<!-- write what is true NOW; cite numbers by key -->\n\n"
+            "> live state: only what is true **now**, and every line below is\n"
+            "> rendered from the ledger; never copy a number into prose.\n\n"
             + BLOCK_BEGIN + "\n" + BLOCK_END + "\n\n"
             + _reg.GATES_BEGIN + "\n" + _reg.GATES_END + "\n"),
         doc.PRINCIPLES: (
             "# PRINCIPLES\n\n"
             "> design rules that do not change. Each one is a **runnable\n"
             "> command**, replayed by `check_facts_replay` on every commit.\n\n"
-            "## Discipline table (rendered, do not hand-edit)\n\n"
             + doc.RULES_BEGIN + "\n" + doc.RULES_END + "\n"),
         "retractions.json": '{"schema": 1, "retractions": []}\n',
         "README.md": (
