@@ -13,7 +13,6 @@
  "doctor.http_status_mismatch": "状态 %(actual)s ≠ 期望 %(expected)s",
  "doctor.http_status_not_int": "`%(check)s` 的 expect_status 必须是整数",
  "doctor.missing_kind": "检查项缺 kind（必填）：%(check)r",
- "doctor.missing_why": "`%(check)s` 缺 why（必填：没有理由的检查项没人敢删，会变成僵尸）",
  "doctor.not_object": "检查项不是对象：%(check)r",
  "doctor.off": "doctor 预检：未配置（REFLECT_DOCTOR 未配且默认 %(name)s 不在）⇒ 本预检未启用（小插件；要启用：cp %(path)s %(name)s）",
  "doctor.port_in_use": "端口被占（连上了）",

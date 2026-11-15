@@ -4,8 +4,11 @@ current state.**
 
 Each entry in `retractions.json` = one retracted assertion:
   `text` the search snippet -- the assertion's signature fragment, matched
-  verbatim against document lines · `why` what made it wrong · `evidence` how
-  to replay the refutation · `fixed_in` where the corrected claim lives now
+  verbatim against document lines · `evidence` how to replay the refutation ·
+  `fixed_in` where the corrected claim lives now
+
+  There is no `why` field: it would be free prose that nothing reads. The
+  evidence command is what explains the correction, and it can be re-run.
 
 Criterion: the line in a living-state document that contains `text` **must
 carry a correction marker**. This is the only mechanism that raises the alarm
@@ -24,7 +27,7 @@ from i18n import M  # noqa: E402
 from ledger import load_or_fatal  # noqa: E402
 from living import HIST_MARK, living_lines  # noqa: E402
 
-REQUIRED = ("id", "text", "why", "evidence", "fixed_in")
+REQUIRED = ("id", "text", "evidence", "fixed_in")
 # **Resolved via the knob helper**: the parse lives in `knobs.history_secs()`
 # (the single producer -- `check_stale` reads the same helper), so the two
 # gates cannot drift apart on "what counts as a history section".
@@ -130,7 +133,7 @@ def run(argv):
 
 def _cases():
     ok_r = {"retractions": [{"id": "R-1", "text": "this thing is green",
-                             "why": "actually red", "evidence": "python3 zreflect/facts.py --check",
+                             "evidence": "python3 zreflect/facts.py --check",
                              "fixed_in": "doc y"}]}
     doc_ok = "(record) this thing is green -- retracted, see R-1\n"
     return [
@@ -156,13 +159,13 @@ def _cases():
         # (it is absent) and the re-runnability one (empty is not a command).
         ("\u2605 retractions.entry_missing_field",
          lambda: [p.code for p in problems(
-             {"retractions": [{"id": "R-2", "text": "t", "why": "w", "fixed_in": "f"}]},
+             {"retractions": [{"id": "R-2", "text": "t", "fixed_in": "f"}]},
              {"A.md": "x\n"})]
          == ["retractions.entry_missing_field", "retractions.evidence_not_runnable"]),
         # evidence must be replayable: prose there is a hole nothing can verify
         ("\u2605 retractions.evidence_not_runnable",
          lambda: [p.code for p in problems(
-             {"retractions": [{"id": "R-3", "text": "t", "why": "w",
+             {"retractions": [{"id": "R-3", "text": "t",
                                "evidence": "a subagent report",
                                "fixed_in": "f"}]}, {"A.md": "x\n"})]
          == ["retractions.evidence_not_runnable"]),

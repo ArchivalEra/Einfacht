@@ -1,1 +1,11 @@
-{"paths": ["app/clean.txt"], "allow": [{"path": "app/leaked.txt", "rule": "aws-access-key", "why": "demonstrate stale-exemption detection"}]}
+{
+  "paths": [
+    "app/clean.txt"
+  ],
+  "allow": [
+    {
+      "path": "app/leaked.txt",
+      "rule": "aws-access-key"
+    }
+  ]
+}

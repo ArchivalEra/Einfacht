@@ -19,7 +19,7 @@ Spec (`REFLECT_AB`, default `ab.json`; data, not code):
           "b": "artifacts/cand/octave.build.json",
           "key": "declared",            # optional: dotted path into the JSON (default: whole file)
           "allow": ["malloc"],          # axis under test (the only key allowed to differ)
-          "why": "...required..." } ] }
+        } ] }
 
 - A value difference on any key outside `allow` => report (confounding
   variable);
@@ -90,7 +90,7 @@ def _dig(obj, dotted):
 def _pair_field_problems(pr):
     """A pair entry missing a required field (name / a / b / why) => report."""
     return [M("ab.pair_missing_field", field=f, entry=pr)
-            for f in ("name", "a", "b", "why") if not pr.get(f)]
+            for f in ("name", "a", "b") if not pr.get(f)]
 
 
 def _declared(obj, key):
@@ -178,7 +178,7 @@ def _cases():
         return rel
     spec = {"pairs": [
         {"name": "allocator A/B", "a": "a.json", "b": "b.json", "key": "declared",
-         "allow": ["malloc"], "why": "axis under test = allocator"}]}
+         "allow": ["malloc"]}]}
     # a/b: identical except malloc
     wf("a.json", {"declared": {"simd": True, "malloc": "mimalloc", "v128": 4752}})
     wf("b.json", {"declared": {"simd": True, "malloc": "dlmalloc", "v128": 4752}})
@@ -187,7 +187,7 @@ def _cases():
     wf("nokey.json", {"declared": "not-a-dict"})
     empty = {"pairs": []}
     confound_spec = {"pairs": [{"name": "m", "a": "mut-a.json", "b": "mut-b.json",
-                                "key": "declared", "allow": ["malloc"], "why": "w"}]}
+                                "key": "declared", "allow": ["malloc"]}]}
     return [
         ("ab.resolve_spec",
          lambda: resolve_spec(["--spec", "x.json"], "K.json") == ("x.json", True)
@@ -202,14 +202,14 @@ def _cases():
         ("★ ab.artifact_unreadable",
          lambda: [p.code for p in check(
              {"pairs": [{"name": "x", "a": "nope-a.json", "b": "nope-b.json",
-                         "why": "w"}]}, d)[1]] == ["ab.artifact_unreadable"]),
+                         }]}, d)[1]] == ["ab.artifact_unreadable"]),
         ("★ ab.not_a_dict",
          lambda: [p.code for p in check(
              {"pairs": [{"name": "x", "a": "nokey.json", "b": "nokey.json",
-                         "key": "declared", "why": "w"}]}, d)[0]] == ["ab.not_a_dict"]),
+                         "key": "declared"}]}, d)[0]] == ["ab.not_a_dict"]),
         ("★ ab.pair_missing_field",
          lambda: [p.code for p in check(
-             {"pairs": [{"a": "a.json", "b": "b.json", "why": "w"}]}, d)[0]]
+             {"pairs": [{"a": "a.json", "b": "b.json"}]}, d)[0]]
          == ["ab.pair_missing_field"]),
         # (3) empty input must be reported
         ("★ ab.empty",

@@ -1261,7 +1261,7 @@ def _selftest_false_states_it():
     """Every module with `selftest=False` must state in its description that "the
     selftest lives in registry._cases".
 
-    All three are checked (`collect.py` / `living.py` / `gate.py`) -- discovery-
+    All three are checked (`living.py` / `gate.py` / `registry.py`) -- discovery-
     based: take everything with `selftest=False` from `modules()`, no hand-written
     list.
     """
@@ -1555,14 +1555,14 @@ def _cases_self_checks():
     surface / CJK predicate / trailing newline / dependency coverage / selftest
     hardening)."""
     return [
-        # **`living.py` / `collect.py` self-verification** (round 24): the two
-        # `selftest=False` modules previously had **zero assertions**, while
+        # **`living.py` self-verification**: a `selftest=False` module
+        # previously had **zero assertions**, while
         # `living_lines` is consumed by `check_stale` / `check_retractions` --
         # had it judged wrongly, every criterion of those two gates would have
         # been void.
         # **A `selftest=False` module description must state where its selftest
-        # lives** (round 25, same class as round 23 `gate.py`): `collect.py` /
-        # `living.py` / `gate.py` all declare `selftest=False`, but their logic
+        # lives**: `living.py` / `gate.py` / `registry.py` all declare
+        # `selftest=False`, but their logic
         # **has substantive assertions** in `registry._cases()`. A description
         # that just says "no selftest" = a disclaimer.
         # Machine criterion for "strictly check surplus interfaces": a public

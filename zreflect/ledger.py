@@ -176,8 +176,8 @@ def fact(value, cmd, source, note="",
     `measured_at` is stamped automatically at **collection time** (issue #3 (2)):
     it is the record of "when it was measured", used for rendering the
     "measured at" column and for fact age, and **must never be treated as a
-    measurement input** (collect.py principle 2: otherwise `--check` never
-    converges -- it is an output, not an input).
+    measurement input** (otherwise `--check` never converges -- it is an
+    output, not an input).
     `first_seen` (issue #6 (1)) is likewise stamped at collection time:
     `measure()` keeps the old date while the value is unchanged and takes today
     when the value changes -- the always-the-same detection ("is this cmd

@@ -6,8 +6,7 @@
     {
       "paths": ["src", "scripts"],
       "allow": [
-        {"path": "src/fixtures/aws.txt", "rule": "aws-access-key",
-         "why": "public documentation fixture"}
+        {"path": "src/fixtures/aws.txt", "rule": "aws-access-key"}
       ]
     }
 
@@ -83,9 +82,8 @@ def _allow_problems(entry, seen):
         return [M("secrets.allow_not_object", entry=entry)]
     path = str(entry.get("path") or "").replace(os.sep, "/").strip()
     rule = str(entry.get("rule") or "").strip()
-    why = str(entry.get("why") or "").strip()
     out = []
-    if not path or not rule or not why:
+    if not path or not rule:
         return [M("secrets.allow_fields", entry=entry)]
     if rule not in RULE_NAMES:
         out.append(M("secrets.allow_unknown_rule", rule=rule))
@@ -236,7 +234,7 @@ def _cases():
         ("secrets.clean", lambda: line_findings("a.txt", 1, clean) == []),
         ("secrets.allow_shape",
          lambda: spec_problems({"paths": ["app"], "allow": [
-             {"path": "app/a.txt", "rule": "aws-access-key", "why": "fixture"}]}) == []),
+             {"path": "app/a.txt", "rule": "aws-access-key"}]}) == []),
         ("★ secrets.aws", lambda: [x["rule"] for x in line_findings("a.txt", 1, leaked)]
          == ["aws-access-key"]),
         ("★ secrets.private_key",

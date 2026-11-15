@@ -13,7 +13,6 @@
  "doctor.http_status_mismatch": "status %(actual)s != expected %(expected)s",
  "doctor.http_status_not_int": "`%(check)s` expect_status must be an integer",
  "doctor.missing_kind": "check entry has no kind (required): %(check)r",
- "doctor.missing_why": "`%(check)s` has no why (required: a check with no stated reason is never deleted, it becomes a zombie)",
  "doctor.not_object": "check entry is not an object: %(check)r",
  "doctor.off": "doctor preflight: not configured (REFLECT_DOCTOR unset and the default %(name)s is absent) ⇒ this preflight is off (small plugin; to enable: cp %(path)s %(name)s)",
  "doctor.port_in_use": "port is taken (the connection succeeded)",

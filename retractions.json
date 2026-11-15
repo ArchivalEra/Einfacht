@@ -8,147 +8,126 @@
   {
    "id": "R-001",
    "text": "ZCODE_REFLECT_TYPO",
-   "why": "（示例）把一条**假**的翻案条目留在仓里，是为了让这条机制开箱就有一次真实运行 —— 删掉它即可。",
    "evidence": "python3 zreflect/check_retractions.py（它必须扫到 STATE.md / AGENTS.md / README.md / README.zh.md / README.de.md）",
    "fixed_in": "本文件（示例条目）"
   },
   {
    "id": "R-002",
    "text": "`Stop` 钩子每轮重渲染 `STATE.md` 的 `AUTO:NEXT` 块",
-   "why": "那个块**从未进过任何文档**：`facts.py --render-doc` 只认 AUTO:FACTS / AUTO:GATES / AUTO:RULES，`next.render()` 除自证外没有调用方。而且它与 --check 的逐字节对账天然互斥（每轮都变）。",
    "evidence": "python3 zreflect/next.py --selftest",
    "fixed_in": "zreflect/next.py（section() 现算，不落盘）+ AGENTS.md「记忆是自动的」"
   },
   {
    "id": "R-003",
    "text": "zreflect/check_wire.py",
-   "why": "套件去校验宿主的 config schema 是把耦合方向搞反了：换一个编辑器就得改闸门，而宿主自己的信任闸门（project hooks pending_trust）套件根本看不见。接线是否生效只有宿主的日志能回答。",
    "evidence": "python3 zreflect/registry.py --gates（名录里不应再有 check_wire）",
    "fixed_in": "zreflect/next.py 暴露宿主无关的 section()/stdout；宿主接线归使用方"
   },
   {
    "id": "R-004",
    "text": "All checks passed（`gitroll-dispositions.json` 的 `_summary` 对那三条 ruff 选择器的结论）",
-   "why": "`gitroll-dispositions.json` 的 `_summary` 声称这条命令「All checks passed」，实测 159 errors：134 个 F841（自证夹具里解包 7 个变量只用 2 个 —— 上一轮「复杂度拆分」留下的机械残渣）、13 个 F401、4 个 C901（最高 27）。**声称「已清」的那条命令本身没有闸门跑它**，所以它安静地烂了。",
    "evidence": "python3 -m ruff check --select=C901,F,E9,B --config lint.mccabe.max-complexity=15 .",
    "fixed_in": "全部清零（F841 134→0、F401 13→0、C901 4→0）；B023 一处经实测确认为误报并写明理由；`facts.main` 拆分派表 + 8 个 handler"
   },
   {
    "id": "R-005",
    "text": "`_doc()` 是模块级函数，`main` 里可以安全调用它",
-   "why": "这句断言曾经成立过，后来 `main` 里加了一句 `import doc as _doc`（`--accept-principles` 分支）⇒ `_doc` 变成整个函数的局部变量 ⇒ `python3 zreflect/facts.py --render-doc`（AGENTS.md 的首要命令之一）直接崩 `UnboundLocalError`。`ruff --select=F823` 早就报过，但那时没有任何闸门跑 ruff。",
    "evidence": "python3 zreflect/facts.py --render-doc（改名后正常；原状 rc=0 但 traceback）",
    "fixed_in": "别名改 `doc_mod`；`facts.main` 拆成每个命令一个 handler，命令间不再共享作用域 ⇒ 这类名字污染在结构上消失"
   },
   {
    "id": "R-006",
    "text": "照 README 的 Usage 走就能在全新仓 bootstrap",
-   "why": "不能。`--init` 在三份 README 里出现 0 次，而 `cp -r` 之后直接 `--render-doc STATE.md` 必然 `FATAL: facts.doc_missing_render`，且报错不提 `--init`。实测：子代理辞书照做，第二步就死。",
    "evidence": "python3 zreflect/facts.py --help；三语 README 的 Usage 段",
    "fixed_in": "161c940（无语言包可用性验收）"
   },
   {
    "id": "R-007",
    "text": "`facts.py --help` 只打印帮助、不碰台账",
-   "why": "它会**量一遍并写台账** —— 未知首参回落给 `measure()`，那是一条真实写盘路径。实测：`--help` 在夹具仓里改写了 FACTS.json。没人会去想「查帮助会写文件」。",
    "evidence": "python3 zreflect/facts.py --help && md5sum FACTS.json",
    "fixed_in": "161c940（无语言包可用性验收）"
   },
   {
    "id": "R-008",
    "text": "bootstrap 完的仓里 `registry --run commit` 与 `harness.py` 可以同时绿",
-   "why": "不能，它们是两个互相打架的门槛：不 source `Einfacht.env` ⇒ registry 3 红（默认名去找不存在的 README）；source 之后 ⇒ harness 红（`knobs.readme_missing_rows` 的自证夹具硬写三份 README，而 `--init` 给单 README 的仓写了 `REFLECT_READMES=README.md`）。",
    "evidence": "python3 zreflect/facts.py --selftest 的 ★ facts.fresh_repo_bootstraps_green",
    "fixed_in": "161c940（无语言包可用性验收）"
   },
   {
    "id": "R-009",
    "text": "`md_lines` 已经排除机器块，渲染不会让它变",
-   "why": "只排除了 `AUTO:FACTS`，而 `AUTO:GATES`(25 行) + `AUTO:RULES`(22 行) 也是渲染产出的 ⇒ 渲染一次行数 +47（实测 38→59），replay 永久红，且修法看起来是「再量一遍」（再量只把新值写进台账，下次渲染又变）。",
    "evidence": "python3 zreflect/facts.py --get md_lines 与复跑命令对比",
    "fixed_in": "161c940（无语言包可用性验收）"
   },
   {
    "id": "R-010",
    "text": "本地全绿 ⇒ CI 会绿",
-   "why": "不是。跨平台问题本地（Linux）**零信息量**：Windows 的默认编码是 cp1252、shell 是 cmd.exe、路径分隔符是 `\\`、`chmod` 只切只读位、并且装了 Git Bash。本轮为此连红 **9 轮**，每一轮只暴露最外层一条（前面的先红），共修掉 8 个真缺陷：① `/dev/null` 被 PowerShell 当路径 ② cp1252 stdout 编不出中文 ③ subprocess 读线程崩（解码失败，stdout=None）④ `/` 判别失效导致 `.git/hooks` 被扫 ⑤ relpath 反斜杠 ≠ 白名单 ⑥ py_sources 的 rel 反斜杠让文件级豁免失效 ⑦ Git Bash 把 `C:\\...` 的反斜杠吃掉 ⇒ 127 ⑧ chmod 夹具在 Windows 造不出不可读目录",
    "evidence": "python3 zreflect/check_i18n.py（本地 Linux 零信息量：Windows 的 cp1252 编码 / cmd.exe / 反斜杠路径本地都不会出现）",
    "fixed_in": "CI 落地（60014a6..80014a6 系列）"
   },
   {
    "id": "R-011",
    "text": "`selftest` 会执行委托给 helper 的断言",
-   "why": "不会。`_case_verdict` 的 delegated 分支直接 `return True`（**从不执行 fn()**），而 `selftest` 循环里 `if was_delegated: continue` 又把结果丢掉。合起来：**60+ 条委托断言从来没被验证过「返回 False 会不会红」**。修好后立刻暴露一条真失败（`facts.fresh_repo_bootstraps_green` 一直是假绿）。",
    "evidence": "python3 zreflect/criteria.py --selftest（掏空一条修复 ⇒ 18 PASS / 1 FAIL）",
    "fixed_in": "CI 落地（60014a6..80014a6 系列）"
   },
   {
    "id": "R-012",
    "text": "`md_lines` 的旧 awk 实现数得对",
-   "why": "不对。`/<!-- AUTO:[A-Z]+ -->/` 把**正文里提到标记**也当成块开始 —— `AGENTS.md` 有一行写着「`STATE.md` 里预先放好 `<!-- AUTO:FACTS -->` 标记」，从那行起剩余 23 行全被排除。台账长期少算 23（2663 vs 2686），无人发现。",
    "evidence": "python3 zreflect/facts.py --count -md",
    "fixed_in": "CI 落地（60014a6..80014a6 系列）"
   },
   {
    "id": "R-013",
    "text": "这个套件可以直接接进任何真实项目",
-   "why": "不能。子代理拿 Static-Contract（65 py / 76 md）照英文 README 接入，5 个致命阻塞：① 仓里任何 .sh 就让 render/check/pre-commit 全 FATAL（判据扫了整个 GATE_REPO，而「全 Python 化」是本仓对自己的纪律）② 报错指向不存在的 registry.ALLOWED_SHELL ③ REFLECT_MEASURE_MODULE 配了却不可用时静默回落占位实现并写盘 ④ measure() 返回裸值先写盘再崩 traceback ⑤ --chain 在已有 core.hooksPath 时静默空转",
    "evidence": "python3 zreflect/facts.py --selftest 的 ★ facts.real_repo_shaped_bootstraps（真实仓形状：build.sh / src / 已有 README 也要能 bootstrap）",
    "fixed_in": "接入体验修复 e9caaec"
   },
   {
    "id": "R-014",
    "text": "`facts.py --selftest` 不碰真实仓",
-   "why": "会碰。自证用例直接调 `main([\"--accept-changes=k1\"])`，那会真的跑 measure 并写盘 —— 调用方的 FACTS.json 被改写（实测 md5 变），随后 `--check` 立刻红，而 README 写着 \"selftests … never touch the real repo\"。",
    "evidence": "python3 zreflect/facts.py --selftest 的 ★ facts.selftest_does_not_write_real_ledger（自证跑完 FACTS.json 的 md5 不变）",
    "fixed_in": "接入体验修复 e9caaec"
   },
   {
    "id": "R-015",
    "text": "`REFLECT_SNAPSHOT_ROOT` 为空时那道闸门明说未启用",
-   "why": "不会。空 ⇒ 扫套件自己的 `zreflect/` 并报 `snapshot.ok(files=33)`，没有 OFF 行。README 与 knobs 的说明都写反了。",
    "evidence": "python3 zreflect/check_snapshots.py（env 未设时看输出）",
    "fixed_in": "接入体验修复 e9caaec"
   },
   {
    "id": "R-016",
    "text": "静态闸门扫整个仓（`ruff check .` / 全部 `.py`）",
-   "why": "不是有意为之，是从没判过。接进真实项目时，使用方的 `examples/` / `scripts/` 被当成套件本体来审：实测一个真项目 `registry --run commit` 报 149 条 ruff + 59 条中文 + 3 条快照违规，**全部指向那个项目自己的文件**。套件的纪律只对套件成立，把它强加给使用方等于让人修别人的偏好。",
    "evidence": "python3 zreflect/criteria.py --selftest（★ registry.scope_two_ways：两种口径各一次）；另见 facts._real_repo_shaped 的 `examples/bad.py` —— 每一轮 bootstrap 都验一次",
    "fixed_in": "gate.declares_itself / gate.scanned_sources（作用域收窄 + opt-in 保留）"
   },
   {
    "id": "R-017",
    "text": "`next.py` 能把结案的悬案从「下一步」里去掉",
-   "why": "不能。`_question_status` 用 `ln.split(\":\", 1)[1]` 取 `**Status:** resolved` 的值，而冒号在**那对星号中间** —— 切出来是 `\"** resolved\"`，永远不等于 `resolved`。于是结案的悬案被永久报成待办，每轮提示去查一件已经查完的事。同一个坑 `check_questions.field` 早就填过（它的 docstring 专门写了这件事），`next.py` 是第二份自己写了一遍的判据。",
    "evidence": "python3 zreflect/next.py --selftest（★ next.resolved_question_is_dropped：一个结案 + 一个没结案的夹具，只有后者该出现）",
    "fixed_in": "next._question_status 转调 check_questions.field（唯一产地）"
   },
   {
    "id": "R-018",
    "text": "`raise SystemExit(<消息>)` 是退 2 的 FATAL",
-   "why": "退 **1**。`SystemExit(str)` 是 Python 的「打印并退 1」约定 —— 于是打出 `FATAL:` 三个字母、退出码却是 1，`registry._record` 按 rc 分类就把它归成「判据红 / 代码问题」，而真相是「配置 / 输入形状坏」。四条 FATAL 路径全错（require_nonempty / selftest 空用例 / ledger._require_pairs / collect.parse_prev_values）。",
    "evidence": "python3 zreflect/criteria.py --selftest（★ registry.system_exit_is_int + 全仓 AST 扫描）",
    "fixed_in": "gate.fatal_exit(msg)（唯一产地，SystemExit(2)）"
   },
   {
    "id": "R-019",
    "text": "`REFLECT_DOCS` 未设时 stale / retraction 扫全部六份活文档",
-   "why": "五份。两道闸门各手抄一份五份的字面量，登记表是六份 —— `PRINCIPLES.md`（规矩的唯一产地）从来不在它们的扫描面里，写在原则文档里的翻案文本与陈旧断言永远不会被看到。",
    "evidence": "python3 zreflect/knobs.py --selftest（★ knobs.docs_names_follow_registry：从两道闸门的消费端读）",
    "fixed_in": "knobs.docs_names()（登记表唯一产地）+ check_stale.scanned_docs() / check_retractions.scanned_docs()"
   },
   {
    "id": "R-020",
    "text": "`REFLECT_QUESTIONS=`（空串）等于没配",
-   "why": "对 `check_questions` 不成立：它不 strip，空串被 `os.path.join(仓根, \"\")` 解析成**仓根**，把 STATE.md / README.md / AGENTS.md 全当悬案收进来，报一堆 missing_status 假问题。同一个值在 facts / next 侧会 strip —— 三份判据、一份错。",
    "evidence": "python3 zreflect/check_questions.py（REFLECT_QUESTIONS= 空串不得等于未配；过去把仓根当悬案目录收进来）",
    "fixed_in": "knobs.questions_path()（唯一产地，strip + 回落登记表）"
   },
   {
    "id": "R-021",
    "text": "must say ADVISORY",
-   "why": "`PRINCIPLES.md` 曾告诉读者：规则行可以标 `ADVISORY`、与 gate 互换。`Rule` 只有三个字段（id / text / cmd），根本没有这个标记位——散文在描述一个从未造出来的特性，且没有任何东西拿散文与那张表对账。曾经看住这句话的 CLAIMS 机制（doc.claim_problems）连同它的自证一起退役，因为全仓没有消费者；唯一的真实条目改记到这里——「散文复活被撤断言」正是本机制管的形状。",
    "evidence": "python3 zreflect/registry.py --selftest（doc 组不再有 doc.no_claim_outlives_its_feature；旧断言由本闸门接管）；python3 zreflect/doc.py --selftest",
    "fixed_in": "retractions.json（R-021）+ PRINCIPLES.md「怎么用这张表」（无中间态，没有可挂「建议」的标记位）"
   }

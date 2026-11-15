@@ -66,11 +66,6 @@ import machine  # noqa: E402
 # ⚠️ **Lazy fetch**: this module is lazily imported by `gate`; a module-level
 # reverse `import gate` would be circular. The values themselves are produced
 # solely by `gate.zdir()` / `gate.tool_repo()` -- not computed again here.
-def _tool_dir():
-    import gate  # noqa: PLC0415
-    return gate.zdir()
-
-
 def _tool_repo_dir():
     import gate  # noqa: PLC0415
     return gate.tool_repo()

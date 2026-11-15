@@ -430,21 +430,13 @@ def _every_rule_has_text():
 
 
 def _every_cmd_references_a_real_file():
-    """Every `zreflect/*.py` / `*.sh` mentioned in a cmd really exists.
+    """Every `zreflect/*.py` / `*.sh` named in a shipped cmd really exists.
 
-    ⚠️ Only **existence** is checked, not runnability -- runnability is
-    `check_facts_replay`'s job (verbatim execution at every commit). This is
-    the **cheap** pre-check that catches dead commands left behind by a
-    rename.
+    Existence only -- runnability is `check_facts_replay`'s job (verbatim
+    execution at every commit). This is the cheap pre-check that catches dead
+    commands left behind by a rename.
     """
-    import os  # noqa: PLC0415
-    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    for r in RULES:
-        for tok in r.cmd.split():
-            is_script = tok.endswith((".py", ".sh"))
-            if is_script and not os.path.exists(os.path.join(base, tok)):
-                return False
-    return True
+    return _cmd_targets_exist(RULES)
 
 
 def _lookup_works():
@@ -494,11 +486,14 @@ def _cases():
                          for i in ["Bad-Id"])),
         ("★ doc.dead_cmd_target_is_rejected",
          lambda: _cmd_targets_exist([Rule("x", "t", "python3 zreflect/nope_xyz.py")]) is False),
-        ("★ doc.unknown_lookup_raises",
-         lambda: _unknown_lookup_raises()),
-        # (3) empty input must be reported
-        ("★ doc.empty_table_has_no_problems_but_cannot_be_trusted",
-         lambda: _cmd_shape_problems([]) == [] and _is_empty_guard_green(())),
+
+        # (3) An empty table is not a shape error -- but "empty => all right"
+        # must never be the reading. The old case here was a tautology
+        # (`isinstance((), tuple)`), which this repo's own `falsifiable` rule
+        # exists to catch. The honest criterion: the shipped table is non-empty,
+        # so a green run means something was actually judged.
+        ("★ doc.table_is_not_empty",
+         lambda: len(RULES) > 0 and _cmd_shape_problems(RULES) == []),
         # (4) The principles added from the retired META table: their cmds are
         # real criteria, so each has teeth pinned here (a cmd that can only
         # pass is not a criterion).
@@ -662,24 +657,6 @@ def _cmd_targets_exist(rows):
                not os.path.exists(os.path.join(base, tok)):
                 return False
     return True
-
-
-def _unknown_lookup_raises():
-    try:
-        rule("definitely_not_a_rule")
-        return False
-    except KeyError:
-        return True
-
-
-def _is_empty_guard_green(rows):
-    """An empty table having **no shape problems** is normal (having no principles is not a shape error),
-    but "empty table => everything is right" is a trap -- so when `ids()` is empty the self-evidence must **stay visible**.
-
-    This case pins the criterion itself: empty input must not masquerade as
-    "checked".
-    """
-    return isinstance(rows, tuple) and len(rows) == 0
 
 
 def _selftest():

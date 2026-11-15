@@ -1,1 +1,10 @@
-{"checks": [{"path": "app/build.sh", "must_contain": ["NEVER_PRESENT_MARKER"], "why": "demonstrate a missing required fragment"}]}
+{
+  "checks": [
+    {
+      "path": "app/build.sh",
+      "must_contain": [
+        "NEVER_PRESENT_MARKER"
+      ]
+    }
+  ]
+}

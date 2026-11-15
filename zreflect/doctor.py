@@ -224,7 +224,7 @@ def spec_problems(checks):
             out.append(M("doctor.not_object", check=c))
             continue
         kind = str(c.get("kind") or "").strip()
-        why = str(c.get("why") or "").strip()
+
         if not kind:
             out.append(M("doctor.missing_kind", check=c))
             continue
@@ -232,8 +232,6 @@ def spec_problems(checks):
             out.append(M("doctor.unknown_kind",
                          kind=kind, supported=", ".join(sorted(_PROBES))))
             continue
-        if not why:
-            out.append(M("doctor.missing_why", check=label(c)))
         out += _KIND_SHAPE[kind](c)
     return out
 
@@ -401,10 +399,7 @@ def _cases_spec(fx):
               ] == ["doctor.missing_kind"]),
     ("★ doctor.unknown_kind",
      lambda: [p.code for p in spec_problems(
-         [{"kind": "smtp", "why": "w"}])] == ["doctor.unknown_kind"]),
-    ("★ doctor.missing_why",
-     lambda: [p.code for p in spec_problems(
-         [{"kind": "http", "url": "http://x/"}])] == ["doctor.missing_why"]),
+         [{"kind": "smtp"}])] == ["doctor.unknown_kind"]),
     # (3) empty input must be reported
     ("★ doctor.empty_spec_none",
      lambda: [p.code for p in spec_problems(None)] == ["doctor.empty_spec"]),
@@ -434,16 +429,16 @@ def _cases_http(fx):
          good[0])[0] is False),
     ("★ doctor.http_missing_url",
      lambda: [p.code for p in spec_problems(
-         [{"kind": "http", "why": "w"}])] == ["doctor.http_missing_url"]),
+         [{"kind": "http"}])] == ["doctor.http_missing_url"]),
     ("★ doctor.http_status_not_int",
      lambda: [p.code for p in spec_problems(
          [{"kind": "http", "url": "http://x/",
-           "expect_status": "200", "why": "w"}])
+           "expect_status": "200"}])
          ] == ["doctor.http_status_not_int"]),
     ("★ doctor.http_headers_not_object",
      lambda: [p.code for p in spec_problems(
          [{"kind": "http", "url": "http://x/",
-           "expect_headers": ["a"], "why": "w"}])
+           "expect_headers": ["a"]}])
          ] == ["doctor.http_headers_not_object"]),
     ]
 
@@ -460,10 +455,10 @@ def _cases_docker(fx):
     ("★ doctor.docker_bad_state",
      lambda: [p.code for p in spec_problems(
          [{"kind": "docker", "container": "c",
-           "state": "paused", "why": "w"}])] == ["doctor.docker_bad_state"]),
+           "state": "paused"}])] == ["doctor.docker_bad_state"]),
     ("★ doctor.docker_missing_container",
      lambda: [p.code for p in spec_problems(
-         [{"kind": "docker", "state": "running", "why": "w"}])
+         [{"kind": "docker", "state": "running"}])
          ] == ["doctor.docker_missing_container"]),
     ]
 

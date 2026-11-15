@@ -13,7 +13,6 @@
  "doctor.http_status_mismatch": "Status %(actual)s != erwartet %(expected)s",
  "doctor.http_status_not_int": "`%(check)s`: expect_status muss eine Ganzzahl sein",
  "doctor.missing_kind": "Prüfeintrag hat kein kind (Pflicht): %(check)r",
- "doctor.missing_why": "`%(check)s` hat kein why (Pflicht: eine Prüfung ohne angegebenen Grund wird nie gelöscht, sie wird zum Zombie)",
  "doctor.not_object": "Prüfeintrag ist kein Objekt: %(check)r",
  "doctor.off": "Doctor-Vorabprüfung: nicht konfiguriert (REFLECT_DOCTOR nicht gesetzt und Standard %(name)s fehlt) ⇒ diese Vorabprüfung ist aus (kleines Plugin; zum Aktivieren: cp %(path)s %(name)s)",
  "doctor.port_in_use": "Port ist belegt (die Verbindung war erfolgreich)",

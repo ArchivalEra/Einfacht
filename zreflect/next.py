@@ -48,8 +48,7 @@ inputs:
     git status --porcelain          -> uncommitted changes / untracked files
     questions/                      -> unresolved open questions ("what is next")
 
-This is also `collect.py`'s collector contract (read only durable disk; no
-inputs that change by themselves).
+Read only durable disk; never introduce an input that changes by itself.
 
 ## The budget is part of the interface
 
@@ -93,7 +92,7 @@ SECTION_MAX = 12
 
 
 def _git(repo, *args):
-    """Run one git command; on failure return None (**never fabricate zero values** -- see collect.py principle 3).
+    """Run one git command; on failure return None (**never fabricate zero values**).
 
     ⚠️ Deliberately does **not** go through `runner.run_cmd`: that seam is for
     "re-running a ledger cmd verbatim" -- a string command passes through the

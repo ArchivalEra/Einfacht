@@ -100,7 +100,7 @@ def _constant_return_problems(f, days):
     return out
 
 
-def _falsified_hits(text, why, fixed, f):
+def _falsified_hits(text, fixed, f):
     """The ledger keys hit by one falsified snippet (a hit = that fact still
     uses the broken measuring method)."""
     hits = []
@@ -108,7 +108,7 @@ def _falsified_hits(text, why, fixed, f):
         entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
         if text in str(entry.get("cmd") or ""):
             hits.append(M("instruments.falsified_method", key=k, text=text,
-                          why=why, fixed_in=fixed))
+                          fixed_in=fixed))
     return hits
 
 
@@ -118,12 +118,11 @@ def _falsified_method_problems(f, methods):
     out = []
     for m in (methods or []):
         text = str(m.get("text") or "").strip()
-        why = str(m.get("why") or "").strip()
-        if not text or not why:
+        if not text:
             out.append(M("instruments.entry_malformed", entry=m))
             continue
         fixed = m.get("fixed_in") or M("instruments.fixed_in_unregistered")
-        out += _falsified_hits(text, why, fixed, f)
+        out += _falsified_hits(text, fixed, f)
     return out
 
 
@@ -231,8 +230,10 @@ def _cases():
         ("★ instruments.falsified_method",
          lambda: [p.code for p in problems(led_method, methods=methods)]
          == ["instruments.falsified_method"]),
+        # the only required field now: a registry entry with no snippet cannot
+        # match anything, so it would silently enrol nothing
         ("★ instruments.entry_malformed",
-         lambda: [p.code for p in problems(led, methods=[{"text": "x"}])]
+         lambda: [p.code for p in problems(led, methods=[{"fixed_in": "y"}])]
          == ["instruments.entry_malformed"]),
         # (3) empty input must be reported
         ("★ instruments.ledger_empty",

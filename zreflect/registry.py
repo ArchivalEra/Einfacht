@@ -565,8 +565,7 @@ def render_gates(gs):
     followed the language, `REFLECT_LANG=de --render-doc` followed by
     `REFLECT_LANG=zh --check` would necessarily go red, and **the same commit
     would give different results in different language environments** (the same
-    family of disease as `collect.py` principle 2: never introduce an input that
-    changes by itself).
+    family of disease: never introduce an input that changes by itself).
     Verified in practice: without PINNED it would not converge.
     """
     lines = [GATES_BEGIN,
