@@ -17,6 +17,7 @@
  "replay.ok_witnessed": "，见证 %(count)d 条",
  "replay.principle_is_off": "原则 `%(key)s` 的判定处**未启用**（off）状态：%(detail)s —— off 不是通过。命令：%(command)s",
  "replay.principle_said_nothing": "原则 `%(key)s` 的判定命令**什么都没说**（stdout 空）—— 无法区分「跑过且通过」与「根本没跑」。命令：%(command)s",
+ "replay.skip_without_reason": "事实 `%(key)s` 设了 `replay: false` 却没有 `replay_why` —— 跳过就是 off 态：必须说明理由（需要构建产物 / 每次运行都不同），否则「悄悄不再被检查」和「通过」长得一样",
  "replay.timeout": "`%(key)s` 复跑**超时**（%(seconds).0fs）：`%(command)s` —— 要起服务/要构建的条目应写 replay=False，别拿超时当数据。注：重启后冷启动首跑可能超时（文件系统冷，热缓存后往往秒回）—— 重跑一次再判，或调大 REFLECT_REPLAY_TIMEOUT",
  "replay.title": "复跑闸门",
  "replay.too_deep": "复跑嵌套太深（深度 %(depth)d，上限 %(limit)d）—— 台账里的 cmd 形成了环：某条原则的命令又触发了复跑。改台账，别加深上限",

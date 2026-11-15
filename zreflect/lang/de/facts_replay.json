@@ -17,6 +17,7 @@
  "replay.ok_witnessed": ", %(count)d mit Zeugen",
  "replay.principle_is_off": "Prinzip `%(key)s` kam **aus** zurück (nicht aktiviert): %(detail)s — aus ist kein Bestehen. Befehl: %(command)s",
  "replay.principle_said_nothing": "Prinzip `%(key)s` hat **nichts** gesagt (stdout leer) — das ist nicht von 'nie gelaufen' zu unterscheiden. Befehl: %(command)s",
+ "replay.skip_without_reason": "Fakt `%(key)s` setzt `replay: false` ohne `replay_why` -- ein Überspringen ist ein Off-Zustand: es muss begründet werden (Build-Artefakt / bei jedem Lauf anders), sonst sieht ein still nicht mehr prüfbarer Fakt aus wie ein bestandener",
  "replay.timeout": "`%(key)s` Wiederholung **Zeitüberschreitung** (%(seconds).0fs): `%(command)s` — Einträge, die Dienste starten oder bauen müssen, sollten replay=False setzen; behandle eine Zeitüberschreitung nicht als Daten. Hinweis: nach einem Neustart kann der erste Kaltstart-Lauf eine Zeitüberschreitung haben (kaltes Dateisystem; sobald die Caches warm sind, kehrt es meist in einer Sekunde zurück) — führe vor dem Urteil einmal erneut aus, oder erhöhe REFLECT_REPLAY_TIMEOUT",
  "replay.title": "Wiederholungs-Tor",
  "replay.too_deep": "Replay-Verschachtelung zu tief (Tiefe %(depth)d, Grenze %(limit)d) — die Befehle im Register bilden einen Zyklus: das Kommando eines Prinzips löst erneut Replay aus. Register korrigieren; Grenze nicht erhöhen",

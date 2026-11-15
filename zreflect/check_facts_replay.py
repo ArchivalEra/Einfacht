@@ -102,6 +102,12 @@ def _replay_one(k, raw_entry, run, seconds, out, stats):
     entry = raw_entry if isinstance(raw_entry, dict) else {"value": raw_entry}
     cmd = str(entry.get("cmd") or "").strip()
     if entry.get("replay") is False:
+        # **A skip is an off state**: it must say why, exactly like a gate that
+        # can go off. Silence here is the cheapest place to hide a fact that
+        # stopped being checkable -- and the docstring always claimed "an
+        # exemption with a roster and a stated reason" while nothing checked it.
+        if not str(entry.get("replay_why") or "").strip():
+            out.append(M("replay.skip_without_reason", key=k))
         stats["skipped"] += 1
         return
     if not cmd:
@@ -329,13 +335,16 @@ LED = {"facts": {"n": {"value": 12, "cmd": "c"}}}
 def _cases_fixture():
     """Build the fixture ledgers + rendering closures. Returns a dict, fed to the three group functions."""
     multi = {"facts": {"a": {"value": 1, "cmd": "ca"},
-                       "b": {"value": 2, "cmd": "cb", "replay": False}}}
+                       "b": {"value": 2, "cmd": "cb", "replay": False,
+                             "replay_why": "needs a build artifact"}}}
     wit = {"facts": {"expensive": {"value": "bench-42", "cmd": "run-bench",
                                     "replay": False,
+                                    "replay_why": "benchmark needs the built artifact",
                                     "witness": "echo tool-ok",
                                     "witness_expect": "tool-ok"}}}
     cal = {"facts": {"objcheck": {"value": "fma-present", "cmd": "scan-artifact",
                                    "replay": False,
+                                   "replay_why": "artifact scan needs a build",
                                    "calibrate": "echo known-positive",
                                    "calibrate_expect": "known-positive"}}}
     # Criteria of the kind "the message must point at the repair" (re-test
@@ -456,9 +465,22 @@ def _cases_replay_empty(fx):
              "replay.none_ran"]
          and params(two, lambda c: (1, ""),
                     "replay.none_ran")[0]["attempts"] == 2),
-        ("\u2605 replay.all_skipped",
+        # A skip is an off state: without a reason it is indistinguishable from
+        # a fact that silently stopped being checkable.
+        ("\u2605 replay.skip_without_reason",
          lambda: codes({"facts": {"a": {"value": 1, "cmd": "x",
                                         "replay": False}}},
+                       lambda c: (0, "1"))
+         == ["replay.skip_without_reason", "replay.all_skipped"]),
+        ("replay.skip_with_reason_ok",
+         lambda: codes({"facts": {"a": {"value": 1, "cmd": "x",
+                                        "replay": False,
+                                        "replay_why": "needs a build"}}},
+                       lambda c: (0, "1")) == ["replay.all_skipped"]),
+        ("\u2605 replay.all_skipped",
+         lambda: codes({"facts": {"a": {"value": 1, "cmd": "x",
+                                        "replay": False,
+                                        "replay_why": "artifact only"}}},
                        lambda c: (0, "1")) == ["replay.all_skipped"]),
     ]
 

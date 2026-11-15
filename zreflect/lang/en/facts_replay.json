@@ -17,6 +17,7 @@
  "replay.ok_witnessed": ", %(count)d witnessed",
  "replay.principle_is_off": "principle `%(key)s` came back **off** (not enabled): %(detail)s — off is not a pass. Command: %(command)s",
  "replay.principle_said_nothing": "principle `%(key)s` answered with **nothing** (empty stdout) — that cannot be told apart from 'never ran'. Command: %(command)s",
+ "replay.skip_without_reason": "fact `%(key)s` sets `replay: false` with no `replay_why` -- a skip is an off state: it must say why (build artifact / different every run), otherwise a fact that silently stopped being checkable looks the same as one that passes",
  "replay.timeout": "`%(key)s` replay **timed out** (%(seconds).0fs): `%(command)s` — entries that need to start services or build should set replay=False, do not treat a timeout as data. Note: after a reboot the first cold-start run may time out (cold filesystem; it usually returns in a second once caches are warm) — rerun once before judging, or raise REFLECT_REPLAY_TIMEOUT",
  "replay.title": "Replay gate",
  "replay.too_deep": "replay nesting too deep (depth %(depth)d, limit %(limit)d) — commands in the ledger form a cycle: some principle's cmd triggers replay again. Fix the ledger; do not raise the limit",
