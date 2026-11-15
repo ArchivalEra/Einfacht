@@ -1,0 +1,23 @@
+{
+  "lines": {
+    "main": {
+      "site": "build/site",
+      "artifacts": "build/artifacts",
+      "container": "demo",
+      "fork_pin_ref": "upstream/demo"
+    },
+    "release-9": {
+      "site": "build/r9",
+      "artifacts": "build/r9-artifacts",
+      "container": "demo",
+      "fork_pin_ref": "upstream/r9"
+    }
+  },
+  "active": "main",
+  "stamps": {
+    "site": {
+      "value": "site-v1",
+      "cmd": "python3 -c \"print('site-v1')\""
+    }
+  }
+}

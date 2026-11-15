@@ -213,7 +213,48 @@ def _copied_fact_problems(facts, nlines, bare_min):
     return out
 
 
-def problems(ledger, doc_text, bare_min=None):
+# The state document renders **everything**; hand-written prose is where rubbish
+# accumulates (measured: 55 hand-written lines of mechanism narration, including
+# four `issue #N` references and a paragraph about a hand-written roster that had
+# drifted -- prose in a rendered document is drift waiting to happen).
+STATE_ALLOWED_HEADING = "# "
+
+
+# Both measured documents render everything they say. Only the title and one
+# short pointer block are allowed outside the machine blocks.
+HAND_WRITTEN_INTRO_LINES = 8
+# Only these documents render everything they say.
+RENDERED_DOCS = frozenset({"STATE.md", "PRINCIPLES.md"})
+
+
+def hand_written_problems(doc_text, name="STATE.md"):
+    """Lines of a fully rendered doc that are **not** part of a machine block.
+
+    Allowed outside blocks: the title, blank lines, and the short intro at the
+    top. Anything else is hand-written narration in a document whose whole
+    purpose is to render. Measured: STATE.md carried 55 such lines, four of them
+    `issue #N` references and one a paragraph about a hand-written roster that
+    had drifted.
+    """
+    out, inside = [], False
+    for lineno, line in enumerate(doc_text.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("<!-- AUTO:"):
+            inside = True
+            continue
+        if stripped.startswith("<!-- /AUTO:"):
+            inside = False
+            continue
+        if inside or not stripped:
+            continue
+        if lineno <= HAND_WRITTEN_INTRO_LINES:
+            continue
+        out.append(M("facts.hand_written_in_state", name=name, lineno=lineno,
+                     text=stripped[:60]))
+    return out
+
+
+def problems(ledger, doc_text, bare_min=None, name="STATE.md"):
     """Return the problem list (pure function: self-evidence needs it). Empty list = pass.
 
     `bare_min` overrides the bare-number threshold (passed explicitly by the
@@ -225,6 +266,7 @@ def problems(ledger, doc_text, bare_min=None):
         # Zero-value guard: an empty ledger is not "no violations", it is
         # "nothing was measured".
         return [M("facts.empty_ledger")]
+    out_hand = hand_written_problems(doc_text, name)
     if BLOCK_BEGIN not in doc_text or BLOCK_END not in doc_text:
         return [M("facts.no_block_markers",
                   begin=BLOCK_BEGIN, end=BLOCK_END)]
@@ -239,7 +281,7 @@ def problems(ledger, doc_text, bare_min=None):
     out += _copied_fact_problems(f, nlines, bm)
     # Reverse criterion (issue #24): numbers that never entered the ledger need provenance too.
     out += _unaccounted_numbers(f, bm, nlines)
-    return out
+    return out + out_hand
 
 
 def _docs_to_scan(argv):
@@ -290,7 +332,7 @@ def run(argv):
         if BLOCK_BEGIN in text and BLOCK_END in text:
             # Documents with a machine block: full criteria (block agreement
             # + citations + bare numbers).
-            probs += problems(led, text)
+            probs += problems(led, text, name=doc)
         else:
             # Documents without a machine block (README / AGENTS / PRINCIPLES
             # etc.): **only bare numbers and copied values are checked** -- no
@@ -317,6 +359,13 @@ def run(argv):
             # `[[nonexistent key]]` there really is a mis-point.
             probs += _copied_fact_problems(facts_of(led), _number_lines(text),
                                            _bare_min())
+        # **Independent of whether a block exists**, but only for the two
+        # measured documents: they render everything they say, so a hand-written
+        # line there is narration that will drift. PRINCIPLES.md carries
+        # `AUTO:RULES`, not `AUTO:FACTS`, so this cannot live inside the block
+        # branch above. README / AGENTS are prose by design and stay out.
+        if os.path.basename(doc) in RENDERED_DOCS:
+            probs += hand_written_problems(text, doc)
     return finish(M("facts.title"), probs,
                   M("facts.ok", count=len(facts_of(led)), docs=scanned))
 
@@ -407,6 +456,22 @@ def _cases_core(fx):
     # (3) empty input must be reported
     ("★ facts.empty_ledger",
      lambda: codes({"facts": {}}, good) == ["facts.empty_ledger"]),
+    # The state document renders everything; one hand-written line outside the
+    # machine blocks is drift waiting to happen (measured: 55 such lines,
+    # including four `issue #N` references).
+    ("★ facts.hand_written_in_state",
+     lambda: [p.code for p in problems(
+         LED, good + "\n- hand written rubbish\n")] == ["facts.hand_written_in_state"]),
+    # ... but a document of nothing but rendered blocks must stay green:
+    # otherwise the criterion forbids the shape it exists to enforce.
+    ("facts.state_fully_rendered_ok",
+     lambda: problems(LED, good) == []),
+    # PRINCIPLES.md is on the same surface: hand-written rules next to the
+    # rendered table would be a second place of origin for the rules.
+    ("\u2605 facts.hand_written_in_principles",
+     lambda: [p.code for p in problems(
+         LED, good + "\n## extra rules\n", name="PRINCIPLES.md")]
+     == ["facts.hand_written_in_state"]),
     ("★ facts.no_block_markers",
      lambda: codes(LED, "a document with no block at all")
      == ["facts.no_block_markers"]),

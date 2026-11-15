@@ -3,6 +3,34 @@
   "steps": [
     {
       "argv": [
+        "git",
+        "init",
+        "-q",
+        "-b",
+        "main"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "-A"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=example",
+        "-c",
+        "user.email=example@invalid",
+        "commit",
+        "-qm",
+        "baseline"
+      ]
+    },
+    {
+      "argv": [
         "{python}",
         "zreflect/check_world.py"
       ],
@@ -50,6 +78,46 @@
       "rc": 2,
       "contains": [
         "world.knob_file_missing"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "-q",
+        "-b",
+        "release-9"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_world.py"
+      ],
+      "env": {
+        "REFLECT_WORLD": "branch-vs-active.json"
+      },
+      "rc": 1,
+      "contains": [
+        "world.branch_mismatch",
+        "active='main'"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_world.py"
+      ],
+      "env": {
+        "REFLECT_WORLD": "branch-vs-active.json",
+        "REFLECT_WORLD_LINE": "main"
+      },
+      "contains": [
+        "world.ok(",
+        "line_name='main'"
+      ],
+      "not_contains": [
+        "world.branch_mismatch"
       ]
     }
   ]

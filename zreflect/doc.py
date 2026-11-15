@@ -95,7 +95,7 @@ RULES = (
          "sys.exit(1 if bad else 0)\""),
 
     Rule("number_once",
-         "each number is produced once: documents reference it as [[key]], never hand-copied (enforced both ways)",
+         "each number is produced once and re-reconciled every commit: documents cite it as [[key]], never hand-copy it",
          "python3 zreflect/check_facts.py"),
 
     Rule("hard_needs_criterion",
@@ -106,7 +106,7 @@ RULES = (
          "sys.exit(1 if p else 0)\""),
 
     Rule("ran_is_not_passed",
-         "'the scan ran' and 'the scan ran and passed' are different statements; a traversal that touches nothing must say so, not pass",
+         "\"ran\" and \"ran and passed\" are different statements, and so are \"off\" and \"ran\": a gate that can go off must declare why, and an empty traversal must say so",
          # Same judgment as `off_is_visible` (a gate must declare why it can be
          # off), read from the other end: it inspects the gate **roster**'s off
          # declarations instead of one gate's problems.
@@ -116,9 +116,6 @@ RULES = (
          "print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));"
          "sys.exit(0 if gs and not p else 1)\""),
 
-    Rule("agreement_needs_reconciler",
-         "two things that must agree will disagree unless a reconciler re-runs on every commit (block vs ledger is the standing witness)",
-         "python3 zreflect/check_facts.py"),
 
     Rule("falsifiable",
          "claims must be falsifiable: always-true shortcuts are swept by AST and any hit fails",
@@ -132,19 +129,6 @@ RULES = (
     # it would reach the replay gate, which loops back here. Instead inspect
     # the **declaration surface**: every gate that can go off must declare a
     # reason (`off_reason`).
-    Rule("off_is_visible",
-         "off must be distinguishable from \"ran and passed\"; a gate that can go off must declare why",
-         # ⚠️ Must check the **full set**: this used to say `gates()[0]` -- only
-         # the first gate was inspected, and missing the other 15 still went
-         # green (review observation: checking 1 gate and checking 16 both
-         # yield 0). That is an always-true idle spin, the exact shape this
-         # repo despises most.
-         "python3 -c \"import sys;sys.path.insert(0,'zreflect');"
-         "import registry, criteria;gs=registry.gates()[0];"
-         "p=criteria.off_reason_problems(gs);"
-         "print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));"
-         "sys.exit(0 if gs and not p else 1)\""),
-
     Rule("zero_language",
          "zero language in the core: user-visible messages go through M(code); machine contracts are untranslatable by construction",
          "python3 zreflect/check_i18n.py"),
@@ -221,6 +205,13 @@ RULES = (
          "print('host_coupled=%d' % len(bad));"
          "sys.exit(1 if bad else 0)\""),
 
+    Rule("one_form_per_fact",
+         "a fact exists as state, as a principle, or as an open question -- never in two of them at once",
+         "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;"
+         "c=doc.form_collision_problems();"
+         "[print('collision=%s' % i) for _, ids in c for i in ids] "
+         "or print('forms=%d' % len(doc.RULES));"
+         "sys.exit(1 if c else 0)\""),
     Rule("style_is_not_a_rule",
          "style preferences (naming, comment density, file layout) do not enter the rule table; they are held by 'match the code around you'",
          # The id vocabulary is spelled out (not derived from a shared table):
@@ -357,6 +348,26 @@ def facts_of_rules():
 
 # -- Self-evidence ------------------------------------------------------------
 
+def form_collision_problems(rows=None):
+    """**One fact, one form.** A fact may exist as state, as a principle, or as
+    an open question -- exactly one of those.
+
+    The collision this catches is the cheapest one to miss: two principles whose
+    judging command is **byte-identical**. That is not two rules, it is one fact
+    filed twice, and the second copy is the one that drifts (measured: both
+    `number_once`/`agreement_needs_reconciler` and
+    `ran_is_not_passed`/`off_is_visible` carried the same cmd).
+
+    Returns `[(cmd, [ids...])]` for every command claimed by more than one rule.
+    """
+    rows = RULES if rows is None else rows
+    by_cmd = {}
+    for r in rows:
+        by_cmd.setdefault(r.cmd, []).append(r.id)
+    return [(cmd, sorted(ids)) for cmd, ids in sorted(by_cmd.items())
+            if len(ids) > 1]
+
+
 def _cmd_shape_problems(rows=None):
     """Each principle's cmd shape: non-empty, **starts with an interpreter**, **contains no environment-mutating call**.
 
@@ -451,6 +462,18 @@ def _cases():
         ("doc.every_rule_has_text", lambda: _every_rule_has_text()),
         ("doc.cmds_reference_real_files", lambda: _every_cmd_references_a_real_file()),
         ("doc.lookup_works", lambda: _lookup_works()),
+        # (4) One fact, one form: two principles sharing a judging command are
+        # one fact filed twice; the second copy is the one that drifts.
+        ("doc.no_form_collision", lambda: form_collision_problems() == []),
+        ("\u2605 doc.form_collision_is_reported",
+         lambda: form_collision_problems([Rule("a", "t", "cmd x"),
+                                          Rule("b", "t2", "cmd x")])
+         == [("cmd x", ["a", "b"])]),
+        # a distinct command per rule stays green -- the criterion must not
+        # forbid the shape it enforces
+        ("doc.distinct_cmds_ok",
+         lambda: form_collision_problems([Rule("a", "t", "cmd x"),
+                                          Rule("b", "t2", "cmd y")]) == []),
         # (2) what must be reported gets reported -- every criterion has teeth
         ("★ doc.empty_cmd_is_rejected",
          lambda: _cmd_shape_problems([Rule("x", "t", "")]) == [("x", "empty_cmd")]),
