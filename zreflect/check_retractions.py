@@ -39,6 +39,19 @@ def _entry_field_problems(retractions):
             for fld in REQUIRED if not r.get(fld)]
 
 
+def _evidence_problems(retractions):
+    """`evidence` must be **replayable**: it promises "how to replay the
+    refutation", so prose there is a hole -- measured: 4 of 21 entries said
+    "github Actions run 421..." / "a subagent report", none of which anything
+    can re-run. A field that promises re-runnability and accepts narration is
+    the same shape as an off state with no reason.
+    """
+    return [M("retractions.evidence_not_runnable",
+              entry=r.get("id"), evidence=str(r.get("evidence"))[:60])
+            for r in retractions
+            if "python3" not in str(r.get("evidence") or "")]
+
+
 def _resurfaced_problems(retractions, docs, hist):
     """Resurfacing: the living-state line containing `text` **must carry a
     correction marker**."""
@@ -67,8 +80,8 @@ def problems(retractions, docs, hist_secs=None):
     inherently a record of "then"; this exemption is the discipline migrated
     from Octave.
 
-    Each of the two rules is its own named helper (field completeness /
-    resurfacing): they scan different things (the ledger itself vs the
+    Each rule is its own named helper (field completeness / evidence
+    re-runnability / resurfacing): they scan different things (the ledger itself vs the
     documents); merging them only made the call site look shorter.
     """
     hist = HIST_SECS if hist_secs is None else hist_secs
@@ -82,8 +95,10 @@ def problems(retractions, docs, hist_secs=None):
         return [M("retractions.no_docs")]
     entries = [r for r in (retractions.get("retractions") or [])
                if isinstance(r, dict)]
-    return _entry_field_problems(entries) + _resurfaced_problems(
-        [r for r in entries if isinstance(r, dict)], docs, hist)
+    return (_entry_field_problems(entries)
+            + _evidence_problems(entries)
+            + _resurfaced_problems(
+                [r for r in entries if isinstance(r, dict)], docs, hist))
 
 
 def scanned_docs():
@@ -115,7 +130,7 @@ def run(argv):
 
 def _cases():
     ok_r = {"retractions": [{"id": "R-1", "text": "this thing is green",
-                             "why": "actually red", "evidence": "run x",
+                             "why": "actually red", "evidence": "python3 zreflect/facts.py --check",
                              "fixed_in": "doc y"}]}
     doc_ok = "(record) this thing is green -- retracted, see R-1\n"
     return [
@@ -137,10 +152,20 @@ def _cases():
          lambda: [p.code for p in problems(
              ok_r, {"A.md": "## 5 history\nthis thing is green.\n"}, hist_secs=())]
          == ["retractions.resurfaced"]),
-        ("★ retractions.entry_missing_field",
+        # A missing `evidence` trips **both** rules: the field-completeness one
+        # (it is absent) and the re-runnability one (empty is not a command).
+        ("\u2605 retractions.entry_missing_field",
          lambda: [p.code for p in problems(
              {"retractions": [{"id": "R-2", "text": "t", "why": "w", "fixed_in": "f"}]},
-             {"A.md": "x\n"})] == ["retractions.entry_missing_field"]),
+             {"A.md": "x\n"})]
+         == ["retractions.entry_missing_field", "retractions.evidence_not_runnable"]),
+        # evidence must be replayable: prose there is a hole nothing can verify
+        ("\u2605 retractions.evidence_not_runnable",
+         lambda: [p.code for p in problems(
+             {"retractions": [{"id": "R-3", "text": "t", "why": "w",
+                               "evidence": "a subagent report",
+                               "fixed_in": "f"}]}, {"A.md": "x\n"})]
+         == ["retractions.evidence_not_runnable"]),
         # (3) empty input must be reported
         ("★ retractions.no_docs",
          lambda: [p.code for p in problems(ok_r, {})] == ["retractions.no_docs"]),
