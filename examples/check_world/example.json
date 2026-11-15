@@ -1,7 +1,56 @@
 {
   "description": "Resolve a product line and replay its environment stamps",
   "steps": [
-    {"argv": ["{python}", "zreflect/check_world.py"]},
-    {"argv": ["{python}", "zreflect/check_world.py"], "env": {"REFLECT_WORLD": "bad-world.json"}, "rc": 1, "contains": ["world.stamp_mismatch"]}
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_world.py"
+      ],
+      "contains": [
+        "world.ok(",
+        "line_name='main'"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_world.py"
+      ],
+      "env": {
+        "REFLECT_WORLD": "bad-world.json"
+      },
+      "rc": 1,
+      "contains": [
+        "world.stamp_mismatch",
+        "name='site'"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_world.py"
+      ],
+      "env": {
+        "REFLECT_WORLD": "override-wins.json",
+        "REFLECT_WORLD_LINE": "edge"
+      },
+      "contains": [
+        "world.ok(",
+        "line_name='edge'"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_world.py"
+      ],
+      "env": {
+        "REFLECT_WORLD": "no-such-world.json"
+      },
+      "rc": 2,
+      "contains": [
+        "world.knob_file_missing"
+      ]
+    }
   ]
 }

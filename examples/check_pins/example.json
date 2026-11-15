@@ -2,7 +2,7 @@
   "description": "Cross-check a derived tree stamp with a real upstream git HEAD",
   "steps": [
     {"argv": ["{python}", "prepare.py"]},
-    {"argv": ["{python}", "zreflect/check_pins.py"]},
+    {"argv": ["{python}", "zreflect/check_pins.py"], "contains": ["pins.ok"], "not_contains": ["SKIP:"]},
     {"argv": ["{python}", "zreflect/check_pins.py", "--spec", "bad-pins.json"], "rc": 1, "contains": ["pins.commit_mismatch"]}
   ]
 }

@@ -1,0 +1,23 @@
+{
+  "lines": {
+    "main": {
+      "site": "build/site",
+      "artifacts": "build/artifacts",
+      "container": "demo",
+      "fork_pin_ref": "upstream/demo"
+    },
+    "edge": {
+      "site": "build/edge",
+      "artifacts": "build/edge-artifacts",
+      "container": "demo",
+      "fork_pin_ref": "upstream/edge"
+    }
+  },
+  "active": "main",
+  "stamps": {
+    "site": {
+      "value": "site-v1",
+      "cmd": "python3 -c \"print('site-v1')\""
+    }
+  }
+}
