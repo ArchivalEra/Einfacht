@@ -125,12 +125,20 @@ def coverage_problems(manifests, gates):
 
 
 def _copy_suite(suite_root, target):
+    """Seed the temp repo with the suite **and the repo-level files gates read**.
+
+    `ruff.toml` is the static criterion. `HISTORY.md` is the prose carrier: a
+    gate now checks that it exists and stays off every scan surface, so a temp
+    repo without one makes that gate red for a reason the example never asked
+    about. Copying it keeps each example about its own subject.
+    """
     for name in ("zreflect", "reflect-hooks"):
         shutil.copytree(os.path.join(suite_root, name), os.path.join(target, name),
                         ignore=IGNORE)
-    config = os.path.join(suite_root, "ruff.toml")
-    if os.path.isfile(config):
-        shutil.copy2(config, os.path.join(target, "ruff.toml"))
+    for name in ("ruff.toml", "HISTORY.md"):
+        path = os.path.join(suite_root, name)
+        if os.path.isfile(path):
+            shutil.copy2(path, os.path.join(target, name))
 
 
 def _copy_payload(example_dir, target):

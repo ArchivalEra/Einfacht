@@ -262,6 +262,9 @@ def _configurable_fixture(repo, tmp, registry):
         "# AGENTS\n\nsee `zreflect/doc.py` (`doc.RULES`); state: `%s`.\n\n"
         "```bash\npython3 zreflect/registry.py --run commit\n```\n" % fx_doc)
     open(os.path.join(tmp, "RETRACT.json"), "w", encoding="utf-8").write('{"schema":1,"retractions":[]}\n')
+    fx_hist = fr.get("HISTORY.md", "PAST.md")
+    open(os.path.join(tmp, fx_hist), "w", encoding="utf-8").write(
+        "# PAST\n\n> how we got here; deliberately off every scan surface.\n")
     os.makedirs(os.path.join(tmp, "cases"), exist_ok=True)
     open(os.path.join(tmp, "cases", "02-y.md"), "w", encoding="utf-8").write(
         "# e2\n\n**Status:** ready-for-agent\n\n**Settling:** `python3 a.py` ---- rc=0 A; rc=7 B\n")
@@ -282,6 +285,7 @@ def _configurable_fixture(repo, tmp, registry):
     env.update({"REFLECT_DOCS": "%s,AGENTS.md" % fx_doc,
                 "REFLECT_RETRACTIONS": "RETRACT.json",
                 "REFLECT_QUESTIONS": "cases",
+                "REFLECT_HISTORY": fx_hist,
                 "REFLECT_READMES": "R1.md,R2.md,R3.md"})
     return env, gates
 

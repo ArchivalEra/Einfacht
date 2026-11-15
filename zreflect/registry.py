@@ -73,6 +73,7 @@ FIXTURE_RENAMES = {
     "README.md": "R1.md",
     "README.zh.md": "R2.md",
     "README.de.md": "R3.md",
+    "HISTORY.md": "PAST.md",
 }
 RENAMED_DEFAULTS = tuple(FIXTURE_RENAMES)
 

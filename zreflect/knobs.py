@@ -101,6 +101,8 @@ REGISTRY = {
                             _Semantic("knobs.sem.reflect_retractions")),
     "REFLECT_QUESTIONS": ("dir", "questions",
                           _Semantic("knobs.sem.reflect_questions")),
+    "REFLECT_HISTORY": ("file", "HISTORY.md",
+                        _Semantic("knobs.sem.reflect_history")),
     "REFLECT_ENV_FILE": ("value", "Einfacht.env",
                          _Semantic("knobs.sem.reflect_env_file")),
     "REFLECT_ENV_HINT": ("flag", "",
