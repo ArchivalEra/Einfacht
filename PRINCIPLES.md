@@ -17,6 +17,7 @@
 | `hard_needs_criterion` | a rule is hard only if it has a machine criterion; without one it does not enter the table at all (there is no advisory state) | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;p=doc._cmd_shape_problems();print('shape_problems=%d' % len(p));sys.exit(1 if p else 0)"` |
 | `host_agnostic` | the suite's source recognizes no host's directory names / config formats (host wiring belongs to the consumer) | `python3 -c "import os,sys;w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR','hook'+'SpecificOutput'];bad=[(d,f) for d in ('zreflect','reflect-hooks') for r,_,fs in os.walk(d) for f in fs if f.endswith(('.py','.sh')) and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)"` |
 | `machine_rows` | machine rows are defined in one place, machine.ROWS; the shell side has a behavior reconciler | `python3 zreflect/machine.py --selftest` |
+| `no_echo_between_carriers` | a near-copy of an assertion in two carriers is a hand-copy: one fact lives in one carrier, and a quotation must name its source | `python3 -c "import glob,sys;sys.path.insert(0,'zreflect');import doc,echoes,ledger;f=(echoes.forms_from_rules(doc.RULES)+echoes.forms_from_ledger(ledger.load('FACTS.json'))+echoes.forms_from_questions(sorted(glob.glob('questions/*.md'))));h=echoes.echo_problems(f);[print('echo=%s~%s(%.3f)' % (a,b,r)) for r,a,b in h] or print('echoes=0 of %d forms' % len(f));sys.exit(1 if h else 0)"` |
 | `no_retired_names` | retired names must not appear as current state; sha provenance and age are checkable | `python3 zreflect/check_stale.py` |
 | `number_once` | each number is produced once and re-reconciled every commit: documents cite it as [[key]], never hand-copy it | `python3 zreflect/check_facts.py` |
 | `one_form_per_fact` | a fact exists as state, as a principle, or as an open question -- never in two of them at once | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;c=doc.form_collision_problems();[print('collision=%s' % i) for _, ids in c for i in ids] or print('forms=%d' % len(doc.RULES));sys.exit(1 if c else 0)"` |
@@ -30,5 +31,5 @@
 | `three_readmes` | the three-language READMEs are three copies of one assertion: change one, change all three in the same batch | `python3 zreflect/check_readme_sync.py` |
 | `zero_language` | zero language in the core: user-visible messages go through M(code); machine contracts are untranslatable by construction | `python3 zreflect/check_i18n.py` |
 
-20 principles -- each with a judging command that **really runs**.
+21 principles -- each with a judging command that **really runs**.
 <!-- /AUTO:RULES -->

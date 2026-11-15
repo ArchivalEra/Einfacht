@@ -16,6 +16,7 @@
  "facts.doc_missing_render": "%(path)s existiert nicht. Platziere die Maschinenblock-Marken einmal von Hand.",
  "facts.doc_unreadable": "Doc nicht lesbar: `%(path)s` (%(error)r) — kaputte Kodierung / Rechte / ein Verzeichnis sind Konfigurationsunfälle, kein „veralteter Block“",
  "facts.doc_unwritable": "Doc nicht schreibbar: `%(path)s` (%(error)r) — nur lesbar / Rechte / volle Platte sind Umgebungsunfälle, kein „veralteter Block“",
+ "facts.echo_of_another_carrier": "zwei Träger enthalten nahezu identischen Text (Ähnlichkeit %(ratio)s): %(a)s und %(b)s -- eine Aussage darf nur in einem Träger leben (Zustand / Regel / Frage); ist es ein Zitat, muss die zitierende Seite die Quelle nennen",
  "facts.empty_ledger": "Register ist leer — leer ist kein Bestehen (Nullwert-Wächter): prüfe, ob measure_example() kaputt ist",
  "facts.get_needs_key": "--get braucht einen Schlüsselnamen: --get KEY",
  "facts.hand_written_in_state": "%(name)s:%(lineno)d ist handgeschrieben: %(text)s -- beide gemessenen Dokumente werden vollständig gerendert; Regeln gehören in die RULES-Tabelle, einmalige Entscheidungen in die Commit-Nachricht",

@@ -312,6 +312,32 @@ def _docs_to_scan(argv):
             if x.strip()]
 
 
+def _echo_problems(led):
+    """**One assertion, one carrier.** A near-copy in two carriers is a hand-copy.
+
+    Deliberately outside the per-document loop: the overlap is *between* carriers
+    (a rule and a ledger note, a question title and a rule), so scanning one
+    document at a time cannot see it.
+
+    Quotations are excluded by the edge the producer declares -- the ledger's
+    `principle.<id>` note names `principle:<id>`, and that edge is the only
+    designed echo (the rendered table has to print the rule's sentence).
+    """
+    import doc  # noqa: PLC0415
+    import echoes  # noqa: PLC0415
+    forms = (echoes.forms_from_rules(doc.RULES)
+             + echoes.forms_from_ledger(led)
+             + echoes.forms_from_questions(_question_paths()))
+    return [M("facts.echo_of_another_carrier", ratio=ratio, a=a, b=b)
+            for ratio, a, b in echoes.echo_problems(forms)]
+
+
+def _question_paths():
+    """`questions/*.md` under the audited repo (empty when the dir is absent)."""
+    import glob  # noqa: PLC0415
+    return sorted(glob.glob(str(gate.repo("questions", "*.md"))))
+
+
 def run(argv):
     docs = _docs_to_scan(list(argv))
     facts_name = os.environ.get("REFLECT_FACTS", "FACTS.json")
@@ -371,6 +397,7 @@ def run(argv):
         # branch above. README / AGENTS are prose by design and stay out.
         if os.path.basename(doc) in rendered_docs():
             probs += hand_written_problems(prose_of(text), doc)
+    probs += _echo_problems(led)
     return finish(M("facts.title"), probs,
                   M("facts.ok", count=len(facts_of(led)), docs=scanned))
 

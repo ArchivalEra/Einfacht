@@ -205,6 +205,15 @@ RULES = (
          "print('host_coupled=%d' % len(bad));"
          "sys.exit(1 if bad else 0)\""),
 
+    Rule("no_echo_between_carriers",
+         "a near-copy of an assertion in two carriers is a hand-copy: one fact lives in one carrier, and a quotation must name its source",
+         "python3 -c \"import glob,sys;sys.path.insert(0,'zreflect');import doc,echoes,ledger;"
+         "f=(echoes.forms_from_rules(doc.RULES)+echoes.forms_from_ledger(ledger.load('FACTS.json'))"
+         "+echoes.forms_from_questions(sorted(glob.glob('questions/*.md'))));"
+         "h=echoes.echo_problems(f);"
+         "[print('echo=%s~%s(%.3f)' % (a,b,r)) for r,a,b in h] "
+         "or print('echoes=0 of %d forms' % len(f));"
+         "sys.exit(1 if h else 0)\""),
     Rule("one_form_per_fact",
          "a fact exists as state, as a principle, or as an open question -- never in two of them at once",
          "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;"

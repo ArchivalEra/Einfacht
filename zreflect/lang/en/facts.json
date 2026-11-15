@@ -16,6 +16,7 @@
  "facts.doc_missing_render": "%(path)s does not exist. Place the machine-block markers by hand once.",
  "facts.doc_unreadable": "doc unreadable: `%(path)s` (%(error)r) — bad encoding / permissions / a directory are config accidents, not 'stale block'",
  "facts.doc_unwritable": "cannot write the doc: `%(path)s` (%(error)r) — read-only / permissions / full disk are environment accidents, not 'stale block'",
+ "facts.echo_of_another_carrier": "two carriers hold near-identical text (similarity %(ratio)s): %(a)s and %(b)s -- one assertion may live in only one carrier (state / principle / question); if this is a quotation, the quoting side must name the source",
  "facts.empty_ledger": "ledger is empty — empty is not a pass (zero-value guard): check whether measure_example() is broken",
  "facts.get_needs_key": "--get needs a key name: --get KEY",
  "facts.hand_written_in_state": "%(name)s:%(lineno)d is hand-written: %(text)s -- both measured documents render everything; rules belong in the RULES table, and a one-off decision belongs to the commit message",

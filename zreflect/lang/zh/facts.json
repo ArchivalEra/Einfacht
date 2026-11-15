@@ -16,6 +16,7 @@
  "facts.doc_missing_render": "%(path)s 不存在。先手工放一次机器块标记。",
  "facts.doc_unreadable": "文档读不了：`%(path)s`（%(error)r）—— 非法编码 / 权限 / 是目录都属于配置事故，不是「块过期」",
  "facts.doc_unwritable": "文档写不进去：`%(path)s`（%(error)r）—— 只读 / 权限 / 磁盘满都是环境事故，不是「块过期」",
+ "facts.echo_of_another_carrier": "两个载体持有近乎相同的文本（相似度 %(ratio)s）：%(a)s 与 %(b)s —— 一条断言只能住在一个载体里（状态 / 原则 / 问题）；如果是引文，引用方必须指名来源",
  "facts.empty_ledger": "台账为空 —— 空不是通过（零值守卫）：先查 measure_example() 是不是坏了",
  "facts.get_needs_key": "--get 需要一个键名：--get KEY",
  "facts.hand_written_in_state": "%(name)s:%(lineno)d 是手写的：%(text)s —— 两份被丈量的文档全部渲染；规矩进 RULES 表，一次性决策进提交信息",
