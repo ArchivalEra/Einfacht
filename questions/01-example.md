@@ -7,7 +7,7 @@
 
 **Status:** resolved
 
-**Settling:** zreflect/facts.py —— rc=0 ⇒ 两道守卫的断言全过，本单可结案；rc≠0 ⇒ 有断言失效，先修守卫
+**Settling:** python3 zreflect/facts.py --selftest —— rc=0 ⇒ 两道守卫的断言全过，本单可结案；rc≠0 ⇒ 有断言失效，先修守卫
 
 ## 复跑方式
 

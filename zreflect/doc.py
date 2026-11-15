@@ -212,6 +212,13 @@ RULES = (
          "[print('collision=%s' % i) for _, ids in c for i in ids] "
          "or print('forms=%d' % len(doc.RULES));"
          "sys.exit(1 if c else 0)\""),
+    Rule("exec_position_is_a_command",
+         "every execution position (stamp cmd / pin version_read / Settling / evidence) must hold a runnable command, not prose",
+         "python3 -c \"import json,os,sys;sys.path.insert(0,'zreflect');import criteria,knobs;"
+         "specs=[(k,knobs.REGISTRY[k][1]) for k in ('REFLECT_WORLD','REFLECT_PINS')];"
+         "bad=[(n,w,f) for k,n in specs if n and os.path.exists(n) "
+         "for w,f,_ in criteria.exec_position_problems(json.load(open(n,encoding='utf-8')),n)];"
+         "print('prose_positions=%d' % len(bad));sys.exit(1 if bad else 0)\""),
     Rule("style_is_not_a_rule",
          "style preferences (naming, comment density, file layout) do not enter the rule table; they are held by 'match the code around you'",
          # The id vocabulary is spelled out (not derived from a shared table):

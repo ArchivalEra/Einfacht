@@ -12,6 +12,7 @@
 | `assertion_lifecycle` | a retracted claim must not quietly return as current state | `python3 zreflect/check_retractions.py` |
 | `declared_not_globbed` | predicates are declarations, not filenames: the execution surface reads registry --run <phase> | `python3 zreflect/registry.py --gates` |
 | `doc_references_real` | a document must not point at a symbol that does not exist | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;d=doc.dangling_references();[print('dangling=%d %s.%s@%s' % (len(d),m,s_,f)) for f,m,s_ in d] or print('dangling=0');sys.exit(1 if d else 0)"` |
+| `exec_position_is_a_command` | every execution position (stamp cmd / pin version_read / Settling / evidence) must hold a runnable command, not prose | `python3 -c "import json,os,sys;sys.path.insert(0,'zreflect');import criteria,knobs;specs=[(k,knobs.REGISTRY[k][1]) for k in ('REFLECT_WORLD','REFLECT_PINS')];bad=[(n,w,f) for k,n in specs if n and os.path.exists(n) for w,f,_ in criteria.exec_position_problems(json.load(open(n,encoding='utf-8')),n)];print('prose_positions=%d' % len(bad));sys.exit(1 if bad else 0)"` |
 | `falsifiable` | claims must be falsifiable: always-true shortcuts are swept by AST and any hit fails | `python3 zreflect/registry.py --selftest` |
 | `hard_needs_criterion` | a rule is hard only if it has a machine criterion; without one it does not enter the table at all (there is no advisory state) | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;p=doc._cmd_shape_problems();print('shape_problems=%d' % len(p));sys.exit(1 if p else 0)"` |
 | `host_agnostic` | the suite's source recognizes no host's directory names / config formats (host wiring belongs to the consumer) | `python3 -c "import os,sys;w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR','hook'+'SpecificOutput'];bad=[(d,f) for d in ('zreflect','reflect-hooks') for r,_,fs in os.walk(d) for f in fs if f.endswith(('.py','.sh')) and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)"` |
@@ -29,5 +30,5 @@
 | `three_readmes` | the three-language READMEs are three copies of one assertion: change one, change all three in the same batch | `python3 zreflect/check_readme_sync.py` |
 | `zero_language` | zero language in the core: user-visible messages go through M(code); machine contracts are untranslatable by construction | `python3 zreflect/check_i18n.py` |
 
-19 principles -- each with a judging command that **really runs**.
+20 principles -- each with a judging command that **really runs**.
 <!-- /AUTO:RULES -->

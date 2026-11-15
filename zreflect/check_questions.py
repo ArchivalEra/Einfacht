@@ -39,6 +39,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import criteria  # noqa: E402
 import gate  # noqa: E402
 import knobs  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta  # noqa: E402
@@ -171,6 +172,10 @@ def _settling_problems(name, text, chk):
     tok = sv.split()[0].strip("`")
     if any(tok.endswith(x) or x in tok for x in PATHISH) and not chk(tok):
         out.append(M("questions.settler_missing", name=name, target=tok))
+    # The settler must be a **command**, not the name of a file: `zreflect/
+    # facts.py` alone names a script and says nothing about how to run it (a
+    # bare path is not a command and cannot be replayed).
+    out += criteria.prose_in_exec_problems(name, "Settling", sv)
     return out
 
 
@@ -231,7 +236,8 @@ def run(argv):
                   M("questions.ok", count=len(files), open=n_open))
 
 
-def _q(status="ready-for-agent", settling="zreflect/facts.py -- rc=0 => stands; rc=2 => did not catch it"):
+def _q(status="ready-for-agent",
+       settling="python3 zreflect/facts.py --selftest -- rc=0 => stands; rc=2 => did not catch it"):
     return "# 01: sample\n\n**Status:** %s\n\n**Settling:** %s\n" % (status, settling)
 
 
@@ -266,13 +272,25 @@ def _cases():
          lambda: [p.code for p in problems(
              {"questions/04.md": _q(settling="")}, exists=lambda p: True)]
          == ["questions.missing_settling"]),
-        ("★ questions.settler_missing",
-         lambda: [p.code for p in problems(ok, exists=lambda p: False)]
-         == ["questions.settler_missing"]),
-        ("★ questions.no_distinct_outcomes",
+        # A named path that does not exist: the setter names a file, so the
+        # existence check fires (a command token would not be existence-checked).
+        ("\u2605 questions.settler_missing",
+         lambda: [p.code for p in problems(
+             {"questions/08.md": _q(settling="zreflect/nope.py -- rc=0 => a; rc=2 => b")},
+             exists=lambda p: False)]
+         == ["questions.settler_missing", "criteria.exec_position_is_prose"]),
+        # A settler that is a **file name** is not a command: "zreflect/facts.py"
+        # names a script and says nothing about how to run it, so it can never
+        # be replayed (measured: the example question shipped in this shape).
+        ("\u2605 questions.settler_is_not_a_command",
+         lambda: [p.code for p in problems(
+             {"questions/09.md": _q(settling="zreflect/facts.py -- rc=0 => a; rc=2 => b")})]
+         == ["criteria.exec_position_is_prose"]),
+        # "run it" is both prose (not a command) and has no two outcomes
+        ("\u2605 questions.no_distinct_outcomes",
          lambda: [p.code for p in problems(
              {"questions/05.md": _q(settling="run it")}, exists=lambda p: True)]
-         == ["questions.no_distinct_outcomes"]),
+         == ["questions.no_distinct_outcomes", "criteria.exec_position_is_prose"]),
         ("★ questions.bad_status",
          lambda: [p.code for p in problems(
              {"questions/06.md": _q(status="whatever")}, exists=lambda p: True)]
@@ -281,9 +299,9 @@ def _cases():
          lambda: [p.code for p in problems(
              {"questions/08.md": _q(settling=_NOT_EXISTS)}, exists=lambda p: False)]
          == ["questions.none_without_first_deliverable"]),
-        ("★ questions.missing_status",
+        ("\u2605 questions.missing_status",
          lambda: [p.code for p in problems(
-             {"questions/07.md": "**Settling:** x.py ---- rc=0 => a；rc=1 => b"},
+             {"questions/07.md": "**Settling:** python3 x.py ---- rc=0 => a; rc=1 => b"},
              exists=lambda p: True)] == ["questions.missing_status"]),
         # (2) UX (issue #15 B1): a wrapped Settling must still yield the full criterion
         ("questions.settling_wrapped",

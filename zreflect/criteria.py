@@ -636,6 +636,82 @@ def _reason_truth_problems(rel, reason):
             for tok, exists in _reason_files(reason) if exists]
 
 
+# -- Execution positions must hold commands, not prose ---------------------
+#
+# Several fields across the suite promise "this is how you re-run it": a world
+# stamp's `cmd`, a pin's `version_read`, an instrument's `cmd`, a retraction's
+# `evidence`, a question's `Settling`. Each was a place narration could hide --
+# measured: a retraction whose `evidence` read "github Actions run 421...", and
+# a `Settling:` naming a bare path with no way to be run. **Prose in a field
+# that promises re-runnability is the same shape as an off state with no
+# reason.**
+#
+# The criterion is deliberately blunt: an execution position must begin with a
+# **command token** -- an interpreter, a common Unix utility, or an absolute
+# path. Prose never does; a real command always does. The list is not meant to be
+# exhaustive (a repo can always call something exotic); it exists to make
+# "narration sits in a replay field" impossible, which is the failure this
+# guards. `EXEC_PREFIXES` is the escape hatch: add a token here when a spec
+# legitimately needs it.
+EXEC_PREFIXES = (
+    "python3", "python", "sh", "bash", "node", "deno", "ruby", "perl",
+    "echo", "printf", "cat", "test", "true", "false", "env", "make", "git",
+    "npm", "pnpm", "yarn", "cargo", "go", "gcc", "cc", "cmake", "docker",
+)
+
+
+def starts_with_interpreter(value):
+    """Does this execution-position value begin with something runnable?"""
+    first = str(value or "").strip().split(" ")[0].strip("`\"'")
+    if not first:
+        return False
+    return first in EXEC_PREFIXES or first.startswith("/")
+
+
+def prose_in_exec_problems(where, field_name, value):
+    """Report when an execution position holds prose instead of a command.
+
+    An empty value is **not** reported here: missing is a different criterion's
+    job, and conflating the two would let one report hide the other.
+    """
+    if not str(value or "").strip():
+        return []
+    if starts_with_interpreter(value):
+        return []
+    return [M("criteria.exec_position_is_prose",
+              where=where, field=field_name, value=str(value)[:60])]
+
+
+# Spec files and the keys whose values are execution positions. One table, so a
+# new spec with a command field is added in one place.
+EXEC_POSITIONS = {
+    "world.json": ("stamps", "cmd"),
+    "pins.json": ("pins", ("version_read", "stamp_read")),
+}
+
+
+def exec_position_problems(spec, name):
+    """Every execution position in one spec must hold a command, not prose."""
+    entry_key, fields = EXEC_POSITIONS.get(name, (None, ()))
+    if entry_key is None or not isinstance(spec, dict):
+        return []
+    fields = (fields,) if isinstance(fields, str) else fields
+    # A spec's entry collection is a dict (world stamps keyed by name) or a list
+    # (pins are positional); both carry execution positions.
+    raw = spec.get(entry_key) or {}
+    pairs = ([(str(i), e) for i, e in enumerate(raw)] if isinstance(raw, list)
+             else list(raw.items()) if isinstance(raw, dict) else [])
+    out = []
+    for key, entry in pairs:
+        if not isinstance(entry, dict):
+            continue
+        for field_name in fields:
+            out += prose_in_exec_problems(
+                "%s/%s" % (name, entry.get("name") or key),
+                field_name, entry.get(field_name))
+    return out
+
+
 def off_reason_problems(gs, sources=None):
     """C4 reconciliation (6): **a gate that can `off()` must declare why it may be
     not-enabled**.

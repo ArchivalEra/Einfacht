@@ -273,6 +273,11 @@ def run(argv=None):
         return fatal(M("world.spec_shape_bad", name=p))
     branch = current_branch()
     probs = spec_problems(spec, branch, LINE_OVERRIDE)
+    # An execution position must hold a command: a stamp's `cmd` that reads like
+    # prose can never be replayed, and "the stamp did not change" becomes an
+    # unfalsifiable claim.
+    import criteria  # noqa: PLC0415
+    probs += criteria.exec_position_problems(spec, "world.json")
     probs += stamp_problems(spec)
     line, world = resolve_line(spec, branch, LINE_OVERRIDE)
     return finish(M("world.title"), probs,

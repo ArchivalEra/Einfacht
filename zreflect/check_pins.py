@@ -178,7 +178,8 @@ def check(spec, run=_run, root=None):
     pins = spec.get("pins") or []
     if not pins:
         return [M("pins.empty")], []
-    problems, skips = [], []
+    import criteria  # noqa: PLC0415
+    problems, skips = criteria.exec_position_problems(spec, "pins.json"), []
     for p in pins:
         probs, sks = _pin_problems(p, root, run)
         problems += probs
