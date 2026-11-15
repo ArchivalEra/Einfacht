@@ -71,7 +71,8 @@ echo "export REFLECT_MEASURE_MODULE=my_measure" >> Einfacht.env
 `my_measure.measure()` returns `{"key": {"value": <int>, "cmd": "<command>"}}`.
 The command's stdout, stripped, must **equal** `value` (bare-value contract) —
 print the value alone, never a human sentence. Expensive facts may set
-`"replay": false` and attach a cheap `witness` + `witness_expect` instead.
+a cheap `witness` + `witness_expect` (there is no `replay: false` opt-out: a fact
+that cannot be re-run here belongs in HISTORY, not in the ledger).
 
 All knobs live in `zreflect/knobs.py` and are configured by name in
 `Einfacht.env` (`REFLECT_DOCS`, `REFLECT_READMES`, `REFLECT_QUESTIONS`,

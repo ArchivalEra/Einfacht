@@ -1,7 +1,7 @@
 {
  "invariants.bad_shape": "Spec-Datei %(path)s hat falsche Form: erwartet {\"checks\": [...]}",
- "invariants.drift_forbidden": "%(marker)s: `%(path)s` enthält ein verbotenes Fragment %(fragment)r (%(why)s)",
- "invariants.drift_missing": "%(marker)s: `%(path)s` fehlt ein Pflichtfragment %(fragment)r (%(why)s)",
+ "invariants.drift_forbidden": "%(marker)s: `%(path)s` enthält ein verbotenes Fragment %(fragment)r",
+ "invariants.drift_missing": "%(marker)s: `%(path)s` fehlt ein Pflichtfragment %(fragment)r",
  "invariants.empty": "die Invariantenliste ist leer — eine leere Liste ist kein Bestehen (Nullwert-Wächter): eine Liste existiert nur mit Gründen",
  "invariants.fragment_not_string": "`%(path)s`: Kriterienfragmente müssen Strings sein",
  "invariants.missing_path": "Prüfeintrag fehlt path (Pflicht): %(entry)r",

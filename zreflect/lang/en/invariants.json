@@ -1,7 +1,7 @@
 {
  "invariants.bad_shape": "spec file %(path)s has a bad shape: expected {\"checks\": [...]}",
- "invariants.drift_forbidden": "%(marker)s: `%(path)s` contains a forbidden fragment %(fragment)r (%(why)s)",
- "invariants.drift_missing": "%(marker)s: `%(path)s` is missing a required fragment %(fragment)r (%(why)s)",
+ "invariants.drift_forbidden": "%(marker)s: `%(path)s` contains a forbidden fragment %(fragment)r",
+ "invariants.drift_missing": "%(marker)s: `%(path)s` is missing a required fragment %(fragment)r",
  "invariants.empty": "the invariants list is empty — an empty list is not a pass (zero-value guard): a list exists only with reasons",
  "invariants.fragment_not_string": "`%(path)s` criteria fragments must be strings",
  "invariants.missing_path": "check item is missing path (required): %(entry)r",

@@ -255,7 +255,7 @@ def _configurable_fixture(repo, tmp, registry):
     # Machine block markers must be **placed by hand once first** (block not
     # found != block is correct).
     open(os.path.join(tmp, fx_doc), "w", encoding="utf-8").write(
-        "# T\n\nrefs [[py_files]] [[md_files]].\n\n"
+        "# T\n\n> refs [[py_files]] [[md_files]].\n\n"
         "<!-- AUTO:FACTS -->\n<!-- /AUTO:FACTS -->\n"
         "<!-- AUTO:GATES -->\n<!-- /AUTO:GATES -->\n")
     open(os.path.join(tmp, "AGENTS.md"), "w", encoding="utf-8").write(

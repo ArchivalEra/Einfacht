@@ -44,16 +44,15 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import main_selftest_or, module_meta  # noqa: E402
 
-# Only the three carriers. README / AGENTS are prose by design -- they describe
-# the project to a reader and legitimately repeat things; scanning them would
-# report usage sentences against rules and drown the signal.
-CARRIERS = ("state", "principle", "question")
-
 # `0.6` catches "a few letters differ" and stays above the natural overlap of
 # two genuinely different rules (measured: the closest unrelated pair in this
 # repo's table is 0.535).
 THRESHOLD = 0.6
-MIN_CHARS = 40          # shorter than this, two short sentences collide by accident
+# Shorter than this, two unrelated short sentences collide by accident (measured:
+# "off is visible" vs "off is visibl" scores 0.94). Below the floor the pair is
+# **not compared**, and `skipped_short()` reports how many forms that silenced --
+# a silent floor is the same trap as a silent off state.
+MIN_CHARS = 40
 
 
 def _norm(text):
@@ -103,13 +102,21 @@ def forms_from_rules(rules):
             for r in rules]
 
 
-def forms_from_ledger(ledger):
-    """Ledger facts -> forms. A `principle.<id>` note echoes `principle:<id>`.
+def forms_from_ledger(ledger, rules=()):
+    """Ledger facts -> forms.
 
-    That edge is the **only** designed echo: the rendered table has to print the
-    rule's sentence, so the ledger stores it, and calling that a copy would
-    report the table itself.
+    A `principle.<id>` entry is a **quotation**, and the edge that explains its
+    overlap is granted only when its note is **byte-identical** to `RULES[id]`'s
+    sentence. Granting it on the key prefix alone was the first shape here and it
+    was wrong: rewriting that note into a paraphrase kept the edge and the copy
+    went unreported -- which is exactly the failure this module exists to catch
+    (measured: a two-word paraphrase of the same note scored 0.916 and passed).
+
+    So the edge is **earned by content**, not by name. `rules` is the `RULES`
+    list; when it is empty no edge is granted and every principle note is
+    compared like any other text.
     """
+    by_id = {r.id: r.text for r in rules}
     facts = ledger.get("facts") if isinstance(ledger, dict) and "facts" in ledger \
         else (ledger or {})
     out = []
@@ -119,8 +126,11 @@ def forms_from_ledger(ledger):
         note = entry.get("note")
         if not note:
             continue
-        refs = ("principle:" + key[len("principle."):],) \
-            if key.startswith("principle.") else ()
+        refs = ()
+        if key.startswith("principle."):
+            rid = key[len("principle."):]
+            if by_id.get(rid) == note:
+                refs = ("principle:" + rid,)
         out.append(("state:" + key, note, refs))
     return out
 
@@ -138,6 +148,18 @@ def forms_from_questions(paths):
                 out.append(("question:" + os.path.basename(path), line[2:], ()))
                 break
     return out
+
+
+class _Rules:
+    """Minimal stand-in for a `RULES` entry list (the builder only reads id/text)."""
+
+    def __init__(self, text, rid="a"):
+        from collections import namedtuple  # noqa: PLC0415
+        rule = namedtuple("R", "id text")
+        self._rules = [rule(rid, text)]
+
+    def __iter__(self):
+        return iter(self._rules)
 
 
 def _cases():
@@ -169,6 +191,18 @@ def _cases():
         ("\u2605 echoes.threshold_is_respected",
          lambda: echo_problems([("principle:a", long_a, ()),
                                 ("principle:b", near, ())], threshold=0.99) == []),
+        # **the edge is earned by content, not by name**: the builder grants it
+        # only when the note is byte-identical to the rule's sentence, so a
+        # paraphrase of a `principle.<id>` note is reported like any other copy
+        # (the first shape granted it on the key prefix and let paraphrases by)
+        ("echoes.verbatim_quote_gets_the_edge",
+         lambda: forms_from_ledger(
+             {"facts": {"principle.a": {"note": long_a}}}, _Rules(long_a))[0][2]
+         == ("principle:a",)),
+        ("\u2605 echoes.paraphrase_gets_no_edge",
+         lambda: forms_from_ledger(
+             {"facts": {"principle.a": {"note": near}}}, _Rules(long_a))[0][2]
+         == ()),
     ]
 
 

@@ -230,10 +230,16 @@ def _copied_fact_problems(facts, nlines, bare_min):
 # exactly the ones that render everything. A literal set here would be a second
 # source for a value `knobs`/`doc` already own.
 def rendered_docs():
-    """The two documents that render everything: the state document (whose name
-    is the `REFLECT_DOC` default) and the principles document (a constant)."""
+    """The two documents that render everything: the state document and the
+    principles document.
+
+    ⚠️ The state document's name is resolved through **`doc.state_name()`**, not
+    read from the registry default: with `REFLECT_DOC=NOTES.md` the literal
+    default kept returning `STATE.md`, so the real state document went unscanned
+    (measured -- and under the rename fixture it was a silent green).
+    """
     import doc  # noqa: PLC0415
-    return frozenset({knobs.REGISTRY["REFLECT_DOC"][1], doc.PRINCIPLES})
+    return frozenset({doc.state_name(), doc.PRINCIPLES})
 
 
 def hand_written_problems(doc_text, name="STATE.md"):
@@ -246,15 +252,26 @@ def hand_written_problems(doc_text, name="STATE.md"):
     Measured: STATE.md carried 55 such lines, four `issue #N` references and a
     paragraph about a hand-written roster that had drifted.
     """
+    # **Position matters, not just shape.** An earlier version exempted any
+    # `#`-prefixed or `>`-prefixed line wherever it appeared, which made
+    # "# a whole hand-written section" and a `>` paragraph in the middle of the
+    # document legal -- the rule was hollowed out by its own exemption.
+    # Allowed: the first `# ` line, and `>` lines that are **contiguous with the
+    # top of the document** (title, blank lines, then the intro quote). Anything
+    # after the first non-blank, non-quote, non-title line is hand-written.
     out = []
+    in_intro = True                  # still in the title/intro zone
+    title_seen = False               # exactly one `# ` line, at the top
     for lineno, line in enumerate(doc_text.splitlines(), 1):
         stripped = line.strip()
         if not stripped:
             continue
-        if stripped.startswith("# "):          # the title
-            continue
-        if stripped.startswith(">"):           # the intro block-quote
-            continue
+        if in_intro and not title_seen and stripped.startswith("# "):
+            title_seen = True
+            continue                 # the title
+        if in_intro and stripped.startswith(">"):
+            continue                 # the intro block-quote
+        in_intro = False             # the rendered body starts here
         out.append(M("facts.hand_written_in_state", name=name, lineno=lineno,
                      text=stripped[:60]))
     return out
@@ -326,16 +343,21 @@ def _echo_problems(led):
     import doc  # noqa: PLC0415
     import echoes  # noqa: PLC0415
     forms = (echoes.forms_from_rules(doc.RULES)
-             + echoes.forms_from_ledger(led)
+             + echoes.forms_from_ledger(led, doc.RULES)
              + echoes.forms_from_questions(_question_paths()))
     return [M("facts.echo_of_another_carrier", ratio=ratio, a=a, b=b)
             for ratio, a, b in echoes.echo_problems(forms)]
 
 
 def _question_paths():
-    """`questions/*.md` under the audited repo (empty when the dir is absent)."""
+    """`questions/*.md` under the audited repo (empty when the dir is absent).
+
+    Resolved through `knobs.questions_path()` so `REFLECT_QUESTIONS` is honoured;
+    a literal `questions/` here ignored the knob and the criterion silently ran
+    on an empty set under the rename fixture.
+    """
     import glob  # noqa: PLC0415
-    return sorted(glob.glob(str(gate.repo("questions", "*.md"))))
+    return sorted(glob.glob(os.path.join(str(knobs.questions_path()), "*.md")))
 
 
 def run(argv):

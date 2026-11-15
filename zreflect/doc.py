@@ -208,7 +208,7 @@ RULES = (
     Rule("no_echo_between_carriers",
          "a near-copy of an assertion in two carriers is a hand-copy: one fact lives in one carrier, and a quotation must name its source",
          "python3 -c \"import glob,sys;sys.path.insert(0,'zreflect');import doc,echoes,ledger;"
-         "f=(echoes.forms_from_rules(doc.RULES)+echoes.forms_from_ledger(ledger.load('FACTS.json'))"
+         "f=(echoes.forms_from_rules(doc.RULES)+echoes.forms_from_ledger(ledger.load('FACTS.json'),doc.RULES)"
          "+echoes.forms_from_questions(sorted(glob.glob('questions/*.md'))));"
          "h=echoes.echo_problems(f);"
          "[print('echo=%s~%s(%.3f)' % (a,b,r)) for r,a,b in h] "

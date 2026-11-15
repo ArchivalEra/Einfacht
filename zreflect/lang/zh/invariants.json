@@ -1,7 +1,7 @@
 {
  "invariants.bad_shape": "规格文件 %(path)s 形状坏：需要 {\"checks\": [...]}",
- "invariants.drift_forbidden": "%(marker)s: `%(path)s` 出现被禁片段 %(fragment)r（%(why)s）",
- "invariants.drift_missing": "%(marker)s: `%(path)s` 缺少应有片段 %(fragment)r（%(why)s）",
+ "invariants.drift_forbidden": "%(marker)s: `%(path)s` 出现被禁片段 %(fragment)r",
+ "invariants.drift_missing": "%(marker)s: `%(path)s` 缺少应有片段 %(fragment)r",
  "invariants.empty": "不变量清单为空 —— 空清单不是通过（零值守卫）：清单要有理由才存在",
  "invariants.fragment_not_string": "`%(path)s` 的判据片段必须是字符串",
  "invariants.missing_path": "检查项缺 path（必填）：%(entry)r",
