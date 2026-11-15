@@ -23,7 +23,6 @@
  "facts.init_kept": "已存在，未覆盖 %(name)s",
  "facts.init_next": "下一步：python3 zreflect/facts.py（量一遍）→ --render-doc <你的状态文档>",
  "facts.ledger_missing": "缺事实台账（%(name)s）。先跑 python3 zreflect/facts.py 量一遍。",
- "facts.ledger_unreadable": "台账读不了：`%(path)s`（%(error)r）—— 坏文件不是「没有台账」，它必须被修好",
  "facts.ledger_why": "事实台账：每条 = 一个**测出来**的值 + 复跑命令 + 出处。别手改，跑 zreflect/facts.py。",
  "facts.marker_swallowed_body": "%(path)s 的标记字面量混进了正文（%(begin)s）—— 渲染会吞块，拒绝写盘；标记只许出现在机器块首尾",
  "facts.markers_missing_check": "%(path)s 缺 %(begin)s / %(end)s 标记",

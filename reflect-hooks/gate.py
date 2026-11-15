@@ -361,12 +361,17 @@ def _main(argv):
     return _run_cli(argv)
 
 
+# Declared on purpose: `criteria.suite_file_without_declaration` requires every
+# file under `reflect-hooks/` to say what it is. This is not "the roster picks it
+# up" -- the roster scans `zreflect/` only -- it is what keeps this file from
+# being read as user code and dropped from auditing.
 GATE = meta("Hook entry",
             "the single mouth called by other hook systems: commit re-renders + "
             "runs gates; push verifies only + trilingual READMEs in one batch",
             knobs=("REFLECT_DOC",),
             runs_at="start-of-work",
             off_reason="the hook entry is invoked by git, not attached to the pre-commit phase")
+
 
 if __name__ == "__main__":
     sys.exit(_main(sys.argv[1:]))

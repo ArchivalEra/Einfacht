@@ -7,11 +7,9 @@ set -eu
 . reflect-hooks/quality-record.sh
 _QR_DECLARED=0
 _QR_RECORDED=0
-QR_LOG_DIR="${TMPDIR:-/tmp}"
-export QR_LOG_DIR
 
 declare_check "true" "true"
-if run_check "true" "true"; then
+if true; then
     rc=0
 else
     rc=$?

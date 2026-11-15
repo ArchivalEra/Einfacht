@@ -105,13 +105,6 @@ def _module_level_assigns(tree):
     return out
 
 
-def _aliases_of(trees, src_mod):
-    """Aliases bound by `import <src_mod> as <alias>` in the scan surface (used by `_reassigned_elsewhere`)."""
-    return {a.asname for tree in trees.values()
-            for node in ast.walk(tree) if isinstance(node, ast.Import)
-            for a in node.names if a.name == src_mod and a.asname}
-
-
 def _import_aliases(trees):
     """`import <mod> as <alias>` => `{alias: mod}` (the alias also points at that module)."""
     aliases = {}
@@ -192,12 +185,6 @@ def _globals_of(tree):
         if isinstance(node, ast.Global):
             out.update(node.names)
     return out
-
-
-def _uses_global(tree, name):
-    """Does this module declare `global <name>`? (name=None => any global at all)."""
-    g = _globals_of(tree)
-    return bool(g) if name is None else name in g
 
 
 def _functions_reading(src_tree, name):
@@ -484,11 +471,6 @@ def problems(paths=None, sources=None):
     return _derived_copy_problems(ix) + _mutable_copy_problems(ix)
 
 
-def collect(root, configured=False):
-    """Which `.py` files to collect -- see `gate.scanned_sources` (the single source of both policies)."""
-    return gate.scanned_sources(root, configured)
-
-
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     # ⚠️ **`REFLECT_SNAPSHOT_ROOT` empty => scan the suite's own `zreflect/`**,
@@ -512,7 +494,7 @@ def run(argv=None):
     if not os.path.isdir(root):
         # knob points at a nonexistent directory => broken config (not "not enabled")
         return fatal(M("snapshot.scan_empty_dir", root=root))
-    paths = collect(root, configured=bool(configured))
+    paths = gate.scanned_sources(root, configured=bool(configured))
     if not paths:
         return fatal(M("snapshot.scan_empty_dir", root=root))
     return finish(M("snapshot.title"), problems(paths),

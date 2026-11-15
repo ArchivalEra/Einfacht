@@ -79,8 +79,11 @@ from i18n import M  # noqa: E402
 
 # Derived from the knob registry (single source of truth) -- a handwritten
 # literal would drift from it (the most expensive kind of debt in this repo).
+# DEFAULT_TIMEOUT used to be a bare `2.0` on the next line after this very
+# comment -- the second origin of `REGISTRY["REFLECT_DOCTOR_TIMEOUT"]`'s
+# default ("2"), contradicting its own rationale on the spot.
 DEFAULT_SPEC = knobs.REGISTRY["REFLECT_DOCTOR"][1]
-DEFAULT_TIMEOUT = 2.0
+DEFAULT_TIMEOUT = float(knobs.REGISTRY["REFLECT_DOCTOR_TIMEOUT"][1])
 
 
 # ---- Pure criteria (selftest can inject fake responses; return (satisfied?, reason)) ----
@@ -238,14 +241,19 @@ def spec_problems(checks):
 # ---- Orchestration (probe injectable: selftest uses fake probes, no network / docker) ----
 
 def _timeout():
+    """The validated probe timeout (positive number of seconds).
+
+    ⚠️ The knob's validation lives in `_timeout_problem()` and runs **before
+    any probe** (`run()` fails fast on a bad value). Re-parsing leniently here
+    -- "bad value => fall back to the default" -- was a dead branch in the
+    production path (unreachable: run() has already returned), and a second,
+    drifting judgment of "what is a good value". This function therefore only
+    converts the value that has already been verified.
+    """
     raw = os.environ.get("REFLECT_DOCTOR_TIMEOUT", "").strip()
     if not raw:
         return DEFAULT_TIMEOUT
-    try:
-        t = float(raw)
-    except ValueError:
-        return DEFAULT_TIMEOUT
-    return t if t > 0 else DEFAULT_TIMEOUT
+    return float(raw)
 
 
 def down_labels(checks, probe=None, timeout=None):

@@ -25,11 +25,10 @@ from ledger import load_or_fatal  # noqa: E402
 from living import HIST_MARK, living_lines  # noqa: E402
 
 REQUIRED = ("id", "text", "why", "evidence", "fixed_in")
-# **Not read at module level as a knob**: `knobs.docs_names()` is the single
-# origin (the registry's default value).
-# Warning: a handwritten five-document literal once lived here and drifted from
-# the registry's six (it lacked PRINCIPLES.md).
-HIST_SECS = tuple(s for s in os.environ.get("REFLECT_HISTORY_SECS", "").split(",") if s)
+# **Resolved via the knob helper**: the parse lives in `knobs.history_secs()`
+# (the single producer -- `check_stale` reads the same helper), so the two
+# gates cannot drift apart on "what counts as a history section".
+HIST_SECS = knobs.history_secs()
 
 
 def _entry_field_problems(retractions):

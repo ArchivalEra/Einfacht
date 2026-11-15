@@ -245,9 +245,9 @@ def applies_to(spec, platform=None):
     return platform_name(platform) in declared
 
 
-def run_example(name, root=DEFAULT_ROOT, suite_root=None):
+def run_example(name, root=DEFAULT_ROOT):
     """Run one isolated example and return ``(problems, skipped)``."""
-    suite_root = gate.tool_repo() if suite_root is None else suite_root
+    suite_root = gate.tool_repo()
     example_dir = os.path.join(root, name)
     try:
         with open(os.path.join(example_dir, "example.json"), encoding="utf-8") as fh:

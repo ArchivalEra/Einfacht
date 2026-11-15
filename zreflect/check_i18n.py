@@ -157,26 +157,32 @@ def _is_output_call(node):
     return isinstance(f, ast.Name) and f.id in ("print", "off", "fatal", "finish")
 
 
-def _docstring_node_id(node):
-    """The id of the docstring constant within one scope node (None if absent)."""
-    d = ast.get_docstring(node, clean=False)
-    if not d:
-        return None
-    for n in ast.walk(node):
-        if isinstance(n, ast.Constant) and n.value == d:
-            return id(n)
-    return None
+def _docstring_both(tree):
+    """The docstring constants of a tree, **both views in one walk**.
 
-
-def _doc_nodes(tree):
-    """Docstring nodes (exemption surface 1: docstrings are not words to the user)."""
-    out = set()
+    Two producers used to collect docstrings separately: `_doc_nodes` (node
+    identities, for the bare-text exemption) and `_docstring_lines` (line
+    spans, for the non-ASCII-prose exemption) -- each with its own scope-node
+    tuple and its own "is body[0] a string constant" judgment. The two
+    identities and the two spans come from one walk of one helper now, so the
+    node view and the line view cannot disagree about what counts as a
+    docstring.
+    """
+    nodes = set()
+    lines = set()
     for node in ast.walk(tree):
-        if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
-            nid = _docstring_node_id(node)
-            if nid is not None:
-                out.add(nid)
-    return out
+        if not isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        d = ast.get_docstring(node, clean=False)
+        if not d:
+            continue
+        for n in ast.walk(node):
+            if isinstance(n, ast.Constant) and n.value == d:
+                nodes.add(id(n))
+                break
+        first = node.body[0].value
+        lines.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
+    return nodes, lines
 
 
 def _msg_consts(tree):
@@ -248,7 +254,7 @@ def _exempt_ids(tree, name, src):
 def _bare_text_problems(name, tree, src):
     """**Bare natural language** in one source file (outside the four exemption classes and not an id-ified label)."""
     out = []
-    doc_nodes = _doc_nodes(tree)
+    doc_nodes, _ = _docstring_both(tree)
     msg_consts = _msg_consts(tree)
     exempt = _exempt_ids(tree, name, src)
     for node in ast.walk(tree):
@@ -326,7 +332,8 @@ def _plain_english_problems(name, src, tree):
     Scanning them here made every fixture-based case fail, which is the criterion
     reporting the gate's test data instead of the gate's source.
     """
-    exempt_lines = _fixture_scope_lines(tree) | _pinned_lines(tree) | _docstring_lines(tree)
+    _, docstring_lines = _docstring_both(tree)
+    exempt_lines = _fixture_scope_lines(tree) | _pinned_lines(tree) | docstring_lines
     out = []
     for lineno, line in enumerate(src.splitlines(), 1):
         if lineno in exempt_lines or i18n.prose_exempt(line):
@@ -370,25 +377,12 @@ def _pinned_lines(tree):
     return spans
 
 
-def _docstring_lines(tree):
-    """Lines occupied by docstrings (prose is allowed to quote the thing it documents)."""
-    spans = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            body = getattr(node, "body", [])
-            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
-                    and isinstance(body[0].value.value, str):
-                first = body[0].value
-                spans.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
-    return spans
-
-
 def problems(paths):
     """Pure function: return the problem list (empty = zero-language). `paths` = [(name, source text)].
 
     `paths` is injectable => self-proofs use fake sources, zero file I/O.
 
-    Five parts (each a helper): `_doc_nodes` / `_msg_consts` / `_exempt_ids` /
+    Five parts (each a helper): `_docstring_both` / `_msg_consts` / `_exempt_ids` /
     `_bare_text_problems` / `_plain_english_problems`. This function only
     orchestrates -- 111 lines -> 15.
     """

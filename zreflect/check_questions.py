@@ -49,7 +49,7 @@ VALID_STATUS = ("needs-triage", "needs-info", "ready-for-agent",
 # Terminal states: once a question carries one of these, consumers stop listing
 # it as pending. **Single origin** (issue #38): next.py used to keep its own
 # closed-set ("!= resolved"), so wontfix -- a legal terminal state -- was
-# re-raised every turn. Consumers import CLOSED_STATUS / is_closed; nobody
+# re-raised every turn. Consumers import CLOSED_STATUS / is_resolved; nobody
 # re-lists the states.
 CLOSED_STATUS = ("wontfix", "resolved")
 # Domain words that must appear in a question body (vocabulary of the convention
@@ -125,15 +125,10 @@ def is_resolved(text):
     answer. next.py used to filter `!= "resolved"` with its own copy of the
     closed-set -- a wontfix ticket was re-raised every turn, i.e. the user was
     asked to redo the same decision forever. The set lives here (single
-    origin, R-017 lineage); callers ask via is_closed / is_resolved, never by
+    origin, R-017 lineage); callers ask via `is_resolved`, never by
     re-listing states.
     """
     return status_of(text) in CLOSED_STATUS
-
-
-def is_closed(text):
-    """Same set as `is_resolved` (alias so callers can name intent)."""
-    return is_resolved(text)
 
 
 def _status_problems(name, text):
@@ -265,7 +260,7 @@ def _cases():
             and is_resolved(_q(status="wontfix")) is True
             and is_resolved(_q(status="needs-info")) is False
             and is_resolved(_q(status="ready-for-agent")) is False
-            and is_closed(_q(status="wontfix")) is True),
+            and is_resolved(_q(status="wontfix")) is True),
         # (2) what must be reported is reported
         ("★ questions.missing_settling",
          lambda: [p.code for p in problems(

@@ -410,6 +410,11 @@ def _knob_problems(knob_problems, gs):
                          + knobs.declared_vs_read_problems(gs)
                          + knobs.registry_vs_readme_problems()
                          + knobs.pack_sync_problems()
+                         # C4 reconciliation (5): REGISTRY kinds vs the kinds
+                         # check_envfile's existence criterion recognizes --
+                         # a new kind nobody handles would silently skip the
+                         # existence check
+                         + knobs.kind_vocabulary_problems()
                          # C4 reconciliation (4): **every code the source uses
                          # must be in every installed pack** (the zh↔en set
                          # difference cannot see "both sides missing the same
@@ -439,7 +444,9 @@ def problems(gs, missing, mods=None, mods_missing=None,
       run = decoration);
     · roster self-consistency (phantom knobs / README phantoms) => report (C3,
       carrier-independent);
-    · the roster as a whole is empty => report (zero-value guard).
+    · the roster as a whole is empty => report (zero-value guard);
+    · the tool directory self-computed in more than one module (path rule, C4 (8))
+      and platform functions consumed but unasserted (C4 (9)) => report.
     """
     out = []
     out += phases_problems()
@@ -457,6 +464,8 @@ def problems(gs, missing, mods=None, mods_missing=None,
     out += criteria.subprocess_encoding_problems()
     out += criteria.suite_scope_problems()
     out += criteria.fatal_exit_problems()
+    out += criteria.path_rule_problems()
+    out += criteria.dependency_coverage_problems()
     # ⚠️ In injection mode (`mods=` given), **dead interfaces are not scanned**:
     # that judgment looks at the real directory while injection mode verifies
     # "the roster judgment itself"; mixing both into one list makes assertions

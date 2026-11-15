@@ -90,8 +90,8 @@ def _shell_argv(cmd):
          repo's ledger, but has no POSIX pipe semantics (`|` is interpreted
          as a pipe by cmd, but `$(...)` and friends are not understood).
 
-    Returns `(argv, strength label)`; the label goes into
-    `EINFACHT_REPLAY_SHELL` for diagnostics.
+    Returns `(argv, strength label)`; the label rides along in run_cmd's
+    failure diagnostics (`[shell=...]`).
     """
     bash = shutil.which("bash")
     if bash:
@@ -222,10 +222,10 @@ def run_cmd(cmd, timeout=None):
 
     ⚠️ **On Windows there is neither bash nor `/bin/sh`**: this used to
     hard-code `["/bin/sh", "-c", cmd]`, so every cmd on CI's Windows leg died
-    with OSError 127. `_shell_argv` now splits it into three tiers and records
-    which tier actually ran in `EINFACHT_REPLAY_SHELL` (`bash` / `sh` /
-    `cmd`) -- criteria strength varying with the environment must never happen
-    silently.
+    with OSError 127. `_shell_argv` now splits it into three tiers, and the
+    tier that actually ran rides along in the failure diagnostics
+    (`[shell=...]`) -- criteria strength varying with the environment must
+    never happen silently.
     """
     t = default_timeout() if timeout is None else timeout
     argv, shell_kind = _shell_argv(cmd)
@@ -237,7 +237,6 @@ def run_cmd(cmd, timeout=None):
     # until OOM (observed). The depth cap is judged by the replay gate
     # (`_MAX_DEPTH`).
     env = dict(os.environ)
-    env["EINFACHT_REPLAY_SHELL"] = shell_kind
     try:
         env["EINFACHT_REPLAY_DEPTH"] = str(
             int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0) + 1)

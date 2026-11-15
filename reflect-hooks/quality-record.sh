@@ -13,7 +13,7 @@
 # 用法：
 #   . reflect-hooks/quality-record.sh
 #   declare_check "ruff" "python -m ruff check ."
-#   ruff_rc=$(run_check "ruff")
+#   python -m ruff check . ; ruff_rc=$?
 #   record "ruff" "python -m ruff check ." "$ruff_rc"
 #   finish_checks        # 两数不等（声明 vs 记录）⇒ 非零退出 —— 假绿在源头被拒
 #
@@ -32,16 +32,6 @@ declare_check() {
     _QR_DECLARED=${_QR_DECLARED:-0}
     _QR_DECLARED=$((_QR_DECLARED + 1))
     export _QR_DECLARED
-}
-
-# 跑一道已声明的检查并记录。命令重定向到日志（使用方给路径或默认 /tmp）。
-run_check() {
-    _qr_name=$1
-    _qr_log=${QR_LOG_DIR:-/tmp}/"$1.log"
-    mkdir -p "${QR_LOG_DIR:-/tmp}"
-    eval "$2" > "$_qr_log" 2>&1
-    _QR_LAST_RC=$?
-    return $_QR_LAST_RC
 }
 
 # 记录一行 TSV：name \t command \t rc。rc 必须是 0–255 整数（畸形行当场被拒，

@@ -144,6 +144,13 @@
       "why": "对 `check_questions` 不成立：它不 strip，空串被 `os.path.join(仓根, \"\")` 解析成**仓根**，把 STATE.md / README.md / AGENTS.md 全当悬案收进来，报一堆 missing_status 假问题。同一个值在 facts / next 侧会 strip —— 三份判据、一份错。",
       "evidence": "REFLECT_QUESTIONS= python3 zreflect/check_questions.py（修复前报 8+ 条假问题）",
       "fixed_in": "knobs.questions_path()（唯一产地，strip + 回落登记表）"
+    },
+    {
+      "id": "R-021",
+      "text": "must say ADVISORY",
+      "why": "`PRINCIPLES.md` 曾告诉读者：规则行可以标 `ADVISORY`、与 gate 互换。`Rule` 只有三个字段（id / text / cmd），根本没有这个标记位——散文在描述一个从未造出来的特性，且没有任何东西拿散文与那张表对账。曾经看住这句话的 CLAIMS 机制（doc.claim_problems）连同它的自证一起退役，因为全仓没有消费者；唯一的真实条目改记到这里——「散文复活被撤断言」正是本机制管的形状。",
+      "evidence": "python3 zreflect/registry.py --selftest（doc 组不再有 doc.no_claim_outlives_its_feature；旧断言由本闸门接管）；python3 zreflect/doc.py --selftest",
+      "fixed_in": "retractions.json（R-021）+ PRINCIPLES.md「怎么用这张表」（无中间态，没有可挂「建议」的标记位）"
     }
   ]
 }

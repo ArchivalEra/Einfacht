@@ -711,7 +711,13 @@ def reason_bases_agree(hook=False):
 
 def _scan_sources(sources, base):
     """Scan surface: use `sources` when given (selftests inject a fake filesystem),
-    otherwise scan the real directory."""
+    otherwise scan the real directory.
+
+    ⚠️ `sources=[]` counts as **injection with an empty surface**, not "scan the
+    real directory": the injection-mode threshold must be able to distinguish
+    "injected surface is empty" from "not injected" (`path_rule_problems` gates
+    on it; scanning the real directory there would judge the host by association).
+    """
     if sources is not None:
         return sorted(sources.items())
     items = []
@@ -763,8 +769,15 @@ def path_rule_problems(sources=None):
     `gate.py` (the single source lives there). `i18n`'s lazy proxy
     `return gate.zdir()` is not self-computation (it lacks that expression).
     """
+    # Injection mode judges **the injected surface only** -- an empty injection
+    # means "nothing to judge", never "scan the real directory". Judging the host
+    # by association would mix two verdicts into one list (the `dead_interface`
+    # lesson). But it must still *judge*: returning `[]` unconditionally made the
+    # criterion's own selftest unable to go red, which is the decoration this
+    # repo exists to refute (observed: a planted `splitter.py` reported nothing).
+    surface = _scan_sources(None, gate.zdir()) if sources is None else sources.items()
     out = []
-    for name, text in _scan_sources(sources, gate.zdir()):
+    for name, text in surface:
         if name == "gate.py":
             continue                    # gate.py is the single source; it is allowed
         for fn in _returns_self_computed_dir(text):

@@ -228,28 +228,6 @@ def collect(repo):
     return last, pending
 
 
-def _question_status(text):
-    """The `**Status:**` value in an open question's body (lowercase); absent => empty string.
-
-    ⚠️ **Must forward to `check_questions.field`**: this used to hand-roll
-    `ln.split(":", 1)[1]`, but the real-world spelling is
-    `**Status:** resolved` (the colon sits **between that pair of asterisks**)
-    -- so what got split out was `"** resolved"`, never equal to
-    `"resolved"`. Consequence: **resolved questions kept being treated as
-    pending** and reported into "pick up from the last turn", nagging every
-    turn to check something already checked. Measured (this repo's
-    `questions/01-example.md` stayed listed after being resolved).
-
-    Of two copies of a criterion, one must be wrong -- and the
-    `check_questions` copy is guarded by 196 lines of self-proof.
-    """
-    import check_questions  # noqa: PLC0415
-    # The single source of normalization (lowercase + first word) lives in
-    # check_questions.status_of -- this copy used to be a third judging method
-    # (R-017); now it only forwards.
-    return check_questions.status_of(text)
-
-
 def _open_question_names(repo):
     """Unresolved open-question filenames from `questions/` (sorted by name, at most `MAX_LISTED`).
 
@@ -268,7 +246,7 @@ def _open_question_names(repo):
     # issue #38): wontfix is as closed as resolved -- a decision not to do a
     # thing must not be re-raised every turn.
     import check_questions  # noqa: PLC0415
-    return [n for n in names if _question_status(_read_question(d, n))
+    return [n for n in names if check_questions.status_of(_read_question(d, n))
             not in check_questions.CLOSED_STATUS][:MAX_LISTED]
 
 
@@ -375,7 +353,7 @@ def _cases():
         # section most needed after compaction vanished entirely).
         ("★ next.section_budget_holds", lambda: _section_budget_holds()),
         # The `**Status:**` asterisk spelling -- resolved questions must stop
-        # appearing under "what is next". `_question_status` used to split with
+        # appearing under "what is next". the pending filter used to split with
         # `split(":", 1)` yielding `"** resolved"`, so **every resolved
         # question was forever reported as pending** (measured on this repo's
         # 01-example.md).

@@ -29,21 +29,20 @@ class Unreadable(RuntimeError):
     """The ledger file exists but can't be read (bad JSON / permissions / encoding).
 
     **This is a different thing from "no ledger"**: the latter is the normal
-    shape of a fresh repo (an empty table is returned when `missing_ok=True`),
-    the former is a configuration accident -- it must reach FATAL rc=2 and
+    shape of a fresh repo -- the caller checks `os.path.exists` itself (the
+    guards in `facts.py` must handle "there is no previous version") -- the
+    former is a configuration accident -- it must reach FATAL rc=2 and
     must never surface as a bare traceback (that would escape this repo's rc
     contract, and a traceback with rc=0 is even worse: the caller believes
     it succeeded).
     """
 
 
-def load(path, missing_ok=False):
-    """Read JSON. With `missing_ok=True` a **missing file returns an empty
-    table** -- for "a new repo's first run": the ledger doesn't exist yet, and
-    `facts.py`'s two guards (dropped / changed) must be able to handle "there
-    is no previous version". **The default remains a hard error**: the caller
-    must explicitly say it accepts a missing ledger, so a mistyped path isn't
-    silently taken for "no ledger yet".
+def load(path):
+    """Read JSON. A missing file is a hard error: the caller must check
+    existence itself before calling, so a mistyped path isn't silently taken
+    for "no ledger yet" (`facts.py`'s `--accept*` path checks first and
+    builds the empty ledger itself).
 
     ⚠️ Bad JSON / permissions / encoding always raise `Unreadable` (not a bare
     `JSONDecodeError`): the caller converts that into FATAL rc=2. Previously
@@ -54,15 +53,11 @@ def load(path, missing_ok=False):
     try:
         with open(path, encoding="utf-8") as fh:
             return json.load(fh)
-    except FileNotFoundError:
-        if missing_ok:
-            return {}
-        raise
     except (OSError, UnicodeError, ValueError) as e:
         raise Unreadable(path, e) from e
 
 
-def load_or_fatal(path, name=None):
+def load_or_fatal(path):
     """Read the ledger; **broken file → FATAL rc=2** (`SystemExit(2)`).
 
     Gates use this instead of a bare `load()`: a broken ledger is a
@@ -82,7 +77,7 @@ def load_or_fatal(path, name=None):
     except Unreadable as e:
         cause = e.args[1] if len(e.args) > 1 else e
         print(machine().emit("fatal", M("ledger.unreadable_gate",
-                                        name=name or path, error=cause)),
+                                        name=path, error=cause)),
               file=sys.stderr)
         raise SystemExit(2) from e
 

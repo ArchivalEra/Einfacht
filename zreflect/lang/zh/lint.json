@@ -6,6 +6,7 @@
  "lint.no_output": "ruff 退出码 %(return_code)s 却没有任何定位行 —— 「工具坏了」与「没有问题」必须可区分（%(detail)s）",
  "lint.off": "静态机器检查：没装 %(module)s ⇒ 明说未启用（外部工具，不是本仓依赖）",
  "lint.off_config": "静态机器检查：本仓没有 `%(path)s` ⇒ 明说未启用（没选这套判据）",
+ "lint.off_no_targets": "静态机器检查：套件没有任何声明自身的 .py 文件（无 `MODULE =` / `GATE =` 声明）⇒ 无可审对象 ⇒ 明说未启用（禁止回落到全仓扫描，见 suite_files）",
  "lint.ok": "静态机器检查全绿（判据：`%(config)s`）",
  "lint.title": "静态机器检查（ruff）",
  "lint.tool_broken": "ruff 跑不起来：%(error)r"

@@ -165,7 +165,7 @@ def uninstall(repo):
     return 0, lines
 
 
-def usage_lines(repo):
+def usage_lines():
     return [str(M("install.usage")),
             str(M("install.usage_no_target")),
             str(M("install.usage_chain")),
@@ -173,7 +173,7 @@ def usage_lines(repo):
             str(M("install.usage_uninstall"))]
 
 
-def instructions(repo):
+def instructions():
     """No args: the wiring instructions (**writes no file**)."""
     return [str(M("install.intro")),
             str(M("install.example_commit", gate=GATE)),
@@ -191,10 +191,10 @@ def main(argv):
         print(str(M("install.not_a_repo", path=repo)), file=sys.stderr)
         return 2
     if mode in ("--help", "-h"):
-        print("\n".join(usage_lines(repo)))
+        print("\n".join(usage_lines()))
         return 0
     if mode == "":
-        print("\n".join(instructions(repo)))
+        print("\n".join(instructions()))
         return 0
     if mode == "--chain":
         rc, lines = install_chain(repo)
@@ -203,7 +203,7 @@ def main(argv):
     elif mode == "--uninstall":
         rc, lines = uninstall(repo)
     else:
-        print("\n".join(usage_lines(repo)), file=sys.stderr)
+        print("\n".join(usage_lines()), file=sys.stderr)
         return 2
     for ln in lines:
         print(ln, file=(sys.stderr if rc else sys.stdout))
@@ -340,13 +340,17 @@ def _selftest_entry():
     return selftest(M("gate.title.install"), _cases())
 
 
-GATE_DECL = meta("Hook installer",
-                 "wires the gate entry into .git/hooks (chained wrappers, never seizing seats); the legacy style and uninstall are both reversible",
-                 runs_at="start-of-work",
-                 off_reason="the installer is run by a human, not attached to the pre-commit phase")
-
 if __name__ == "__main__":
     if "--selftest" in sys.argv[1:]:
         sys.exit(_selftest_entry())
     rc = activate_or_fatal()
     sys.exit(rc or main(sys.argv[1:]))
+
+
+# Same reason as `reflect-hooks/gate.py`'s `GATE`: `criteria.`
+# `suite_file_without_declaration` requires a declaration line in every suite
+# file, and an undeclared file is treated as user code and stops being audited.
+GATE_DECL = meta("Hook installer",
+                 "wire the hooks in (chain, never hooksPath); no behaviour of its own",
+                 runs_at="start-of-work",
+                 off_reason="the installer runs by hand when wiring, not on any commit phase")

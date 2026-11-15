@@ -1,6 +1,7 @@
 {
  "knobs.dead_default": "`%(file)s` defines `%(name)s` but **never uses it** — a declared default that has no effect is worse than none (it makes people think it is configured)",
  "knobs.declared_not_read": "`%(file)s` declares it consumes %(knobs)s but the source never reads those knobs — declaration disagrees with implementation (the AUTO:GATES table would lie)",
+ "knobs.kind_unhandled": "kind `%(kind)s` appears in the knob roster but the env-file gate's existence criterion does not handle it — a knob of that kind silently gets no existence check (register the kind in both producers or use one)",
  "knobs.module_only": "knobs is a module (consumed by the gates); run --selftest for its self-test.",
  "knobs.pack_extra_keys": "Pack %(lang)s has keys absent from %(reference)s (the reference pack) -- key sets disagree: if %(lang)s is a declared service language (REFLECT_LANGS), its readers would see bare codes; packs outside REFLECT_LANGS are self-evidence samples, key-set drift does not block: %(keys)s",
  "knobs.pack_missing_code": "These codes the source emits are missing from the %(lang)s pack (%(count)d) -- %(lang)s is a declared service language (REFLECT_LANGS), its readers would see bare codes: %(codes)s",

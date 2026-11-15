@@ -43,6 +43,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import knobs  # noqa: E402
 from gate import (  # noqa: E402
     finish,
     machine,  # noqa: E402
@@ -189,7 +190,7 @@ def run(argv):
                   M("readme.ok_structure", count=len(langs)))
 
 
-LANGS = ("README.md", "README.zh.md", "README.de.md")
+LANGS = tuple(knobs.REGISTRY["REFLECT_READMES"][1].split(","))
 
 
 def _trio():

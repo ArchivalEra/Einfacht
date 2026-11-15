@@ -35,7 +35,7 @@ from gate import (  # noqa: E402
     repo,
 )
 from i18n import M  # noqa: E402
-from ledger import age_days, fact, facts_of, load, value_of  # noqa: E402
+from ledger import age_days, fact, facts_of, load_or_fatal, value_of  # noqa: E402
 from render import BLOCK_BEGIN, BLOCK_END, render_block  # noqa: E402
 
 REPO_REAL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -258,7 +258,6 @@ def _block_homes(ledger):
 
         AUTO:FACTS -> STATE.md        ledger render, the **single source of the numbers**
         AUTO:GATES -> STATE.md        discovery-based roster render, the **single source of gate narration**
-        AUTO:META  -> PRINCIPLES.md   meta-rule render, the admission criteria for RULES
         AUTO:RULES -> PRINCIPLES.md   discipline table render, the **single source of the rules narration**
 
     Why the discipline block gets its own doc: discipline is "unchanging design
@@ -283,8 +282,7 @@ def _block_homes(ledger):
     # if one place honors the opt-out and the other doesn't, it only half-works.
     if _has_principles_doc():
         homes.append((doc.PRINCIPLES,
-                      [(doc.META_BEGIN, doc.META_END, doc.render_meta()),
-                       (doc.RULES_BEGIN, doc.RULES_END, doc.render_rules())]))
+                      [(doc.RULES_BEGIN, doc.RULES_END, doc.render_rules())]))
     return homes, None
 
 
@@ -565,9 +563,15 @@ def _carry_first_seen(facts, old):
 
 
 def _write_ledger_doc(out, facts):
-    """Write the ledger to disk. Returns `(rc, error message or None)`."""
+    """Write the ledger to disk. Returns `(rc, error message or None)`.
+
+    The **one serialization site**: `--accept*`'s `_write_ledger` and
+    `--init`'s `_init_principles_into_ledger` delegate here. Both used to
+    inline their own `json.dump` of the same document shape, and the init
+    copy had already **drifted** (it dropped the `generated` field) --
+    three producers of one file format is two too many.
+    """
     import json  # noqa: PLC0415
-    import time  # noqa: PLC0415
     doc = {"schema": 1, "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
            "_why": M("facts.ledger_why"),
            "facts": facts}
@@ -622,7 +626,7 @@ def measure(argv):
     rc = _shape_guard(facts)
     if rc:
         return rc
-    old = facts_of(_read_or_exit(out)) if os.path.exists(out) else {}
+    old = facts_of(load_or_fatal(out)) if os.path.exists(out) else {}
 
     rc = _guarded_write(argv, old, facts)
     if rc:
@@ -710,27 +714,6 @@ def get_value(ledger, key):
     return True, value_of(f[key])
 
 
-def _read_or_exit(out):
-    """Read the ledger; **a bad file becomes FATAL rc=2**, never a raw traceback.
-
-    ⚠️ This is where the "broken config != red criterion" contract lands: if
-    `ledger.Unreadable` bubbled to the top level, Python would print a traceback and
-    exit **1** -- and `registry --run` records rc=1 as "criterion red". Observed: one
-    bad JSON made `facts.py --check` print a traceback with rc=0, and the caller
-    believed the check had run.
-    """
-    from ledger import Unreadable  # noqa: PLC0415
-    try:
-        return load(out)
-    except Unreadable as e:
-        cause = e.args[1] if len(e.args) > 1 else e
-        print(machine().emit("fatal", M(
-            "facts.ledger_unreadable",
-            path=os.path.relpath(out, gate.GATE_REPO), error=cause)),
-              file=sys.stderr)
-        raise SystemExit(2) from e
-
-
 def _load_or_empty():
     """Read the ledger; **a missing ledger yields an empty one** (used by `--accept*`).
 
@@ -742,7 +725,7 @@ def _load_or_empty():
     out = _out()
     if not os.path.exists(out):
         return {"schema": 1, "facts": {}}
-    return _read_or_exit(out)
+    return load_or_fatal(out)
 
 
 def _load_or_die():
@@ -764,7 +747,7 @@ def _load_or_die():
                                 path=os.path.relpath(out, gate.GATE_REPO))),
               file=sys.stderr)
         raise SystemExit(2)
-    return _read_or_exit(out)
+    return load_or_fatal(out)
 
 
 def main(argv):
@@ -920,10 +903,6 @@ def _init_skeleton(root, state):
             "# PRINCIPLES\n\n"
             "> design rules that do not change. Each one is a **runnable\n"
             "> command**, replayed by `check_facts_replay` on every commit.\n\n"
-            "## Meta rules (rendered, do not hand-edit)\n\n"
-            "What may enter the rule table, plus why. Data lives in `META` in\n"
-            "`zreflect/doc.py`; this block is reconciled by `facts.py --check`.\n\n"
-            + doc.META_BEGIN + "\n" + doc.META_END + "\n\n"
             "## Discipline table (rendered, do not hand-edit)\n\n"
             + doc.RULES_BEGIN + "\n" + doc.RULES_END + "\n"),
         "retractions.json": '{"schema": 1, "retractions": []}\n',
@@ -964,14 +943,13 @@ def _init_principles_into_ledger():
     import doc  # noqa: PLC0415
     if not doc.accepts_principles():
         return 0
-    import json as _json  # noqa: PLC0415
     out = _out()
     facts = dict(facts_of(_load_or_empty()))
     facts.update(doc.facts_of_rules())
-    with open(out, "w", encoding="utf-8") as fh:
-        _json.dump({"schema": 1, "_why": M("facts.ledger_why"),
-                    "facts": facts}, fh, indent=1, ensure_ascii=False)
-        fh.write("\n")
+    rc, err = _write_ledger_doc(out, facts)
+    if err:
+        print(machine().emit("fatal", err), file=sys.stderr)
+        return 2
     return write_doc(doc.PRINCIPLES, {"schema": 1, "facts": facts})
 
 
@@ -1188,15 +1166,10 @@ def _write_ledger(led, facts, argv, accept_all=False):
     if fatal_w:
         print(machine().emit("fatal", fatal_w), file=sys.stderr)
         return 2
-    import json  # noqa: PLC0415
-    import time  # noqa: PLC0415
-    doc = {"schema": 1,
-           "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-           "_why": M("facts.ledger_why"),
-           "facts": facts}
-    with open(out, "w", encoding="utf-8") as fh:
-        json.dump(doc, fh, indent=1, ensure_ascii=False)
-        fh.write("\n")
+    rc, err = _write_ledger_doc(out, facts)
+    if err:
+        print(machine().emit("fatal", err), file=sys.stderr)
+        return 2
     print(M("facts.measure_written",
             path=os.path.relpath(out, gate.GATE_REPO), count=len(facts)))
     return 0
@@ -1504,18 +1477,17 @@ def _unwritable_doc_rc():
 
 
 def _corrupt_load_raises():
-    """`ledger.load` raises `Unreadable` on bad JSON (not a bare `JSONDecodeError`)."""
+    """`ledger.load_or_fatal` exits rc=2 on bad JSON (not a bare `JSONDecodeError`)."""
     import tempfile  # noqa: PLC0415
 
-    from ledger import Unreadable  # noqa: PLC0415
     fd, path = tempfile.mkstemp()
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write("{ broken")
         try:
-            load(path)
-        except Unreadable:
-            return True
+            load_or_fatal(path)
+        except SystemExit as e:
+            return e.code == 2
         except Exception:                                # noqa: BLE001
             return False
         return False

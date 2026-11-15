@@ -1,6 +1,6 @@
 # ShellCheck 项目级白名单（issue #41 落实轮，2026-11-13）。
-# 五个 shell 面（gates-selftest.sh / reflect-hooks/{einfacht-env.sh,pre-commit,
-# pre-push,quality-record.sh}）扫过：15 findings 全部落入以下四类**有意形状**，
+# 被扫的 shell 面清单与数量以 CI（.github/workflows/gates.yml 的 shellcheck 步）
+# 为唯一产地，此处不抄副本；现存 findings 全部落入以下四类**有意形状**，
 # 非缺陷；逐类理由留痕于此，新 shell 文件进来时按同口径审。
 #
 # SC1007 "Remove space after ="

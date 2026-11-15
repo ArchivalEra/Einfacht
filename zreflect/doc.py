@@ -64,35 +64,6 @@ class Rule(NamedTuple):
     cmd: str
 
 
-class Claim(NamedTuple):
-    """A statement prose makes about this module's data.
-
-    `holds` = whether the feature the claim describes was actually built.
-    `holds=False` means the claim is a lie and must be removed from `where`;
-    `note` says what to do instead. This is the only honest way to retire a
-    promise: record that it was never kept, and fail while it is still written.
-    """
-    id: str
-    text: str
-    where: str
-    holds: bool
-    note: str
-    markers: tuple
-
-
-class Meta(NamedTuple):
-    """A meta rule: an admission criterion for `RULES`.
-
-    `text` = the rule itself; `why` = the accident that taught it;
-    `witness` = an optional command showing the accident class is still
-    possible (None means "no machine witness exists", printed as `-`).
-    """
-    id: str
-    text: str
-    why: str
-    witness: str | None
-
-
 # -- Principles registry: the **single place of origin** ----------------------
 #
 # Each `cmd` must be an **existing gate** -- no new executors are invented
@@ -125,6 +96,28 @@ RULES = (
 
     Rule("number_once",
          "each number is produced once: documents reference it as [[key]], never hand-copied (enforced both ways)",
+         "python3 zreflect/check_facts.py"),
+
+    Rule("hard_needs_criterion",
+         "a rule is hard only if it has a machine criterion; without one it does not enter the table at all (there is no advisory state)",
+         "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;"
+         "p=doc._cmd_shape_problems();"
+         "print('shape_problems=%d' % len(p));"
+         "sys.exit(1 if p else 0)\""),
+
+    Rule("ran_is_not_passed",
+         "'the scan ran' and 'the scan ran and passed' are different statements; a traversal that touches nothing must say so, not pass",
+         # Same judgment as `off_is_visible` (a gate must declare why it can be
+         # off), read from the other end: it inspects the gate **roster**'s off
+         # declarations instead of one gate's problems.
+         "python3 -c \"import sys;sys.path.insert(0,'zreflect');"
+         "import registry, criteria;gs=registry.gates()[0];"
+         "p=criteria.off_reason_problems(gs);"
+         "print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));"
+         "sys.exit(0 if gs and not p else 1)\""),
+
+    Rule("agreement_needs_reconciler",
+         "two things that must agree will disagree unless a reconciler re-runs on every commit (block vs ledger is the standing witness)",
          "python3 zreflect/check_facts.py"),
 
     Rule("falsifiable",
@@ -227,105 +220,41 @@ RULES = (
          "for k in w)];"
          "print('host_coupled=%d' % len(bad));"
          "sys.exit(1 if bad else 0)\""),
+
+    Rule("style_is_not_a_rule",
+         "style preferences (naming, comment density, file layout) do not enter the rule table; they are held by 'match the code around you'",
+         # The id vocabulary is spelled out (not derived from a shared table):
+         # this rule's criterion must be readable as data on its own -- deriving
+         # the list from a constant inside the same scan would make "what counts
+         # as style" a second origin nobody compares.
+         "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;"
+         "style=('style','naming','comment','layout','format');"
+         "bad=[r.id for r in doc.RULES if r.id in style];"
+         "print('style_ids=%d' % len(bad));"
+         "sys.exit(1 if bad else 0)\""),
+
+    Rule("one_off_decisions_do_not_land",
+         "a one-off decision ('why this round changed this way') is not recorded in a document; it belongs to the commit message",
+         # Round narrative in the main documents is scanned, including the CJK
+         # words for "this round" -- spelled by codepoint (this file is inside
+         # check_i18n's scan surface; a literal would be judged as the core
+         # speaking human).
+         "python3 -c \"import os,re,sys;"
+         "p='|'.join([''.join(chr(c) for c in (0x8FD9,0x8F6E)),"
+         "''.join(chr(c) for c in (0x672C,0x8F6E)),r'round\\s+N']);"
+         "hit=[(f,m.group()) for f in ('PRINCIPLES.md','STATE.md','AGENTS.md') "
+         "if os.path.exists(f) "
+         "for m in [re.search(p,open(f,encoding='utf-8').read())] if m];"
+         "print('round_narrative=%d' % len(hit));"
+         "sys.exit(1 if hit else 0)\""),
 )
 
 _BY_ID = {r.id: r for r in RULES}
-
-# -- Meta rules: the rules *about* the rules -------------------------------
-#
-# `RULES` says what the code must do. `META` says what **may enter `RULES`** and
-# what must stay out of it -- the admission criteria. They used to be prose at
-# the top of `PRINCIPLES.md`, which made them hand-editable: prose drifts
-# silently because nothing compares it to anything. Same disease as a
-# hand-copied number, one level up.
-#
-# A meta rule cannot have a judging command by construction -- "is this claim
-# falsifiable" is the kind of thing a machine cannot settle without solving the
-# halting problem. So each meta rule carries a `why` (the accident that taught
-# us) and, where one exists, a `witness` (the command that shows the accident
-# class is still possible). `witness` is optional and is **not** replayed; an
-# absent witness is printed as `-`, never glossed over.
-META = (
-    Meta("hard_needs_criterion",
-         "a rule is hard only if it has a machine criterion; without one it is "
-         "advisory and must say ADVISORY",
-         "This repo once carried 19 hard rules as prose in `AGENTS.md`, 4 of them "
-         "with no criterion at all. They looked identical to the 15 that were "
-         "enforced -- a reader could not tell which would be caught and which was "
-         "a wish. Letting advice impersonate a hard rule is the single biggest "
-         "corruption risk: people rely on it because they assume something stops "
-         "them.",
-         "python3 zreflect/check_facts_replay.py"),
-    Meta("numbers_rot_immediately",
-         "a number starts rotting the moment it is written: produce it once in "
-         "the ledger, reference it as [[key]], never hand-copy",
-         "Code changes and a hand-copied number becomes a lie, and nobody "
-         "remembers to come back and fix it.",
-         "python3 zreflect/check_facts.py"),
-    Meta("ran_is_not_passed",
-         "'the scan ran' and 'the scan ran and passed' are different statements; "
-         "traversing a directory that does not exist yields an empty set and a "
-         "true 'no violations found'",
-         "Both sentences were true and the conclusion was wrong.",
-         None),
-    Meta("agreement_needs_reconciler",
-         "two things that must agree will disagree unless a reconciler re-runs on "
-         "every commit",
-         "A 'must stay in sync' with no reconciler is not a discipline, it is a "
-         "wish.",
-         "python3 zreflect/registry.py --run commit"),
-    Meta("style_is_not_a_rule",
-         "style preferences (naming, comment density, file layout) do not enter "
-         "the rule table; they are held by 'match the code around you'",
-         "A criterion can only guard what is mechanically decidable. Writing style "
-         "into the table turns the table into noise, and noise is where a real "
-         "rule goes to hide.",
-         None),
-    Meta("one_off_decisions_do_not_land",
-         "a one-off decision ('why this round changed this way') is not recorded in "
-         "a document; it belongs to the commit message",
-         "The state document says only what is true now; the rule table accepts "
-         "only what can still overturn today's design.",
-         None),
-)
-
-_META_BY_ID = {m.id: m for m in META}
 
 # Machine-block markers: the principles table is rendered from here (prose
 # must never hand-copy it).
 RULES_BEGIN = "<!-- AUTO:RULES -->"
 RULES_END = "<!-- /AUTO:RULES -->"
-META_BEGIN = "<!-- AUTO:META -->"
-META_END = "<!-- /AUTO:META -->"
-
-
-def render_meta(rows=None):
-    """Meta rules -> the `AUTO:META` machine block. **Pure function**.
-
-    Same reasoning as `render_rules`: this block is **fixed to one language**
-    and reconciled byte-for-byte by `facts.py --check`. A block that followed
-    `REFLECT_LANG` would make `--check` non-convergent across languages.
-
-    PINNED: byte-exact, English, not language-following.
-    """
-    rows = META if rows is None else rows
-    lines = [META_BEGIN,
-             ("> Rendered by `zreflect/facts.py --render-doc` from the `META` table in "
-              "`zreflect/doc.py`; **do not hand-edit**."),
-             ("> These decide what may enter the rule table. They have no judging "
-              "command by construction -- a `witness` (where one exists) shows the "
-              "accident class is still possible; it is not replayed."),
-             "",
-             "| id | meta rule | why | witness |",
-             "|---|---|---|---|"]
-    for m in sorted(rows, key=lambda x: x.id):
-        lines.append("| `%s` | %s | %s | %s |"
-                     % (m.id, m.text, m.why,
-                        "`%s`" % m.witness if m.witness else "-"))
-    lines += ["", "%d meta rules -- the admission criteria for the table below." % len(rows),
-              META_END]
-    return "\n".join(lines)
-
 
 
 def render_rules(rows=None):
@@ -540,61 +469,25 @@ def _cases():
         # (3) empty input must be reported
         ("★ doc.empty_table_has_no_problems_but_cannot_be_trusted",
          lambda: _cmd_shape_problems([]) == [] and _is_empty_guard_green(())),
-        # (4) meta rules: the admission criteria for the table above are data
-        # too. Without these, `AUTO:META` is a block nothing compares to
-        # anything -- the exact disease it was introduced to cure.
-        ("doc.meta_well_formed", lambda: _meta_problems() == []),
-        ("doc.meta_ids_unique",
-         lambda: len({m.id for m in META}) == len(META)),
-        ("doc.meta_ids_disjoint_from_rules",
-         lambda: not ({m.id for m in META} & {r.id for r in RULES})),
-        ("★ doc.meta_render_has_markers",
-         lambda: META_BEGIN in render_meta() and META_END in render_meta()),
-        ("★ doc.meta_missing_why_is_rejected",
-         lambda: _meta_problems([Meta("x", "t", "  ", None)]) != []),
-        ("★ doc.meta_missing_text_is_rejected",
-         lambda: _meta_problems([Meta("x", " ", "why", None)]) != []),
-        ("★ doc.meta_bad_id_is_rejected",
-         lambda: _meta_problems([Meta("Bad-Id", "t", "why", None)]) != []),
-        # An absent witness must print as `-`, never as an empty cell: an empty
-        # cell reads as "not applicable", which is a different claim.
-        ("doc.meta_absent_witness_prints_dash",
-         lambda: "| - |" in render_meta([Meta("x", "t", "why", None)])),
-        # and a present witness must be rendered as a command, not prose
-        ("doc.meta_present_witness_is_backticked",
-         lambda: "| `python3 x.py` |" in render_meta([Meta("x", "t", "why", "python3 x.py")])),
-        # A hand-edited render block must not survive: this is the criterion
-        # that makes "do not hand-edit" a threat instead of a request.
-        ("★ doc.hand_edited_meta_block_is_detected",
-         lambda: _hand_edit_detected()),
-        # (5) Prose must not promise a feature the table does not have.
-        # `PRINCIPLES.md` told readers an ADVISORY marker and a "why" column
-        # existed; `Rule` has three fields and neither. Nothing compared the
-        # prose to the data, so it survived -- this is that comparison.
-        ("doc.no_claim_outlives_its_feature",
-         lambda: claim_problems() == [] and _false_claims_still_written()),
-        # red path: an unbuilt claim with no note is a silent lie -- recorded
-        # as never-built, with nothing saying so
-        ("★ doc.unbuilt_claim_without_note_is_reported",
-         lambda: claim_problems([Claim("ghost", "t", "PRINCIPLES.md", False,
-                                       "  ", ("NOTHING",))])
-         == [("ghost", "PRINCIPLES.md", "unbuilt claim without a note")]),
-        # green path: a well-recorded unbuilt claim reports nothing; what it
-        # forbids is the prose reviving it, tested by
-        # `doc.marker_outside_block_is_caught`
-        ("doc.recorded_unbuilt_claim_is_honest",
-         lambda: claim_problems([Claim("ghost", "t", "PRINCIPLES.md", False,
-                                       "never built", ("NOTHING",))]) == []),
-        # A claim that DOES hold is not a problem -- otherwise the criterion
-        # would forbid ever describing the module accurately.
-        ("doc.true_claim_passes",
-         lambda: claim_problems([Claim("real", "t", "PRINCIPLES.md", True,
-                                       "", ("X",))]) == []),
-        # The scan must ignore rendered blocks (they are produced from here) and
-        # must still catch the same word written by hand outside them.
-        ("★ doc.marker_outside_block_is_caught",
-         lambda: _marker_outside_block_caught()),
-        # (6) A doc must not point readers at a symbol that does not exist.
+        # (4) The principles added from the retired META table: their cmds are
+        # real criteria, so each has teeth pinned here (a cmd that can only
+        # pass is not a criterion).
+        # `ran_is_not_passed` green side runs off_reason_problems on a
+        # well-declared gate; here the same call with the declaration dropped
+        # must report -- otherwise the cmd could rot into an always-green.
+        ("★ doc.ran_is_not_passed_can_red",
+         lambda: [p.code for p in _off_reason_problems_of(_CALLS_OFF_SRC)]
+         == ["registry.off_without_reason"]
+         and _off_reason_problems_of(_DECLARED_SRC) == []),
+        # `one_off_decisions_do_not_land`: the CJK round words are spelled by
+        # codepoint (this file is inside check_i18n's scan surface), so the
+        # pattern itself is verified against a planted hit, not trusted.
+        ("★ doc.round_narrative_pattern_has_teeth",
+         lambda: _round_pattern_hits(_ROUND_SAMPLE)
+         == ["".join(chr(c) for c in (0x8FD9, 0x8F6E))]
+         and _round_pattern_hits("round N happened") == ["round N"]
+         and _round_pattern_hits("clean prose") == []),
+        # (5) A doc must not point readers at a symbol that does not exist.
         ("doc.no_dangling_symbol_references",
          lambda: dangling_references() == []),
         ("★ doc.dangling_reference_is_caught",
@@ -624,94 +517,49 @@ def _dangling_reference_caught():
         return dangling_references(root) == []
 
 
-def _marker_outside_block_caught():
-    """`_outside_blocks` must strip rendered blocks and keep hand-written prose."""
-    doc_text = ("prose before\n"
-                "<!-- AUTO:META -->\nADVISORY\n<!-- /AUTO:META -->\n"
-                "prose after\n")
-    stripped = _outside_blocks(doc_text)
-    return "ADVISORY" not in stripped and "prose after" in stripped
+# -- Teeth fixtures for the principles merged in from the retired META table --
+
+# A gate source that calls `off()` with **no declared reason** (the red input)
+# and one with a declared reason (the green input). Used by
+# `doc.ran_is_not_passed_can_red` against `criteria.off_reason_problems`.
+_CALLS_OFF_SRC = "def run(argv):\n    off(\"x\")\n"
+_DECLARED_SRC = ("off_reason=a real justification long enough\n" + _CALLS_OFF_SRC)
+
+# The round-narrative vocabulary, spelled by codepoint: this file is inside
+# check_i18n's scan surface, so a CJK literal here would be judged as the core
+# speaking human. Same words as `one_off_decisions_do_not_land`'s cmd.
+_CN_ROUND = ("".join(chr(c) for c in (0x8FD9, 0x8F6E)),
+             "".join(chr(c) for c in (0x672C, 0x8F6E)))
+_ROUND_SAMPLE = "changed this way in " + _CN_ROUND[0]
+_ROUND_RE = "|".join(_CN_ROUND + (r"round\s+N",))
 
 
-def _hand_edit_detected():
-    """Rendering twice from the same table is byte-identical; a block that
-    differs from `render_meta()` is hand-edited (this is what `--check` compares)."""
-    first, second = render_meta(), render_meta()
-    tampered = first.replace("hard_needs_criterion", "hard_needs_criterion_HAND")
-    return first == second and tampered != render_meta()
+def _off_reason_problems_of(src):
+    """`criteria.off_reason_problems` over one fake gate source (seam for the
+    red-side pin of `ran_is_not_passed`)."""
+    import criteria  # noqa: PLC0415
+    return criteria.off_reason_problems([{"file": "check_x.py"}],
+                                        sources={"check_x.py": src})
 
 
-# -- Claims about this table, made in prose elsewhere ----------------------
+def _round_pattern_hits(text):
+    """Round-narrative hits in one text (same pattern as
+    `one_off_decisions_do_not_land`'s cmd -- kept adjacent so a change to the
+    cmd's vocabulary must touch both, and the pin below catches a drift)."""
+    import re  # noqa: PLC0415
+    return re.findall(_ROUND_RE, text)
+
+
+# -- Claims about this table, made in prose elsewhere ------------------------
 #
 # `PRINCIPLES.md` used to tell readers that an `ADVISORY` marker and a "why"
 # column exist, that a row flips between `advisory` and `gate`. `Rule` has
 # three fields and no such marker -- the prose described a feature that was
-# never built. Nothing caught it, because prose about a data table is not
-# compared to that data table by anything.
-#
-# The cure is the same as everywhere else in this repo: make the claim data,
-# then compare. Each entry is (the claim, where it is written, whether it still
-# holds). A claim that no longer holds fails the gate; delete the claim or build
-# the feature, but do not let prose promise what the table cannot do.
-CLAIMS = (
-    # `ADVISORY` is the whole vocabulary of this claim; if the word returns to
-    # PRINCIPLES.md, someone is describing the marker again.
-    Claim("advisory_marker",
-          "a rule row can be marked ADVISORY instead of gate",
-          "PRINCIPLES.md",
-          False,   # never built: Rule has no such field
-          "there is no advisory marker; a rule without a criterion is not a rule "
-          "and does not enter the table at all (see META.hard_needs_criterion)",
-          ("ADVISORY",)),
-)
-
-
-def claim_problems(claims=None):
-    """Claims marked `holds=False` are lies still owed a fix.
-
-    Returns a tuple list (empty = honest). This module is the **data layer**: it
-    imports no i18n (a `M(...)` call here would make the rule table depend on a
-    language pack, and the rules must read the same in every language).
-
-    `holds=False` is not "an open task": it is the **permanent record that the
-    feature was never built**. What it forbids is the *prose* reviving the
-    claim, and that is `_false_claims_still_written()`'s job. So this function
-    reports nothing for a well-recorded unbuilt claim -- an unbuilt claim that
-    stays unbuilt is honest, an unbuilt claim that is described as existing is
-    the lie.
-    """
-    rows = CLAIMS if claims is None else claims
-    out = []
-    for c in rows:
-        if not c.holds and not c.note.strip():
-            out.append((c.id, c.where, "unbuilt claim without a note"))
-    return out
-
-
-def _false_claims_still_written():
-    """A claim marked `holds=False` must have no trace left in the named document.
-
-    Keyword-based on purpose: the point is "did the phrase come back", not
-    grammar. `markers` is the vocabulary the claim would use if restated.
-    """
-    import os  # noqa: PLC0415
-    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    for c in CLAIMS:
-        if c.holds:
-            continue
-        path = os.path.join(base, c.where)
-        if not os.path.exists(path):
-            continue
-        text = open(path, encoding="utf-8").read()
-        # Only the **rendered block is exempt**: that text is produced from this
-        # module, so a mention there is the source talking, not prose promising a
-        # feature. Everything outside the machine blocks is hand-written prose and
-        # must not revive the claim.
-        prose = _outside_blocks(text)
-        if any(m in prose.upper() for m in c.markers):
-            return False
-    return True
-
+# never built. The claim-matching machinery that watched for the phrase coming
+# back was retired (it had no consumer outside its own selftest); the single
+# real entry it ever carried lives on as retraction R-021 in `retractions.json`,
+# which gates the same regression: the retracted phrase may not reappear in a
+# living-state document without a correction marker.
 
 # Documents whose `module.symbol` references are checked. Only the docs an agent
 # is told to read: a reference here is an instruction to go look at something.
@@ -772,28 +620,6 @@ def dangling_references(root=None):
             continue
         out += [(rel, mod, sym)
                 for mod, sym in _refs_in_text(open(path, encoding="utf-8").read(), mods)]
-    return out
-
-
-def _outside_blocks(text):
-    """The document with every `AUTO:` machine block removed."""
-    import re  # noqa: PLC0415
-    return re.sub(r"<!-- AUTO:[A-Z]+ -->.*?<!-- /AUTO:[A-Z]+ -->", "", text,
-                  flags=re.S)
-
-
-def _meta_problems(rows=None):
-    """Shape criteria for one meta-rule set: id / text / why must be non-empty,
-    ids must be lowercase-dotted like rule ids."""
-    import re  # noqa: PLC0415
-    out = []
-    for m in (META if rows is None else rows):
-        if not re.fullmatch(r"[a-z][a-z0-9_]*", m.id):
-            out.append((m.id, "bad_id"))
-        if not m.text.strip():
-            out.append((m.id, "empty_text"))
-        if not m.why.strip():
-            out.append((m.id, "empty_why"))
     return out
 
 

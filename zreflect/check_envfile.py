@@ -55,13 +55,21 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gate  # noqa: E402
 import knobs  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
 from i18n import M  # noqa: E402
 from knobs import REGISTRY  # noqa: E402
 
-ENV_FILE = (os.environ.get("REFLECT_ENV_FILE", "Einfacht.env")
-            .strip() or "Einfacht.env")
+
+# The carrier's **name** for messages resolves through `gate.env_carrier()` --
+# the single origin of the resolution order (hooks dir first, repo root
+# second). This file used to keep its own copy (`ENV_FILE` frozen at import
+# time + a private `_find_env_file`), already forked from the gate's
+# call-time behavior.
+def _carrier_name():
+    p = gate.env_carrier()
+    return os.path.basename(p) if p else None
 
 _EXPORT_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 # The explicit parentheses only spell out the precedence (`^a|b$` alternation
@@ -208,10 +216,10 @@ def _export_problems(name, value, registry, file_exists, dir_exists):
     return out
 
 
-def _syntax_problems(syntax_ok):
+def _syntax_problems(syntax_ok, name):
     """sh -n verdict → problems: False = file syntax broken; None = the instrument itself broke."""
     if syntax_ok is False:
-        return [M("envfile.syntax_broken", name=ENV_FILE)]
+        return [M("envfile.syntax_broken", name=name)]
     if syntax_ok is None:
         return [M("envfile.syntax_tool_broken")]
     return []
@@ -228,7 +236,7 @@ def problems(exports, registry, file_exists, dir_exists, syntax_ok=None,
     `syntax_ok` = the sh -n verdict (True / False; None = the instrument itself can't run).
     """
     if not exports:
-        return [M("envfile.no_effective_export", name=ENV_FILE)]
+        return [M("envfile.no_effective_export", name=_carrier_name())]
     # Phantom / typo audit (scan surface) + per-export carrier criteria + sh syntax.
     out = _phantom_token_problems(scanned, registry)
     for name in sorted(exports):
@@ -236,28 +244,21 @@ def problems(exports, registry, file_exists, dir_exists, syntax_ok=None,
             continue                    # non-knob exports are not this gate's business
         out += _export_problems(name, exports[name], registry,
                                 file_exists, dir_exists)
-    return out + _syntax_problems(syntax_ok)
-
-
-def _find_env_file():
-    """Same resolution order as the plugin: hooks directory first, repo root second."""
-    for d in (repo("reflect-hooks"), repo()):
-        p = os.path.join(d, ENV_FILE)
-        if os.path.exists(p):
-            return p
-    return None
+    return out + _syntax_problems(syntax_ok, _carrier_name())
 
 
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    p = _find_env_file()
+    p = gate.env_carrier()
     if p is None:
         # ⚠️ C3: the off early-return **only skips the carrier checks** -- roster
         # self-consistency (phantom knobs / README phantoms) has nothing to do
         # with whether the carrier exists; it moved to knobs.py and is funneled
         # through registry.problems() (while it was welded here, this repo had
         # no Einfacht.env => it never executed; hit in practice).
-        return off(M("envfile.off", name=ENV_FILE))
+        return off(M("envfile.off",
+                     name=(os.environ.get("REFLECT_ENV_FILE", "Einfacht.env")
+                           .strip() or "Einfacht.env")))
     try:
         with open(p, encoding="utf-8", errors="replace") as fh:
             text = fh.read()

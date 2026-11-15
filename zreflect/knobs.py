@@ -336,6 +336,18 @@ def questions_path(repo_root=None):
     return os.path.join(root, questions_dir())
 
 
+def history_secs():
+    """The append-only history section numbers (`REFLECT_HISTORY_SECS`).
+
+    Two reconcilers (`check_stale`, `check_retractions`) previously each wrote
+    the same "split the env var, drop empties" parse as a module-level constant
+    -- a second producer of the same parsed value with no reconciler between
+    them. The parse now lives here once; the gates read it through this
+    function so the semantics cannot drift apart again.
+    """
+    return tuple(s for s in os.environ.get("REFLECT_HISTORY_SECS", "").split(",") if s)
+
+
 def _text_of(name, files=None):
     """Read a file's text. Returns `None` = absent / unreadable (**not the empty
     string**).
@@ -405,6 +417,40 @@ def declared_vs_read_problems(gates, sources=None):
         if ghost:
             out.append(M("knobs.declared_not_read",
                          file=g["file"], knobs=", ".join(ghost)))
+    return out
+
+
+def kind_vocabulary_problems(existence_kinds=None, registry=None):
+    """C4 reconciliation (5): the kind vocabulary's **two producers** must agree.
+
+    The kind of every knob lives twice: in `REGISTRY` (the declared half) and
+    in `check_envfile._existence_targets` (the half that decides whether a
+    knob's default gets an existence check). Nothing compared them -- register
+    a new kind and forget the other half, and the existence criterion **silently
+    skips** every knob of that kind (the silent degradation this repo exists to
+    eliminate). `KINDS` (the vocabulary tuple in this file) is not one of the
+    two producers -- it is a third copy and is not consulted here.
+
+    `existence_kinds` is injectable (fake vocabulary for self-evidence); the
+    default pins the **half that does the checking** (the kinds
+    `check_envfile._existence_targets` recognizes -- see its `return None`
+    arm) so a new registered kind without a matching arm reports here.
+
+    ⚠️ `number` / `flag` / `value` are legal roster kinds whose existence
+    check is **vacuously absent** (`_existence_targets` returns `None` by
+    design, not by omission) -- they are listed explicitly rather than
+    inverted, so "the roster grew a kind nobody handles" reports while
+    "the checking half learned an extra kind" stays a positive control,
+    not a report.
+    """
+    reg = REGISTRY if registry is None else registry
+    out = []
+    if existence_kinds is None:
+        existence_kinds = ("file", "list", "dir", "number", "flag", "value")
+    used = {kind for kind, _d, _w in reg.values()}
+    unknown = sorted(used - set(existence_kinds))
+    for kind in unknown:
+        out.append(M("knobs.kind_unhandled", kind=kind))
     return out
 
 
@@ -1382,6 +1428,25 @@ def _cases_registry(fx):
     # to coexist (`== "off"` and `in ("1","true","yes")`); the latter was
     # case-sensitive -- `TRUE` silently did nothing.
     ("★ knobs.flag_three_states", lambda: _flag_case()),
+    # C4 reconciliation (5): REGISTRY's kind half vs check_envfile's existence
+    # half -- previously nothing compared them, and a new kind registered
+    # without a matching `_existence_targets` arm would silently skip the
+    # existence check for every knob of that kind.
+    # ⚠️ The assertion is inlined (not a helper call): `never_falsifiable`
+    # only scans the lambda's AST -- a helper `return True` would be invisible.
+    ("knobs.kind_vocabulary_clean",
+     lambda: kind_vocabulary_problems() == []),
+    ("★ knobs.kind_unhandled",
+     lambda: [p.code for p in kind_vocabulary_problems(
+         registry={"X": ("ghostkind", "",
+                         _Semantic("knobs.sem.reflect_doc"))})
+     ] == ["knobs.kind_unhandled"]
+     and [p.params for p in kind_vocabulary_problems(
+         registry={"X": ("ghostkind", "",
+                         _Semantic("knobs.sem.reflect_doc"))})
+     ] == [{"kind": "ghostkind"}]),
+    ("knobs.kind_vocabulary_empty_registry",
+     lambda: kind_vocabulary_problems(registry={}) == []),
     ]
 
 

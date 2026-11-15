@@ -54,15 +54,26 @@ from i18n import M  # noqa: E402
 from ledger import age_days, facts_of, load_or_fatal, value_of  # noqa: E402
 from living import CITE_RE, DATED_RECORD, living_lines  # noqa: E402
 
-# **Not resolved at module level**: `knobs.docs_names()` is the single source
-# of truth (defaults live in the registry), and a module-level constant would
-# freeze it at import time -- neither the selftest nor the renamed-doc fixtures
-# could change it afterwards.
-# Warning: a five-name literal was once handwritten here and drifted away from
-# the registry's six names (PRINCIPLES.md was the missing one).
-HIST_SECS = tuple(s for s in os.environ.get("REFLECT_HISTORY_SECS", "").split(",") if s)
-RETIRED = tuple(s for s in os.environ.get("REFLECT_RETIRED", "").split(",") if s)
+# **Resolved at import time via the knob helper**: the parse lives in
+# `knobs.history_secs()` (the single producer -- `check_retractions` reads the
+# same helper), so the two gates cannot drift apart on "what counts as a
+# history section".
+HIST_SECS = knobs.history_secs()
 STALE_DAYS_RAW = os.environ.get("REFLECT_STALE_DAYS", "").strip()
+
+
+def _retired():
+    """The retired-name list (`REFLECT_RETIRED`, same parse shape as
+    `knobs.history_secs()`; unset => empty => the rule stands down)."""
+    return tuple(s for s in os.environ.get("REFLECT_RETIRED", "").split(",") if s)
+
+
+# **None = the knob is unset** (a real decision, distinct from an empty list):
+# `run()` may say "the retired-name rule is declared off" only when the knob is
+# genuinely unset -- collapsing unset and empty would let `REFLECT_RETIRED=`
+# silence the declaration instead of stating it. Resolved by the call-time
+# helper (`_retired()`), never read as a list here.
+RETIRED = None if os.environ.get("REFLECT_RETIRED") is None else _retired()
 
 
 def _stale_days():
@@ -206,7 +217,7 @@ def _retired_name_problems(docs, hist, retired):
     return out
 
 
-def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
+def problems(ledger, docs, retired=None, hist_secs=None, stale_days=None):
     """Return the problem list (pure function: the selftest depends on that).
     `docs` = {file name: body}.
 
@@ -216,6 +227,9 @@ def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
     `hist_secs=None` => use the module-level `REFLECT_HISTORY_SECS`; the
     selftest passes it explicitly, which is the only way to test it.
     `stale_days=None` => use `REFLECT_STALE_DAYS` (unset => age rule off).
+    `retired=None` => use `REFLECT_RETIRED` (unset => retired-name rule off;
+    the `RETIRED` module constant is None = unset, so `run` can tell
+    "declared off" apart from an empty list).
     """
     hist = HIST_SECS if hist_secs is None else hist_secs
     f = facts_of(ledger)
@@ -224,9 +238,10 @@ def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
     if not docs:
         return [M("stale.no_docs")]
     sd = _stale_days() if stale_days is None else stale_days
+    retired_names = _retired() if retired is None else retired
     return (_sha_assertion_problems(f, docs, hist)
             + _stale_age_problems(f, sd)
-            + _retired_name_problems(docs, hist, retired))
+            + _retired_name_problems(docs, hist, retired_names))
 
 
 def _load_docs(names):
@@ -262,15 +277,16 @@ def run(argv):
     if not os.path.exists(repo(facts_name)):
         return fatal(M("stale.ledger_missing", name=facts_name))
     probs = problems(load_or_fatal(repo(facts_name)), docs)
+    retired = _retired() if RETIRED is None else RETIRED
     if not probs:
-        if not RETIRED:
+        if not retired:
             print(M("stale.retired_rule_off"), file=sys.stderr)
         if _stale_days() is None:
             print(M("stale.age_rule_off"), file=sys.stderr)
     rc = finish(M("stale.title"), probs,
                 M("stale.ok", count=len(docs),
-                  declared=M("stale.retired_none") if not RETIRED
-                  else M("stale.retired_count", count=len(RETIRED))))
+                  declared=M("stale.retired_none") if not retired
+                  else M("stale.retired_count", count=len(retired))))
     if rc == 1 and "--list" in argv:
         return 0                      # --list lists only, never changes, always 0 (manual patrol mode)
     return rc

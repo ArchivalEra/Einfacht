@@ -23,7 +23,6 @@
  "facts.init_kept": "already exists, left alone: %(name)s",
  "facts.init_next": "next: python3 zreflect/facts.py (measure) → --render-doc <your state doc>",
  "facts.ledger_missing": "fact ledger (%(name)s) is missing. Run python3 zreflect/facts.py to measure first.",
- "facts.ledger_unreadable": "ledger unreadable: `%(path)s` (%(error)r) — a corrupt file is not 'no ledger'; it must be fixed",
  "facts.ledger_why": "fact ledger: each entry = a **measured** value + replay command + source. Do not edit by hand; run zreflect/facts.py.",
  "facts.marker_swallowed_body": "%(path)s has the marker literal mixed into the prose (%(begin)s) — rendering would swallow the block; refusing to write; markers may appear only at the block's ends",
  "facts.markers_missing_check": "%(path)s is missing the %(begin)s / %(end)s markers",

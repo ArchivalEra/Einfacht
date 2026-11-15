@@ -1,6 +1,7 @@
 {
  "knobs.dead_default": "`%(file)s` definiert `%(name)s`, nutzt es aber **nie** — ein deklarierter Standardwert ohne Wirkung ist schlimmer als keiner (man glaubt, es sei konfiguriert)",
  "knobs.declared_not_read": "`%(file)s` deklariert, %(knobs)s zu konsumieren, aber der Quelltext liest diese Knöpfe nie — Deklaration widerspricht der Implementierung (die AUTO:GATES-Tabelle würde lügen)",
+ "knobs.kind_unhandled": "kind `%(kind)s` steht in der Knopf-Liste, aber das Existenzkriterium des env-file-Tors kennt es nicht — Knöpfe dieses kinds bekommen stumm keine Existenzprüfung (das kind in beiden Erzeugern registrieren oder nur einen Erzeuger lassen)",
  "knobs.module_only": "knobs ist ein Modul (von den Toren konsumiert); führe --selftest für seinen Selbsttest aus.",
  "knobs.pack_extra_keys": "Paket %(lang)s hat Schluessel, die %(reference)s (Referenzpaket) nicht hat -- Schluesselmengen weichen ab: ist %(lang)s eine deklarierte Serviersprache (REFLECT_LANGS), saehen deren Leser nackte Codes; Pakete ausserhalb von REFLECT_LANGS sind Selbsttest-Proben, Schluesseldrift blockiert nicht: %(keys)s",
  "knobs.pack_missing_code": "Diese Codes fehlen im %(lang)s-Paket (%(count)d) -- %(lang)s ist eine deklarierte Serviersprache (REFLECT_LANGS), ihre Leser saehen nackte Codes: %(codes)s",

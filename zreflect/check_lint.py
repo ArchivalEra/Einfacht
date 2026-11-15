@@ -55,7 +55,7 @@ from i18n import M  # noqa: E402
 CONFIG = "ruff.toml"
 
 
-def suite_files(repo_root=None):
+def suite_files():
     """Paths of the **suite's own** `.py` files (those for which `declares_itself()`
     is true).
 
@@ -70,10 +70,9 @@ def suite_files(repo_root=None):
     `GATE = ...`), not a directory name -- discovery-based, the same yardstick as
     `registry.modules()` / `gates()`.
     """
-    root = repo_root or gate.GATE_REPO
     out = []
     for sub in ("zreflect", "reflect-hooks"):
-        base = os.path.join(root, sub)
+        base = os.path.join(gate.GATE_REPO, sub)
         if not os.path.isdir(base):
             continue
         for rel, _src in gate.py_sources(base):
@@ -83,17 +82,18 @@ def suite_files(repo_root=None):
     return sorted(out)
 
 
-def ruff_argv(files=None):
+def ruff_argv():
     """The argv for running ruff (`sys.executable -m ruff`: cross-platform and
-    identical to the pip-installed one).
+    identical to the pip-installed one), targeting **the suite's own files**
+    (never the whole repo).
 
-    With `files` given, only those are checked; without it, **the suite's own
-    files** (not the whole repo).
+    ⚠️ Empty target list => the caller must go `off`, not fall back to
+    `ruff check .` -- the fallback re-opens the whole-repo wound recorded in
+    `suite_files` (149 host findings). A suite with zero declared files has
+    nothing to audit; pretending the whole repo is the target is exactly the
+    mis-audit, one decision later.
     """
-    targets = list(files) if files is not None else suite_files()
-    if not targets:
-        return [sys.executable, "-m", "ruff", "check",
-                "--output-format=concise", "."]
+    targets = suite_files()
     return [sys.executable, "-m", "ruff", "check", "--output-format=concise",
             *targets]
 
@@ -145,6 +145,11 @@ def run(argv=None):
         rc, _out = subprocess_ruff_probe()
         if rc != 0:
             return off(M("lint.off", module="ruff"))
+    if not suite_files():
+        # Zero declared suite files => nothing to audit. Never fall back to
+        # `ruff check .`: that fallback re-opens the whole-repo mis-audit
+        # recorded in `suite_files` (149 host findings on a real integration).
+        return off(M("lint.off_no_targets"))
     try:
         p = subprocess.run(ruff_argv(), cwd=gate.GATE_REPO,
                            capture_output=True, text=True, timeout=300,

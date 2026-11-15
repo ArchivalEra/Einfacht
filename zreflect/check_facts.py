@@ -20,6 +20,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate  # noqa: E402
+import knobs  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M, load_pack  # noqa: E402
 from knobs import a_pack_lang  # noqa: E402
@@ -34,22 +35,27 @@ from living import (
 )
 from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
 
-BARE_MIN = 100   # default bare-number threshold: integers below it are not checked (1/2/3 are everywhere; checking them is all noise)
 FENCE_RE = re.compile(r"^\s*```")
 INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 
 
 def _bare_min():
-    """Bare-number threshold (issue #3 (4)): configurable via `REFLECT_NAKED_MIN`; bad value => default + warning."""
+    """Bare-number threshold (issue #3 (4)): configurable via `REFLECT_NAKED_MIN`; bad value => default + warning.
+
+    The default comes from the knob roster (`knobs.REGISTRY`), not a local
+    literal: a second producer of the same number is how the two copies drift
+    apart (the `_docs_to_scan` shape below is the same cure).
+    """
     raw = os.environ.get("REFLECT_NAKED_MIN", "").strip()
+    default = int(knobs.REGISTRY["REFLECT_NAKED_MIN"][1])
     if not raw:
-        return BARE_MIN
+        return default
     try:
         return int(raw)
     except ValueError:
-        print("⚠ %s" % M("facts.bad_bare_min", value=raw, default=BARE_MIN),
+        print("⚠ %s" % M("facts.bad_bare_min", value=raw, default=default),
               file=sys.stderr)
-        return BARE_MIN
+        return default
 
 
 def _number_lines(doc_text):
@@ -255,7 +261,6 @@ def _docs_to_scan(argv):
     raw = os.environ.get("REFLECT_DOCS", "").strip()
     if raw:
         return [x.strip() for x in raw.split(",") if x.strip()]
-    import knobs  # noqa: PLC0415
     return [x.strip() for x in knobs.REGISTRY["REFLECT_DOCS"][1].split(",")
             if x.strip()]
 
@@ -506,7 +511,7 @@ def _cases():
 
 
 GATE = meta("Facts gate", "block agreement / bare numbers / bad citations",
-            knobs=("REFLECT_FACTS", "REFLECT_DOC", "REFLECT_NAKED_MIN"), name_dependent=True)
+            knobs=("REFLECT_FACTS", "REFLECT_NAKED_MIN"), name_dependent=True)
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], M("gate.title.facts"),

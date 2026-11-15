@@ -6,6 +6,7 @@
  "lint.no_output": "ruff exited %(return_code)s with no located finding — 'the tool broke' must be distinguishable from 'no problems' (%(detail)s)",
  "lint.off": "static machine check: %(module)s not installed ⇒ explicitly off (external tool, not a dependency of this repo)",
  "lint.off_config": "static machine check: this repo has no `%(path)s` ⇒ explicitly off (this criteria set was not chosen)",
+ "lint.off_no_targets": "static machine check: the suite has no declared .py files (no `MODULE =` / `GATE =` declaration anywhere) ⇒ nothing to audit ⇒ explicitly off (whole-repo fallback is forbidden, see suite_files)",
  "lint.ok": "static machine check clean (criteria: `%(config)s`)",
  "lint.title": "Static machine check (ruff)",
  "lint.tool_broken": "ruff cannot run: %(error)r"

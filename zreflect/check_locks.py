@@ -8,11 +8,11 @@ fall back to a lock list of **URL + file + sha256**. This gate verifies that
 list:
 
     { "locked": [
-        { "name": "glpk", "version": "5.0",
+        { "name": "glpk",
           "url": "https://ftp.gnu.org/gnu/glpk/glpk-5.0.tar.gz",
           "file": "third_party/glpk-5.0.tar.gz",      # repo-root-relative or absolute
           "sha256": "..." },                           # required in file form; optional in dir form
-        { "name": "lapack", "version": "3.4.2", "file": ".../lapack-3.4.2",
+        { "name": "lapack", "file": ".../lapack-3.4.2",
           "form": "dir", "optional": true } ] }
 
 - File form: **sha256 is required and must match** (both missing and mismatched
@@ -169,15 +169,15 @@ def _cases():
     g = os.path.join(d, "glpk.tar.gz")
     lp = os.path.join(d, "lapack-3.4.2")
     spec = {"locked": [
-        {"name": "glpk", "version": "5.0", "url": "u", "file": g, "sha256": good},
-        {"name": "lapack", "version": "3.4.2", "url": "u", "file": lp, "form": "dir"},
-        {"name": "mesa", "version": "x", "url": "u", "file": "nope.tar.xz", "optional": True},
+        {"name": "glpk", "url": "u", "file": g, "sha256": good},
+        {"name": "lapack", "url": "u", "file": lp, "form": "dir"},
+        {"name": "mesa", "url": "u", "file": "nope.tar.xz", "optional": True},
     ]}
-    bad_hash = {"locked": [{"name": "glpk", "version": "5.0", "url": "u",
+    bad_hash = {"locked": [{"name": "glpk", "url": "u",
                             "file": g, "sha256": "0" * 64}]}
-    missing = {"locked": [{"name": "glpk", "version": "5.0", "url": "u", "file": "nope.tar.gz",
+    missing = {"locked": [{"name": "glpk", "url": "u", "file": "nope.tar.gz",
                            "sha256": good}]}
-    no_sha = {"locked": [{"name": "glpk", "version": "5.0", "url": "u", "file": g}]}
+    no_sha = {"locked": [{"name": "glpk", "url": "u", "file": g}]}
     empty = {"locked": []}
     return [
         ("locks.resolve_spec",
