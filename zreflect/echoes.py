@@ -7,11 +7,10 @@ The suite has exactly three places an assertion may live:
     principle   a rule in `RULES`       (zreflect/doc.py)
     question    an open question        (questions/*.md)
 
-and the discipline is "one fact, one carrier". The existing criterion for that
-(`doc.form_collision_problems`) compares judging commands **byte for byte**,
-which catches the crude case (two rules with the same cmd) and misses the real
-one: the same sentence written twice with a few words changed. A paraphrase is
-exactly what a hand-copy looks like after one edit.
+and the discipline is "one fact, one carrier". This module is the criterion for
+that, and it is the **only** one: a text-similarity comparison that catches the
+same sentence written twice with a few words changed -- which is exactly what a
+hand-copy looks like after one edit.
 
 ## Why text ratio alone is not the criterion
 

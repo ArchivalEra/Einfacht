@@ -20,7 +20,6 @@
 | `no_echo_between_carriers` | a near-copy of an assertion in two carriers is a hand-copy: one fact lives in one carrier, and a quotation must name its source | `python3 -c "import glob,sys;sys.path.insert(0,'zreflect');import doc,echoes,ledger;f=(echoes.forms_from_rules(doc.RULES)+echoes.forms_from_ledger(ledger.load('FACTS.json'),doc.RULES)+echoes.forms_from_questions(sorted(glob.glob('questions/*.md'))));h=echoes.echo_problems(f);[print('echo=%s~%s(%.3f)' % (a,b,r)) for r,a,b in h] or print('echoes=0 of %d forms' % len(f));sys.exit(1 if h else 0)"` |
 | `no_retired_names` | retired names must not appear as current state; sha provenance and age are checkable | `python3 zreflect/check_stale.py` |
 | `number_once` | each number is produced once and re-reconciled every commit: documents cite it as [[key]], never hand-copy it | `python3 zreflect/check_facts.py` |
-| `one_form_per_fact` | a fact exists as state, as a principle, or as an open question -- never in two of them at once | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;c=doc.form_collision_problems();[print('collision=%s' % i) for _, ids in c for i in ids] or print('forms=%d' % len(doc.RULES));sys.exit(1 if c else 0)"` |
 | `one_off_decisions_do_not_land` | a one-off decision ('why this round changed this way') is not recorded in a document; it belongs to the commit message | `python3 -c "import os,re,sys;p='|'.join([''.join(chr(c) for c in (0x8FD9,0x8F6E)),''.join(chr(c) for c in (0x672C,0x8F6E)),r'round\s+N']);hit=[(f,m.group()) for f in ('PRINCIPLES.md','STATE.md','AGENTS.md') if os.path.exists(f) for m in [re.search(p,open(f,encoding='utf-8').read())] if m];print('round_narrative=%d' % len(hit));sys.exit(1 if hit else 0)"` |
 | `only_measured` | numbers/behavior trust measurement only; every fact must carry a re-run command | `python3 -c "import json,sys;d=json.load(open('FACTS.json', encoding='utf-8'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
 | `open_questions_settle` | every unresolved open question must carry a runnable settler | `python3 zreflect/check_questions.py` |
@@ -31,5 +30,5 @@
 | `three_readmes` | the three-language READMEs are three copies of one assertion: change one, change all three in the same batch | `python3 zreflect/check_readme_sync.py` |
 | `zero_language` | zero language in the core: user-visible messages go through M(code); machine contracts are untranslatable by construction | `python3 zreflect/check_i18n.py` |
 
-21 principles -- each with a judging command that **really runs**.
+20 principles -- each with a judging command that **really runs**.
 <!-- /AUTO:RULES -->
