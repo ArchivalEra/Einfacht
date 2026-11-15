@@ -1,0 +1,5 @@
+{
+  "lines": {"main": {"site": "build/site", "artifacts": "build/artifacts", "container": "demo", "fork_pin_ref": "upstream/demo"}},
+  "active": "main",
+  "stamps": {"site": {"value": "site-v2", "cmd": "python3 -c \"print('site-v1')\""}}
+}

@@ -40,6 +40,7 @@
  "knobs.sem.reflect_retired": "list of retired component names; empty = that rule is explicitly off",
  "knobs.sem.reflect_retractions": "the retractions ledger",
  "knobs.sem.reflect_snapshot_root": "source dir scanned by the snapshot gate; empty = scan only the suite's own zreflect/ (name your dir to audit your own code)",
+ "knobs.sem.reflect_secrets": "secret-scan spec with explicit paths and exact justified exemptions; absent default file = off",
  "knobs.sem.reflect_stale_days": "measurement-age alarm in days; empty = that rule is explicitly off",
  "knobs.sem.reflect_world": "world declaration (list of things to verify); missing file = off",
  "knobs.sem.reflect_world_line": "world line override (CI / special run modes)",

@@ -1,0 +1,3 @@
+#!/bin/sh
+ALLOW_TABLE_GROWTH=1
+export ALLOW_TABLE_GROWTH

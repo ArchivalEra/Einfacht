@@ -40,6 +40,7 @@
  "knobs.sem.reflect_retired": "退役组件名清单；空 = 该规则明说未启用",
  "knobs.sem.reflect_retractions": "翻案台账",
  "knobs.sem.reflect_snapshot_root": "快照闸门扫描的源码目录；空 = 只扫套件自己的 zreflect/（要审你的代码就填你的目录名）",
+ "knobs.sem.reflect_secrets": "秘密扫描规格：显式路径与带理由的精确豁免；默认文件不存在 = 未启用",
  "knobs.sem.reflect_stale_days": "测龄报警天数；空 = 该规则明说未启用",
  "knobs.sem.reflect_world": "world 声明（验证对象清单）；缺文件 = 未启用",
  "knobs.sem.reflect_world_line": "world 线覆盖（CI / 特殊跑法）",

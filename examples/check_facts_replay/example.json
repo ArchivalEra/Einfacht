@@ -1,0 +1,10 @@
+{
+  "description": "Replay every fact command and detect a changed value",
+  "steps": [
+    {"argv": ["{python}", "zreflect/facts.py"]},
+    {"argv": ["{python}", "zreflect/facts.py", "--render-doc"]},
+    {"argv": ["{python}", "zreflect/check_facts_replay.py"]},
+    {"argv": ["{python}", "break.py"]},
+    {"argv": ["{python}", "zreflect/check_facts_replay.py"], "rc": 1, "contains": ["replay.mismatch"]}
+  ]
+}

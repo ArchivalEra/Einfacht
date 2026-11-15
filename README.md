@@ -47,7 +47,7 @@ reappearance detection, and a doctor for start-of-work liveness.
 | Teach an agent to use it | [skills/einfacht/SKILL.md](skills/einfacht/SKILL.md) |
 | This file (English) | README.md — trio: [README.zh.md](README.zh.md) · [README.de.md](README.de.md) |
 | Hard rules for agents | [AGENTS.md](AGENTS.md) |
-| Status & direction | [maintaince.md](maintaince.md) |
+| Runnable examples (every capability) | [examples/README.md](examples/README.md) |
 | Measured facts (machine block) | [STATE.md](STATE.md) |
 | Language-pack glossary | [docs/LANG-PACK-GLOSSARY.md](docs/LANG-PACK-GLOSSARY.md) |
 

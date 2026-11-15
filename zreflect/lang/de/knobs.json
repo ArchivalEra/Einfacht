@@ -40,6 +40,7 @@
  "knobs.sem.reflect_retired": "Liste pensionierter Komponentennamen; leer = diese Regel ist ausdrücklich aus",
  "knobs.sem.reflect_retractions": "das Widerrufsregister",
  "knobs.sem.reflect_snapshot_root": "Quellverzeichnis für das Snapshot-Tor; leer = nur zreflect/ des Suites scannen (eigenen Code prüfen: Verzeichnisnamen angeben)",
+ "knobs.sem.reflect_secrets": "Spec für Secret-Scan mit expliziten Pfaden und begründeten exakten Ausnahmen; fehlende Standarddatei = aus",
  "knobs.sem.reflect_stale_days": "Alarm für Messalter in Tagen; leer = diese Regel ist ausdrücklich aus",
  "knobs.sem.reflect_world": "Welt-Deklaration (Liste zu prüfender Dinge); fehlende Datei = aus",
  "knobs.sem.reflect_world_line": "Überschreibung der Welt-Zeile (CI / spezielle Laufmodi)",

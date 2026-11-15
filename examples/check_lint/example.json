@@ -1,0 +1,8 @@
+{
+  "description": "Run the configured static checks and expose a located finding",
+  "steps": [
+    {"argv": ["{python}", "zreflect/check_lint.py"]},
+    {"argv": ["{python}", "break.py"]},
+    {"argv": ["{python}", "zreflect/check_lint.py"], "rc": 1, "contains": ["lint.finding"]}
+  ]
+}

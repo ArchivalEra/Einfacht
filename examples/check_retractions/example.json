@@ -1,0 +1,7 @@
+{
+  "description": "Prevent a retracted assertion from returning without a correction marker",
+  "steps": [
+    {"argv": ["{python}", "zreflect/check_retractions.py"]},
+    {"argv": ["{python}", "zreflect/check_retractions.py"], "env": {"REFLECT_RETRACTIONS": "resurfaced.json", "REFLECT_DOCS": "BAD.md"}, "rc": 1, "contains": ["retractions.resurfaced"]}
+  ]
+}

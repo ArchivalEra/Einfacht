@@ -1,0 +1,7 @@
+{
+  "description": "Resolve a product line and replay its environment stamps",
+  "steps": [
+    {"argv": ["{python}", "zreflect/check_world.py"]},
+    {"argv": ["{python}", "zreflect/check_world.py"], "env": {"REFLECT_WORLD": "bad-world.json"}, "rc": 1, "contains": ["world.stamp_mismatch"]}
+  ]
+}

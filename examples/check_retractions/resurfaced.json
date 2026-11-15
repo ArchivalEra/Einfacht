@@ -1,0 +1,1 @@
+{"schema": 1, "retractions": [{"id": "R-DEMO", "text": "the old collector is active", "why": "the collector was replaced", "evidence": "run registry --gates", "fixed_in": "the discovered collector"}]}

@@ -1,0 +1,2 @@
+token = "${SERVICE_TOKEN}"
+password = "your-password-here"

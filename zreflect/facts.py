@@ -956,7 +956,7 @@ def _init_principles_into_ledger():
     (observed: `facts.missing_key_cite(line=3)`)."""
     import doc  # noqa: PLC0415
     if not doc.accepts_principles():
-        return
+        return 0
     import json as _json  # noqa: PLC0415
     out = _out()
     facts = dict(facts_of(_load_or_empty()))
@@ -965,6 +965,7 @@ def _init_principles_into_ledger():
         _json.dump({"schema": 1, "_why": M("facts.ledger_why"),
                     "facts": facts}, fh, indent=1, ensure_ascii=False)
         fh.write("\n")
+    return write_doc(doc.PRINCIPLES, {"schema": 1, "facts": facts})
 
 
 def _init_questions_dir(root):
@@ -1077,7 +1078,9 @@ def cmd_init(argv):
         print(str(M("facts.init_kept", name=name)))
     if not created:
         return 0
-    _init_principles_into_ledger()
+    rc = _init_principles_into_ledger()
+    if rc:
+        return rc
     _init_questions_dir(root)
     _init_env_file(root, state)
     print(str(M("facts.init_next")))
@@ -1419,6 +1422,22 @@ def _copy_hooks_roster(src_z, d):
             shutil.copy(src, os.path.join(d, "reflect-hooks", name))
 
 
+def fixture_env(extra=None):
+    """Environment for a fixture subprocess: no inherited knobs, **and no GATE_REPO**.
+
+    Copying this dict literal five times is how the `GATE_REPO` omission survived
+    in two of them: `harness` sets `GATE_REPO` to *this* repo when it runs
+    selftests, while a fixture is a *different* repo — leave it in and the child
+    audits this repo instead of the fixture (observed: the corrupt-ledger case
+    passed alone and failed under `harness`). One source, so it cannot drift again.
+    """
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith("REFLECT_") and k != "GATE_REPO"}
+    if extra:
+        env.update(extra)
+    return env
+
+
 def _corrupt_ledger_rc():
     """`--check`'s rc under a corrupt ledger (fixture repo; this repo's ledger untouched)."""
     import shutil  # noqa: PLC0415
@@ -1429,8 +1448,7 @@ def _corrupt_ledger_rc():
         subprocess.run(["git", "init", "-q", d], check=True, capture_output=True)
         _copy_suite_into(d)
         open(os.path.join(d, "FACTS.json"), "w", encoding="utf-8").write("{ broken")
-        env = {k: v for k, v in os.environ.items()
-               if not k.startswith("REFLECT_")}
+        env = fixture_env()
         p = subprocess.run(
             [sys.executable, os.path.join(d, "zreflect", "facts.py"), "--check"],
             cwd=d, env=env, capture_output=True, text=True, timeout=120,
@@ -1454,9 +1472,7 @@ def _unwritable_doc_rc():
         subprocess.run(["git", "-C", d, "config", "user.email", "a@b"], check=True)
         subprocess.run(["git", "-C", d, "config", "user.name", "a"], check=True)
         _copy_suite_into(d)
-        env = {k: v for k, v in os.environ.items()
-               if not k.startswith("REFLECT_")}
-        env["GATE_REPO"] = d
+        env = fixture_env({"GATE_REPO": d})
 
         def run(*args):
             return subprocess.run([sys.executable, *args], cwd=d, env=env,
@@ -1659,8 +1675,7 @@ def _real_repo_shaped():
             fh.write(bad_body)
         with open(os.path.join(d, "README.md"), "w", encoding="utf-8") as fh:
             fh.write("# my project\n\nNo machine block here.\n")
-        base = {k: v for k, v in os.environ.items()
-                if not k.startswith("REFLECT_") and k != "GATE_REPO"}
+        base = fixture_env()
         subprocess.run([sys.executable, "zreflect/facts.py", "--init"],
                        cwd=d, env=base, capture_output=True, text=True,
                        timeout=180,
@@ -1707,8 +1722,7 @@ def _opt_out_check_case():
     try:
         subprocess.run(["git", "init", "-q", d], check=True, capture_output=True)
         _copy_suite_into(d)
-        base = {k: v for k, v in os.environ.items()
-                if not k.startswith("REFLECT_") and k != "GATE_REPO"}
+        base = fixture_env()
         subprocess.run([sys.executable, "zreflect/facts.py", "--init"],
                        cwd=d, env=base, capture_output=True, timeout=180)
         # Complete the bootstrap's measure and render (as in `_fresh_bootstraps`):
@@ -1754,11 +1768,7 @@ def _fresh_bootstraps():
         subprocess.run(["git", "init", "-q", d], check=True,
                        capture_output=True)
         _copy_suite_into(d)
-        # ⚠️ Must clear `GATE_REPO` along with the rest: `harness` sets it to **this
-        # repo** when running selftests, while the fixture here is another repo --
-        # leave it in and the subprocesses will come back to check this repo.
-        base = {k: v for k, v in os.environ.items()
-                if not k.startswith("REFLECT_") and k != "GATE_REPO"}
+        base = fixture_env()
         subprocess.run([sys.executable, "zreflect/facts.py", "--init"],
                        cwd=d, env=base, capture_output=True, text=True,
                        timeout=180,

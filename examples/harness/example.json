@@ -1,0 +1,6 @@
+{
+  "description": "Every gate first proves it can go red: the three-tier harness that refutes a decoration",
+  "steps": [
+    {"argv": ["{python}", "zreflect/harness.py"], "contains": ["harness"], "timeout": 600}
+  ]
+}

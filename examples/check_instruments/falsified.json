@@ -1,0 +1,1 @@
+{"methods": [{"text": "--count -files .py", "why": "this retired counter ignored nested files", "fixed_in": "use the recursive counter"}]}

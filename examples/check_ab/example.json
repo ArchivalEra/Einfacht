@@ -1,0 +1,7 @@
+{
+  "description": "Allow only the declared A/B axis to differ",
+  "steps": [
+    {"argv": ["{python}", "zreflect/check_ab.py"]},
+    {"argv": ["{python}", "zreflect/check_ab.py", "--spec", "confound.json"], "rc": 1, "contains": ["ab.confound"]}
+  ]
+}

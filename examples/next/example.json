@@ -1,0 +1,73 @@
+{
+  "description": "Compute the next-turn brief from git state: counts must match the real repo, not just print keys",
+  "steps": [
+    {
+      "argv": [
+        "git",
+        "init",
+        "-q"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "."
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=example",
+        "-c",
+        "user.email=example@invalid",
+        "commit",
+        "-qm",
+        "local work"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/next.py"
+      ],
+      "contains": [
+        "next.commits_count(count=1)",
+        "next.tree_state(changed=0, untracked=0)",
+        "next.open_question(name='01-example.md')"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "-c",
+        "open('dirty.txt','w').write('x')"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "-c",
+        "open('untracked.txt','w').write('y')"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "dirty.txt"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/next.py"
+      ],
+      "contains": [
+        "next.tree_state(changed=1, untracked=1)",
+        "next.tree_dirty"
+      ]
+    }
+  ]
+}

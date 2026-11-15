@@ -45,7 +45,7 @@ python3 zreflect/registry.py --run commit         # 执行面唯一入口
 | 教 agent 用它 | [skills/einfacht/SKILL.md](skills/einfacht/SKILL.md) |
 | 本文件（简体中文） | README.zh.md —— 三语组：[README.md](README.md) · [README.de.md](README.de.md) |
 | 给 agent 的硬规矩 | [AGENTS.md](AGENTS.md) |
-| 现状与方向 | [maintaince.md](maintaince.md) |
+| 可运行示范（每项能力） | [examples/README.md](examples/README.md) |
 | 测出的事实（机器块） | [STATE.md](STATE.md) |
 | 语言包术语表 | [docs/LANG-PACK-GLOSSARY.md](docs/LANG-PACK-GLOSSARY.md) |
 

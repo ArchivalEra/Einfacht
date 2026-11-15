@@ -48,7 +48,7 @@ Live-Checks vor der Arbeit.
 | Einem Agenten die Nutzung beibringen | [skills/einfacht/SKILL.md](skills/einfacht/SKILL.md) |
 | Diese Datei (Deutsch) | README.de.md — Trio: [README.md](README.md) · [README.zh.md](README.zh.md) |
 | Harte Regeln für Agenten | [AGENTS.md](AGENTS.md) |
-| Stand & Richtung | [maintaince.md](maintaince.md) |
+| Lauffähige Beispiele (jede Fähigkeit) | [examples/README.md](examples/README.md) |
 | Gemessene Fakten (Maschinenblock) | [STATE.md](STATE.md) |
 | Sprachpaket-Glossar | [docs/LANG-PACK-GLOSSARY.md](docs/LANG-PACK-GLOSSARY.md) |
 

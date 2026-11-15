@@ -1,0 +1,7 @@
+{
+  "description": "Detect a mutable module global imported as a stale value copy",
+  "steps": [
+    {"argv": ["{python}", "zreflect/check_snapshots.py"]},
+    {"argv": ["{python}", "zreflect/check_snapshots.py"], "env": {"REFLECT_SNAPSHOT_ROOT": "app"}, "rc": 1, "contains": ["snapshot"]}
+  ]
+}

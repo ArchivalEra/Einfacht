@@ -1,0 +1,1 @@
+{"checks": [{"path": "app/build.sh", "must_contain": ["ALLOW_TABLE_GROWTH=1"], "must_not_contain": ["-flto"], "why": "dynamic loading needs a growable table"}]}

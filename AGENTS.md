@@ -1,165 +1,211 @@
 # AGENTS.md
 
-**这个文件只干一件事：告诉 agent「套件在哪、规矩在哪、状态在哪」。**
+Where the suite lives, where the rules live, what state means. The rules
+themselves have exactly one origin: the `RULES` table in `zreflect/doc.py`
+(guarded by a criterion). Copying them here would be a third copy -- this repo
+handles "two copies that must agree" with a paired reconciler, and hand-copied
+prose cannot be reconciled.
 
-它不写规矩本身。规矩的唯一产地是 `zreflect/doc.py` 的 `RULES` 数据表（在套件里，
-有判据守着）。这里再抄一遍就是第三份拷贝 —— 本仓对「必须一致的两份」的唯一处置
-是**配对账器**，而手抄的文档没法对账。
+## Where the suite is
 
-## 套件在哪
-
-Einfacht 是**可移植的套件**，不是本仓专有。全部判据都住在 `zreflect/`：
+Einfacht is a **portable suite**, not specific to this repo. All criteria live
+in `zreflect/`:
 
 ```
-zreflect/gate.py         rc 契约 / off 态 / 三档自证 / 相位执行器
-zreflect/machine.py      机器行协议：哪一行是机器行（唯一产地）
-zreflect/i18n.py         本体零语言 + 语言包（zh/en/de）
-zreflect/doc.py          文档体系：纪律登记表（规矩的唯一产地）
-zreflect/next.py         「接着上一轮」采集器（宿主无关：只产 stdout 行）
-zreflect/check_*.py      闸门（清单见 registry --gates）
-zreflect/lang/<lang>/    语言包；一个都不装也能跑（输出 code+参数）
-ruff.toml                静态机器检查的判据（check_lint 读它，CI 读同一份）
-reflect-hooks/           钩子入口（只暴露一个口，不抢钩子座位）
-harness.py               发现式自证 harness
+zreflect/gate.py         rc contract / off state / three-tier selftest / phase executor
+zreflect/machine.py      machine-row protocol: which line is a machine row (single origin)
+zreflect/i18n.py         zero-language core + language packs (zh/en/de)
+zreflect/doc.py          document system: the discipline registry (rules' single origin)
+zreflect/next.py         the "pick up from the last turn" collector (host-agnostic: stdout lines)
+zreflect/check_*.py      gates (roster: registry --gates)
+zreflect/examples.py     runnable examples: every gate + every core entry, in a temp repo
+zreflect/lang/<lang>/    language packs; none installed is a legal state (output: code+args)
+examples/<name>/         one example per gate plus the core entry points
+ruff.toml                static checks' criteria (read by check_lint; CI reads the same file)
+reflect-hooks/           hook entries (one mouth; never grabs a hook seat)
+zreflect/harness.py      discovery-based selftest harness
+secrets.json             this repo's credential-scan declaration (exemptions carry reasons)
 ```
 
-**给人看的**：`README.md`（英文，默认）/ `README.zh.md` / `README.de.md`。
-三份是同一条断言的三份拷贝，改一份必须同批改三份（`check_readme_sync.py` 拦）。
+Reader-facing: `README.md` (English, default) / `README.zh.md` / `README.de.md`.
+The three are three copies of one assertion; change one, change all three in the
+same batch (`check_readme_sync.py` enforces).
 
-## 两段：唯二必须丈量的东西
+## The two documents that must be measured
 
-| 段 | 文件 | 写什么 | 怎么被丈量 |
+| Part | File | Content | How it is measured |
 |---|---|---|---|
-| **原则** | [`PRINCIPLES.md`](PRINCIPLES.md) | 每条原则 = 一句话 + 一条判定命令 | 每次提交逐条真跑（`check_facts_replay`） |
-| **现在** | [`STATE.md`](STATE.md) | 此刻是什么样；数字一律 `[[键名]]` | `--check` 比机器块与台账 |
+| **Principles** | [`PRINCIPLES.md`](PRINCIPLES.md) | each principle = one sentence + one judging command | every commit really runs it (`check_facts_replay`) |
+| **State** | [`STATE.md`](STATE.md) | what things are now; numbers only as `[[key]]` | `--check` compares machine block vs ledger |
 
-原则与状态**都进 `FACTS.json`**（原则的键是 `principle.<id>`），所以它们共用
-**同一条复跑路径** —— 没有第二套执行器。
+Principles and state both land in `FACTS.json` (principle keys are
+`principle.<id>`) -- one re-run path, no second executor.
 
-`AGENTS.md` 就是这两份的**路由**。**没有历史文档**：append-only 的经过只在
-「当时那个条件」下可复现，复不了的就不占一个会被判的位置。
+Notes and other md files can be **manually registered** as facts, but are not
+on the default surface.
 
-别的东西（笔记、别处的 md）可以**手动注册**成事实来查，但不在默认面上。
-
-## 怎么跑
+## How to run
 
 ```bash
-# 开工前：唯二必须丈量的两份（state = 数值，principle = 判定）
-python3 zreflect/facts.py --check            # 两份文档的机器块都与台账一致
-python3 zreflect/check_facts_replay.py       # 全部原则的判定命令逐条真跑
+# Before work: the two documents (state = numbers, principle = verdicts)
+python3 zreflect/facts.py --check            # machine blocks agree with the ledger
+python3 zreflect/check_facts_replay.py       # every principle's command really runs
 
-python3 zreflect/registry.py --run commit   # 全部 commit 相位闸门（ran/off/failed 分列）
-python3 zreflect/harness.py                 # 每个闸门先证明自己会红
-python3 zreflect/facts.py                   # 重量测
-python3 zreflect/facts.py --render-doc      # 渲染机器块（不带文件名 = 状态文档）
+python3 zreflect/registry.py --run commit   # all commit-phase gates (ran/off/failed)
+python3 zreflect/examples.py --all          # every capability, run for real in a temp repo
+python3 zreflect/harness.py                 # every gate proves it can go red first
+python3 zreflect/facts.py                   # re-measure
+python3 zreflect/facts.py --render-doc      # render machine block (no filename = state doc)
 ```
 
-`registry.py --run` 是**执行面的唯一入口** —— 不要 glob `check_*.py`。什么该跑由各闸门
-的 `GATE = gate.meta(...)` 声明行决定，相位是声明字段（`runs_at`）。
+`registry.py --run` is the **only execution entry** -- never glob `check_*.py`.
+What runs is decided by each gate's `GATE = gate.meta(...)` declaration line;
+the phase is a declaration field (`runs_at`).
 
-## 想知道什么，去问谁
+## Lookups
 
-| 想知道 | 去看 |
+| Want | Go to |
 |---|---|
-| 有哪些原则、各自跑什么命令 | `PRINCIPLES.md` 的 `AUTO:RULES` 块 |
-| 某条原则现在过不过 | `python3 zreflect/facts.py --get principle.<id>` |
-| 全部原则逐条复跑 | `python3 zreflect/check_facts_replay.py` |
-| 每个旋钮的语义 | `python3 zreflect/knobs.py --list` |
-| 闸门清单 | `python3 zreflect/registry.py --gates` |
-| 此刻什么在跑、什么在 off | `python3 zreflect/registry.py --run commit` |
-| 数字是多少 | `python3 zreflect/facts.py --get <键>` |
+| principles and their commands | `AUTO:RULES` block in `PRINCIPLES.md` |
+| whether one principle passes now | `python3 zreflect/facts.py --get principle.<id>` |
+| re-run all principles | `python3 zreflect/check_facts_replay.py` |
+| knob semantics | `python3 zreflect/knobs.py --list` |
+| gate roster | `python3 zreflect/registry.py --gates` |
+| what runs now vs off | `python3 zreflect/registry.py --run commit` |
+| a number | `python3 zreflect/facts.py --get <key>` |
+| how to use one capability | `python3 zreflect/examples.py <name>` (see `examples/README.md`) |
+| which capabilities have an example | `python3 zreflect/examples.py --check` |
 
-## 记忆是自动的
+## Memory is automatic
 
-不用在压缩前手工整理 handoff。`zreflect/next.py` 在每次调用时**现算**一段
-「接着上一轮」（从 git 状态长出来：未推送提交、工作区、悬案）：
-
-```bash
-python3 zreflect/next.py                    # 纯文本行，不落盘
-REFLECT_LANG=zh python3 zreflect/next.py    # 换输出语言（只影响这条命令）
-```
-
-**它不落盘** —— 每轮都变的东西不占一个会被判的位置，所以 `facts.py --check`
-里没有它，也没有「文档说它自动、其实从没写过」的中间态。
-
-⚠️ **套件不管宿主怎么接。** 它不认任何编辑器的钩子协议、不写任何宿主的配置、
-不校验任何宿主的 schema。要接进会话开始钩子，使用方自己加一层薄壳读它的
-stdout —— 这是「在别的仓里用」的一部分，不是套件的事。宿主那边的接入是否
-真的生效，只有那个宿主自己的日志能回答。
-
-## 在别的仓里用
-
-把 `zreflect/` + `reflect-hooks/` 拷过去，然后在那个仓里：
+No hand-written handoff before compaction. `zreflect/next.py` computes a
+"pick up from the last turn" block on each call (from git state: unpushed
+commits, worktree, open questions):
 
 ```bash
-python3 zreflect/facts.py --init     # 生成合格骨架（不覆盖已有文件）
-python3 zreflect/facts.py            # 量一遍
-python3 zreflect/facts.py --render-doc STATE.md   # 渲染机器块
-python3 reflect-hooks/install.py --chain          # 接钩子
+python3 zreflect/next.py                    # plain text lines, never persisted
+REFLECT_LANG=zh python3 zreflect/next.py    # switch output language (this command only)
 ```
 
-`--init` 会建 `STATE.md` / `PRINCIPLES.md` / `AGENTS.md` / `README.md` /
-`retractions.json` / `questions/`（含一条示例悬案）/ `Einfacht.env`，并且：
+It is never persisted -- per-turn state does not occupy a judged position.
 
-- **`STATE.md` 里预先放好 `<!-- AUTO:FACTS -->` / `<!-- AUTO:GATES -->` 标记**
-  —— 没有它们 `--render-doc` 会 `FATAL: facts.markers_missing_render`，
-  而标记字符串此前只住在 `render.py` 源码里；
-- **`Einfacht.env` 按实际生成的文档写** `REFLECT_DOCS` / `REFLECT_READMES`
-  —— 默认值假设你已经有六份文档（STATE / AGENTS / PRINCIPLES / README×3），
-  新仓只有一份 README，不写这一份每个闸门都会报「找不到 README.zh.md」。
+⚠️ **The suite does not care how hosts wire it.** It knows no editor's hook
+protocol, writes no host config, validates no host schema. To feed a session
+hook, the consumer adds its own thin shell reading stdout -- that is part of
+"using it in another repo", not the suite's business.
 
-跑完上面四条，`registry --run commit` 应当 **failed=0 / fatal=0**。
-若不然，先看 `--init` 的输出里有没有 `already exists, left alone`（旧文件没被覆盖）。
+## Using it in another repo
 
-⚠️ **`docs/` 不行** —— 那在套件外面，闸门扫不到。
-
-⚠️ 量测对象默认是**套件自己**（`zreflect/measure_example.py` 的占位实现）。
-量你自己的项目：在 `Einfacht.env` 里设 `REFLECT_MEASURE_MODULE=<你的模块>`，
-或直接改 `zreflect/facts.py` 的 `measure_example()`。不设就量套件 —— 那时
-`STATE.md` 里的数字是**关于 Einfacht 的**，不是关于你的项目的。
-
-旋钮全在 `zreflect/knobs.py` 登记，名字型旋钮（`REFLECT_DOCS` / `REFLECT_READMES`
-/ `REFLECT_QUESTIONS` …）在那个仓的 `Einfacht.env` 里改，不改代码。
-
-## 本仓规程：接线与防直写
-
-本仓是**套件仓**：别的 agent 对它的产出一律走 issue 反哺（带复现与根因
-file:line），由 owner 会话裁决后落补丁，**不许直写**。
-
-**各跑各的**：每个仓自己接 git 钩子（`reflect-hooks/install.py --chain`），
-要「接着上一轮」就在对应仓手跑 `python3 zreflect/next.py <仓>`。宿主不代管
-（`host_agnostic` 原则不动）——不在用户级 config 注册会话钩子。
-
-防直写用 OS 层 advisory 锁（宿主侧 `einfacht-lock.sh`，不进判据面）：
-`chmod -R a-w` 全树，缓存目录（`.ruff_cache` / `__pycache__` 等）保持可写，
-否则 ruff 写不了缓存、`check_lint` 会 FATAL。同用户进程能 chmod 回来，挡的是
-误写与莽撞，不是对抗。
+Copy `zreflect/` + `reflect-hooks/` over, then in that repo:
 
 ```bash
-~/.kimi-code/hooks/einfacht-lock.sh claim <session_id>  # 登记 owner
-~/.kimi-code/hooks/einfacht-lock.sh seal                # 收工时加锁
-~/.kimi-code/hooks/einfacht-lock.sh open                # 自己要写时解锁
-~/.kimi-code/hooks/einfacht-lock.sh release             # 全放
+python3 zreflect/facts.py --init     # generate a qualified skeleton (never overwrites)
+python3 zreflect/facts.py            # measure once
+python3 zreflect/facts.py --render-doc STATE.md   # render machine block
+python3 reflect-hooks/install.py --chain          # wire git hooks
 ```
 
-直写先撞 EACCES；绕过 chmod 硬写视为越界。
+`--init` creates `STATE.md` / `PRINCIPLES.md` / `AGENTS.md` / `README.md` /
+`retractions.json` / `questions/` (one example question) / `Einfacht.env`, and:
 
-## 落库通道：**永久**走「本地修改 → 报告 → 站长落库」
+- **`STATE.md` comes pre-seeded with `<!-- AUTO:FACTS -->` / `<!-- AUTO:GATES -->`
+  markers** -- without them `--render-doc` fails with
+  `FATAL: facts.markers_missing_render`;
+- **`Einfacht.env` matches the docs actually generated** (`REFLECT_DOCS` /
+  `REFLECT_READMES`) -- the defaults assume six docs (STATE / AGENTS /
+  PRINCIPLES / README×3); a new repo with one README must narrow them or every
+  gate reports "cannot find README.zh.md".
 
-**PlumHelper（只读）是节点侧 gh 凭据的终态，不是过渡。** ArchivalEra 的
-token 不再下发，全网不存在节点写路径：`git push` 任何分支都 403（实测
-2026-11-13，`denied to PlumHelper`），PR 分支同样推不上去。**不要等待凭据
-恢复，不要重试 push，不要试图获取写权限** —— 这些不是故障，是设计。
+After those four commands, `registry --run commit` must be **failed=0 /
+fatal=0**. If not, check `--init` output for `already exists, left alone`
+(old files were not overwritten).
 
-交付流程（三步，无第四步）：
+⚠️ **`docs/` does not work** -- it is outside the suite; gates cannot see it.
 
-1. 本地完成修改，闸门全绿（`registry --run commit` + `harness.py`）；
-2. 把变更内容报告给 wo-u-maintainer（diff 摘要 / finding 清单 / 证据）；
-3. 站长侧代为落库（合入 main），合并后本地 `git pull` 对齐。
+⚠️ The measured target defaults to **the suite itself**
+(`zreflect/measure_example.py` placeholder). To measure your project, set
+`REFLECT_MEASURE_MODULE=<your module>` in `Einfacht.env`, or edit
+`measure_example()` directly. Unset = the suite is measured -- then the numbers
+in `STATE.md` are **about Einfacht**, not about your project.
 
-判据状态照常写进报告（`ran/off/failed` 计数与名单、CI run 链接），站长据此
-裁决。本地 commit 照常做——commit 不经 gh，不受只读影响；只有 push 走不通。
+Name-type knobs (`REFLECT_DOCS` / `REFLECT_READMES` / `REFLECT_QUESTIONS` ...)
+are set in that repo's `Einfacht.env`, never in code.
 
-## 不懂就问
+## This repo's protocol: wiring and no-direct-writes
 
-**如果非无人值守目标处于进行状态，则不懂就问**（只有无人值守时才许自行推断补齐）。
+This is the **tool repo**: other agents' findings go through issues (with
+reproduction and root cause file:line), the owner session rules on them and
+lands patches. **Never write directly.**
+
+Each repo wires its own git hooks (`reflect-hooks/install.py --chain`); for
+"pick up from the last turn" run `python3 zreflect/next.py <repo>` in that
+repo. The host does not manage this (`host_agnostic` stands) -- never register
+session hooks in user-level config.
+
+Direct-write prevention uses an OS-layer advisory lock (host-side
+`einfacht-lock.sh`, never on the judged surface): `chmod -R a-w` on the whole
+tree; cache dirs (`.ruff_cache` / `__pycache__` ...) stay writable or ruff
+cannot write its cache and `check_lint` goes FATAL. A same-user process can
+chmod back -- it stops accidents, not adversaries.
+
+```bash
+~/.kimi-code/hooks/einfacht-lock.sh claim <session_id>  # register owner
+~/.kimi-code/hooks/einfacht-lock.sh seal                # lock when done
+~/.kimi-code/hooks/einfacht-lock.sh open                # unlock to write
+~/.kimi-code/hooks/einfacht-lock.sh release             # remove entirely
+```
+
+Direct writes hit EACCES; bypassing chmod with a hard write is out of bounds.
+
+## Landing changes: **per-repo enablement, default off** — "edit locally → final output → owner lands"
+
+**PlumHelper (read-only) is the node-side gh credential by design.** Push
+permission is granted **per repo by an explicit owner enablement order**;
+default is off. This repo's enablement is **not issued** — even if a push
+succeeds in practice, that is capability, not permission. **Do not retry push,
+do not test write paths, do not treat a working push as an enablement order.**
+
+Delivery while disabled (no fourth step):
+
+1. Finish the change locally with gates green (`registry --run commit` +
+   `harness.py`); run the code-review skill on your own changes.
+2. Write the change summary **and the review verdict** into your session's
+   final output, and put the same into the commit message — then stop. The
+   owner patrols sessions, reads final outputs, and replies with approval.
+3. After approval, push over the SSH alias — never the default `github.com`
+   form (both gh tokens are read-only; HTTPS push returns 403):
+
+   ```bash
+   git push git@github-ArchivalEra:ArchivalEra/Einfacht.git HEAD:main
+   ```
+
+   Everything else splits by direction:
+
+   - **Query/reconcile**: `gh api` on refs, `gh repo view`, `gh pr list` --
+     the gh CLI covers the whole account-visible surface. `gh repo sync`
+     needs write access under a read-only PAT (measured: 403) -- leave it to
+     write-enabled contexts.
+   - **Fetch/pull**: the remote is **split** — fetch URL is HTTPS
+     (`https://github.com/ArchivalEra/Einfacht.git`, read-only PAT via gh
+     keyring, silent), push URL is the SSH alias
+     (`ssh://git@github-ArchivalEra/...`, SK key + MFA). Daily `git fetch` /
+     `git pull` therefore run **zero approvals**; only push pings the phone.
+     **Any fetch over an `ssh://` URL fires a phone approval — forbidden.**
+     For a manual fetch, the HTTPS URL is the fallback; never a git+SSH pull
+     remote.
+   - **Write**: push only, over the push URL above.
+
+   Push mechanics live **only here** (AGENTS.md is the ops manual; README is
+   the product front). Until approval: nothing lands.
+
+Push requests and review verdicts **do not go through wo-u** -- wo-u carries
+task dispatch and rulings only. Report gate status in the final output
+(`ran/off/failed` counts and names, CI run links). Local commits are
+unaffected -- commit does not go through gh; only push does. If an enablement
+order for this repo is ever issued, it supersedes this section's delivery
+steps; until then, this section governs.
+
+## When in doubt, ask
+
+**Ask when a non-unattended objective is in progress**; only unattended work
+allows self-derived fill-ins.

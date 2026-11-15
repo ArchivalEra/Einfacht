@@ -1,0 +1,7 @@
+{
+  "description": "Validate the persistent knob carrier and reject an unknown knob",
+  "steps": [
+    {"argv": ["{python}", "zreflect/check_envfile.py"]},
+    {"argv": ["{python}", "zreflect/check_envfile.py"], "env": {"REFLECT_ENV_FILE": "broken.env"}, "rc": 1, "contains": ["envfile.unregistered_knob"]}
+  ]
+}

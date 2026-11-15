@@ -18,8 +18,8 @@
 !/gates-selftest.sh
 !/gitroll-dispositions.json
 !/icon.svg
-!/maintaince.md
 !/retractions.json
+!/secrets.json
 !/ruff.toml
 
 # ---- tracked directories (their own rules below) ----
@@ -28,6 +28,7 @@
 !/questions/
 !/skills/
 !/docs/
+!/examples/
 !/.github/
 !/.shellcheckrc
 

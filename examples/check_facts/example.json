@@ -1,0 +1,10 @@
+{
+  "description": "Render cited facts and reject an unaccounted prose number",
+  "steps": [
+    {"argv": ["{python}", "zreflect/facts.py"]},
+    {"argv": ["{python}", "zreflect/facts.py", "--render-doc"]},
+    {"argv": ["{python}", "zreflect/check_facts.py"]},
+    {"argv": ["{python}", "break.py"]},
+    {"argv": ["{python}", "zreflect/check_facts.py"], "rc": 1, "contains": ["facts.bare_number_unaccounted"]}
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "description": "Check README cross-links and same-batch changes",
+  "env": {"REFLECT_READMES": "R1.md,R2.md,R3.md"},
+  "steps": [
+    {"argv": ["{python}", "zreflect/check_readme_sync.py"]},
+    {"argv": ["{python}", "zreflect/check_readme_sync.py", "--changed", "changed.txt"], "rc": 1, "contains": ["readme.not_in_push"]}
+  ]
+}

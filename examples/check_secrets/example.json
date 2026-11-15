@@ -1,0 +1,66 @@
+{
+  "description": "Scan explicit paths, redact findings, and retire stale exemptions",
+  "steps": [
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_secrets.py"
+      ],
+      "contains": [
+        "secrets.ok",
+        "allowed=0"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_secrets.py",
+        "--spec",
+        "leaked.json"
+      ],
+      "rc": 1,
+      "contains": [
+        "secrets.finding",
+        "rule='aws-access-key'"
+      ],
+      "not_contains": [
+        "AKIAIOSFODNN7EXAMPLE"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_secrets.py",
+        "--spec",
+        "allowed.json"
+      ],
+      "contains": [
+        "allowed=1"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_secrets.py",
+        "--spec",
+        "stale-allow.json"
+      ],
+      "rc": 1,
+      "contains": [
+        "secrets.allow_stale"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_secrets.py",
+        "--spec",
+        "ghost.json"
+      ],
+      "rc": 2,
+      "contains": [
+        "secrets.spec_missing"
+      ]
+    }
+  ]
+}

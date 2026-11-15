@@ -1,0 +1,7 @@
+{
+  "description": "The execution face has one entry: gates declare their phase, nothing is globbed",
+  "steps": [
+    {"argv": ["{python}", "zreflect/registry.py", "--gates"], "contains": ["check_facts", "check_secrets"]},
+    {"argv": ["{python}", "zreflect/registry.py", "--selftest"], "contains": ["0 FAIL"]}
+  ]
+}

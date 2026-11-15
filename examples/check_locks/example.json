@@ -1,0 +1,7 @@
+{
+  "description": "Pin an upstream artifact by URL and SHA-256",
+  "steps": [
+    {"argv": ["{python}", "zreflect/check_locks.py"]},
+    {"argv": ["{python}", "zreflect/check_locks.py", "--spec", "bad-lock.json"], "rc": 1, "contains": ["locks.sha_mismatch"]}
+  ]
+}

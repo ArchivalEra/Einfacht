@@ -1,0 +1,11 @@
+{
+  "description": "Bootstrap, measure, render, verify, and run the commit phase",
+  "init": false,
+  "steps": [
+    {"argv": ["{python}", "zreflect/facts.py", "--init"]},
+    {"argv": ["{python}", "zreflect/facts.py"]},
+    {"argv": ["{python}", "zreflect/facts.py", "--render-doc"]},
+    {"argv": ["{python}", "zreflect/facts.py", "--check"]},
+    {"argv": ["{python}", "zreflect/registry.py", "--run", "commit"], "contains": ["failed=0", "fatal=0"]}
+  ]
+}

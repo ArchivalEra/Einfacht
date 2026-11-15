@@ -1,0 +1,8 @@
+{
+  "description": "Reject a retired component name presented as current state",
+  "steps": [
+    {"argv": ["{python}", "zreflect/facts.py"]},
+    {"argv": ["{python}", "zreflect/check_stale.py"]},
+    {"argv": ["{python}", "zreflect/check_stale.py"], "env": {"REFLECT_DOCS": "BAD.md", "REFLECT_RETIRED": "OldThing"}, "rc": 1, "contains": ["stale.retired_name"]}
+  ]
+}

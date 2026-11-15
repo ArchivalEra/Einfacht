@@ -1,0 +1,1 @@
+{"paths": ["app/leaked.txt"], "allow": [{"path": "app/leaked.txt", "rule": "aws-access-key", "why": "AWS's public documentation example, isolated to this fixture"}]}

@@ -1,0 +1,6 @@
+{
+  "description": "Probe all three doctor kinds (http alive / port-free / docker) and make each failure shape visible",
+  "steps": [
+    {"argv": ["{python}", "exercise.py"], "contains": ["doctor example ok"]}
+  ]
+}

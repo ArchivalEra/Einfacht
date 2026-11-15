@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+"""Secret-material gate with explicit paths and narrow, justified exemptions.
+
+``secrets.json`` example::
+
+    {
+      "paths": ["src", "scripts"],
+      "allow": [
+        {"path": "src/fixtures/aws.txt", "rule": "aws-access-key",
+         "why": "public documentation fixture"}
+      ]
+    }
+
+Rules match single lines and findings never print the matched value. Files are
+read incrementally; binary files and symlinks are counted, not followed. An
+allow entry suppresses exactly one path/rule pair and becomes a finding when it
+no longer suppresses anything. The gate is off only when its default spec is
+absent; an explicitly named missing spec is a configuration error.
+"""
+from __future__ import annotations
+
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gate  # noqa: E402
+import knobs  # noqa: E402
+from gate import fatal, finish, load_spec, main_selftest_or, meta, off, repo  # noqa: E402
+from i18n import M  # noqa: E402
+
+DEFAULT_SPEC = knobs.REGISTRY["REFLECT_SECRETS"][1]
+SKIP_DIRS = {".git", ".mypy_cache", ".ruff_cache", "__pycache__"}
+RULES = (
+    ("private-key", re.compile(
+        r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----")),
+    ("aws-access-key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("github-token", re.compile(
+        r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})\b")),
+    ("slack-token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b")),
+    ("stripe-key", re.compile(r"\b(?:sk|rk)_live_[0-9A-Za-z]{16,}\b")),
+    ("google-api-key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
+    ("jwt", re.compile(
+        r"\beyJ[0-9A-Za-z_-]{8,}\.[0-9A-Za-z_-]{8,}\.[0-9A-Za-z_-]{8,}\b")),
+    ("url-credentials", re.compile(
+        r"\b[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s:@]{6,}@")),
+    ("generic-secret", re.compile(
+        r"(?i)\b(?:api[_-]?key|client[_-]?secret|password|passwd|"
+        r"access[_-]?token|secret[_-]?key|auth[_-]?token)\b"
+        r"\s*[:=]\s*(?:[\"'](?P<quoted>[^\"']{8,})[\"']"
+        r"|(?P<bare>[A-Za-z0-9/+_-]{16,}))")),
+)
+RULE_NAMES = frozenset(name for name, _pattern in RULES)
+# A value is exempt only when it is **entirely** a template or a stand-in word.
+# Substring matching was the earlier shape and it waved through real secrets
+# that merely contained "example" somewhere in the middle.
+PLACEHOLDER = re.compile(
+    r"(?i)^(?:\$\{[^}]*\}|\{\{[^}]*\}\}|<[^>]*>|x{6,}|\*{6,}|\.{6,}"
+    r"|changeme|placeholder|dummy|redacted|secret|password|token"
+    r"|your[-_][\w-]*|example[-_][\w-]*)$")
+
+
+def spec_problems(spec):
+    """Validate paths and allow entries without reading the target tree."""
+    if not isinstance(spec, dict):
+        return [M("secrets.spec_not_object")]
+    out = []
+    paths = spec.get("paths")
+    if (not isinstance(paths, list) or not paths
+            or any(not isinstance(path, str) or not path.strip() for path in paths)):
+        out.append(M("secrets.paths_empty"))
+    allow = spec.get("allow", [])
+    if not isinstance(allow, list):
+        return out + [M("secrets.allow_not_list")]
+    seen = set()
+    for entry in allow:
+        out += _allow_problems(entry, seen)
+    return out
+
+
+def _allow_problems(entry, seen):
+    if not isinstance(entry, dict):
+        return [M("secrets.allow_not_object", entry=entry)]
+    path = str(entry.get("path") or "").replace(os.sep, "/").strip()
+    rule = str(entry.get("rule") or "").strip()
+    why = str(entry.get("why") or "").strip()
+    out = []
+    if not path or not rule or not why:
+        return [M("secrets.allow_fields", entry=entry)]
+    if rule not in RULE_NAMES:
+        out.append(M("secrets.allow_unknown_rule", rule=rule))
+    key = (path, rule)
+    if key in seen:
+        out.append(M("secrets.allow_duplicate", path=path, rule=rule))
+    seen.add(key)
+    return out
+
+
+def _safe_path(root, relative):
+    if os.path.isabs(relative):
+        return None
+    path = os.path.abspath(os.path.join(root, relative))
+    try:
+        inside = os.path.commonpath((os.path.abspath(root), path)) == os.path.abspath(root)
+    except ValueError:
+        return None
+    return path if inside else None
+
+
+def _walk_path(root, relative, files, problems, stats):
+    path = _safe_path(root, relative)
+    if path is None:
+        problems.append(M("secrets.path_outside", path=relative))
+        return
+    if not os.path.exists(path):
+        problems.append(M("secrets.path_missing", path=relative))
+        return
+    if os.path.islink(path):
+        stats["symlinks"] += 1
+        return
+    if os.path.isfile(path):
+        files.add(path)
+        return
+    for dirpath, dirnames, filenames in os.walk(path):
+        dirnames[:] = sorted(name for name in dirnames if name not in SKIP_DIRS)
+        for name in sorted(filenames):
+            filename = os.path.join(dirpath, name)
+            if os.path.islink(filename):
+                stats["symlinks"] += 1
+            else:
+                files.add(filename)
+
+
+def collect_files(root, paths):
+    """Return ``(files, problems, stats)`` with deterministic, non-escaping traversal."""
+    files, problems = set(), []
+    stats = {"symlinks": 0, "binary": 0, "scanned": 0}
+    for relative in paths:
+        _walk_path(root, relative.strip(), files, problems, stats)
+    return sorted(files), problems, stats
+
+
+def line_findings(path, lineno, line):
+    """Return rule identifiers for one line; matched material is never retained."""
+    out = []
+    for rule, pattern in RULES:
+        for match in pattern.finditer(line):
+            if rule == "generic-secret":
+                value = match.group("quoted") or match.group("bare") or ""
+                if PLACEHOLDER.fullmatch(value.strip()):
+                    continue
+            out.append({"path": path, "line": lineno, "rule": rule})
+    return out
+
+
+def _relative(root, path):
+    return os.path.relpath(path, root).replace(os.sep, "/")
+
+
+def _scan_file(root, path, stats):
+    relative = _relative(root, path)
+    findings = []
+    try:
+        with open(path, "rb") as fh:
+            if b"\0" in fh.read(8192):
+                stats["binary"] += 1
+                return findings, None
+        stats["scanned"] += 1
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for lineno, line in enumerate(fh, 1):
+                findings += line_findings(relative, lineno, line)
+    except OSError as exc:
+        return findings, M("secrets.unreadable", path=relative, error=exc)
+    return findings, None
+
+
+def _allowed(finding, allow):
+    return any(entry.get("path") == finding["path"]
+               and entry.get("rule") == finding["rule"] for entry in allow)
+
+
+def _unused_allow_problems(findings, allow):
+    pairs = {(item["path"], item["rule"]) for item in findings}
+    return [M("secrets.allow_stale", path=entry["path"], rule=entry["rule"])
+            for entry in allow
+            if (entry.get("path"), entry.get("rule")) not in pairs]
+
+
+def scan(root, spec):
+    """Scan a spec and return ``(problems, stats)`` suitable for ``gate.finish``."""
+    paths = spec.get("paths") or []
+    allow = spec.get("allow") or []
+    files, problems, stats = collect_files(root, paths)
+    findings = []
+    for path in files:
+        current, error = _scan_file(root, path, stats)
+        findings += current
+        if error:
+            problems.append(error)
+    problems += _unused_allow_problems(findings, allow)
+    problems += [M("secrets.finding", path=item["path"], line=item["line"],
+                   rule=item["rule"]) for item in findings if not _allowed(item, allow)]
+    if not stats["scanned"]:
+        problems.append(M("secrets.empty"))
+    return problems, stats
+
+
+def run(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    name, explicit = gate.resolve_spec(argv, os.environ.get("REFLECT_SECRETS", ""),
+                                       DEFAULT_SPEC)
+    path = gate.repo_path(name)
+    if not os.path.isfile(path):
+        if explicit:
+            return fatal(M("secrets.spec_missing", name=name))
+        return off(M("secrets.off", name=name))
+    spec, error = load_spec(path)
+    if error:
+        return fatal(error)
+    shape = spec_problems(spec)
+    if shape:
+        for problem in shape:
+            print("  · " + str(problem), file=sys.stderr)
+        return 2
+    problems, stats = scan(repo(), spec)
+    return finish(M("secrets.title"), problems, M(
+        "secrets.ok", scanned=stats["scanned"], binary=stats["binary"],
+        symlinks=stats["symlinks"], allowed=len(spec.get("allow") or [])))
+
+
+def _cases():
+    import tempfile  # noqa: PLC0415
+    clean = 'token = "${SERVICE_TOKEN}"\npassword = "your-password-here"\n'
+    leaked = 'aws = "AKIAIOSFODNN7EXAMPLE"\n'
+    return [
+        ("secrets.clean", lambda: line_findings("a.txt", 1, clean) == []),
+        ("secrets.allow_shape",
+         lambda: spec_problems({"paths": ["app"], "allow": [
+             {"path": "app/a.txt", "rule": "aws-access-key", "why": "fixture"}]}) == []),
+        ("★ secrets.aws", lambda: [x["rule"] for x in line_findings("a.txt", 1, leaked)]
+         == ["aws-access-key"]),
+        ("★ secrets.private_key",
+         lambda: [x["rule"] for x in line_findings(
+             "a.txt", 1, "-----BEGIN OPENSSH PRIVATE KEY-----")] == ["private-key"]),
+        ("★ secrets.github",
+         lambda: [x["rule"] for x in line_findings(
+             "a.txt", 1, "ghp_" + "a" * 36)] == ["github-token"]),
+        ("★ secrets.generic",
+         lambda: [x["rule"] for x in line_findings(
+             "a.txt", 1, 'api_key = "not-a-real-demo-value"')] == ["generic-secret"]),
+        # the family set must actually grow: a 1M-line repo leaks through Slack,
+        # Stripe, Google, JWT and inline-URL credentials, not only AWS/GitHub
+        ("★ secrets.slack",
+         lambda: [x["rule"] for x in line_findings(
+             "a.txt", 1, "hook = xoxb-" + "1" * 12)] == ["slack-token"]),
+        ("★ secrets.stripe",
+         lambda: [x["rule"] for x in line_findings(
+             "a.txt", 1, "k = sk_live_" + "a" * 20)] == ["stripe-key"]),
+        ("★ secrets.google",
+         lambda: [x["rule"] for x in line_findings(
+             "a.txt", 1, "k = AIza" + "a" * 35)] == ["google-api-key"]),
+        ("★ secrets.jwt",
+         lambda: [x["rule"] for x in line_findings(
+             "a.txt", 1, "t = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSM")]
+         == ["jwt"]),
+        ("★ secrets.url_credentials",
+         lambda: [x["rule"] for x in line_findings(
+             "a.txt", 1, "u = https://user:hunter2pass@host/x")] == ["url-credentials"]),
+        ("★ secrets.bare_assignment",
+         lambda: [x["rule"] for x in line_findings(
+             "a.txt", 1, "password: hunter2hunter2hunter2")] == ["generic-secret"]),
+        # placeholder exemption must be exact, not substring: a real secret that
+        # merely contains "example" used to be waved through
+        ("★ secrets.placeholder_is_exact",
+         lambda: line_findings("a.txt", 1, 'api_key = "my-example-real-key-9f2"')
+         != [] and line_findings("a.txt", 1, 'api_key = "${API_KEY}"') == []),
+        ("★ secrets.empty_paths",
+         lambda: [p.code for p in spec_problems({"paths": []})]
+         == ["secrets.paths_empty"]),
+        ("★ secrets.empty_tree", lambda: _empty_tree_case(tempfile)),
+        ("★ secrets.path_escape",
+         lambda: [p.code for p in scan(tempfile.gettempdir(), {"paths": ["../"]})[0]]
+         == ["secrets.path_outside", "secrets.empty"]),
+        # an exemption that suppresses nothing must be reported: otherwise a
+        # stale allow entry silently pre-authorises a future leak
+        ("★ secrets.allow_stale",
+         lambda: _stale_allow_case(tempfile)),
+    ]
+
+
+def _stale_allow_case(tempfile):
+    with tempfile.TemporaryDirectory() as root:
+        problems, _stats = scan(root, {"paths": ["."], "allow": [
+            {"path": "gone.txt", "rule": "jwt", "why": "no longer needed"}]})
+        return [p.code for p in problems] == ["secrets.allow_stale", "secrets.empty"]
+
+
+def _empty_tree_case(tempfile):
+    with tempfile.TemporaryDirectory() as root:
+        problems, _stats = scan(root, {"paths": ["."]})
+        return [p.code for p in problems] == ["secrets.empty"]
+
+
+GATE = meta("Secrets gate", "plain-text credential detection with explicit paths and justified exact exemptions",
+            knobs=("REFLECT_SECRETS",),
+            off_reason="a repo that declares no credential-scanning spec keeps this "
+                       "gate off; a spec named explicitly but absent is a "
+                       "configuration error, never a disable")
+
+
+if __name__ == "__main__":
+    sys.exit(main_selftest_or(sys.argv[1:], "check_secrets", _cases, run))

@@ -170,7 +170,7 @@ def _unaccounted_numbers(facts, bare_min, nlines):
         if DATED_RECORD.search(line):
             continue                     # a record line with explicit provenance is exempt as a whole (same scope as stale)
         line = strip_re.sub(" ", line)
-        for token in re.findall(r"(?<![\w.])\d+(?![\w.])", line):
+        for token in re.findall(r"(?<![\w.])\d+\b", line):
             try:
                 val = int(token)
             except ValueError:
@@ -365,7 +365,7 @@ def _cases_fixture():
 
 
 def _cases_core(fx):
-    """See `_cases()`: this group has 9 entries."""
+    """See `_cases()`: this group has 10 entries."""
     good, codes = fx["good"], fx["codes"]
     return [
     # (1) normal: no report
@@ -394,6 +394,11 @@ def _cases_core(fx):
     ("facts.cite_counts_as_provenance",
      lambda: problems(LED, "see [[count]] = 99887766\n"
                       + render_block(LED)) == []),
+    # reverse: a number ending a sentence is still a number (`\b` before the
+    # period) — without this the regex silently waved through "9999."
+    ("★ facts.bare_number_sentence_period",
+     lambda: codes(LED, "measured 99887766.\n" + render_block(LED))
+     == ["facts.bare_number_unaccounted"]),
     # (3) empty input must be reported
     ("★ facts.empty_ledger",
      lambda: codes({"facts": {}}, good) == ["facts.empty_ledger"]),

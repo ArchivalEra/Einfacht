@@ -1,0 +1,1 @@
+{"pairs": [{"name": "allocator", "a": "a.json", "b": "b.json", "key": "declared", "allow": ["malloc"], "why": "malloc is the axis under test"}]}
