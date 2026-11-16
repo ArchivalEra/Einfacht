@@ -7,52 +7,111 @@
 ![python](https://img.shields.io/badge/python-3.13+-3776AB)
 ![license](https://img.shields.io/github/license/ArchivalEra/Einfacht)
 
-**An agent's memory should not be prose — it should be an assertion you can re-run.**
-
-A fact system against hallucination for agent-driven repos: every "this is how
-things are" must be backed by a re-runnable command, marked as an inference
-with a settling command, or moved to the retraction ledger. None of the three
-⇒ a gate turns red.
+Every "this is how things are" must be re-runnable. Einfacht is the apparatus
+that makes that true for a repo an agent works in: five carriers hold what the
+next session must not have to guess, and a gate reports any claim that drifted
+away from the thing that proves it.
 
 **Languages:** **English** (this file, default) · [简体中文](README.zh.md) · [Deutsch](README.de.md)
 
+## What it holds
+
+An agent's context dies with the session. The next one starts cold, and what
+survives is whatever was written down. Einfacht makes that written-down part
+**checkable**, and fixes where each kind of statement may live:
+
+| Carrier | Holds | What proves it |
+|---|---|---|
+| `STATE.md` | what is true right now: measured numbers | rendered from the ledger; `facts.py --check` compares byte for byte |
+| `PRINCIPLES.md` | the rules | each row carries a command that really runs (`check_facts_replay`) |
+| `questions/` | what is still unresolved | every open question must carry a settler that yields two distinguishable outcomes |
+| `HISTORY.md` | why a rule exists | must exist and must stay off every scan surface (`check_history`) |
+| `AGENTS.md` | where to look and what to run | prose by design; it routes, it does not assert |
+
+Four of those are judged; the fifth is the map into them. A statement that fits
+none of them is the failure mode this suite exists to report.
+
+The load-bearing part is the **last column**. A carrier without a criterion is a
+folder; what makes `STATE.md` reliable is not that numbers were written there but
+that a fresh render must match it byte for byte, and that every number carries a
+command which reprints it. The same shape holds for the other three: a rule is a
+row whose command runs at every commit, a question is a settler whose two
+outcomes carry different exit codes, and `HISTORY.md` is guarded from the
+opposite side — the criterion proves it **stays unscanned**, because an "as it
+was then" line judged as current state would go red forever.
+
 ## Use it
 
-**For AI agents:** read [skills/einfacht/SKILL.md](skills/einfacht/SKILL.md) —
-it teaches install, wiring, knobs, and how to read gate output. That file is
-the single entry point; this README does not repeat it.
-
-Humans, the 30-second version:
+Two commands put the suite into a repo; everything after that is usage, and
+lives in [skills/einfacht/SKILL.md](skills/einfacht/SKILL.md) — that file is the
+single entry point, and this README does not repeat it.
 
 ```bash
 cp -r <suite>/zreflect <suite>/reflect-hooks <suite>/ruff.toml <your-repo>/
 cd <your-repo>
-python3 zreflect/facts.py --init                  # skeleton docs, never overwrites
-python3 zreflect/facts.py                         # first measurement
-python3 zreflect/facts.py --render-doc            # machine block into the state doc
 python3 reflect-hooks/install.py --chain          # chain into your git hooks
-set -a; . ./Einfacht.env; set +a                  # source the knob carrier
-python3 zreflect/registry.py --run commit         # the live execution face
 ```
 
-What you get: measured numbers produced once in `FACTS.json` (docs cite `[[key]]`,
-never hand-copy), a discovery-registered gate roster that runs at commit/push,
-three-tier self-proof per gate (`harness.py`), a retraction ledger with
-reappearance detection, and a doctor for start-of-work liveness.
+The suite needs no install step of its own: it is scripts plus a config file, and
+`install.py --chain` adds its lines to the hooks the repo already has instead of
+replacing them. Nothing is written outside the repo.
+
+## What runs, and when
+
+```
+start-of-work   facts.py --check           documents agree with the ledger
+                doctor.py                  liveness: are the services still up
+commit          registry.py --run commit   every commit-phase gate, aggregated
+                (ran / off / failed / fatal are reported separately -- off is
+                 not a pass)
+push            the same criterion, plus the trilingual READMEs in one batch
+```
+
+Every gate declares its own phase in a `GATE = meta(...)` line; the roster is
+discovered from those declarations, never globbed. A gate that can switch
+itself off must declare why, and its `OFF:` line is reported rather than being
+counted as green.
+
+The three phases differ in **frequency**, not in strictness, and the frequency is
+a declaration field rather than a naming convention. `doctor.py` checks things
+that can die — a rebooted machine, a container that vanished, a port taken by
+something else — so it is wrong at commit frequency and right before work
+starts. Everything else is cheap enough to run on every commit, which is the only
+reason it can be trusted: a criterion that runs when someone remembers is a
+criterion that reports the state of someone's memory.
+
+## What a gate must survive before you trust it
+
+Each gate ships `--selftest`. Running one proves the criteria it contains can
+still go red; a criterion that can only pass is treated as decoration, not
+evidence. `harness.py` runs all of them, then re-runs the suite with every
+name-type knob swapped for a different name — a criterion that depends on this
+repo's file names is a criterion that will not work in yours.
+
+Two consequences follow, and both were paid for. First, a criterion must be able
+to name **which** thing it rejected: a gate that reports "problems found" without
+the file and line leaves the reader to guess, and guessing is what this suite is
+against. Second, the self-test is not optional for a gate that "obviously works" —
+the ones that obviously work are exactly the ones whose criteria quietly turn
+into always-true comparisons, which is why `harness.py` refuses a gate whose own
+proof cannot fail.
+
+## Why prose is confined
+
+Prose rots: a sentence written as true keeps looking true after the code moves,
+and nothing compares it to anything. So narration has exactly one home, and its
+provenance is recorded in `HISTORY.md`. See [HISTORY.md](HISTORY.md).
 
 ## Documentation map
 
-| Want | Go to |
-|---|---|
-| Teach an agent to use it | [skills/einfacht/SKILL.md](skills/einfacht/SKILL.md) |
-| This file (English) | README.md — trio: [README.zh.md](README.zh.md) · [README.de.md](README.de.md) |
-| Hard rules for agents | [AGENTS.md](AGENTS.md) |
-| Runnable examples (every capability) | [examples/README.md](examples/README.md) |
-| Measured facts (machine block) | [STATE.md](STATE.md) |
-| Language-pack glossary | [docs/LANG-PACK-GLOSSARY.md](docs/LANG-PACK-GLOSSARY.md) |
+The primary documents are `STATE.md` (numbers), `PRINCIPLES.md` (rules),
+`HISTORY.md` (provenance), `questions/` (open items) and `AGENTS.md` (routing).
+Runnable examples live in [examples/README.md](examples/README.md); the language
+packs are described in [docs/LANG-PACK-GLOSSARY.md](docs/LANG-PACK-GLOSSARY.md).
+Agent-facing instructions are [skills/einfacht/SKILL.md](skills/einfacht/SKILL.md).
 
-The long-form README (design rationale, component tables, decision records)
-lives in git history — `git log -- README.md`.
+This file is the English member of the trio — [README.zh.md](README.zh.md) ·
+[README.de.md](README.de.md) — and all three are checked as one assertion.
 
 ## License
 

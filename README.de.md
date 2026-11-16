@@ -7,53 +7,113 @@
 ![python](https://img.shields.io/badge/python-3.13+-3776AB)
 ![license](https://img.shields.io/github/license/ArchivalEra/Einfacht)
 
-**Das Gedächtnis eines Agenten sollte keine Prosa sein — es sollte eine überprüfbare Aussage sein.**
+Jedes „so ist es jetzt" muss wiederholbar sein. Einfacht ist die Vorrichtung, die
+das in einem Repo wahr macht, in dem ein Agent arbeitet: fünf Träger halten, was
+die nächste Sitzung nicht raten soll, und ein Gate meldet jede Aussage, die sich
+von dem entfernt hat, was sie beweist.
 
-Ein Faktensystem gegen Halluzination für agentengetriebene Repos: Jede Aussage
-„so ist es jetzt" muss an einem wiederholbaren Befehl hängen, als Inferenz mit
-Settling-Befehl markiert sein oder im Widerrufsledger stehen. Keines von dreien
-⇒ ein Gate wird rot.
+**Sprachen:** [English](README.md) · [简体中文](README.zh.md) · **Deutsch** (diese Datei)
 
-**Sprachen:** [English](README.md) (Standard) · [简体中文](README.zh.md) · **Deutsch** (diese Datei)
+## Was es hält
 
-## Benutzen
+Der Kontext eines Agenten stirbt mit der Sitzung. Die nächste beginnt kalt, und
+was überlebt, ist das Aufgeschriebene. Einfacht macht diesen Teil **prüfbar** und
+legt fest, wo jede Art von Aussage wohnen darf:
 
-**Für KI-Agenten:** Lies [skills/einfacht/SKILL.md](skills/einfacht/SKILL.md) —
-dort stehen Installation, Anbindung, Knobs und wie man Gate-Ausgaben liest.
-Diese Datei ist der einzige Einstiegspunkt; dieses README wiederholt sie nicht.
+| Träger | Hält | Was es beweist |
+|---|---|---|
+| `STATE.md` | was gerade wahr ist: gemessene Zahlen | aus dem Register gerendert; `facts.py --check` vergleicht Byte für Byte |
+| `PRINCIPLES.md` | die Regeln | jede Zeile trägt einen Befehl, der wirklich läuft (`check_facts_replay`) |
+| `questions/` | was noch offen ist | jede offene Frage braucht einen Settler mit zwei unterscheidbaren Ausgängen |
+| `HISTORY.md` | warum eine Regel existiert | muss existieren und auf keiner Scanfläche liegen (`check_history`) |
+| `AGENTS.md` | wo man nachsieht und was man läuft | absichtlich Prosa; es leitet, es behauptet nicht |
 
-Die 30-Sekunden-Version für Menschen:
+Vier davon werden beurteilt; das fünfte ist die Karte hinein. Eine Aussage, die in
+keinen passt, ist genau der Fehlerfall, für den es diese Suite gibt.
+
+Tragend ist die **letzte Spalte**. Ein Träger ohne Bedingung ist ein Ordner;
+`STATE.md` ist nicht deshalb verlässlich, weil Zahlen dort stehen, sondern weil ein
+frisches Rendern Byte für Byte mit ihm übereinstimmen muss und jede Zahl einen
+Befehl mitbringt, der sie erneut ausgibt. Dieselbe Form gilt für die anderen drei:
+eine Regel ist eine Tabellenzeile, deren Befehl bei jedem Commit läuft; eine offene
+Frage ist ein Settler, dessen zwei Ausgänge verschiedene Exit-Codes tragen; und
+`HISTORY.md` wird von der **Gegenseite** bewacht — die Bedingung beweist, dass es
+**ungescannt bleibt**, weil eine „so war es damals"-Zeile, als aktueller Zustand
+beurteilt, für immer rot wäre.
+
+## Benutzung
+
+Zwei Befehle bringen die Suite in ein Repo; alles danach ist Nutzung und steht in
+[skills/einfacht/SKILL.md](skills/einfacht/SKILL.md) — diese Datei ist der einzige
+Einstiegspunkt, und dieses README wiederholt sie nicht.
 
 ```bash
 cp -r <suite>/zreflect <suite>/reflect-hooks <suite>/ruff.toml <dein-repo>/
 cd <dein-repo>
-python3 zreflect/facts.py --init                  # Skelett-Dokumente, überschreibt nie
-python3 zreflect/facts.py                         # erste Messung
-python3 zreflect/facts.py --render-doc            # Maschinenblock ins Statusdokument
 python3 reflect-hooks/install.py --chain          # in vorhandene Git-Hooks einketten
-set -a; . ./Einfacht.env; set +a                  # Knob-Träger sourcen
-python3 zreflect/registry.py --run commit         # die einzige Ausführungsfläche
 ```
 
-Was du bekommst: Messwerte werden einmal in `FACTS.json` produziert (Dokumente
-zitieren `[[key]]`, niemals handkopiert), eine entdeckungsbasierte Gate-Liste
-läuft bei Commit/Push echt, jedes Gate hat drei Selbstbeweis-Stufen
-(`harness.py`), ein Widerrufsledger mit Wiedererkennung, und einen Doctor für
-Live-Checks vor der Arbeit.
+Die Suite braucht keinen eigenen Installationsschritt: sie besteht aus Skripten und
+einer Konfigurationsdatei, und `install.py --chain` hängt ihre Zeilen an die Hooks,
+die das Repo schon hat, statt sie zu ersetzen. Nichts wird außerhalb des Repos
+geschrieben.
+
+## Was wann läuft
+
+```
+vor der Arbeit   facts.py --check           Dokumente stimmen mit dem Register
+                 doctor.py                  Lebendigkeit: laufen die Dienste noch
+beim Commit      registry.py --run commit   alle Commit-Gates, aggregiert
+                                            (ran / off / failed / fatal getrennt;
+                                             off ist kein Bestehen)
+beim Push        dieselbe Vorschrift, dazu die dreisprachigen READMEs im selben Zug
+```
+
+Jedes Gate deklariert seine Phase in einer `GATE = meta(...)`-Zeile; die Liste wird
+aus diesen Deklarationen entdeckt, nie geglobbt. Ein Gate, das sich abschalten kann,
+muss begründen, warum; seine `OFF:`-Zeile wird gemeldet, statt als grün zu zählen.
+
+Die drei Phasen unterscheiden sich in der **Frequenz**, nicht in der Strenge, und die
+Frequenz ist ein Deklarationsfeld statt einer Namenskonvention. `doctor.py` prüft
+Dinge, die sterben können — eine neu gestartete Maschine, ein verschwundener
+Container, ein Port, den etwas anderes genommen hat —, also ist es bei
+Commit-Frequenz falsch und vor der Arbeit richtig. Alles andere ist billig genug für
+jeden Commit, und das ist der einzige Grund, ihm zu trauen: eine Bedingung, die läuft,
+wenn jemand daran denkt, berichtet den Stand von jemandes Gedächtnis.
+
+## Was ein Gate überleben muss, bevor man ihm traut
+
+Jedes Gate bringt `--selftest` mit. Es zu laufen zeigt, dass die Bedingungen darin
+noch rot werden können; eine Bedingung, die nur bestehen kann, gilt als Dekoration,
+nicht als Beweis. `harness.py` läuft alle, dann läuft es die Suite erneut mit jedem
+namensartigen Knopf auf einen anderen Namen umgestellt — eine Bedingung, die von
+den Dateinamen dieses Repos abhängt, ist in deinem keine.
+
+Daraus folgen zwei Konsequenzen, beide teuer bezahlt. Erstens muss eine Bedingung
+sagen können, **was** sie abgelehnt hat: ein Gate, das „Probleme gefunden" ohne Datei
+und Zeile meldet, lässt den Leser raten, und Raten ist genau das, wogegen diese Suite
+steht. Zweitens ist der Selbsttest für ein Gate, das „offensichtlich funktioniert",
+nicht optional — die offensichtlich funktionierenden sind genau die, deren
+Bedingungen sich still in immer-wahre Vergleiche verwandeln, weshalb `harness.py` ein
+Gate ablehnt, dessen eigener Beweis nicht fehlschlagen kann.
+
+## Warum Prosa eingesperrt ist
+
+Prosa verrottet: ein Satz, der als wahr geschrieben wurde, sieht weiter wahr aus,
+wenn der Code sich bewegt, und nichts vergleicht ihn mit irgendetwas. Deshalb hat
+Erzählung genau ein Zuhause, und ihre Herkunft ist in [HISTORY.md](HISTORY.md)
+festgehalten.
 
 ## Dokumentkarte
 
-| Willst du | Geh zu |
-|---|---|
-| Einem Agenten die Nutzung beibringen | [skills/einfacht/SKILL.md](skills/einfacht/SKILL.md) |
-| Diese Datei (Deutsch) | README.de.md — Trio: [README.md](README.md) · [README.zh.md](README.zh.md) |
-| Harte Regeln für Agenten | [AGENTS.md](AGENTS.md) |
-| Lauffähige Beispiele (jede Fähigkeit) | [examples/README.md](examples/README.md) |
-| Gemessene Fakten (Maschinenblock) | [STATE.md](STATE.md) |
-| Sprachpaket-Glossar | [docs/LANG-PACK-GLOSSARY.md](docs/LANG-PACK-GLOSSARY.md) |
+Die Hauptdokumente sind `STATE.md` (Zahlen), `PRINCIPLES.md` (Regeln),
+`HISTORY.md` (Herkunft), `questions/` (Offenes) und `AGENTS.md` (Wegführung).
+Lauffähige Beispiele liegen in [examples/README.md](examples/README.md); die
+Sprachpakete sind in [docs/LANG-PACK-GLOSSARY.md](docs/LANG-PACK-GLOSSARY.md)
+beschrieben. Agentenanweisungen sind [skills/einfacht/SKILL.md](skills/einfacht/SKILL.md).
 
-Das lange README (Designbegründung, Komponententabellen, Entscheidungsaufzeichnungen)
-liegt in der Git-Historie — `git log -- README.md`.
+Diese Datei README.de.md ist das deutsche Mitglied des Trios — [README.md](README.md) ·
+[README.zh.md](README.zh.md) — und alle drei werden als eine Aussage geprüft.
 
 ## Lizenz
 
