@@ -985,6 +985,10 @@ def pack_sync_problems(loader=None, discovery=None):
     ref = tables[ref_lang]
     out = []
     for lang in sorted(tables):
+        # Brace-vs-percent is judged for **every** pack including the reference
+        # one: `_render` is percent-only, so a braced template is dead in all
+        # languages equally and comparing two packs would agree on nonsense.
+        out += _brace_template_problems(lang, tables[lang])
         if lang == ref_lang:
             continue
         out += _key_set_problems(lang, ref_lang, ref, tables[lang])
@@ -1045,6 +1049,21 @@ def _key_set_problems(lang, ref_lang, ref, other):
         out.append(M("knobs.pack_extra_keys", lang=lang, reference=ref_lang,
                      keys=", ".join(only_other[:8])))
     return out
+
+
+# `_render` does `table[code] % params` -- percent style only. A template that
+# says `{count}` is therefore never interpolated: the user sees the braces
+# verbatim and no check notices, because the placeholder comparison below only
+# looks for `%(name)s` on both sides. Measured: three language packs, twelve
+# entries, all written with braces while the call sites passed percent kwargs.
+_BRACE_RE = re.compile(r"\{[a-z_][a-z0-9_]*\}")
+
+
+def _brace_template_problems(lang, table):
+    """Templates using `{name}` instead of `%(name)s` -- never interpolated."""
+    return [M("knobs.pack_brace_template", lang=lang, key=code, text=v[:60])
+            for code, v in sorted(table.items())
+            if isinstance(v, str) and _BRACE_RE.search(v)]
 
 
 def _placeholder_problems(lang, ref_lang, ref, other):
@@ -1297,6 +1316,19 @@ def _cases_sync_rules():
              discovery=lambda: ("zh", "en"), loader=lambda l: {
                  "zh": {"a": "x"}, "en": {"a": "x", "b": "y"}}[l])
          ] == ["knobs.pack_missing_keys"]),
+        # Percent is the only style `_render` interpolates. A braced template
+        # renders with the braces visible to the user, and the placeholder
+        # comparison below cannot see it (it looks for `%(name)s` on both sides,
+        # and two packs written the same wrong way agree perfectly).
+        ("\u2605 knobs.pack_brace_template",
+         lambda: [p.code for p in pack_sync_problems(
+             discovery=lambda: ("zh", "en"), loader=lambda l: {
+                 "zh": {"a": "x {k}"}, "en": {"a": "x {k}"}}[l])
+         ] == ["knobs.pack_brace_template", "knobs.pack_brace_template"]),
+        ("knobs.pack_percent_template_ok",
+         lambda: pack_sync_problems(
+             discovery=lambda: ("zh", "en"), loader=lambda l: {
+                 "zh": {"a": "x %(k)s"}, "en": {"a": "x %(k)s"}}[l]) == []),
         ("\u2605 knobs.pack_placeholder_mismatch",
          lambda: [p.code for p in pack_sync_problems(
              discovery=lambda: ("zh", "en"), loader=lambda l: {

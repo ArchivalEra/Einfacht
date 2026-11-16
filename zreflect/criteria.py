@@ -37,6 +37,8 @@ Each is a **pure function** (injectable `sources=` / `zdir=`); selftests live in
 from __future__ import annotations
 
 import ast
+import glob
+import json
 import os
 import re
 
@@ -689,7 +691,72 @@ EXEC_POSITIONS = {
     "pins.json": ("pins", ("version_read", "stamp_read")),
 }
 
+# Every execution position in the suite, spec files **and** the two carriers
+# whose fields promise re-runnability. One collector, so the rule's text and its
+# command cannot drift apart: the text names Settling and evidence, and this is
+# what makes that true.
+def _spec_path(knobs_key, default, base):
+    rel = os.environ.get(knobs_key, "").strip() or default
+    if not rel:
+        return None
+    path = rel if os.path.isabs(rel) else os.path.join(base, rel)
+    return path if os.path.exists(path) else None
 
+
+def _spec_exec_problems(knobs_key, spec_name, base):
+    path = _spec_path(knobs_key, "", base)
+    if path is None:
+        return []
+    try:
+        spec = json.loads(open(path, encoding="utf-8").read())
+    except (OSError, ValueError):
+        return []
+    return exec_position_problems(spec, spec_name)
+
+
+def _settling_problems(base):
+    """The `Settling:` line of every question."""
+    out = []
+    for rel in sorted(glob.glob(os.path.join(base, "questions", "*.md"))):
+        try:
+            body = open(rel, encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        for line in body.splitlines():
+            if "**Settling:**" in line:
+                out += prose_in_exec_problems(
+                    os.path.basename(rel), "Settling",
+                    line.split("**Settling:**", 1)[1].strip())
+    return out
+
+
+def _evidence_problems(base):
+    """The `evidence` field of every retraction entry."""
+    path = _spec_path("REFLECT_RETRACTIONS", "retractions.json", base)
+    if path is None:
+        return []
+    try:
+        entries = json.loads(open(path, encoding="utf-8").read())
+    except (OSError, ValueError):
+        return []
+    return [p for r in (entries or {}).get("retractions") or []
+            if isinstance(r, dict)
+            for p in prose_in_exec_problems("retractions/%s" % r.get("id", "?"),
+                                            "evidence", r.get("evidence"))]
+
+
+def all_exec_position_problems(root=None):
+    """Every prose-in-an-execution-position, across specs and carriers.
+
+    `root` = repo root (default: the audited repo). Each carrier is its own
+    helper: they read different files and fail differently, so merging them
+    only hides which one spoke.
+    """
+    base = root or gate.GATE_REPO
+    return (_spec_exec_problems("REFLECT_WORLD", "world.json", base)
+            + _spec_exec_problems("REFLECT_PINS", "pins.json", base)
+            + _settling_problems(base)
+            + _evidence_problems(base))
 def exec_position_problems(spec, name):
     """Every execution position in one spec must hold a command, not prose."""
     entry_key, fields = EXEC_POSITIONS.get(name, (None, ()))
@@ -1392,6 +1459,42 @@ def _stale_in_hooks_dir():
 
 
 
+def _exec_position_every_carrier():
+    """All three carriers must be scanned: spec, Settling, evidence.
+
+    Uses a temp repo so the assertion does not depend on this checkout having a
+    violation to find.
+    """
+    import tempfile  # noqa: PLC0415
+    with tempfile.TemporaryDirectory() as root:
+        os.makedirs(os.path.join(root, "questions"))
+        with open(os.path.join(root, "world.json"), "w", encoding="utf-8") as fh:
+            fh.write('{"lines":{"m":{"site":"s","artifacts":"a","container":"c",'
+                     '"fork_pin_ref":"u"}},"active":"m","stamps":{"s":'
+                     '{"value":"v","cmd":"the deploy was green last tuesday"}}}')
+        with open(os.path.join(root, "retractions.json"), "w", encoding="utf-8") as fh:
+            fh.write('{"schema":1,"retractions":[{"id":"R-9","text":"t",'
+                     '"evidence":"a slack thread said so","fixed_in":"f"}]}')
+        with open(os.path.join(root, "questions", "01.md"), "w", encoding="utf-8") as fh:
+            fh.write("# q\n\n**Status:** ready-for-agent\n\n"
+                     "**Settling:** just look at it ---- rc=0 A; rc=1 B\n")
+        saved = {k: os.environ.get(k) for k in
+                 ("REFLECT_WORLD", "REFLECT_PINS", "REFLECT_RETRACTIONS")}
+        try:
+            os.environ["REFLECT_WORLD"] = os.path.join(root, "world.json")
+            os.environ["REFLECT_PINS"] = ""
+            os.environ["REFLECT_RETRACTIONS"] = os.path.join(root, "retractions.json")
+            fields = {p.params.get("field")
+                      for p in all_exec_position_problems(root)}
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+    return fields == {"cmd", "Settling", "evidence"}
+
+
 def _path_rule_single_source():
     """Real repo: only gate.py self-computes the tool dir; plant one more fake =>
     must report."""
@@ -1455,6 +1558,12 @@ def _cases_path_rule():
     # one would split them).
     ("★ registry.path_rule_single_source",
      lambda: _path_rule_single_source()),
+    # **The execution-position rule covers every carrier its text names.**
+    # The command used to unpack a `str` (ValueError on the first violation)
+    # and to scan only world/pins while the text promised Settling and
+    # evidence -- a criterion narrower than its sentence. This pins all three.
+    ("\u2605 registry.exec_position_covers_every_carrier",
+     lambda: _exec_position_every_carrier()),
     # **Selftest of `gate.zdir()` / `tool_repo()`** (round 21): they are the repo-wide
     # foundation; previously only "other modules delegate to it" criteria existed,
     # never "it computes the right thing itself".

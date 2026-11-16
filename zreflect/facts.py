@@ -902,6 +902,17 @@ def _init_skeleton(root, state):
             "> design rules that do not change. Each one is a **runnable\n"
             "> command**, replayed by `check_facts_replay` on every commit.\n\n"
             + doc.RULES_BEGIN + "\n" + doc.RULES_END + "\n"),
+        # The prose carrier must exist from the start: a repo that adopts the
+        # suite gets `check_history` in its commit phase immediately, and a
+        # missing history document is a red one. Seeding it here is what makes
+        # "prose has one legal home" true on day one rather than after the first
+        # red commit.
+        "HISTORY.md": (
+            "# HISTORY\n\n"
+            "> The one carrier where prose is allowed. Every entry here answers\n"
+            "> \"why does this rule exist\" -- an account reproducible only under\n"
+            "> the conditions of that moment, so it stays off every scan surface.\n\n"
+            "## Entries\n"),
         "retractions.json": '{"schema": 1, "retractions": []}\n',
         "README.md": (
             "# " + os.path.basename(root) + "\n\n"

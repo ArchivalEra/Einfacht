@@ -38,18 +38,30 @@ Einfacht 让那部分**可验证**，并把每一类陈述的居所钉死：
 
 ## 用它
 
-两条命令把它搬进你的仓；之后都是用法，写在
-[skills/einfacht/SKILL.md](skills/einfacht/SKILL.md) —— 那是唯一入口，
-本 README 不重复。
-
 ```bash
 cp -r <suite>/zreflect <suite>/reflect-hooks <suite>/ruff.toml <你的仓>/
 cd <你的仓>
+python3 zreflect/facts.py --init                  # 生成骨架文档，不覆盖已有文件
+python3 zreflect/facts.py                         # 量一遍
+python3 zreflect/facts.py --render-doc            # 渲染状态文档
 python3 reflect-hooks/install.py --chain          # 链进你已有的 git 钩子
+```
+
+`--init` 会写一份 `Einfacht.env`，内容按它**实际生成**的文档裁剪：登记表默认值
+假设你有六份（状态、原则、路由、三份 README），而新仓只有少数几份，载体就是
+防止每道闸门都报「找不到 README.zh.md」的那一环。
+
+**载体由钩子读取，裸跑 `python3 zreflect/...` 不读它。** 手工跑闸门时先 source：
+
+```bash
+set -a; . ./Einfacht.env; set +a
 ```
 
 它自身不需要安装步骤：就是几个脚本加一份配置文件，`install.py --chain` 把它的
 行加进仓里已有的钩子，而不是替换掉它们。不往仓外写任何东西。
+
+之后的用法 —— 旋钮、输出、每个退出码是什么意思 —— 见
+[skills/einfacht/SKILL.md](skills/einfacht/SKILL.md)，那是唯一入口。
 
 ## 什么时候跑什么
 

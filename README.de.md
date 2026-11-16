@@ -43,20 +43,34 @@ beurteilt, für immer rot wäre.
 
 ## Benutzung
 
-Zwei Befehle bringen die Suite in ein Repo; alles danach ist Nutzung und steht in
-[skills/einfacht/SKILL.md](skills/einfacht/SKILL.md) — diese Datei ist der einzige
-Einstiegspunkt, und dieses README wiederholt sie nicht.
-
 ```bash
 cp -r <suite>/zreflect <suite>/reflect-hooks <suite>/ruff.toml <dein-repo>/
 cd <dein-repo>
+python3 zreflect/facts.py --init                  # Skelett-Dokumente, überschreibt nie
+python3 zreflect/facts.py                         # erste Messung
+python3 zreflect/facts.py --render-doc            # Statusdokument rendern
 python3 reflect-hooks/install.py --chain          # in vorhandene Git-Hooks einketten
+```
+
+`--init` schreibt eine `Einfacht.env`, zugeschnitten auf die **tatsächlich
+erzeugten** Dokumente: die Register-Standardwerte setzen sechs voraus (Status,
+Regeln, Wegführung, drei READMEs), ein neues Repo hat weniger, und der Träger ist
+das, was verhindert, dass jedes Gate „README.zh.md fehlt" meldet.
+
+**Der Träger wird von den Hooks gelesen, nicht von einem blanken
+`python3 zreflect/...`.** Wenn du ein Gate von Hand läufst, source ihn zuerst:
+
+```bash
+set -a; . ./Einfacht.env; set +a
 ```
 
 Die Suite braucht keinen eigenen Installationsschritt: sie besteht aus Skripten und
 einer Konfigurationsdatei, und `install.py --chain` hängt ihre Zeilen an die Hooks,
 die das Repo schon hat, statt sie zu ersetzen. Nichts wird außerhalb des Repos
 geschrieben.
+
+Die Nutzung danach — Knöpfe, Ausgabe, was jeder Exit-Code bedeutet — steht in
+[skills/einfacht/SKILL.md](skills/einfacht/SKILL.md), dem einzigen Einstiegspunkt.
 
 ## Was wann läuft
 

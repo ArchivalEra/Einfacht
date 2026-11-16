@@ -42,19 +42,33 @@ was then" line judged as current state would go red forever.
 
 ## Use it
 
-Two commands put the suite into a repo; everything after that is usage, and
-lives in [skills/einfacht/SKILL.md](skills/einfacht/SKILL.md) — that file is the
-single entry point, and this README does not repeat it.
-
 ```bash
 cp -r <suite>/zreflect <suite>/reflect-hooks <suite>/ruff.toml <your-repo>/
 cd <your-repo>
+python3 zreflect/facts.py --init                  # skeleton docs, never overwrites
+python3 zreflect/facts.py                         # first measurement
+python3 zreflect/facts.py --render-doc            # render the state document
 python3 reflect-hooks/install.py --chain          # chain into your git hooks
+```
+
+`--init` writes an `Einfacht.env` trimmed to the documents it actually made: the
+registry defaults assume six (state, principles, routing, three READMEs), and a
+new repo has fewer, so the carrier is what stops every gate from reporting
+"README.zh.md is missing".
+
+**The carrier is read by the hooks, not by a bare `python3 zreflect/...`.** When
+you run a gate by hand, source it first:
+
+```bash
+set -a; . ./Einfacht.env; set +a
 ```
 
 The suite needs no install step of its own: it is scripts plus a config file, and
 `install.py --chain` adds its lines to the hooks the repo already has instead of
 replacing them. Nothing is written outside the repo.
+
+Usage after that — knobs, output, what each exit code means — lives in
+[skills/einfacht/SKILL.md](skills/einfacht/SKILL.md), the single entry point.
 
 ## What runs, and when
 

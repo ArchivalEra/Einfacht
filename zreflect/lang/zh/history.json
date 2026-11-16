@@ -1,5 +1,5 @@
 {
- "history.missing": "%(path)s 处没有历史文档 —— 散文就没有合法归宿；把 REFLECT_HISTORY 指向该文件，或撤掉这个旋钮",
+ "history.missing": "%(path)s 处没有历史文档 —— 散文就没有合法归宿；把 REFLECT_HISTORY 指向该文件，或把它显式置空以声明本仓不保留历史（**撤掉旋钮不行**：会回落到默认名，继续红）",
  "history.off": "未配置历史文档（REFLECT_HISTORY 为空）⇒ 本仓的散文没有合法归宿；明说并退出",
  "history.ok": "历史文档 %(path)s 已声明，且不在任何扫描面上",
  "history.on_scan_surface": "历史文档 %(path)s 落在扫描面上（REFLECT_DOCS / REFLECT_READMES / REFLECT_QUESTIONS / REFLECT_FACTS）—— 它「当时如此」的行会被当成活状态来判",

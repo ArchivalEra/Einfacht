@@ -3,6 +3,7 @@
  "knobs.declared_not_read": "`%(file)s` 声明消费 %(knobs)s，但源码里读不到这些旋钮 —— 声明与实现不符（AUTO:GATES 表会撒谎）",
  "knobs.kind_unhandled": "kind `%(kind)s` 在旋钮名册里出现，但 env-file 闸门的存在性判据不认识它 —— 该 kind 的旋钮会被静默跳过存在性检查（两个产地都登记该 kind，或只留一个产地）",
  "knobs.module_only": "knobs 是模块（被各闸门消费）；--selftest 看自证。",
+ "knobs.pack_brace_template": "语言包 %(lang)s：模板 `%(key)s` 用了花括号占位符（%(text)s）—— 渲染只认百分号写法，花括号会原样送到用户眼前",
  "knobs.pack_extra_keys": "语言包 %(lang)s 有 %(reference)s（参照包）里没有的键（键集不一致 ⇒ 若 %(lang)s 是声明服务的语言，那边读者会看到裸 code；不在 REFLECT_LANGS 里的包是套件自证样本，键集差异不阻塞）：%(keys)s",
  "knobs.pack_missing_code": "本体会发 `code` 里这些在 %(lang)s 包里没有（%(count)d 条）—— %(lang)s 是声明服务的语言（REFLECT_LANGS），该语言的读者会看到裸 code：%(codes)s",
  "knobs.pack_missing_keys": "语言包 %(lang)s 缺少参照包 %(reference)s 里有的键（%(count)d 条）—— %(lang)s 在声明服务的集合里（REFLECT_LANGS），缺键处会渲染成裸 code：%(keys)s",
