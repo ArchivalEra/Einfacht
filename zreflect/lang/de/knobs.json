@@ -14,6 +14,7 @@
  "knobs.readme_missing_rows": "der Konfigurationstabelle von %(file)s fehlen Zeilen für diese registrierten Knöpfe: %(knobs)s — registriert, aber niemand weiß, wie man sie konfiguriert (Dokumentationslücke)",
  "knobs.readme_phantom": "%(file)s erwähnt unregistrierten Knopf `%(token)s` — Phantom oder Tippfehler; registriere ihn in zreflect/knobs.py",
  "knobs.sem.reflect_ab": "Spezifikationsname für das A/B-Tor mit gleichen Flags",
+ "knobs.sem.reflect_comments": "Kommentar-Disziplin: `strict` (keine Docstrings) / `mismatch` (Docstring >= 500 Zeichen über <= 20 Codezeilen) / leer = aus",
  "knobs.sem.reflect_doc": "Lebendzustand-Dokument (Maschinenblöcke rendern hinein)",
  "knobs.sem.reflect_docs": "Lebendzustand-Dokumente, die von den Widerruf- / Veraltet-Toren gescannt werden",
  "knobs.sem.reflect_doctor": "doctor-Spezifikation (Arbeitsbeginn-Vorabprüfung, kein Tor)",

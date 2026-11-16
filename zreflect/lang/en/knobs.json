@@ -14,6 +14,7 @@
  "knobs.readme_missing_rows": "%(file)s config table lacks rows for these registered knobs: %(knobs)s — registered but nobody knows how to configure them (documentation gap)",
  "knobs.readme_phantom": "%(file)s mentions unregistered knob `%(token)s` — phantom or typo; register it in zreflect/knobs.py",
  "knobs.sem.reflect_ab": "spec name for the A/B same-flags gate",
+ "knobs.sem.reflect_comments": "comment discipline: `strict` (no docstrings at all) / `mismatch` (no docstring >= 500 chars over <= 20 code lines) / empty = off",
  "knobs.sem.reflect_doc": "living-state document (machine blocks render into it)",
  "knobs.sem.reflect_docs": "living-state documents scanned by the retraction / staleness gates",
  "knobs.sem.reflect_doctor": "doctor spec (start-of-work preflight, not a gate)",

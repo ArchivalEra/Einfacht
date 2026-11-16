@@ -16,7 +16,7 @@
 #
 # ⚠️ 平台矩阵只跑 Linux + Windows：Windows 上没有 `sh`，能验出「全 Python 化」
 # 是否真的成立（本仓的 `gates-selftest.sh` 兼容薄壳在 Windows 上会 127）。
-# macOS 不跑 —— 它与 Linux 的差异不涉及本仓用到的任何东西。
+# 支持面：Linux + Windows。macOS 不跑，也不支持（来历见 HISTORY.md）。
 name: gates
 
 on:

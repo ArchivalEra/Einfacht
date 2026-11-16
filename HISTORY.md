@@ -88,3 +88,27 @@ The lesson is not "remember to update packs" -- it is that a message template an
 its call site are two copies of one contract, and nothing reconciled them. That
 gap is why `check_i18n` now also compares placeholder sets against the call site
 rather than only checking that every code has a translation.
+
+### macOS was never a target, and the comment said otherwise
+
+The CI matrix runs Linux and Windows. The comment above it used to say macOS was
+skipped because "its differences do not touch anything this repo uses". That
+sentence was a guess, not a measurement, and it was wrong: the hooks read the
+knob carrier through `sh -c '...; env -0'`, and `env -0` is a GNU extension. BSD
+`env` rejects it, and the failure handler was a bare `return` -- so on that
+platform the **entire carrier was dropped silently**, `REFLECT_LANG` and
+`REFLECT_DOCS` fell back to their defaults, and a renamed repo went red inside
+the hooks with nothing said.
+
+Two lessons, and only one of them is about macOS.
+
+The first: "no test means no difference" is not a claim a repo can make. The
+platform was never in the matrix, so the comment had nothing behind it.
+
+The second is why the fix stayed even though macOS is out of scope. `env -0` is
+failing when anything other than GNU coreutils provides `env`, which is a
+property of the host, not of macOS. The parser now tries NUL-separated output and
+falls back to one `NAME=VALUE` per line -- so a host without the extension gets a
+working carrier instead of a silent one. The self-test drives that fallback
+directly: it feeds `_plugin_exports` a fake `_sh` that refuses `-0` and requires
+both paths to agree.

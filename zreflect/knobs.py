@@ -131,6 +131,10 @@ REGISTRY = {
                                _Semantic("knobs.sem.reflect_measure_module")),
     "REFLECT_PHASES": ("value", "",
                        _Semantic("knobs.sem.reflect_phases")),
+    # Comment discipline mode: `strict` (no docstrings at all) / `mismatch`
+    # (no docstring wider than its interface) / empty = off.
+    "REFLECT_COMMENTS": ("value", "",
+                         _Semantic("knobs.sem.reflect_comments")),
     # Explicitly opt out of this suite's principles (for repos that don't want
     # to run those judgment commands on every commit).
     "REFLECT_NO_PRINCIPLES": ("flag", "",

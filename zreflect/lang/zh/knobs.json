@@ -14,6 +14,7 @@
  "knobs.readme_missing_rows": "%(file)s 的配置表缺这些已登记旋钮的说明行：%(knobs)s —— 登记了却没人知道怎么配（文档缺口）",
  "knobs.readme_phantom": "%(file)s 提到未登记旋钮 `%(token)s` —— 幻影 or typo；登记进 zreflect/knobs.py 才算数",
  "knobs.sem.reflect_ab": "A/B 同旗标闸门的规格名",
+ "knobs.sem.reflect_comments": "注释纪律：`strict`（完全不要 docstring）/ `mismatch`（docstring 超过 500 字符而代码不超过 20 行）/ 空 = 关闭",
  "knobs.sem.reflect_doc": "活状态文档（机器块渲染进它）",
  "knobs.sem.reflect_docs": "翻案 / 陈旧闸门扫描的活状态文档清单",
  "knobs.sem.reflect_doctor": "doctor 规格（开工预检，非闸门）",

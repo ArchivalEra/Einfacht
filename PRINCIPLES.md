@@ -10,6 +10,7 @@
 | id | principle | judging command |
 |---|---|---|
 | `assertion_lifecycle` | a retracted claim must not quietly return as current state | `python3 zreflect/check_retractions.py` |
+| `comments_earn_their_place` | a docstring is a claim the code could not make -- under `strict` no function carries one, under `mismatch` none explains more than it implements | `python3 -c "import os,sys;sys.path.insert(0,'zreflect');import check_explain as c;m=os.environ.get('REFLECT_COMMENTS','').strip().lower();p=[] if not m or m=='off' else c.problems([(f,open(os.path.join('zreflect',f),encoding='utf-8').read()) for f in sorted(os.listdir('zreflect')) if f.endswith('.py')], m);[print(x) for x in p] or print('comment_mode=%s problems=%d' % (m or 'off', len(p)));sys.exit(1 if p else 0)"` |
 | `declared_not_globbed` | predicates are declarations, not filenames: the execution surface reads registry --run <phase> | `python3 zreflect/registry.py --gates` |
 | `doc_references_real` | a document must not point at a symbol that does not exist | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;d=doc.dangling_references();[print('dangling=%d %s.%s@%s' % (len(d),m,s_,f)) for f,m,s_ in d] or print('dangling=0');sys.exit(1 if d else 0)"` |
 | `exec_position_is_a_command` | every execution position (stamp cmd / pin version_read / Settling / evidence) must hold a runnable command, not prose | `python3 -c "import json,os,sys;sys.path.insert(0,'zreflect');import criteria,knobs;specs=[(k,knobs.REGISTRY[k][1]) for k in ('REFLECT_WORLD','REFLECT_PINS')];bad=[(n,w,f) for k,n in specs if n and os.path.exists(n) for w,f,_ in criteria.exec_position_problems(json.load(open(n,encoding='utf-8')),n)];print('prose_positions=%d' % len(bad));sys.exit(1 if bad else 0)"` |
@@ -30,5 +31,5 @@
 | `three_readmes` | the three-language READMEs are three copies of one assertion: change one, change all three in the same batch | `python3 zreflect/check_readme_sync.py` |
 | `zero_language` | zero language in the core: user-visible messages go through M(code); machine contracts are untranslatable by construction | `python3 zreflect/check_i18n.py` |
 
-20 principles -- each with a judging command that **really runs**.
+21 principles -- each with a judging command that **really runs**.
 <!-- /AUTO:RULES -->

@@ -82,13 +82,14 @@ def _usage():
 def _plugin_exports(plugin, env):
     """Run the carrier plugin and return its `REFLECT_*` exports.
 
-    ⚠️ `env -0` is a **GNU** extension: BSD `env` (macOS) rejects it, and the
-    first version returned on that non-zero rc -- dropping the **whole carrier**
-    silently. `REFLECT_LANG` / `REFLECT_DOCS` then fell back to their defaults
-    and a renamed repo went red inside the hooks with nothing said.
+    ⚠️ `env -0` is a **GNU** extension, so its failure is a property of the host,
+    not of the suite. A failed probe must not silently drop the carrier: the two
+    parsers below are the same retrieval with different separators, and dropping
+    either one means `REFLECT_LANG` / `REFLECT_DOCS` fall back to defaults and a
+    renamed repo goes red inside the hooks with nothing said.
 
-    So: try NUL-separated (exact, handles newlines in values), fall back to one
-    `NAME=VALUE` per line (printed by every `env`).
+    NUL-separated is exact (values may contain newlines); one `NAME=VALUE` per
+    line is what every `env` prints.
     """
     rc, out = _sh(["sh", "-c",
                    '. "$1" >/dev/null 2>&1; env -0', "sh", plugin], env=env)

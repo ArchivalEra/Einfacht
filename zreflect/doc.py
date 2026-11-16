@@ -221,6 +221,16 @@ RULES = (
          "bad=[(n,w,f) for k,n in specs if n and os.path.exists(n) "
          "for w,f,_ in criteria.exec_position_problems(json.load(open(n,encoding='utf-8')),n)];"
          "print('prose_positions=%d' % len(bad));sys.exit(1 if bad else 0)\""),
+    Rule("comments_earn_their_place",
+         "a docstring is a claim the code could not make -- under `strict` no function carries one, under `mismatch` none explains more than it implements",
+         "python3 -c \"import os,sys;sys.path.insert(0,'zreflect');import check_explain as c;"
+         "m=os.environ.get('REFLECT_COMMENTS','').strip().lower();"
+         "p=[] if not m or m=='off' else c.problems("
+         "[(f,open(os.path.join('zreflect',f),encoding='utf-8').read()) "
+         "for f in sorted(os.listdir('zreflect')) if f.endswith('.py')], m);"
+         "[print(x) for x in p] or print('comment_mode=%s problems=%d' % (m or 'off', len(p)));"
+         "sys.exit(1 if p else 0)\"",
+         ),
     Rule("style_is_not_a_rule",
          "style preferences (naming, comment density, file layout) do not enter the rule table; they are held by 'match the code around you'",
          # The id vocabulary is spelled out (not derived from a shared table):

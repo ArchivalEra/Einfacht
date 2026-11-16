@@ -1,0 +1,9 @@
+{
+ "comments.bad_mode": "REFLECT_COMMENTS=%(mode)r ist kein Modus (unterstützt: %(supported)s)",
+ "comments.docstring_in_strict_mode": "%(file)s:%(line)d `%(name)s` trägt einen Docstring, und dieses Repo deklariert `strict`: eine Funktion muss aus Signatur und Rumpf lesbar sein",
+ "comments.docstring_wider_than_interface": "%(file)s:%(line)d `%(name)s` erklärt sich in %(chars)d Zeichen über %(body)d Codezeilen -- das ist Designbegründung, kein Aufrufvertrag; sie gehört nach HISTORY.md",
+ "comments.off": "REFLECT_COMMENTS ist nicht gesetzt => dieses Repo hat nicht erklärt, ob ein Kommentar eine Behauptung oder eine Krücke ist; sagen und stillstehen",
+ "comments.ok": "Kommentarmodus %(mode)s: %(files)d Dateien geprüft, %(count)d Docstrings im Bereich",
+ "comments.title": "Kommentar-Disziplin",
+ "knobs.sem.reflect_comments": "Kommentar-Disziplin: `strict` (keine Docstrings) / `mismatch` (Docstring >= 500 Zeichen über <= 20 Codezeilen) / leer = aus"
+}

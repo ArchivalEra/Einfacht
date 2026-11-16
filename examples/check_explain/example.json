@@ -1,0 +1,50 @@
+{
+  "description": "Two readings of 'this comment earns its place'",
+  "steps": [
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_explain.py"
+      ],
+      "contains": [
+        "OFF: comments.off"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_explain.py"
+      ],
+      "env": {
+        "REFLECT_COMMENTS": "bogus"
+      },
+      "rc": 2,
+      "contains": [
+        "comments.bad_mode"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_explain.py"
+      ],
+      "env": {
+        "REFLECT_COMMENTS": "strict"
+      },
+      "contains": [
+        "comments.docstring_in_strict_mode"
+      ],
+      "rc": 1
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_explain.py",
+        "--selftest"
+      ],
+      "contains": [
+        "0 FAIL"
+      ]
+    }
+  ]
+}
