@@ -887,9 +887,22 @@ def cmd_get(argv):
 
 
 def _init_skeleton(root, state):
-    """Skeleton docs to generate: `{filename: body}`. **Pure data**, never touches disk."""
+    """Skeleton docs to generate: `{filename: body}`. **Pure data**, never touches disk.
+
+    ⚠️ **Every name comes from a knob.** The first version wrote the literals
+    `retractions.json` / `README.md`, so `--init` in a repo that had renamed its
+    documents produced files the gates were not looking for, and the very first
+    `registry --run commit` went FATAL. The rename fixture only exercised the
+    **gates**, never `--init` -- "the fixture passes" does not mean "every path
+    honours the knob".
+    """
     import doc  # noqa: PLC0415
     import registry as _reg  # noqa: PLC0415
+    retract_name = (os.environ.get("REFLECT_RETRACTIONS", "").strip()
+                    or knobs.REGISTRY["REFLECT_RETRACTIONS"][1])
+    history_name = (os.environ.get("REFLECT_HISTORY", "").strip()
+                    or knobs.REGISTRY["REFLECT_HISTORY"][1])
+    readme_name = (knobs.readme_names() or ["README.md"])[0]
     return {
         state: (
             "# " + state + "\n\n"
@@ -907,14 +920,14 @@ def _init_skeleton(root, state):
         # missing history document is a red one. Seeding it here is what makes
         # "prose has one legal home" true on day one rather than after the first
         # red commit.
-        "HISTORY.md": (
-            "# HISTORY\n\n"
+        history_name: (
+            "# " + history_name + "\n\n"
             "> The one carrier where prose is allowed. Every entry here answers\n"
             "> \"why does this rule exist\" -- an account reproducible only under\n"
             "> the conditions of that moment, so it stays off every scan surface.\n\n"
             "## Entries\n"),
-        "retractions.json": '{"schema": 1, "retractions": []}\n',
-        "README.md": (
+        retract_name: '{"schema": 1, "retractions": []}\n',
+        readme_name: (
             "# " + os.path.basename(root) + "\n\n"
             "> the project's human-facing docs. `check_readme_sync` treats the\n"
             "> README trio as three copies of one assertion -- if you add\n"

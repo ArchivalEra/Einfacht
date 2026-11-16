@@ -79,6 +79,37 @@ def _usage():
     return 0
 
 
+def _plugin_exports(plugin, env):
+    """Run the carrier plugin and return its `REFLECT_*` exports.
+
+    ⚠️ `env -0` is a **GNU** extension: BSD `env` (macOS) rejects it, and the
+    first version returned on that non-zero rc -- dropping the **whole carrier**
+    silently. `REFLECT_LANG` / `REFLECT_DOCS` then fell back to their defaults
+    and a renamed repo went red inside the hooks with nothing said.
+
+    So: try NUL-separated (exact, handles newlines in values), fall back to one
+    `NAME=VALUE` per line (printed by every `env`).
+    """
+    rc, out = _sh(["sh", "-c",
+                   '. "$1" >/dev/null 2>&1; env -0', "sh", plugin], env=env)
+    if rc == 0:
+        chunks = out.split("\0")
+    else:
+        rc, out = _sh(["sh", "-c",
+                       '. "$1" >/dev/null 2>&1; env', "sh", plugin], env=env)
+        if rc != 0:
+            return {}
+        chunks = out.splitlines()
+    exports = {}
+    for chunk in chunks:
+        if "=" not in chunk:
+            continue
+        k, v = chunk.split("=", 1)
+        if k.startswith("REFLECT_"):
+            exports[k] = v
+    return exports
+
+
 def _load_env_plugin(tool_dir):
     """Pluggable add-on (issue #8): knobs `export`ed inside
     `einfacht-env.sh`.
@@ -99,16 +130,8 @@ def _load_env_plugin(tool_dir):
     # `env -0` showed not a single REFLECT_*).
     env = dict(os.environ)
     env["EINFACHT_PLUGIN_DIR"] = tool_dir
-    rc, out = _sh(["sh", "-c",
-                   '. "$1" >/dev/null 2>&1; env -0', "sh", plugin], env=env)
-    if rc != 0:
-        return
-    for chunk in out.split("\0"):
-        if "=" not in chunk:
-            continue
-        k, v = chunk.split("=", 1)
-        if k.startswith("REFLECT_"):
-            os.environ[k] = v
+    exports = _plugin_exports(plugin, env)
+    os.environ.update(exports)
 
 
 def _refs_from_stdin():
@@ -241,6 +264,35 @@ def run(phase, repo, stdin_rows=None):
 
 # -- Self-verification -------------------------------------------------------
 
+def _plugin_export_case():
+    """Both parsers must yield the same `REFLECT_*` set.
+
+    Drives `_plugin_exports` with a fake `_sh` that refuses `env -0` (what BSD
+    `env` on macOS does), so the fallback path is exercised rather than assumed.
+    """
+    import tempfile  # noqa: PLC0415
+    saved = _sh
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            plugin = os.path.join(d, "env.sh")
+            with open(plugin, "w", encoding="utf-8") as fh:
+                fh.write("export REFLECT_LANG=zz\nexport REFLECT_DOC=STATE.md\n")
+            env = dict(os.environ)
+            env["EINFACHT_PLUGIN_DIR"] = d
+            nul = _plugin_exports(plugin, env)
+
+            def refuse_nul(cmd, stdin=None, env=None):
+                if any("env -0" in str(c) for c in cmd):
+                    return 1, ""
+                return saved(cmd, stdin, env)
+
+            globals()["_sh"] = refuse_nul
+            lines = _plugin_exports(plugin, env)
+    finally:
+        globals()["_sh"] = saved
+    return nul == lines and nul.get("REFLECT_LANG") == "zz"
+
+
 def _cases():
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
@@ -260,6 +312,11 @@ def _cases():
         # (asking for help is not an error)
         ("hookgate.no_args_prints_usage", lambda: case([]) == 0),
         # (2) What must be reported gets reported
+        # The carrier reaches the hooks through the plugin's exports. Two
+        # parsers, not one: `env -0` (exact) and a line fallback (BSD `env`
+        # rejects `-0`, and dropping the whole carrier silently was the bug).
+        ("\u2605 hookgate.plugin_exports_nul_and_lines",
+         lambda: _plugin_export_case()),
         ("★ hookgate.unknown_phase_is_2", lambda: case(["bogus", "/tmp"]) == 2),
         ("★ hookgate.missing_repo_is_2",
          lambda: case(["commit", "/nonexistent-xyz"]) == 2),
