@@ -162,8 +162,13 @@ def _carrier_exports(target, requested):
     name = requested.get("REFLECT_ENV_FILE", "Einfacht.env")
     relative = name if os.path.isabs(name) else os.path.join(target, name)
     hooked = os.path.join(target, "reflect-hooks", name)
-    path = hooked if not os.path.isabs(name) and os.path.isfile(hooked) else relative
-    if not os.path.isfile(path):
+    path = hooked if not os.path.isabs(name) and os.path.exists(hooked) else relative
+    # "No carrier" and "a carrier I cannot read" are different answers. The
+    # first version tested `isfile` and returned `{}` for both -- so a path that
+    # existed but was not a readable file (a directory, a permission wall) was
+    # silently treated as "this repo has no carrier", and the steps then ran
+    # knob-less and could still pass.
+    if not os.path.exists(path):
         return {}, None
     try:
         with open(path, encoding="utf-8") as fh:
@@ -416,6 +421,15 @@ def _cases():
 
 
 def _carrier_case():
+    """A readable carrier parses; an unreadable one is a **problem**, not `{}`.
+
+    ⚠️ The unreadable half is simulated by pointing the carrier name at a
+    **directory** (`Einfacht.env` exists but is a directory, so `open` raises
+    `IsADirectoryError`). The first version used `os.chmod(path, 0o000)`, which
+    is a no-op on Windows -- `chmod` there only toggles the read-only bit, so the
+    file stayed readable and the case failed on the Windows CI leg only
+    (observed). A directory is unreadable on every platform.
+    """
     import tempfile  # noqa: PLC0415
     with tempfile.TemporaryDirectory() as root:
         os.makedirs(os.path.join(root, "reflect-hooks"))
@@ -425,12 +439,11 @@ def _carrier_case():
         exports, problem = _carrier_exports(root, {})
         if problem is not None or exports.get("REFLECT_DOCS") != "STATE.md":
             return False
-        os.chmod(carrier, 0o000)
-        try:
-            _exports, broken = _carrier_exports(root, {})
-        finally:
-            os.chmod(carrier, 0o644)
-        return broken is not None and getattr(broken, "code", "") == "examples.carrier_unreadable"
+        os.remove(carrier)
+        os.makedirs(carrier)                      # a directory where a file is expected
+        _exports, broken = _carrier_exports(root, {})
+        return (broken is not None
+                and getattr(broken, "code", "") == "examples.carrier_unreadable")
 
 
 MODULE = module_meta("Example runner", "isolated runnable examples with discovered coverage")
