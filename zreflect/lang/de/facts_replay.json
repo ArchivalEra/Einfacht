@@ -10,16 +10,12 @@
  "replay.no_cmd": "`%(key)s` hat keinen Wiederholungsbefehl — ein Fakt ohne cmd ist Prosa (der nackter-Wert-Vertrag verlangt, dass er ein cmd hat)",
  "replay.none_ran": "%(attempts)d Versuche neu ausgeführt und **kein einziger gelang** (alle rc≠0 / Timeout) — wenn die Umgebung oder die Shell insgesamt kaputt ist, tarnen sich Fehler pro Eintrag als \"alle Daten wurden geprüft\" (Nullwert-Wächter)",
  "replay.off": "Wiederholungs-Tor: REFLECT_REPLAY=off ⇒ dieses Tor ist abgeschaltet (gesagt, nicht als geprüft ausgegeben). Es gibt keine Ausnahme pro Eintrag: ein Fakt, der hier nicht wiederholbar ist, gehört nach HISTORY",
- "replay.ok": "Wiederholungs-Tor: OK (%(count)d Fakten wörtlich neu ausgeführt; stdout entspricht dem Register%(witnessed)s%(calibrated)s)",
+ "replay.ok": "Wiederholungs-Tor: OK (%(count)d Fakten wörtlich neu ausgeführt; stdout entspricht dem Register%(calibrated)s)",
  "replay.ok_calibrated": ", %(count)d kalibriert",
- "replay.ok_witnessed": ", %(count)d mit Zeugen",
  "replay.principle_is_off": "Prinzip `%(key)s` kam **aus** zurück (nicht aktiviert): %(detail)s — aus ist kein Bestehen. Befehl: %(command)s",
  "replay.principle_said_nothing": "Prinzip `%(key)s` hat **nichts** gesagt (stdout leer) — das ist nicht von 'nie gelaufen' zu unterscheiden. Befehl: %(command)s",
  "replay.skip_is_gone": "Fakt `%(key)s` setzt `replay: false` -- eine Ausnahmeklasse gibt es nicht mehr: ein Fakt, der in dieser Umgebung nicht wiederholbar ist, gehört nach HISTORY, nicht ins Register. Eine Ausnahme mit Prosa-Begründung ist von einem still nicht mehr geprüften Fakt nicht unterscheidbar",
  "replay.timeout": "`%(key)s` Wiederholung **Zeitüberschreitung** (%(seconds).0fs): `%(command)s` — behandle eine Zeitüberschreitung nicht als Daten. Hinweis: nach einem Neustart kann der erste Kaltstart-Lauf eine Zeitüberschreitung haben — führe vor dem Urteil einmal erneut aus, oder erhöhe REFLECT_REPLAY_TIMEOUT",
  "replay.title": "Wiederholungs-Tor",
- "replay.too_deep": "Replay-Verschachtelung zu tief (Tiefe %(depth)d, Grenze %(limit)d) — die Befehle im Register bilden einen Zyklus: das Kommando eines Prinzips löst erneut Replay aus. Register korrigieren; Grenze nicht erhöhen",
- "replay.witness_command_failed": "`%(key)s` Zeuge **Befehl fehlgeschlagen** (rc=%(return_code)s): `%(command)s` — der Zeugenbefehl selbst ist tot (ein Zeuge muss billig, harmlos, schreibgeschützt sein)",
- "replay.witness_mismatch": "`%(key)s` Zeuge passt nicht: Zeuge=%(actual)s vs erwartet=%(expected)s — Herkunft-/Kontext-Drift (das Werkzeug oder die Eingabe, das/die ihn erzeugte, hat sich geändert); dass der Wert selbst unverändert bleibt, **zählt trotzdem als Vorfall**",
- "replay.witness_timeout": "`%(key)s` Zeuge **Zeitüberschreitung** (%(seconds).0fs): `%(command)s` — ein Zeuge muss billig sein; ein teurer Zeuge ist kein Zeuge"
+ "replay.too_deep": "Replay-Verschachtelung zu tief (Tiefe %(depth)d, Grenze %(limit)d) — die Befehle im Register bilden einen Zyklus: das Kommando eines Prinzips löst erneut Replay aus. Register korrigieren; Grenze nicht erhöhen"
 }

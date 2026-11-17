@@ -92,18 +92,12 @@ SECTION_MAX = 12
 
 
 def _git(repo, *args):
-    """Run one git command; on failure return None (**never fabricate zero values**).
+    """One git command against `repo`; **None on failure**, never a fabricated 0.
 
-    ⚠️ Deliberately does **not** go through `runner.run_cmd`: that seam is for
-    "re-running a ledger cmd verbatim" -- a string command passes through the
-    three-tier shell (bash pipefail semantics / sh / Windows argv splitting)
-    and cwd is always `GATE_REPO`. The git call here is **argv-shaped**
-    (`-C <repo>`, list arguments, no shell, no injection surface), cwd is the
-    **repo given as a parameter** (not the audited repo), and the failure shape
-    is None, not (rc, out). All three contracts differ -- funneling them
-    together would turn the safe argv into shell concatenation or get the cwd
-    semantics wrong. The two copies (here and `check_world.current_branch`)
-    are kept intentionally.
+    Interface: cwd is the argument (not the audited repo), arguments are argv
+    (no shell, no injection surface), and failure is `None` rather than
+    `(rc, out)` -- so a caller cannot mistake "the command died" for "the answer
+    is zero".
     """
     try:
         p = subprocess.run(["git", "-C", repo, *args],

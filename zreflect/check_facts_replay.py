@@ -27,49 +27,28 @@ Criteria (`cmd` runs verbatim, cwd = repo root):
     to /bin/sh and says so in the output -- criteria strength varying with the
     environment must never happen silently.
 
-Three zero-value guards: empty ledger => report; not a single cmd ran
-successfully (all rc!=0/timeout) => report; every fact declares
-`replay: false` **and has no witness, no calibration** => report (full
-exemption is not a "pass", it is "this gate checked nothing"; expensive
-facts carrying witness / calibrate are still checked -- issue #5/#6).
 
-Third tier: **witness** (issue #5) -- an expensive fact with `replay=False`
-can carry a cheap witness (`witness` + `witness_expect`, both required
-together; incomplete shapes are rejected on the spot by `ledger.fact()`).
-Witness is **orthogonal** to `replay`: the value itself is not re-run
-verbatim, but its **provenance/context** ("the tool/input that produced it
-is the one I think it is") is **really run at every commit**, under the same
-bare-value contract (`stdout.strip() == witness_expect`). "Expensive" is
-precisely where a cheap re-check matters most: the artifact did not change,
-but the tool producing it did -- that can slip all the way to the most
-expensive end-to-end regression before exploding. The witness catches it at
-commit time.
-
-Fourth tier: **instrument calibration** (issue #6 (1)) -- the replay contract
+**Instrument calibration** (issue #6 (1)) -- the replay contract
 catches "the command died" (rc!=0), but not **silent instrument drift**: the
 command succeeds, the value is stable, the re-run "passes" forever, yet what
 it measures is not the thing at all (`grep -c X` exits successfully with 0
 when the instrument does not recognize X). A `cmd` that claims "whether the
 artifact contains X" gets a **known-positive sample**: `calibrate` (a cheap
 command run against the sample) + `calibrate_expect` (the sample's known
-output), orthogonal to `replay` / `witness`, **really run at every commit**,
+output), orthogonal to `replay`, **really run at every commit**,
 under the same bare-value contract.
 
-Boundary (stated explicitly in issue #2 (1), don't overdo it): replay should
-cover only facts that **need no build artifacts**. The ones that start
-services or compile binaries opt out explicitly with
-`fact(value, cmd, source, replay=False)` -- that is an exemption with a
-roster and a stated reason, not silence; the whole gate also keeps a
-repo-wide exit via `REFLECT_REPLAY=off` (same precedent as `REFLECT_RETIRED`:
-**state that it is not enabled, don't pretend it was checked**).
-Another class needs no build artifacts but is **different on every run**
-(random padding lengths, GREASE payloads, timestamps -- issue #4 (5)): store
-**one measured sample** + a pair of `*_stable` stability marker keys
-(consumers split into two tiers: stable judged verbatim, unstable judged
-structurally), or set `replay=False` explicitly -- **bare storage is
-forbidden**: bare storage = this fact is red forever = noise = eventually
-the whole gate gets switched off. A value that changes != it cannot enter the
-ledger; you must first declare how it changes.
+Boundary (issue #2 (1)): replay covers facts that **need no build artifacts**.
+A fact that cannot be re-run here does not enter the ledger -- it belongs in
+HISTORY. There is no opt-out flag; a "skip with a stated reason" tier was
+removed after it measured at zero users, because a prose reason is
+unverifiable and "stopped being checkable" then looks exactly like "passes".
+
+A value that changes on every run (random padding, GREASE payloads,
+timestamps -- issue #4 (5)) is still a legal fact: store **one measured
+sample** plus a `*_stable` marker pair, so consumers judge the stable tier
+verbatim and the unstable tier structurally. A value that changes is not
+"cannot enter the ledger" -- you must first declare **how** it changes.
 
 ⚠️ This gate executes **commands from this repo's own ledger** -- the trust
 boundary is the same as the pre-commit scripts themselves. The ledger is a
@@ -199,68 +178,57 @@ def _depth():
         return 0
 
 
-def _probe_failure(kind, key, rc, seconds, command, got, want):
-    """A probe's failure message. Each tier has its **own literal code**.
-
-    ⚠️ The `i18n` contract requires codes to be literals (composed codes make
-    the language-pack directory impossible to prove complete), and in the
-    language packs "witness" and "calibrate" are two different sentences --
-    stuffing the noun into a parameter would break template word order in
-    non-Chinese languages. So this is an `if/else`, not
-    `"replay.%s_..." % kind`.
-    """
+def _probe_failure(key, rc, seconds, command, got, want):
+    """A calibration probe's failure message."""
     if rc is None:
-        return (M("replay.witness_timeout", key=key, seconds=seconds,
-                  command=command) if kind == "witness"
-                else M("replay.calibrate_timeout", key=key,
-                       seconds=seconds, command=command))
+        return M("replay.calibrate_timeout", key=key, seconds=seconds,
+                 command=command)
     if rc != 0:
-        return (M("replay.witness_command_failed", key=key,
-                  return_code=rc, command=command) if kind == "witness"
-                else M("replay.calibrate_command_failed", key=key,
-                       return_code=rc, command=command))
-    return (M("replay.witness_mismatch", key=key,
-              actual=quote(got), expected=quote(want)) if kind == "witness"
-            else M("replay.calibrate_mismatch", key=key,
-                   actual=quote(got), expected=quote(want)))
+        return M("replay.calibrate_command_failed", key=key,
+                 return_code=rc, command=command)
+    return M("replay.calibrate_mismatch", key=key,
+             actual=quote(got), expected=quote(want))
 
 
-def _run_probe(kind, key, entry, run, seconds):
-    """Run one probe (witness / calibrate). Returns `(problem or None, passed)`."""
-    probe = str(entry.get(kind) or "").strip()
+def _run_probe(key, entry, run, seconds):
+    """Run the calibration probe for one fact. Returns `(problem or None, passed)`."""
+    probe = str(entry.get("calibrate") or "").strip()
     if not probe:
         return None, False
-    expect = entry.get(kind + "_expect")
+    expect = entry.get("calibrate_expect")
     rc, stdout = run(probe)
     if rc is None or rc != 0:
-        return _probe_failure(kind, key, rc, seconds, probe, "", ""), False
+        return _probe_failure(key, rc, seconds, probe, "", ""), False
     got = stdout.strip()
     want = str(expect) if expect is not None else ""
     if got != want:
-        return _probe_failure(kind, key, rc, seconds, probe, got, want), False
+        return _probe_failure(key, rc, seconds, probe, got, want), False
     return None, True
 
 
-def _one_probe(kind, ok_key, key, entry, run, seconds, out, stats):
-    """A single probe: no such kind => skip; present => count one attempt, run it, keep the books."""
-    if not str(entry.get(kind) or "").strip():
+def _one_probe(key, entry, run, seconds, out, stats):
+    """One calibration probe: absent => skip; present => run it and keep the books."""
+    if not str(entry.get("calibrate") or "").strip():
         return
-    stats[kind + "_attempts"] += 1
-    problem, passed = _run_probe(kind, key, entry, run, seconds)
+    stats["calibrate_attempts"] += 1
+    problem, passed = _run_probe(key, entry, run, seconds)
     if problem is not None:
         out.append(problem)
     if passed:
-        stats[ok_key] += 1
+        stats["calibrated"] += 1
 
 
 def _run_probes(f, run, seconds, out, stats):
-    """Probe tier (#5 witness / #6 (1) instrument calibration): orthogonal to
-    replay -- an expensive fact's provenance / instrument really runs each
-    commit, under the same bare-value contract."""
-    for kind, ok_key in (("witness", "witnessed"), ("calibrate", "calibrated")):
-        for key in sorted(f):
-            entry = f[key] if isinstance(f[key], dict) else {"value": f[key]}
-            _one_probe(kind, ok_key, key, entry, run, seconds, out, stats)
+    """Instrument calibration (issue #6 (1)): a known-positive sample run against
+    the same instrument, under the same bare-value contract.
+
+    Replay catches "the command died". It cannot catch "the command succeeded,
+    the value is stable, and it measures the wrong thing" -- so that needs its
+    own cheap check, not a second opinion on the value.
+    """
+    for key in sorted(f):
+        entry = f[key] if isinstance(f[key], dict) else {"value": f[key]}
+        _one_probe(key, entry, run, seconds, out, stats)
 
 
 def replay_all(ledger, runner=None):
@@ -274,13 +242,11 @@ def replay_all(ledger, runner=None):
         return {"problems": [M("replay.too_deep", depth=_depth(),
                                limit=_MAX_DEPTH)],
                 "ok": 0, "attempts": 0, "ran": 0,
-                "witness_attempts": 0, "witnessed": 0,
                 "calibrate_attempts": 0, "calibrated": 0}
     run = runner or run_cmd
     out = []
     f = facts_of(ledger)
     stats = {"ok": 0, "attempts": 0, "ran": 0,
-             "witness_attempts": 0, "witnessed": 0,
              "calibrate_attempts": 0, "calibrated": 0}
     if not f:
         # Zero-value guard: an empty ledger is not "no violations", it is
@@ -316,11 +282,10 @@ def run(argv):
     if not os.path.exists(p):
         return fatal(M("replay.ledger_missing", name=name))
     r = replay_all(load_or_fatal(p))
-    wtail = str(M("replay.ok_witnessed", count=r["witnessed"])) if r["witnessed"] else ""
     ctail = str(M("replay.ok_calibrated", count=r["calibrated"]) if r["calibrated"] else "")
     return finish(M("replay.title"), r["problems"],
                   M("replay.ok", count=r["ok"],
-                    witnessed=wtail, calibrated=ctail))
+                    calibrated=ctail))
 
 
 LED = {"facts": {"n": {"value": 12, "cmd": "c"}}}
@@ -335,9 +300,6 @@ def _cases_fixture():
     """Build the fixture ledgers + rendering closures. Returns a dict, fed to the three group functions."""
     multi = {"facts": {"a": {"value": 1, "cmd": "ca"},
                        "b": {"value": 2, "cmd": "cb"}}}
-    wit = {"facts": {"expensive": {"value": "bench-42", "cmd": "echo bench-42",
-                                    "witness": "echo tool-ok",
-                                    "witness_expect": "tool-ok"}}}
     cal = {"facts": {"objcheck": {"value": "fma-present", "cmd": "echo fma-present",
                                    "calibrate": "echo known-positive",
                                    "calibrate_expect": "known-positive"}}}
@@ -380,7 +342,7 @@ def _cases_fixture():
         return [p.params for p in replay_all(ledger, runner=runner)["problems"]
                 if p.code == code]
 
-    return {"multi": multi, "wit": wit, "cal": cal, "said": said,
+    return {"multi": multi, "cal": cal, "said": said,
             "hint_has": _hint_has, "params": params, "codes": codes,
             "pack_lang": pack_lang}
 
@@ -488,33 +450,6 @@ def _cases_replay(fx):
             + _cases_replay_empty(fx))
 
 
-def _cases_witness(fx):
-    """See `_cases()`: this group has 6 entries."""
-    codes = fx["codes"]
-    wit = fx["wit"]
-    return [
-    # (3) witness tier (issue #5)
-    ("replay.witness_ok",
-     lambda: replay_all(wit, runner=lambda c: (0, "bench-42" if c == "echo bench-42" else "tool-ok"))["problems"] == []),
-    ("replay.witness_counted",
-     lambda: replay_all(wit, runner=lambda c: (0, "tool-ok"))["witnessed"] == 1),
-    # the fact's own replay must stay green so the probe's verdict is the only
-    # thing under test (a shared runner would fail the fact first)
-    ("★ replay.witness_mismatch",
-     lambda: codes(wit, lambda c: (0, "bench-42") if c == "echo bench-42"
-                  else (0, "tool-CHANGED")) == ["replay.witness_mismatch"]),
-    ("★ replay.witness_command_failed",
-     lambda: codes(wit, lambda c: (0, "bench-42") if c == "echo bench-42"
-                  else (1, "")) == ["replay.witness_command_failed"]),
-    ("★ replay.witness_timeout",
-     lambda: codes(wit, lambda c: (0, "bench-42") if c == "echo bench-42"
-                  else (None, "")) == ["replay.witness_timeout"]),
-    ("replay.witness_satisfies_guard",
-     lambda: "replay.skip_is_gone" not in
-     codes(wit, lambda c: (0, "tool-ok"))),
-    ]
-
-
 def _cases_calibrate(fx):
     """See `_cases()`: this group has 6 entries."""
     codes = fx["codes"]
@@ -545,7 +480,6 @@ def _cases():
     fx = _cases_fixture()
     return (
         _cases_replay(fx)
-        + _cases_witness(fx)
         + _cases_calibrate(fx)
     )
 

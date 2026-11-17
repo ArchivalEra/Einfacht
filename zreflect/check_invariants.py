@@ -21,10 +21,10 @@ it cannot tell comments from code (a snippet inside a comment still counts as
 "present"). What it proves is "this text is still there", not "the code really
 uses it". The strength ceiling of a declarative check is the shape of the text
 it matches. For stronger guarantees, do not use grep: that is the job of
-`calibrate` (measures the **artifact**) or `witness` (measures the **source**).
-Orthogonal to `calibrate` (issue #6, item 1) -- keep them apart: one guards the
-**measurement instruments**, the other guards **the repo files themselves**
-(what recipes / source code should look like).
+`calibrate` (issue #6, item 1). Orthogonal to this gate -- keep them apart: one
+guards the **measurement instruments** (does the command measure what it
+claims), the other guards **the repo files themselves** (what the source should
+look like).
 
 **Pluggable**: `REFLECT_INVARIANTS` unset => explicitly not enabled, exit 0
 (repos that do not configure it are entirely unaffected; the discovery-based

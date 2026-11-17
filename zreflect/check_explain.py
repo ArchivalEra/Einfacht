@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -51,6 +52,69 @@ DEFAULT_MODE = "off"
 # because the body is trivial).
 DOC_MAX_CHARS = 500
 BODY_MAX_LINES = 20
+
+# `--classify`: a docstring that recounts what a previous version did is
+# **history**, not a contract. Measured on this repo: 61 of 111 over-long
+# docstrings carry a temporal marker, 30 are public and carry none (a possible
+# calling contract), and 20 are private and carry none -- those cannot be decided
+# mechanically because nothing in the text says whether it explains "how to call
+# me" or "why I exist".
+#
+# The point of three classes rather than a list: a hand-written list of "these
+# need fixing" drifts, cannot be re-run, and hands the judgement to whoever reads
+# it next. A classifier shrinks "111 to look at" into "N to decide", and N is
+# recomputed on every run.
+TEMPORAL = re.compile(
+    r"(used to|first version|was wrong|no longer|had been|"
+    r"\u4e0a\u4e00\u7248|\u539f\u6765|\u66fe\u662f|\u539f\u672c|"
+    r"\u6b64\u524d|\u66fe\u7ecf|\u5f53\u65f6|observed)", re.I)
+CLASSES = ("history", "contract", "undecided")
+
+
+def classify(path, src, chosen="mismatch"):
+    """Group over-long docstrings into `{class: [(file, line, name)]}`.
+
+    `history` = carries a temporal marker (it recounts), `contract` = public and
+    carries none (it may state a calling convention), `undecided` = private and
+    carries none (nothing in the text says which it is).
+    """
+    out = {k: [] for k in CLASSES}
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return out
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        doc = ast.get_docstring(node) or ""
+        if len(doc) < DOC_MAX_CHARS:
+            continue
+        after_doc = max((node.body[1].lineno if len(node.body) > 1
+                         else (node.end_lineno or node.lineno)), node.lineno)
+        body = (node.end_lineno or node.lineno) - after_doc + 1
+        if body > BODY_MAX_LINES:
+            continue
+        if TEMPORAL.search(doc):
+            out["history"].append((path, node.lineno, node.name))
+        elif node.name.startswith("_"):
+            out["undecided"].append((path, node.lineno, node.name))
+        else:
+            out["contract"].append((path, node.lineno, node.name))
+    return out
+
+
+def classify_tree(zdir=None):
+    """Classify every file under `zdir` (default: the suite's own directory)."""
+    import os.path  # noqa: PLC0415
+    base = zdir or gate.zdir()
+    merged = {k: [] for k in CLASSES}
+    for name in sorted(os.listdir(base)):
+        if not name.endswith(".py"):
+            continue
+        src = open(os.path.join(base, name), encoding="utf-8").read()
+        for key, rows in classify(name, src).items():
+            merged[key].extend(rows)
+    return merged
 
 
 def mode():
@@ -98,8 +162,21 @@ def problems(paths, chosen):
             for p in function_reports(name, src, chosen)]
 
 
+def _print_classification(merged):
+    """The `--classify` report: three groups, then the exit code the ticket names."""
+    for key in CLASSES:
+        rows = sorted(merged[key])
+        print("%-10s %d" % (key, len(rows)))
+        for path, line, name in rows:
+            print("    %s:%d  %s" % (path, line, name))
+    # rc: 0 = nothing left to decide, 1 = someone must rule on `undecided`.
+    return 1 if merged["undecided"] else 0
+
+
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if "--classify" in argv:
+        return _print_classification(classify_tree())
     chosen = mode()
     if chosen == "off":
         return off(M("comments.off"))
@@ -113,6 +190,21 @@ def run(argv=None):
     return gate.finish(M("comments.title"), probs,
                        M("comments.ok", mode=chosen, files=len(paths),
                          count=len(probs)))
+
+
+def _classify_case():
+    """One source with all three shapes must yield one row in each class."""
+    filler = "".join("A sentence of rationale that runs on. " * 2 + "\n\n"
+                     for _ in range(12))          # comfortably over DOC_MAX_CHARS
+    hist = ('def pub():\n    """Does the thing.\n\n' + filler
+            + 'The first version returned None.\n    """\n    return 1\n')
+    contract = ('def pub2():\n    """Does the thing.\n\n' + filler
+                + '"""\n    return 1\n')
+    undecided = ('def _priv():\n    """Does the thing.\n\n' + filler
+                 + '"""\n    return 1\n')
+    merged = classify("x.py", hist + contract + undecided)
+    return (len(merged["history"]) == 1 and len(merged["contract"]) == 1
+            and len(merged["undecided"]) == 1)
 
 
 def _cases():
@@ -142,6 +234,11 @@ def _cases():
         ("★ comments.bad_mode_is_reported",
          lambda: [p.code for p in problems([("x.py", narrow)], "loud")]
          == ["comments.bad_mode"]),
+        # --classify must separate the three kinds, not just count them: a
+        # recounting docstring is history, a public one may be a contract, and a
+        # private one carrying neither signal is what a human has to rule on.
+        ("comments.classify_splits_three_ways",
+         lambda: _classify_case()),
     ]
 
 

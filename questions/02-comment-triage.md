@@ -1,0 +1,83 @@
+# 02: 哪些被 `check_explain` 扫出来的函数需要整改
+
+**What to build:** 把 `check_explain` 的 `mismatch` 模式从「110 条，都要改吗」
+收窄成「哪些是设计理由伪装成调用契约、哪些是真的契约」。收窄的产物是一条
+**更窄的判据**，不是一份人工清单。
+
+**Blocked by:** None (can start immediately)
+
+**Status:** needs-triage
+
+**Settling:** 不存在 —— 第一交付物就是 `zreflect/check_explain.py --classify`。
+它建成后本行改为：`python3 zreflect/check_explain.py --classify`，
+rc=0 ⇒ `undecided` 为空、每条 docstring 都有结论，本单可结案；
+rc=1 ⇒ 有未裁决项，逐条裁完；rc=2 ⇒ 分类器自身坏了（配置事故，不是判据红）。
+
+## 为什么不是「列个清单」
+
+110 条 docstring 超长，但**其中哪些真的要改**不是清单能回答的问题。人工清单
+的三个毛病这个仓都踩过：
+
+- 清单会漂（手写的名录实测少过三道闸门，且没有判据拦得住）；
+- 清单不可复跑（改完代码，清单还写着旧函数名）；
+- 清单把判断留给了没有上下文的人（三个月后没人知道当初为什么放过第 7 条）。
+
+所以本单要的不是清单，是让判断**可判定、可复跑、可对账**。
+
+## 已经量到的分层（这是起点，不是结论）
+
+按 `body <= 3` 且 `docstring >= 300 × body` 筛：
+
+    57 个  body<=3 且 doc >= 100x body
+    21 个  body<=3 且 doc >= 300x body
+     8 个  body<=3 且 doc >= 500x body
+
+抽查 21 个那一档的三个样本，形态一致：它们解释的是**为什么这么实现**，不是
+**怎么调用**。
+
+- `gate.zdir` — "Purpose: scan my own source"，后半段讲它是与 `GATE_REPO` 的
+  区别（契约），前半段讲为什么需要它（经过）
+- `gate.scanned_sources` — "Single source: 两处曾各写一遍"（纯经过）
+- `check_questions.is_resolved` — "next.py used to filter `!= resolved`"（纯经过）
+
+## 三条候选判据，各自的已知问题
+
+写这张单之前试过三条，都记下来避免重走：
+
+| 判据 | 结果 | 为什么不行 |
+|---|---|---|
+| docstring 段数 > 参数数 + 2 | 46 条 | 无参函数全中——零参数不是「宽」，是不需要说明参数 |
+| 契约词（must/never/raise/…）出现即算契约 | 111 条里 98 条命中 | 分辨率等于零，两个方向都判不出来 |
+| 比值（字符数 / 行数） | 中位 14.3 | 三行函数配 150 字是合理的，比值高不代表有问题 |
+
+## 要建的东西
+
+`check_explain.py --classify`：把每条报告归入三类之一，**分类依据必须是数据，
+不是启发式**。
+
+    history      docstring 里带时态标记（used to / first version / 曾经 / 当时 …）
+                 ⇒ 它讲的是经过，进 HISTORY.md
+    contract     不含时态标记，且函数是公开接口（无前导下划线）
+                 ⇒ 它可能在说调用约定，保留（但需要人确认一次）
+    undecided    不含时态标记，但函数是私有的
+                 ⇒ 判不出来，必须人裁决
+
+`undecided` 是这张单真正要产出的东西：**它把「110 条都要看」压成「N 条要裁决」**，
+而 N 是可复跑算出来的。
+
+## 结算条件
+
+`--classify` 的 rc：
+- `0` — `undecided` 为空（每条都归了类，且归类可复跑）
+- `1` — `undecided` 非空，逐条裁决后写入一个声明文件（`explain-dispositions.json`），
+        每条附理由；下一次跑应降到 0
+- `2` — 分类器本身没实现
+
+**注意**：结算要求的是「没有未裁决项」，不是「110 条都改完了」。改不改 docstring
+是各仓的裁决；这条判据只保证**每条都有结论**。
+
+## 不要做的事
+
+- 不要生成人工清单（见上）
+- 不要一次性重写 110 个 docstring（不可验证的动作去满足判据，本仓反对这个）
+- 不要把 `mismatch` 的阈值调到能过为止（那是「把判据调松到不报」，与 `off_is_visible` 同形的反面）
