@@ -134,12 +134,8 @@ def _none_like_problems(name, sv):
     """`Settling` declared "none" (e.g. None): must **also** name the first
     deliverable.
 
-    Warning: both spellings of "first deliverable" are accepted -- the one with the
-    measure word and the one without. The convention doc spells it with the measure
-    word; had the checker only accepted the shorter form, **compliant questions
-    would be judged non-compliant** (observed in this repo: of 15 tickets, the one
-    using the natural word order was reported by its own gate as "first
-    deliverable not stated").
+    Both spellings of "first deliverable" are accepted -- the one with the
+    measure word and the one without.
     """
     if _FIRST_DELIVERABLE in sv.replace(_PARTICLE, ""):
         return []

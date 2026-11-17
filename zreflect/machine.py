@@ -1,34 +1,19 @@
 #!/usr/bin/env python3
 """Machine-line protocol: the **single source of "which line is a machine line"** (C1 + C4).
 
-This repo previously held **seven mutually unaware copies** of that
-knowledge, so the same hole leaked once at each of seven places:
+## The shape of the hole
 
-  - `gate.run_phase` used `ln.startswith("OFF:")`
-  - `gate.finish` / `fatal` / `off` each assembled `"OFF: %s"` / `"FATAL: %s"`
-  - `gate.selftest` printed `PASS | ` / `fail | ` / `note | ` / `=== N PASS / M FAIL ===`
-  - `gates-selftest.sh` used `grep -E '^=== [0-9]+ PASS / [0-9]+ FAIL ===$'`
-  - `reflect-hooks/*.sh` each printed their own `PASS | ` / `fail | `
-  - `i18n._CONTRACT_SHAPES` used four `^`-anchored regexes **looking only at the value's first line**
-  - a dozen gates directly did `print("FATAL: %s" % M(...))`
+A `^`-anchored criterion judges only the **first line**: a language-pack value
+of `"context\nOFF: masquerading"` would be accepted, and once rendered the
+`OFF:` stands as its own line that `run_phase` classifies as `off`.
 
-## The shape of the hole (measured, not inferred)
+Runtime data (filenames, document lines, exception text) fills template
+placeholders `%s`, so a filename containing a newline can render a forged
+machine line. **A language pack is a static asset (changing it goes through
+code review); a filename is not.**
 
-`i18n._validate`'s criterion was `shape.match(value)` -- `^`-anchored => it
-judged only the **first line**. A language-pack value of
-`"context\\nOFF: masquerading"` was therefore accepted; once rendered, the
-`OFF:` stood as its own line, and `run_phase` classified it as `off`.
-
-But the more frequently traveled channel is **parameters**: 144 call sites
-fill runtime data (filenames, document lines, exception text) into templates
-as `%s`, and 58 templates start with a placeholder (`%(name)s: ...` -- 34
-`name`, 6 `path`, 6 `file`). Measured: scanning a file named
-`"evil\\nOFF: gate not configured"` renders a forged machine line. **A
-language pack is a static asset (changing it goes through code review); a
-filename is not.**
-
-`s.splitlines()` recognizes **10** separators (`\\n \\r \\x0b \\x0c \\x1c \\x1d
-\\x1e \\x85 U+2028 U+2029`) and does not recognize `\\t \\xa0 \\u200b \\ufeff`.
+`s.splitlines()` recognizes **10** separators (`\n \r \x0b \x0c \x1c \x1d
+\x1e \x85 U+2028 U+2029`) and does not recognize `\t \xa0 \u200b \ufeff`.
 The defense must use the **same** line-splitting semantics, otherwise the
 defense and the consumers each count lines their own way.
 
@@ -86,10 +71,7 @@ lines.
     export variables). What guards it is **not** regex reconciliation but
     `harness.run_plugins()`: it actually runs that script and reports
     `harness.no_machine_summary(file=...)` if the summary line's shape is
-    wrong (measured: break that line and it names the file).
-    (There used to be a `summary_agrees_with_shell()` reconciler here;
-    measured as overlapping harness's function with worse attribution, so it
-    was deleted.)
+    wrong.
 """
 from __future__ import annotations
 
@@ -187,10 +169,8 @@ def _is_broad(line):
 def is_summary(line):
     """Is this whole line the **machine summary** (`=== N PASS / M FAIL ===`)?
 
-    **Single source**: `harness.py` and `reflect-hooks/gate.py` each used to
-    hold a byte-identical copy of the regex
-    (`^=== [0-9]+ PASS / [0-9]+ FAIL ===$`). Three copies would drift -- now
-    they all ask here (the `machine_summary` grammar in `ROWS`).
+    The `machine_summary` grammar in `ROWS` is the single source; consumers ask
+    here instead of holding their own regex.
     """
     return re.match(_BY_KIND["machine_summary"].grammar, line) is not None
 

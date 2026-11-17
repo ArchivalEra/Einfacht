@@ -1,16 +1,6 @@
 #!/usr/bin/env python3
 """The "pick up from the last turn" **collector** -- the memory system's half.
 
-## What it replaces is manual labor
-
-Before a session gets compacted, a human had to hand-write "what was done
-this round, what comes next". Skip it, and after compaction the agent starts
-empty-handed: re-raising already-closed questions, or re-analyzing from zero.
-
-**"Someone must prepare every compaction" is itself a defect** -- it requires
-a human to remember to do what a mechanism should do, and the cost of
-forgetting is the entire context.
-
 ## Interface: a block of lines, **never persisted**
 
     section(repo) -> list[str]      # includes its own header line; <= SECTION_MAX lines
@@ -24,20 +14,13 @@ validate any host's config schema.
 
 ## Why there is no block in a document
 
-This module used to render an `AUTO:NEXT` machine block in `STATE.md`,
-rewritten every turn by a `Stop` hook. **That path never worked once**
-(measured: `facts.py --render-doc` only accepts `AUTO:FACTS` / `AUTO:GATES` /
-`AUTO:RULES`; this block never made it into any document, and `next.render()`
-had no caller besides the self-proof). Worse, it is **naturally incompatible**
-with `facts.py --check`'s byte-exact reconciliation: a block that changes
-every turn makes the check permanently red; exempt it, and that block of the
-document is verified by no one.
-
-**What changes every turn must not occupy a position that gets judged.** So
-it is not persisted: it is computed fresh at each session start. The cost is
-slightly higher (two git calls + one directory read); what it buys is that
-it is **always fresh**, with no intermediate state of "the document says it
-is automatic, but it was never actually written".
+**What changes every turn must not occupy a position that gets judged.** A
+block that changes every turn is naturally incompatible with
+`facts.py --check`'s byte-exact reconciliation: it would make the check
+permanently red, and exempting it would leave that part of the document
+verified by no one. So it is not persisted: it is computed fresh at each
+session start. The cost is slightly higher (two git calls + one directory
+read); what it buys is that it is **always fresh**.
 
 ## What gets collected, and from where
 
@@ -52,13 +35,10 @@ Read only durable disk; never introduce an input that changes by itself.
 
 ## The budget is part of the interface
 
-Text injected into context beyond one screen crowds out the actual work, and
-`AUTO:NEXT` was once truncated by a caller with `[:8]` -- so **the last
-pending items were silently cut** (measured: exactly the part most needed
-after compaction). Truncation now happens **inside the module**
-(`MAX_LISTED` / `SECTION_MAX`); callers no longer need to know the length.
-`next.section_budget_holds` pins "not a single pending item may be squeezed
-out".
+Text injected into context beyond one screen crowds out the actual work.
+Truncation happens **inside the module** (`MAX_LISTED` / `SECTION_MAX`);
+callers never need to know the length. `next.section_budget_holds` pins "not a
+single pending item may be squeezed out".
 
 ## Honest boundaries
 
@@ -362,10 +342,8 @@ def _wontfix_question_dropped():
     """**A wontfix question must not appear under "what is next"** (issue #38).
 
     wontfix is a legal terminal state: the user decided not to do the thing.
-    next.py used to filter `!= "resolved"` with its own closed-set, so the
-    decision was re-raised every turn. The fixture has one wontfix and one
-    open: only the open one may be listed. Never use the real repo -- same
-    reason as _resolved_question_dropped.
+    The fixture has one wontfix and one open: only the open one may be listed.
+    Never use the real repo -- same reason as _resolved_question_dropped.
     """
     import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()

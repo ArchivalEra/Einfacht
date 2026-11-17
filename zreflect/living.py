@@ -2,21 +2,16 @@
 """Living-state extraction: within one document, which lines are "true now" and
 which are "true then".
 
-Migrated from Octave-Full-Wasm's `.githooks/check-handoff.py` (where this set of
-judgments first grew). The problem it solves: gates want to check "does the
-assertion contradict the artifact", but **not every line should be checked** --
-in append-only history sections the numbers are "as they were then"; comparing
-them against today's artifacts is meaningless, and forcing the check would push
-people to rewrite history as the present, which destroys the record.
+Gates want to check "does the assertion contradict the artifact", but **not
+every line should be checked** -- in append-only history sections the numbers
+are "as they were then"; comparing them against today's artifacts is
+meaningless, and forcing the check would push people to rewrite history as the
+present, which destroys the record.
 
-Three hard rules (all learned there; do not "improve" them back into something
-cleverer):
+Three hard rules:
 
   1. **Strict by default**. Every section (**including unnumbered ones**) is
-     living state unless explicitly declared historical. The first version there
-     treated only "numbered and not on the history list" sections as living, so
-     an unnumbered "## Appendix: ..." heading **inherited the previous section's
-     status** -- slide a stale assertion in there and the checker looked away.
+     living state unless explicitly declared historical.
   2. **Inline exit**. A line that itself says it is history (historical /
      retired / formerly / retracted / corrected ...) is exempt. Without this
      exit, the only options are deleting history or moving the section -- the
@@ -24,10 +19,8 @@ cleverer):
      current state", not destroying the record.
   3. **Dated records are exempt, but the provenance must be explicit**. A
      delivery-bundle name (with its 8-digit date) or a **commit sha inside
-     backticks** counts as provenance. Warning: the first version there also had
-     a lax bare-sha regex, and "a fake assertion containing an expired sha" got
-     exempted whole-line as a "dated historical entry" -- that is how misses
-     happen. A laxly recognized exit is a hall pass for fake assertions.
+     backticks** counts as provenance. A laxly recognized exit is a hall pass
+     for fake assertions.
 """
 import re
 
@@ -72,11 +65,8 @@ def living_lines(text, historical_secs=()):
     """Split the document into lines, tagging each as living or not. Returns
     [(line number, line, is living), ...].
 
-    Warning: the file **header** (before the first `## `) is living state --
-    observed there: the header held precisely the lines most worth checking
-    ("wasm sha ..., full build N suites / M items"); the first version skipped
-    the whole leading block, letting the most important assertions slip away.
-    Here the header **is judged** (the inline exit still applies).
+    The file **header** (before the first `## `) is living state and is judged;
+    the inline history exit still applies.
     """
     out = []
     keep = True

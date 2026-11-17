@@ -88,9 +88,8 @@ def machine():
 
     ⚠️ **Must not be a module-level `import machine`**: `machine` needs
     `from gate import module_meta` to declare itself (a registry adoption
-    requirement), so a module-level import would be circular (observed ImportError).
-    Same reason as `i18n.py`'s lazy import -- a cycle can only be broken by ordering
-    "who goes first", not by each side grabbing a piece inside the loop.
+    requirement), so a module-level import would be circular. The lazy import
+    orders the two sides of the cycle.
     """
     import machine  # noqa: PLC0415
     return machine
@@ -217,9 +216,8 @@ def scanned_sources(base, configured=False):
 def py_sources(base):
     """`(filename, text)` of all `.py` under the `base` directory; unreadable => skip.
 
-    **Single source**: this `listdir` + `open(errors="replace")` block used to be
-    written out in **three** places -- `knobs._py_sources`,
-    `check_snapshots.collect`, and `check_i18n`'s collection loop. All call here now.
+    **Single source**: `knobs._py_sources`, `check_snapshots.collect`, and
+    `check_i18n`'s collection loop all delegate here.
 
     Unreadable => that file is skipped (not a whole-directory failure): each caller
     judges emptiness itself -- "empty" means something different to each of them
@@ -227,8 +225,8 @@ def py_sources(base):
     gate is broken").
 
     ⚠️ `base` must be passed explicitly: upstream defaults differ (the tool repo's
-    `zreflect` vs the audited repo's `zreflect`); providing a default would hide that
-    difference (observed).
+    `zreflect` vs the audited repo's `zreflect`); providing a default would hide
+    that difference.
     """
     import os  # noqa: PLC0415
     out = []
@@ -322,9 +320,8 @@ def _env_hint_off():
     """Is `REFLECT_ENV_HINT` explicitly off -- goes through `knobs.flag` (the single
     source of the flag vocabulary).
 
-    ⚠️ This used to be `.lower() == "off"`: a **second flag vocabulary** next to
-    `doc.accepts_principles`'s `("1","true","yes")` (the latter case-sensitive;
-    observed: `TRUE` didn't take effect). Now unified through `knobs.flag`.
+    ⚠️ `knobs.flag` accepts the whole flag vocabulary, including `TRUE` and
+    `YES`, instead of a second case-sensitive list.
     """
     import knobs  # noqa: PLC0415
     return knobs.flag("REFLECT_ENV_HINT") is False
@@ -668,9 +665,8 @@ def _is_delegated(why):
     short circuit)?
 
     ⚠️ Must look at `.code`, never `str(why)`: `why` is a `Message` whose str value
-    has already been rendered **in the current language** -- under `zh` it becomes
-    Chinese, matching against the English code never hits, and a delegated assertion
-    gets reported as an always-true short circuit (observed: `KeyError: 'label'`).
+    has already been rendered **in the current language**, so matching against the
+    English code never hits under `zh`.
     """
     return getattr(why, "code", None) == "gate.never_falsifiable_delegated"
 
@@ -744,8 +740,7 @@ def _report_one(label, fn):
     report" must stay separate:
 
       - delegated + passed  -> `note | ... | delegated`
-      - delegated + failed  -> **`fail | ...`** (this used to `continue`, discarding
-        the result entirely)
+      - delegated + failed  -> **`fail | ...`**
       - always-true / exception -> `fail | <reason>`
       - normal              -> `PASS | ...` or `fail | ...`
     """
@@ -864,9 +859,8 @@ def default_runner(f, repo_root=None):
 
     ⚠️ **stdout and stderr must be merged**: this repo's convention is "problem lines
     all on stderr", so a gate with rc=2 can have **empty** stdout (the reason is all
-    on stderr). Returning only `p.stdout` => the aggregator gets (2, ""), knowing
-    neither which file broke nor why (observed:
-    `REFLECT_SNAPSHOT_ROOT=/nonexistent` => stdout='').
+    on stderr). Returning only `p.stdout` gives the aggregator `(2, "")`, with no
+    reason for the failure.
     """
     import subprocess  # noqa: PLC0415
     p = subprocess.run([sys.executable, f], capture_output=True, text=True,
@@ -877,12 +871,8 @@ def default_runner(f, repo_root=None):
 
 def _empty_result():
     """The initial shape of the aggregate result. `fail_out` keeps **each failed
-    gate's raw output**.
-
-    ⚠️ When the aggregator prints only filenames, users must re-run the gate
-    themselves to learn why it went red (observed: the hook reported only
-    `FAILED check_facts.py`, while running it directly showed
-    `facts.bare_number_unaccounted(line=9, ...)`).
+    gate's raw output**, so the aggregator can explain a red gate without asking
+    the user to re-run it.
     """
     return {"ran": 0, "off": 0, "failed": 0, "fatal": 0, "error": 0,
             "off_list": [], "fail_list": [], "fatal_list": [], "error_list": [],

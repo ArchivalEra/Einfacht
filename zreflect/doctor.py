@@ -157,7 +157,7 @@ _PROBES = {"http": _http_probe, "docker": _docker_probe,
 
 
 def label(check):
-    """Label used to name a DOWN line: kind:target."""
+    """Label for a DOWN line: kind:target."""
     target = check.get("url") or check.get("container") \
         or check.get("port")
     return "%s:%s" % (check.get("kind"), target)

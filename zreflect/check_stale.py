@@ -260,13 +260,7 @@ def _load_docs(names):
 
 def scanned_docs():
     """The **list of files** this gate scans (`knobs.docs_names()`, the single
-    source of truth).
-
-    Warning: this function name used to return a {name: body} dict while
-    `check_retractions`'s same-named function returned a list -- one name,
-    two return shapes. The reconciliation criterion on the `knobs` side
-    therefore read the dict's keys (it happened to work). The name says
-    "list", so it returns a list.
+    source of truth). Returns a list of names, not a {name: body} dict.
     """
     return knobs.docs_names()
 

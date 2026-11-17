@@ -367,13 +367,12 @@ def pack_dir():
 
 
 def _load_shards(base, lang):
-    """`<lang>/*.json` shards (files split by namespace for parallel development; later ones override the same code).
+    """`<lang>/*.json` shards (files split by namespace; later ones override the same code).
 
-    ⚠️ **Broken JSON must not be silently skipped**: there used to be an
-    `except: continue`, so a broken shard only sent those codes back to bare
-    codes while **rc stayed 0** -- "half-installed looked installed"
-    (observed). Now broken shards / non-objects always raise `MissingPack`.
-    """
+**Broken JSON is not skipped**: a broken shard or non-object always raises
+`MissingPack`. Silently dropping a shard would send its codes back as bare
+codes while rc stays 0 -- a half-installed pack would look installed.
+"""
     import json  # noqa: PLC0415
     d = os.path.join(base, lang)
     if not os.path.isdir(d):
@@ -535,12 +534,11 @@ def _scoped(catalog, fn):
 def _as_null(fn):
     """Run fn inside an **explicit null** scope.
 
-    ⚠️ Shape assertions must carry their own null scope: once the entry point
-    `activate()` has set zh / en, cases that read `M(...)` directly all go red
-    (observed: KeyError under `REFLECT_LANG=zh gates-selftest.sh`) -- an
-    assertion that does not declare its scope degenerates into "tested by
-    whatever environment it happens to run in".
-    """
+Shape assertions that read `M(...)` directly must carry their own null scope:
+with a language pack active via `activate()`, the same assertion reads
+translated text and degenerates into "tested by whichever environment it
+happens to run in".
+"""
     return _scoped(NULL, fn)
 
 

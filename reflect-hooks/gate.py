@@ -2,14 +2,10 @@
 """Gate entry point: **meant to be called by other hook systems**; it never
 takes over hook slots.
 
-## Why "expose one entry" instead of `git config core.hooksPath`
-
-`core.hooksPath` is git's **global override switch** -- once it is set, git
-**stops looking at** `.git/hooks/` entirely. Measured: after setting it, the
-script inside `.git/hooks/pre-commit` never ran once, while commits kept
-succeeding with no message at all. So husky / lefthook / pre-commit (Python)
-/ handwritten hooks are all **silently disabled** -- exactly the "deployed
-does not mean running" state this repo exists to eliminate.
+`git config core.hooksPath` is git's **global override switch** -- once it is
+set, git **stops looking at** `.git/hooks/` entirely, so husky / lefthook /
+pre-commit (Python) / handwritten hooks are all **silently disabled** (the
+"deployed does not mean running" state this repo exists to eliminate).
 
 So this repo only **exposes one mouth**: any hook system can call this line
 from its own hook. Hook locations, ordering, other tools -- all yours; we
@@ -27,24 +23,13 @@ provide the criteria and never take the seat.
     Exit codes: 0 = green; 1 = criterion red (reject); 2 = environment/config
     broken.
 
-## Why Python instead of sh
+Python keeps the entry inside `check_i18n`'s AST-scanned surface (shell output
+is invisible to it), avoids depending on `sh` on Windows, and makes pre-push's
+text-parsing ref protocol explicit.
 
-This used to be `einfacht-gate.sh` (155 lines of shell with 26 `echo`s of
-Chinese). Three diseases:
-
-  1. **It bypassed the zero-language regime**: `check_i18n` is an AST scanner
-     (it only reads `.py`), so it cannot see shell => "outputs Chinese with
-     no language pack installed" lived here undetected for a long time.
-  2. Portability: on Windows `sh` may not exist, and `$(...)` / `[ -f ]` each
-     have their own dialects.
-  3. pre-push's ref protocol is **text parsing** -- far clearer in Python
-     than in shell.
-
-## The old install style still works
-
-Old users of `core.hooksPath reflect-hooks` invoke the `pre-commit` /
-`pre-push` files in this directory; they are thin shells around this entry
-(still present). Upgrade without breakage.
+The `pre-commit` / `pre-push` files in this directory remain as thin shells
+around this entry, so the `core.hooksPath reflect-hooks` install style keeps
+working.
 """
 from __future__ import annotations
 
@@ -362,9 +347,6 @@ def _run_cli(argv, quiet=False):
     `quiet=True` (**selftest only**): print nothing -- selftest output is the
     interface a human checks; if diagnostics flood it, there is nothing left
     to check (this repo's discipline: "pure functions stay quiet").
-    Warning: it used to print during the selftest, so those lines landed
-    **after** the machine summary line, and the harness taking "the last
-    line as the summary" picked up an error message (measured).
     """
     def _say(code, **kw):
         if not quiet:

@@ -1,24 +1,9 @@
 #!/usr/bin/env python3
 """Gate selftest harness: **discovers** every gate and first proves it can go red.
 
-## Why Python and not shell
-
-This used to be `gates-selftest.sh` (287 lines of shell). What it did was
-**pure orchestration**: walk the roster, run subprocesses, judge rc, judge
-the machine summary line. Python does all three more naturally, and --
-
-**the shell version bypassed this repo's zero-language regime wholesale**:
-the 38 Chinese strings it `echo`ed were hardcoded literals, and `check_i18n`
-is an AST scanner that only sees `.py`, so it never saw them. Thus
-"outputs Chinese with no language pack installed" lived in that file
-indefinitely, unintercepted (caught in review: it printed Chinese even with
-`REFLECT_LANG` unset).
-
-After the move to Python, all of its text goes through `M()`, under the
-same regime as every other gate. **This also eliminated almost all of the
-shell vocabulary copies** -- only `einfacht-env.sh` remains (it must be
-shell), and its summary-line shape is checked by actually running it in
-`run_plugins()`.
+All of its text goes through `M()`, under the same zero-language regime as
+every other gate; only `einfacht-env.sh` remains shell, and its summary-line
+shape is checked by actually running it in `run_plugins()`.
 
 ## Why "discovery" and not a "roster"
 
@@ -28,7 +13,7 @@ the roster itself stays green and tells you everything is fine. So here it
 is the other way around: **registration is discovered**, not remembered
 (rosters are always derived from `registry`'s declaration lines).
 
-## Four sections of duty (one-to-one with the original shell version)
+## Four sections of duty
 
     gates        discover and run every gate → must be able to red + must emit a machine summary line
     plugins      pluggable plugins (those in reflect-hooks/*.sh carrying the selftest marker + named specials)
@@ -84,11 +69,8 @@ def _tail(text, n=3):
     """Lines to relay on failure: **prefer** `fail |` / `FATAL:` lines; fall
     back to the last n lines only if none are found.
 
-    ⚠️ This used to always take the last 3 lines -- but a selftest's layout is
-    "fail lines first, summary line last", so what got relayed was always the
-    **summary** like "=== 28 PASS / 1 FAIL ===", with no way to see which case
-    went red. Observed: CI's Windows leg reported only `28 PASS / 1 FAIL`,
-    with no way to know which case -- the whole section had to be re-run.
+    ⚠️ A selftest's layout is "fail lines first, summary line last", so taking
+    the last n lines relays only a summary and hides which case went red.
     """
     all_lines = [ln for ln in (text or "").splitlines() if ln.strip()]
     notable = [ln for ln in all_lines
@@ -304,8 +286,8 @@ def _default_names_go_red(repo, gates, tmp):
     """Under default names, the gates named by `--red-need` **must go red**. Returns `(ok, the ones that didn't)`.
 
     ⚠️ The environment must be **clean**: give it only `GATE_REPO`, no renamed
-    knobs -- using the fixture's `env` means still running renamed, and this
-    criterion can never hold (observed).
+    knobs -- the fixture's `env` still runs renamed, and this criterion cannot
+    hold.
     """
     clean = {k: v for k, v in os.environ.items() if not k.startswith("REFLECT_")}
     clean["GATE_REPO"] = tmp
@@ -406,13 +388,8 @@ def run_zero_language(repo):
 
     Why this case lives in the harness and not in `check_i18n`: `check_i18n`
     is a **static** AST scan (bare Chinese literals in source). It can't see
-    "Chinese assembled at runtime", nor shell scripts. The observed incident
-    was exactly that shape: clean source, injection emitting full Chinese
-    (`inject_state` auto-picked the zh pack). A static criterion can never
-    catch that.
-
-    This one is a **behavioral** criterion: really run it, really look at the
-    output.
+    "Chinese assembled at runtime", nor shell scripts. This one is a
+    **behavioral** criterion: really run it, really look at the output.
 
     ⚠️ The environment **must** have no `REFLECT_LANG` -- what's judged is
     exactly the "no language pack requested" path.
@@ -449,7 +426,7 @@ def run_zero_language(repo):
 
 
 def _section(heading, runner):
-    """Run one section, print it, return that section's rc (0 = pass). main's loop body used to be repeated five times."""
+    """Run one section, print it, return that section's rc (0 = pass)."""
     print(str(M(heading)))
     ok, *_, lines = runner()
     for ln in lines:

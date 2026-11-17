@@ -207,10 +207,8 @@ def main(argv):
 def _fixture():
     """A real git fixture repo plus specs of each shape. Returns a dict.
 
-    Warning: this block (eight spec literals + repo building) used to live
-    directly inside `_cases()`, interleaved with the assertions -- half of the
-    70 lines were fixture. Separated, "which spec exercises which criterion"
-    is visible at a glance.
+    The eight spec literals and repo building live here, separate from the
+    assertions in `_cases()`.
     """
     import atexit  # noqa: PLC0415
     import shutil  # noqa: PLC0415

@@ -158,16 +158,12 @@ def _is_output_call(node):
 
 
 def _docstring_both(tree):
-    """The docstring constants of a tree, **both views in one walk**.
+    """The docstring constants of a tree: node identities and line spans in one walk.
 
-    Two producers used to collect docstrings separately: `_doc_nodes` (node
-    identities, for the bare-text exemption) and `_docstring_lines` (line
-    spans, for the non-ASCII-prose exemption) -- each with its own scope-node
-    tuple and its own "is body[0] a string constant" judgment. The two
-    identities and the two spans come from one walk of one helper now, so the
-    node view and the line view cannot disagree about what counts as a
-    docstring.
-    """
+The node view serves the bare-text exemption; the line view serves the
+non-ASCII-prose exemption. Both come from the same helper so they cannot
+disagree about what counts as a docstring.
+"""
     nodes = set()
     lines = set()
     for node in ast.walk(tree):
@@ -426,12 +422,11 @@ def _fixture_literal_problems(name, tree):
 
 
 def sources_for(d, configured=False):
-    """Which `.py` files to collect -- see `gate.scanned_sources` (the single source of both policies).
+    """Which `.py` files to collect -- forwards to `gate.scanned_sources`.
 
-    ⚠️ This used to re-implement that ternary inline, and
-    `check_snapshots.collect` had its own copy -- the same criterion in two
-    places. Now it only forwards.
-    """
+The discovery policy has one owner; a second copy would let the two policies
+drift apart under a rename fixture.
+"""
     return gate.scanned_sources(d, configured)
 
 

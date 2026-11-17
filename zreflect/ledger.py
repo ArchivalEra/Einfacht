@@ -60,9 +60,6 @@ def load_or_fatal(path):
     traceback (Python would exit 1, and rc=1 in `registry --run` means
     "criterion red" -- a completely different fix: fix the configuration vs
     fix the problem).
-
-    Observed: a `{ broken` FACTS.json made `check_facts.py` print a traceback
-    and exit 1, and the user would go fix the gate.
     """
     import sys  # noqa: PLC0415
 

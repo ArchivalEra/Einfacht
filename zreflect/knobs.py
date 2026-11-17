@@ -55,8 +55,7 @@ class _Semantic(str):
     `REGISTRY` is built at import time, while language packs are only
     `activate()`d inside the entry `main_selftest_or` -- calling `M(...)` directly
     here would render at construction time and be **permanently stuck on the
-    null pack** (observed shape: a zh user sees the code instead of the
-    semantics). So we store the code and re-render per the **current** language
+    null pack**. So we store the code and re-render per the **current** language
     at `__str__` time (consumers only format it via `%(entry)s`; see
     check_envfile's file_missing / dir_missing messages).
     """
@@ -199,11 +198,8 @@ def scan_surface_problems(py_dir=None):
     absent from the roster.
 
     **Roster self-consistency**, independent of whether any carrier
-    (Einfacht.env) exists -- it belongs to the "roster" itself (C3): this
-    judgment used to be welded behind check_envfile.run()'s "carrier exists"
-    precondition, and since this repo has no Einfacht.env, the phantom guard
-    never executed (observed hit). `py_dir` is injectable (fake source tree for
-    self-evidence).
+    (Einfacht.env) exists -- it belongs to the "roster" itself (C3). `py_dir` is
+    injectable (fake source tree for self-evidence).
     """
     d = py_dir if py_dir is not None else gate.zdir()
     toks = set()
@@ -506,11 +502,8 @@ def _discovery_sees_planted_lang():
     Uses a temporary `REFLECT_I18N` (base pack + planted half-broken pack) --
     never touches the real repo's lang/.
 
-    ⚠️ The planted language name **must differ from the base pack's**: it used to
-    hard-code planting `de` while the base was `a_pack_lang()`; once the real
-    repo installed `de` (sorted() makes `de` the base), the planted half-broken
-    pack would **overwrite** the base pack => this self-test false-rotted after
-    German was installed (observed).
+    ⚠️ The planted language name **must differ from the base pack's**: a name
+    equal to the base pack's makes the planted half-broken pack overwrite it.
     """
     import json  # noqa: PLC0415
     import shutil  # noqa: PLC0415
@@ -583,17 +576,11 @@ def installed_langs():
     """Which languages are actually installed in the pack directory (**discovered**,
     never a written list).
 
-    C4's "a hand-written roster always drifts" applies here too: `langs=("zh",
-    "en")` was hard-coded before, so adding a `de/` (half-installed, missing
-    keys) under `zreflect/lang/` went **completely unseen** by the reconcilers --
-    "installed but never reconciled" is exactly the class of silence this repo
-    exists to eliminate. Now it scans the directory.
-
     **The judgment is not "the directory exists" but "there really are .json
-    pack files in there"**: earlier it collected by directory name, so a
-    `straynotes/` directory or a stray `extra.json` in the pack root would be
-    taken for a language, inventing "missing keys" and rotting the roster red
-    (observed). A language pack's judgment is "has a pack file".
+    pack files in there"**: a `straynotes/` directory or a stray `extra.json` in
+    the pack root is not a language. A language pack's judgment is "has a pack
+    file". An unreadable pack root raises `PacksUnreadable`; an empty root
+    returns `[]` (a legal "no packs installed" state).
     """
     base = pack_dir()
     out = set()
@@ -795,23 +782,14 @@ def pack_coverage_problems(codes=None, loader=None, discovery=None):
     installed pack**.
 
     The zh↔en set-difference comparison (`pack_sync_problems`) cannot see "both
-    sides missing the same thing" -- observed: delete `locks.ok` from both zh and
-    en and `pack_sync_problems()` returns `[]`, while a `REFLECT_LANG=zh` user
-    sees `locks.ok(count=3)` (a bare code) on screen with a normal exit code.
-    That is the **silent degradation this repo exists to fight**, the classic C4
-    failure mode ("two copies that must agree" only guarantees agreement, not
-    completeness).
+    sides missing the same thing"; a missing code is a bare code on screen with
+    a normal exit code. The reference surface is the **source** (`used_codes()`),
+    not another pack -- so two packs drifting together are still caught. Zero
+    packs is a legal state => nothing to check; return empty.
 
-    The reference surface is the **source** (`used_codes()`), not another pack --
-    so two packs drifting together are still caught. Zero packs is a legal state
-    => nothing to check; return empty.
-
-    `langs=None` => discover via `discovery()` (default `installed_langs()`).
-    ⚠️ This parameter used to be **accepted but never called** (in the
-    signature, absent from the implementation) -- passing a fake discovery in
-    changed nothing (observed). That is the shape this repo detests most: an
-    interface claiming injectability that is not. Now it goes through the same
-    channel as `pack_sync_problems`.
+    `discovery` decides "which languages count" (default `installed_langs()`),
+    through the same channel as `pack_sync_problems`. `loader` and `codes` are
+    injectable for self-evidence.
     """
     load = loader if loader is not None else load_pack
     codes = used_codes() if codes is None else set(codes)
@@ -855,18 +833,9 @@ def pack_sync_problems(loader=None, discovery=None):
     """C4 reconciliation (3): every language pack's **key set** and **placeholder
     names** must agree.
 
-    Nothing enforced this before -- hand-add a code to zh and forget en, and a
-    `REFLECT_LANG=en` user silently sees a bare code (the silent degradation
-    this repo exists to eliminate). At the time of writing the two packs were
-    equal, but "equal" was luck, not a judgment.
-
     `discovery` decides "which languages count" (default `installed_langs()`).
-    ⚠️ There used to be a `langs=` parameter that could **directly inject a set
-    of language names** -- it let six self-tests bypass the discovery channel:
-    swap `installed_langs()` back to a hand-written list and 5/6 cases stayed
-    green (observed BLIND). Two parameters for the same thing, and the weaker
-    one becomes a back door. Removed: to pin languages, inject `discovery`,
-    going through the same seam as production.
+    To pin languages, inject `discovery`, going through the same seam as
+    production.
     `loader` is injectable (fake packs for self-evidence); the default is
     `i18n.load_pack` (the **merged view** -- same table as the real loader;
     reading single shards would fork from the loader).
@@ -995,8 +964,7 @@ def null_pack():
     Shape judgments in self-evidence ("with no pack installed it should be a
     code") must carry their own null scope: the entry `activate()` sets
     `REFLECT_LANG` to zh/en, and without its own scope an assertion becomes
-    "whatever environment it runs in is what gets tested" -- observed: under
-    `REFLECT_LANG=zh gates-selftest.sh` such cases all went red.
+    "whatever environment it runs in is what gets tested".
     """
     return bind(NULL)
 
@@ -1097,14 +1065,11 @@ def _cases_readme_nominations():
 
 
 def _cases_readme_declared_read():
-    """The declared↔read reconciliation -- never once proven red since landing
-    (AGENTS rule 4).
+    """The declared↔read reconciliation (AGENTS rule 4).
 
     ⚠️ The assertion must **not** be extracted into a helper: `never_falsifiable`
-    only scans the lambda's AST, and delegating to a function blinds it -- that
-    was done before, and after the helper became `return True` it was 26 PASS /
-    0 FAIL all green (observed). Rather write a long line than switch the
-    detector off.
+    only scans the lambda's AST, and delegating to a function blinds it.
+    Rather write a long line than switch the detector off.
     """
     return [
         ("\u2605 knobs.declared_not_read",

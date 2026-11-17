@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """Verbatim executor (bare-value-contract runner, **public seam**).
 
-"Run a command verbatim, and stdout stripped of leading/trailing whitespace
-must equal the expected value" is one of the repo's most important interfaces
--- the replay gate (ledger `cmd`, issue #2 (1)) and the world stamp (environment
-reconciliation, issue #13) are both adapters over it. "Two adapters = a real
-seam": this used to live in check_facts_replay's private section, and
-check_world reached into its neighbor's underscore name to use it (its own
-docstring called the maneuver a "graft") -- it is now promoted to a module,
-so gates no longer pick each other's privates.
+The replay gate (ledger `cmd`) and the world stamp (environment
+reconciliation) are both adapters over this interface: "run a command
+verbatim, and stdout stripped of leading/trailing whitespace must equal the
+expected value".
 
 Criteria (`cmd` runs verbatim, cwd = repo root):
 
@@ -188,12 +184,9 @@ def _non_local_encoding_ok():
 def run_cmd(cmd, timeout=None):
     """Run a `cmd` verbatim (cwd=repo root), returning (returncode, stdout). Timeout => returncode None.
 
-    ⚠️ **On Windows there is neither bash nor `/bin/sh`**: this used to
-    hard-code `["/bin/sh", "-c", cmd]`, so every cmd on CI's Windows leg died
-    with OSError 127. `_shell_argv` now splits it into three tiers, and the
-    tier that actually ran rides along in the failure diagnostics
-    (`[shell=...]`) -- criteria strength varying with the environment must
-    never happen silently.
+    `_shell_argv` selects bash with pipefail, falling back to /bin/sh and then
+    to a direct command; the tier that ran rides along in the failure
+    diagnostics (`[shell=...]`).
     """
     t = default_timeout() if timeout is None else timeout
     argv, shell_kind = _shell_argv(cmd)

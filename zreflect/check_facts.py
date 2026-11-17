@@ -144,13 +144,6 @@ def _has_provenance(token, line):
 def _unaccounted_numbers(facts, bare_min, nlines):
     """Reverse criterion (issue #24): numbers in prose with **no provenance** at or above the threshold.
 
-    Previously only "a ledger value was hand-copied" was checked -- a number
-    that had **never entered the ledger** was unknown to the gate
-    (`AGENTS.md` said "check_facts blocks bare numbers in prose", stated
-    without reservation). Downstream observed: a v4 protocol document
-    hand-copied 21 numbers and stayed all green; a human review found at
-    least 3 of them wrong.
-
     Criterion (whitelist-style): scan the prose (outside fences/inline code,
     already stripped by `_number_lines`); every integer token >= bare_min must
     have one of these **provenances**, otherwise report:

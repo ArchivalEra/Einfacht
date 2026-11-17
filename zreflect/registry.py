@@ -1,15 +1,8 @@
 #!/usr/bin/env python3
 """registry -- the data plane of the discovered rosters: gate list / plugin list / red list.
 
-"Registration is discovered, not remembered" -- this repo long since made the
-**set** of gates discovered (`for g in zreflect/check_*.py` in hooks / runner /
-CI), but the **narrative** of the set was still hand-written: STATE.md
-hand-wrote "N gates" and named them one by one (observed drift: the day
-ab/locks/pins merged, the list was short three gates and no gate could stop it --
-the hand-written "ten" miscounted even the count); gates-selftest.sh hand-wrote
-the red list (6 gates actually red under default names, only 4 in the list);
-plugins and doctor relied on name-calling. This module turns the narrative into
-data:
+"Registration is discovered, not remembered": this module turns the roster
+narrative into data:
 
   · `gates()`: ast-parses each check_*.py's module-level declaration line
         GATE = gate.meta("name", "one line", knobs=(...), name_dependent=...)
@@ -27,10 +20,8 @@ data:
     named special cases (doctor.py -- the reason lives next to the data).
 
 Consumers: `facts.py --render-doc` renders the AUTO:GATES machine block (same
-precedent as AUTO:FACTS -- the hand-written list retires, and `check_facts` /
-`--check` automatically blocks drift); gates-selftest.sh consumes `--red-need`
-and `--plugins` (the hand-written red list and the name-calling of plugins and
-doctor retire).
+precedent as AUTO:FACTS; `check_facts` / `--check` blocks drift);
+gates-selftest.sh consumes `--red-need` and `--plugins`.
 
 Honesty boundary: this module only **narrates** rosters and never executes
 gates; whether a gate can go red is forever proven by gates-selftest.sh actually
@@ -397,10 +388,6 @@ def _undeclared_module_problems(undeclared):
 def _knob_problems(knob_problems, gs):
     """Roster self-consistency (C3): phantom knobs / README phantoms -- independent of
     whether any carrier exists.
-
-    It used to be welded behind check_envfile.run()'s "carrier exists"
-    precondition, and this repo has no Einfacht.env => never executed (observed
-    hit). The roster's home closes here.
     """
     if knob_problems is None:
         import knobs  # noqa: PLC0415
@@ -1182,8 +1169,7 @@ def _cases_phase(fx):
     ]
 
 def _env_hint_case(which):
-    """`gate.env_hint()`'s **five tiers** of behavior (after the #28 fix: the carrier
-    value joins the decision).
+    """`gate.env_hint()`'s **five tiers** of behavior:
 
     1. `no_carrier`   -- no carrier => None (a bare run stays quiet)
     2. `carrier_bare` -- carrier present, knob unset => **hint** (nobody sourced it)
@@ -1193,12 +1179,10 @@ def _env_hint_case(which):
        (a manual export drifted)
     5. `carrier_off`  -- `REFLECT_ENV_HINT=off` => the print layer emits nothing
 
-    ⚠️ The judgment's semantic precondition is a "controlled process
-    environment": in hook contexts the carrier gets sourced into the
-    environment, and once the knob is set, `carrier_bare` would be permanently
-    red (#29 observed: upstream's own `REFLECT_FACTS=x registry --selftest` => 1).
-    Isolating the test from its own process's inputs is self-evidence's job: all
-    relevant knobs are temporarily popped and restored in finally.
+    The case requires a controlled process environment: in hook contexts the
+    carrier gets sourced into the environment, and once the knob is set,
+    `carrier_bare` would be permanently red. All relevant knobs are temporarily
+    popped and restored in finally.
     """
     import shutil
     import tempfile  # noqa: PLC0415

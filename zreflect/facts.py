@@ -43,10 +43,7 @@ LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
 
 def _out():
     """Ledger write path. **A function, not a module constant**: `repo()` reads
-    `gate.GATE_REPO`, and fixtures change it -- stored as a module-level string the
-    path would freeze at import time.
-    Observed: after changing `gate.GATE_REPO`, the old `OUT` constant still held the
-    original repo path (stale snapshot)."""
+    `gate.GATE_REPO` when called, so fixtures can change the path."""
     return repo(LEDGER_NAME)
 # ⚠️ **Not a module-level constant**: `REFLECT_DOC` is a name-type knob, hooks may
 # change it mid-run (fixtures do). `doc.state_name()` reads it fresh every time --
@@ -272,10 +269,7 @@ def _read_doc(p, path_rel):
     """Read a doc. Returns `(text, rc)`; rc != 0 = FATAL already reported.
 
     ⚠️ **Unreadable != stale block**: invalid UTF-8 / permissions / a directory --
-    all configuration accidents (FATAL rc=2). This used to do a bare
-    `open().read()`, so one binary file made Python throw a raw
-    `UnicodeDecodeError` and exit with **1** -- and rc=1 means "criterion red" in
-    `registry --run`, a completely different fix (swap the file vs fix the content).
+    all configuration accidents (FATAL rc=2), not rc=1 "criterion red".
     """
     try:
         return open(p, encoding="utf-8").read(), 0
@@ -465,11 +459,8 @@ def _measure():
     """Collection entry (issue #15 A1/C3): dispatch on the `REFLECT_MEASURE_MODULE` knob.
 
     - Knob unset / module import fails / fixture scenario (gate.GATE_REPO is not this
-      repo) => fall back to `measure_example()` (placeholder) and **print a warning**
-      -- observed downstream: running facts.py by hand without the knob => empty
-      table plus the `--allow-drop` temptation (a scary FATAL in the OM repo about
-      "24 facts would drop", whose real cause was just the missing knob). The
-      fallback must be audible, never silent.
+      repo) => fall back to `measure_example()` (placeholder) and **print a warning**.
+      The fallback must be audible, never silent.
     - Knob set, import succeeds, and gate.GATE_REPO is the real repo => use the
       knob-designated measure().
     """
@@ -543,10 +534,7 @@ def _write_ledger_doc(out, facts):
     """Write the ledger to disk. Returns `(rc, error message or None)`.
 
     The **one serialization site**: `--accept*`'s `_write_ledger` and
-    `--init`'s `_init_principles_into_ledger` delegate here. Both used to
-    inline their own `json.dump` of the same document shape, and the init
-    copy had already **drifted** (it dropped the `generated` field) --
-    three producers of one file format is two too many.
+    `--init`'s `_init_principles_into_ledger` delegate here.
     """
     import json  # noqa: PLC0415
     doc = {"schema": 1, "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -687,10 +675,8 @@ def get_value(ledger, key):
 def _load_or_empty():
     """Read the ledger; **a missing ledger yields an empty one** (used by `--accept*`).
 
-    Why separate from `_load_or_die`: "manually registering the first fact" and
-    "rendering/checking" are two different things -- the former **should be able to
-    create the ledger in a fresh repo**, the latter has nothing to check without a
-    ledger. Sharing one read path made `--accept` FATAL in fresh repos (observed).
+    `_accept*` must be able to create the ledger in a fresh repo; `_load_or_die`
+    serves rendering/checking, where a missing ledger is FATAL.
     """
     out = _out()
     if not os.path.exists(out):
@@ -800,11 +786,8 @@ def _usage():
 def _command_table():
     """Command name -> handler.
 
-    Why a table rather than an if-chain: an if-chain's complexity grows linearly
-    with the command count (observed up to 27), and each command's body embeds dozens
-    more lines, so "which commands exist" sank into 130 lines. The table turns that
-    into one readable piece of data; handlers stay independent and individually
-    testable.
+    The table is the one readable list of available commands; handlers stay
+    independent and individually testable.
     """
     return _COMMANDS
 
@@ -852,12 +835,8 @@ def cmd_get(argv):
 def _init_skeleton(root, state):
     """Skeleton docs to generate: `{filename: body}`. **Pure data**, never touches disk.
 
-    ⚠️ **Every name comes from a knob.** The first version wrote the literals
-    `retractions.json` / `README.md`, so `--init` in a repo that had renamed its
-    documents produced files the gates were not looking for, and the very first
-    `registry --run commit` went FATAL. The rename fixture only exercised the
-    **gates**, never `--init` -- "the fixture passes" does not mean "every path
-    honours the knob".
+    ⚠️ **Every name comes from a knob**: renamed documents must be generated under
+    the same names the gates look for.
     """
     import doc  # noqa: PLC0415
     import registry as _reg  # noqa: PLC0415
@@ -922,8 +901,7 @@ def _create_missing(root, files):
 
 def _init_principles_into_ledger():
     """Principles must enter the ledger too -- otherwise the `[[RULES:...]]` citations
-    in `PRINCIPLES.md` are all broken references in a fresh repo
-    (observed: `facts.missing_key_cite(line=3)`)."""
+    in `PRINCIPLES.md` are all broken references in a fresh repo."""
     import doc  # noqa: PLC0415
     if not doc.accepts_principles():
         return 0
@@ -1148,8 +1126,7 @@ def _write_ledger(led, facts, argv, accept_all=False):
 
 
 def _tmp_doc(content, name="doc.md"):
-    """A temp doc for selftests (tempfile + atexit cleanup -- it used to write a fixed
-    /tmp path, not pid-unique, so two parallel selftests stomped on each other)."""
+    """A temp doc for selftests (tempfile + atexit cleanup; parallel-safe path)."""
     import atexit  # noqa: PLC0415
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
@@ -1285,25 +1262,16 @@ def _copy_suite_into(d):
     """Copy the suite files **within the platform roster** into fixture repo `d`
     (implementation of #30 direction B).
 
-    ⚠️ Five fixtures used to each `copytree(zreflect/)` -- **the whole directory** --
-    under the vendored form (`gate.tool_repo()` resolves to the host root, #30), the
-    host's own wiring files (its own gates / measure module / extra language packs)
-    got copied into the fresh repo too, while their inputs (specs/ etc.) did not =>
-    measure drops facts => `guard.refuse_dropped` FATAL, structurally always-red
-    bootstrap.
-
     The roster is **discovered**: platform modules = `registry.modules()`, gates =
     `registry.gates()` (derived from declaration lines), but the **anchor is the
     suite's own physical location** (`__file__`), not the current process's `zdir()`
     -- in vendored form `zdir()` resolves to the host's wiring directory, whose
-    roster mixes in host-owned gates (they also carry `GATE` declarations, so
-    discovery collects them); copying them into the fresh repo drags the host's
-    criteria surface in (observed: 4 gates red). `facts.py` is a suite platform file;
-    the directory it sits in is always the suite -- regardless of how the host wires
+    roster mixes in host-owned gates. `facts.py` is a suite platform file; the
+    directory it sits in is always the suite -- regardless of how the host wires
     itself.
     Language packs are copied per pack per `installed_langs()` (criterion = a .json
     pack file present).
-    Host wiring files never belonged in a fresh repo's bootstrap.
+    Host wiring files never belong in a fresh repo's bootstrap.
     """
     import shutil  # noqa: PLC0415
     src_z = os.path.dirname(os.path.abspath(__file__))     # the suite itself, not anchored on zdir()
@@ -1371,11 +1339,9 @@ def _copy_hooks_roster(src_z, d):
 def fixture_env(extra=None):
     """Environment for a fixture subprocess: no inherited knobs, **and no GATE_REPO**.
 
-    Copying this dict literal five times is how the `GATE_REPO` omission survived
-    in two of them: `harness` sets `GATE_REPO` to *this* repo when it runs
-    selftests, while a fixture is a *different* repo -- leave it in and the child
-    audits this repo instead of the fixture (observed: the corrupt-ledger case
-    passed alone and failed under `harness`). One source, so it cannot drift again.
+    `harness` sets `GATE_REPO` to *this* repo when it runs selftests, while a
+    fixture is a *different* repo; leaving it in makes the child audit this repo
+    instead of the fixture. One source, so the environment cannot drift.
     """
     env = {k: v for k, v in os.environ.items()
            if not k.startswith("REFLECT_") and k != "GATE_REPO"}
@@ -1464,10 +1430,9 @@ def _corrupt_load_raises():
 def _env_from_envfile(d, base_env):
     """Parse `Einfacht.env` into environment variables (**cross-platform, no shell**).
 
-    ⚠️ Used to be `shell=True` + `set -a; . ./Einfacht.env; set +a;` -- that is
-    **POSIX sh syntax**. Windows' shell is cmd.exe, which does not understand it; so
-    the env was never loaded => gates fell back to the default doc list =>
-    `doc_has_no_home` (observed: CI's Windows leg, `facts` selftest 13 PASS / 1 FAIL).
+    ⚠️ A shell-based loader uses **POSIX sh syntax**; Windows' cmd.exe cannot
+    understand it. Parsing without a shell keeps the doc roster from falling
+    back to its default on Windows.
     """
     out = dict(base_env)
     path = os.path.join(d, "Einfacht.env")
@@ -1567,23 +1532,16 @@ def _real_repo_shaped():
     """A repo of the **real-project shape** completes bootstrap: `.sh` files + `src/` +
     an existing README.
 
-    This case was bought with the "wire into a real project" acceptance: previously
-    `shell_surface_problems()` scanned the whole `GATE_REPO`, so **any repo with a
-    `build.sh`** got `--render-doc` FATAL, `--check` FATAL, red pre-commit, and no
-    knob could let it through -- "all Python" is this repo's discipline for itself,
-    not a requirement on every consumer.
-
-    The fixture deliberately plants these three things (all the most common shapes of
+    The fixture plants these three things (all the most common shapes of
     real projects):
 
-      - `build.sh` / `deploy.sh` -- build scripts (these once killed the whole chain)
+      - `build.sh` / `deploy.sh` -- build scripts
       - `src/app.py` -- its own code
       - `examples/bad.py` -- **its own code that would be red by suite standards**
-        (bare CJK + unused import). This is the second discipline: "the suite audits
-        only the suite" is not a promise written in a comment but something this
-        fixture verifies every round -- if any of the three gates ever widens its
-        scope back to the whole repo, this goes red on the spot (observed: before the
-        interface was narrowed it reported 149 + 59 findings).
+        (bare CJK + unused import). "The suite audits only the suite" is not a
+        promise written in a comment but something this fixture verifies every
+        round -- if any of the three gates widens its scope to the whole repo,
+        this goes red on the spot.
       - An existing `README.md` **without a machine block** -- `--init` prints
         `already exists, left alone`, so `check_readme_sync`'s single-entry path must work.
     """
@@ -1650,13 +1608,11 @@ def _opt_out_check_case():
     """With `REFLECT_NO_PRINCIPLES=1`, `--check` must not ask `PRINCIPLES.md` for a block.
 
     ⚠️ Must use a fixture repo **without `PRINCIPLES.md`**: this repo always has that
-    file, so the old "unconditionally check both" implementation would also be green
-    here -- the criterion would be blind (observed: the subprocess runs the new code;
-    patches do not cross processes). The fixture = the same copytree +
-    `--init` as `_fresh_bootstraps`, with the init-created `PRINCIPLES.md` deleted
-    (the shape of a real opt-out repo), then two assertions:
+    file, so an unconditional check of both docs stays green here and the criterion
+    is blind. The fixture = the same copytree + `--init` as `_fresh_bootstraps`,
+    with the init-created `PRINCIPLES.md` deleted, then two assertions:
 
-      - flag set => `--check` rc=0 and PRINCIPLES untouched (old behavior FATALs here);
+      - flag set => `--check` rc=0 and PRINCIPLES untouched;
       - flag unset => PRINCIPLES is checked => "file missing" is reported (default
         surface unchanged; the file simply is not there).
     """
@@ -1696,14 +1652,10 @@ def _fresh_bootstraps():
     """A brand-new repo: `--init` -> measure -> two renders -> `registry --run commit`
     all green.
 
-    **End-to-end**: spawns subprocesses. Precisely because of that it catches the
-    three defects that each look reasonable alone but together break bootstrap -- the
-    env making harness go red on itself, md_lines counting the GATES+RULES blocks
-    too, and `--accept-changes` treated as an unknown command.
-
-    The three stages (prepare fixture / resolve env / run step by step) are each a
-    helper: merged, complexity 12, and its own `check_lint` would judge it red on the
-    spot (observed).
+    **End-to-end**: spawns subprocesses, so it covers the env, the machine
+    block line counts, and command dispatch together. The three stages
+    (prepare fixture / resolve env / run step by step) are each a helper to
+    keep the merged complexity below `check_lint`'s threshold.
     """
     import shutil  # noqa: PLC0415
     import subprocess  # noqa: PLC0415

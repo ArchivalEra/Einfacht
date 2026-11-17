@@ -361,13 +361,10 @@ def suite_scope_problems(repo_root=None):
 def _rule_cmd_encoding_problems():
     """**`open(` inside rule cmds is audited too**.
 
-    ⚠️ This block is a missed-detection patch: `doc.RULES`'s `cmd` is a **string
-    literal**, not a real `open()` call -- the AST scan (`_encoding_problems`)
-    cannot see it. Yet it gets **executed verbatim** by `check_facts_replay`, so the
-    same Windows encoding problem leaked from "open in code" into "cmd in the
-    ledger" (observed: CI's Windows leg stumbled on the `principle.only_measured`
-    cmd two rounds in a row while the encoding criterion reported 0 violations --
-    **the criterion's own blind spot**).
+    ⚠️ `doc.RULES`'s `cmd` is a **string literal**, not a real `open()` call --
+    the AST scan (`_encoding_problems`) cannot see it. Yet `check_facts_replay`
+    executes it verbatim, so ledger cmds need the same encoding judgment as
+    source code.
     """
     import re  # noqa: PLC0415
     out = []
@@ -537,9 +534,8 @@ def _reason_shape_problems(rel, reason, calls_off):
 
     ⚠️ **Unreadable source (`calls_off is None`) => this direction is skipped
     entirely**: treating `False` as truth when the fixture repo lacks the file
-    reports a pile of fake "reason written for nothing" (observed: `GATE_REPO=$tmp
-    registry --gates` reported 8). Reason truthfulness does not depend on source and
-    is still checked normally.
+    reports fake "reason written for nothing". Reason truthfulness does not
+    depend on source and is still checked normally.
     """
     if calls_off is None:
         return []
@@ -731,9 +727,8 @@ def reason_bases_agree(hook=False):
 
     `einfacht-env.sh` checks the **hooks dir** first, then the **repo root** (two
     locations). This file's `_REASON_BASES` (the legal locations for the reason
-    truthfulness criterion) must share that convention -- otherwise "the carrier
-    genuinely lives in reflect-hooks/ while the criterion only looks at the root"
-    lets stale reasons slip through (observed in round 18).
+    truthfulness criterion) must share that convention -- otherwise a carrier in
+    reflect-hooks/ is invisible to the criterion.
 
     The criterion is **behavioral**, not a text match: put a carrier at both
     locations in a temp repo and require `_reason_files` to see both. That way it
@@ -1183,9 +1178,8 @@ def _owner_shell_is_allowed():
     """`.sh` files at the **consumer's repo root** must not be reported -- those are
     their build scripts, none of the suite's business.
 
-    This is the regression guard for the most lethal blocker of "wiring into a real
-    project": the criterion used to scan the whole `GATE_REPO`, so any repo with a
-    `build.sh` / `deploy.sh` got `--render-doc` FATAL with no knob to let it through.
+    This guards the `shell_surface_problems` scope: the suite audits its own
+    Python sources, not the consumer's build scripts.
     """
     import os  # noqa: PLC0415
     import shutil  # noqa: PLC0415

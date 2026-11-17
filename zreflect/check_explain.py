@@ -189,6 +189,35 @@ def _classifier_has_teeth():
             and not merged["contract"] and not merged["undecided"])
 
 
+def temporal_reports(zdir=None):
+    """Every docstring containing a temporal marker, **regardless of length**.
+
+`--classify` only examines over-long docstrings (`DOC_MAX_CHARS`). This scan
+has no length floor: history does not become a contract by being brief.
+"""
+    import os.path  # noqa: PLC0415
+    base = zdir or gate.zdir()
+    out = []
+    for name in sorted(os.listdir(base)):
+        if not name.endswith(".py"):
+            continue
+        src = open(os.path.join(base, name), encoding="utf-8").read()
+        for node in ast.walk(ast.parse(src)):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            doc = ast.get_docstring(node) or ""
+            if doc.strip() and TEMPORAL.search(doc):
+                out.append((name, node.lineno, node.name, len(doc)))
+    return out
+
+
+def _print_temporal(rows):
+    for path, line, name, chars in rows:
+        print("%s:%d  %s  (%d chars)" % (path, line, name, chars))
+    print("temporal=%d" % len(rows))
+    return 1 if rows else 0
+
+
 def _print_classification(merged):
     """The `--classify` report: three groups, then the exit code the ticket names."""
     for key in CLASSES:
@@ -202,6 +231,8 @@ def _print_classification(merged):
 
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if "--temporal" in argv:
+        return _print_temporal(temporal_reports())
     if "--classify" in argv:
         merged, seen = classify_tree()
         if seen == 0:

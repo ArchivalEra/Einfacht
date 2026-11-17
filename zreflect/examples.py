@@ -423,12 +423,9 @@ def _cases():
 def _carrier_case():
     """A readable carrier parses; an unreadable one is a **problem**, not `{}`.
 
-    ⚠️ The unreadable half is simulated by pointing the carrier name at a
+    The unreadable half is simulated by pointing the carrier name at a
     **directory** (`Einfacht.env` exists but is a directory, so `open` raises
-    `IsADirectoryError`). The first version used `os.chmod(path, 0o000)`, which
-    is a no-op on Windows -- `chmod` there only toggles the read-only bit, so the
-    file stayed readable and the case failed on the Windows CI leg only
-    (observed). A directory is unreadable on every platform.
+    `IsADirectoryError`). A directory is unreadable on every platform.
     """
     import tempfile  # noqa: PLC0415
     with tempfile.TemporaryDirectory() as root:
