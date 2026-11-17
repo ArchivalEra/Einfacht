@@ -113,16 +113,13 @@ def _check_one(entry, hasher, root):
 
 
 def check(spec, hasher=_sha, root=None):
-    """Pure logic (the selftest injects `hasher`). Returns (problems, skips).
+    """Pure logic (the selftest injects `hasher`). Returns `(problems, skips)`.
 
     `root` = the anchor for resolving relative `file` paths (default: the repo
-    under check; the selftest passes a fixture directory).
-
-    The single-entry check is a named helper (`_check_one`): previously its
-    `problems[-1].code` looked back at the previously appended entry to decide
-    "this entry lacks fields" -- that was both fragile (anyone appending an
-    entry in between breaks it) and pushed complexity to 12. Now a missing
-    field is a **return value**, not context.
+    under check; the selftest passes a fixture directory). Empty `locked` /
+    `sources` => `(["locks.empty"], [])`; otherwise each entry is judged by
+    `_check_one`, whose missing-field verdict is a **return value**, not
+    context. Problems and skips are concatenated in entry order.
     """
     root = repo() if root is None else root
     locked = spec.get("locked") or spec.get("sources") or []

@@ -151,24 +151,13 @@ def _module_global_mutations(tree, module):
 
 
 def _mutated_globals(trees):
-    """One-time index: which `(module, name)` pairs get assigned by others at runtime.
+    """Index the `(module, name)` pairs that others assign at runtime.
 
-    ⚠️ Previously `_reassigned_elsewhere(trees, src_mod, name)` re-ran
-    `ast.walk` over all modules **for every candidate name** -- 115 names x
-    28 modules' ASTs => 6.3 seconds (measured: 97% of the gate's total 6.5s).
-    Build the index once; lookups are O(1).
-
-    The key shape of the criterion: not "how many times the source module
-    itself assigns it" (`gate.GATE_REPO` is assigned once), but "**will others
-    reassign it**" -- the self-proofs of `check_envfile` / `i18n` both do
-    `gate.GATE_REPO = ...`. A constant assigned once and rewritten by nobody
-    (`REGISTRY`) is not reported -- its semantics is "a data table", where
-    copy and reference are indistinguishable.
-
-    Each shape gets a named helper (cross-module attribute assignment /
-    within-module global rewrite): merged into one function, the two nesting
-    levels plus isinstance branches over three statement kinds pushed
-    complexity to 15.
+    Returns a set built from two shapes: cross-module attribute assignment
+    (`gate.GATE_REPO = ...`, including `import X as Y` aliases) and a module's
+    own `global NAME` reassignments. A name assigned once and never rewritten
+    is absent: for a data table, copy and reference are indistinguishable.
+    Lookups are O(1); the index is built once for all candidate names.
     """
     aliases = _import_aliases(trees)
     out = set()
@@ -188,15 +177,11 @@ def _globals_of(tree):
 
 
 def _functions_reading(src_tree, name):
-    """Top-level function names in `src_mod` that (transitively) read `name`.
+    """Top-level function names in `src_mod` that transitively read `name`.
 
-    Derived snapshots often appear through a wrapper: `OUT = repo(LEDGER_NAME)`
-    -- the expression text contains no `gate.GATE_REPO`, but the body of
-    `repo()` does. Looking only one hop misses **two hops**: `def a(): return
-    repo(x)` followed by `OUT = a()` (measured: []).
-    So this computes a **closure**: repeatedly add "functions that call a known
-    reader" to the reader set until a fixed point. At zreflect's scale of 28
-    modules, a few rounds suffice.
+    The reader set is a fixed point: a function that directly loads `name`, or
+    whose calls include a known reader, is added until no more appear. This
+    catches wrappers such as `OUT = a()` where `a()` calls `repo()`.
     """
     defs = {}
     for node in src_tree.body:
@@ -250,21 +235,13 @@ def _call_graph(tree):
 
 
 def _reaches(node, readers, graph):
-    """Can this expression reach a function in `readers`, directly or via this module's top-level functions?
+    """Can this expression reach a function in `readers`?
 
-    ⚠️ Reachability uses the prebuilt call graph (`graph`) + an explicit stack:
-    **no recursion, no repeated walk**. The previous version ran `ast.walk`
-    over the whole function body per derived node and recursed -- mutually
-    recursive functions hung it outright (measured: the real repo's 28 modules
-    never returned within the 60s timeout).
-
-    Two false-positive guards (both previously produced false reds, measured):
-      - a same-named function defined in this module does not count as a
-        reader of the source module (shadowing) -- it is still followed along
-        the call graph (it may itself forward to repo)
-      - attribute calls (`tools.repo(...)`) do not count --
-        `getattr(...,"attr")` would match same-named functions of any module,
-        which is not this module's repo
+    Follows bare-name calls through the prebuilt call `graph` with an explicit
+    stack and a `seen` set (no recursion, no repeated AST walk). Lambda bodies
+    are skipped: their calls are lazy. A same-named local function shadows a
+    reader but is still followed through the graph; attribute calls
+    (`tools.repo(...)`) do not count.
     """
     # ⚠️ **Do not enter lambda bodies**: calls inside
     # `CASES = [("label", lambda: check_doc(..., repo(...)))]` are **executed
@@ -315,15 +292,11 @@ def _target_names(node):
 
 
 def _module_level_derivations(tree, src_mod, name, readers=(), graph=None):
-    """Does the module top level contain `OTHER = <expression mentioning src_mod.name>`? That is **the same class of snapshot**.
+    """Names assigned at module top level whose value mentions `src_mod.name` or
+    reaches a reader through the call graph.
 
-    Both spellings freeze at the moment of import:
-        from gate import GATE_REPO      # value copy
-        OUT = repo(LEDGER_NAME)        # repo() internally reads gate.GATE_REPO => frozen into a string
-
-    Catching only the first misses the second -- and the second is the one
-    actually present in this repo (`facts.py:35`; measured: after changing
-    `gate.GATE_REPO`, `facts.OUT` still held the old path).
+    Both `from gate import GATE_REPO` and `OUT = repo(NAME)` freeze at import;
+    the second is detected via `_reaches`. Returns target names, one per hit.
     """
     marker = "%s.%s" % (src_mod, name)
     hits = []
@@ -520,15 +493,11 @@ def set_repo(p):
 
 
 def _fixtures():
-    """Fixture sources (English: they are the **inputs** being audited, not the module's own output).
+    """Fixture source dict for the self-proof.
 
-    ⚠️ Must be constructed **inside a function**, not as module-level
-    constants: the gate scans exactly "expressions assigned at module top
-    level", so module-level fixtures would be flagged by the gate itself as
-    derived snapshots -- measured: after hoisting to module level it
-    self-reported
-    `snapshot.derived_copy(derived='fx["ok_style"]', source='gate')`.
-    The criterion was right; the fixtures sat at the wrong layer.
+    Built inside a function, never as module-level constants: the gate scans
+    module-level assignments, so hoisting these would make the gate report its
+    own fixtures as derived snapshots.
     """
     return {
         "good": "GATE_REPO = \"/repo\"\nCONST = [1]\n",

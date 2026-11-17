@@ -83,18 +83,14 @@ _REASON_BASES = ("", "reflect-hooks")
 
 
 def _reason_files(reason, repo_root=None):
-    """Filenames mentioned in an `off_reason` -> [(name, whether the file exists at
-    **any legal location**)].
+    """Filenames mentioned in an `off_reason` -> `[(name, exists at any legal
+    location)]`.
 
-    Only "tokens with an extension" count (`ab.json` / `Einfacht.env` /
-    `world.json`), not ordinary words in the sentence -- otherwise "this repo does no
-    A/B comparison" would be sliced into fake filenames.
-
-    ⚠️ **Both locations must be checked**: `Einfacht.env` may live at the repo root
-    **or** in `reflect-hooks/` (that is exactly `einfacht-env.sh`'s order: hooks dir
-    first, repo root second). Checking only the root => when a carrier genuinely sits
-    in `reflect-hooks/`, the criterion misses it (observed: `off_reason_problems`
-    returned `[]` in precisely the "reason has gone stale" case).
+    Only tokens with an extension count (`ab.json` / `Einfacht.env` /
+    `world.json`); ordinary words in the sentence are not filenames. Both
+    `_REASON_BASES` (repo root and `reflect-hooks/`) are checked, matching
+    `einfacht-env.sh`'s lookup order -- checking only the root misses a carrier
+    that legitimately sits in the hooks dir.
     """
     if not reason:
         return []
@@ -108,33 +104,13 @@ def _reason_files(reason, repo_root=None):
 
 
 def dead_interface_problems(zdir=None):
-    """**Public functions with zero consumers** -- the machine criterion behind
-    "strictly audit surplus interfaces".
+    """**Public functions with zero consumers** are reported.
 
-    Why it deserves a criterion: hand-enumerating every public function in the repo
-    and grepping call sites one by one finds dead interfaces but is slow, and
-    whatever gets added next goes unchecked. This repo already has
-    `dependency_coverage_problems` for "consumed but zero assertions" (the dead-link
-    problem); this one handles the **opposite direction**: defined but never used
-    (zombie interfaces).
-
-    Criterion (fully discovery-based):
-      - top-level functions **not starting with `_`** in platform modules
-        (`zreflect/*.py`, non-`check_*`);
-      - the name appears in **any other .py** (`mod.fn` / `from mod import fn` /
-        direct call);
-      - it may also be used by **its own `_cases()`** (that is the internal seam /
-        selftest-only helper);
-      - none of the three => report.
-
-    Honest boundaries:
-      - Only `.py` is looked at. Shell scripts calling Python functions don't count
-        (gone after the all-Python move).
-      - No distinction between "should be public" and "should be private" -- zero
-        consumption is zero consumption; renaming or deleting are both correct.
-      - Exempt: **contract names** like `run` / `main` / `problems` (every gate must
-        have them, invoked by `main_selftest_or` or `__main__` -- they are used
-        **in the same file**, so they would never be reported anyway).
+    Candidates come from `_public_functions`, the reference corpus from
+    `_repo_corpus`, and the verdict from `_consumed`; the criterion is
+    discovery-based (no hand-written rosters) and this function only
+    orchestrates. Returns one `registry.dead_interface` per unreferenced name,
+    sorted by function name.
     """
     cand, own_text = _public_functions(zdir)
     corpus = _repo_corpus(zdir)
@@ -146,12 +122,13 @@ def dead_interface_problems(zdir=None):
 
 
 def _public_functions(zdir):
-    """(1) Top-level functions **not starting with `_`** in platform modules
-    (`zreflect/*.py`, non-`check_*`).
+    """(1) Candidate discovery: top-level functions **not starting with `_`** in
+    platform modules (`zreflect/*.py`, non-`check_*`).
 
-    Returns `(cand, own_text)`: `cand` = {function name: module filename defining
-    it}, `own_text` = {module filename: full text} (needed for same-file reference
-    counting).
+    Returns `(cand, own_text)`: `cand` maps function name -> defining module,
+    `own_text` maps module -> full text (needed for same-file reference
+    counting). Unreadable or unparseable files are skipped; only `.py` is
+    scanned, so shell callers do not count.
     """
     import ast  # noqa: PLC0415
     import os  # noqa: PLC0415
@@ -174,13 +151,12 @@ def _public_functions(zdir):
 
 
 def _repo_corpus(zdir):
-    """(2) Reference text for the whole repo (zreflect / reflect-hooks), as
+    """(2) Reference text for the whole repo (`zreflect` + `reflect-hooks`), as
     `[(filename, text)]`.
 
-    ⚠️ Record the **filename**, not the text: skipping self by string identity
-    (`is`) never works (Python does not guarantee two equal strings are the same
-    object) -- observed: with a zero-consumer function planted, the criterion still
-    reported clean. Excluding by name is the reliable way.
+    Skipping self is done by **filename**, never by string identity (`is` is not
+    guaranteed for equal strings). Every other `.py` counts as a consumer only
+    when its text references the name; unreadable files are skipped.
     """
     import os  # noqa: PLC0415
     d = zdir if zdir is not None else gate.zdir()
@@ -201,9 +177,14 @@ def _repo_corpus(zdir):
 
 
 def _consumed(fn, mod, own_text, corpus):
-    """Does this public function have a consumer: referenced from another file, **or**
-    appearing more than once in its own file (the definition counts once => use by
-    its own `_cases()` counts too)."""
+    """(3) Consumption test: a public name is consumed when it is referenced from
+    another file, **or** appears more than once in its own file (the definition
+    counts once, so use by its own `_cases()` counts too).
+
+    Zero consumption is reported regardless of whether the name should be
+    private; `run` / `main` / `problems` are never reported because every gate
+    uses them in the same file.
+    """
     own = len(re.findall(r"\b%s\b" % re.escape(fn), own_text.get(mod, "")))
     if own > 1:
         return True
@@ -212,25 +193,16 @@ def _consumed(fn, mod, own_text, corpus):
 
 
 def encoding_surface_problems(repo_root=None):
-    """**Text-mode `open()` must pass an explicit `encoding=`** -- the cross-platform
-    readability guard.
+    """**Text-mode `open()` must pass an explicit `encoding=`** -- Windows defaults
+    to cp1252 while every file here is UTF-8.
 
-    Why it deserves a criterion: Windows' default encoding is cp1252 (the code page),
-    while every file in this repo is UTF-8. This round's CI Windows leg tripped on
-    this **four times**, each in a different form:
+    Criterion (AST): a text-mode (no `b`) `open()` must carry `encoding=`;
+    binary mode is exempt. Scans `zreflect/` + `reflect-hooks/`, plus `open(`
+    inside rule cmds (`_rule_cmd_encoding_problems`): string literals invisible
+    to the AST but executed verbatim by `check_facts_replay`.
 
-      - `registry --gates` printing Chinese gate names -> `UnicodeEncodeError`
-      - `subprocess.run(text=True)` decoding child output -> reader thread crashed,
-        `stdout=None`
-      - `open('FACTS.json')` in a ledger `cmd` -> `UnicodeDecodeError`
-      - assorted `open(..., "w")` writing Chinese fixtures
-
-    Criterion (AST): a text-mode (no `b`) `open()` must carry the `encoding=`
-    keyword. Binary mode is exempt (`rb` / `wb` do no encoding conversion).
-
-    Honest boundary: it only sees **literal calls**. `pathlib.Path.read_text()` and
-    friends are out of scope (this repo doesn't use them); dynamically constructed
-    calls are invisible too.
+    Honest boundary: literal calls only; `Path.read_text()` and dynamic calls
+    are out of scope.
     """
     import os  # noqa: PLC0415
     root = repo_root or gate.GATE_REPO
@@ -257,28 +229,16 @@ def _matching_paren(text, open_idx):
 
 
 def subprocess_encoding_problems(repo_root=None):
-    """**`subprocess.run(text=True)` must pass an explicit `encoding=`** --
-    cross-platform guard.
+    """**`subprocess.run(text=True)` must pass an explicit `encoding=`**.
 
-    Why it deserves a criterion: the same pit this repo **fell into five times**,
-    each in a different form:
+    `text=True` decodes with `locale.getpreferredencoding()` (cp1252 on Windows);
+    non-cp1252 child output makes `subprocess`'s reader thread raise
+    `UnicodeDecodeError` and the main thread see `stdout=None` -- the symptom is
+    far from the cause.
 
-      1. `registry --gates` printing Chinese -> `UnicodeEncodeError`
-      2. `runner.run_cmd` decoding child output -> **reader thread crash**,
-         `stdout=None`
-      3. `open()` in a ledger `cmd` -> `UnicodeDecodeError`
-      4. assorted `open(..., "w")` writing Chinese fixtures
-      5. `harness._run` decoding gate selftest output -> the summary line
-         "vanished" (CI's Windows leg reported "missing machine summary line" while
-         the summary plainly existed locally)
-
-    `text=True` decodes with `locale.getpreferredencoding()`, which is cp1252 on
-    Windows by default; once the child outputs non-cp1252 bytes, `subprocess`'s
-    **reader thread** (off the main thread) raises `UnicodeDecodeError` and the main
-    thread gets `stdout=None` -- the symptom is far from the true cause.
-
-    Criterion (AST): `subprocess.run(...)` with `text=True` must also carry
-    `encoding=`.
+    Criterion (AST): every `subprocess.run(...)` with `text=True` must also carry
+    `encoding=`. Scans `zreflect/` + `reflect-hooks/`; missing directories are
+    skipped.
     """
     import os  # noqa: PLC0415
     root = repo_root or gate.GATE_REPO
@@ -315,26 +275,16 @@ def _subprocess_encoding_problems(name, src):
 
 
 def fatal_exit_problems(repo_root=None):
-    """**`SystemExit` may only carry an integer** -- the sole mechanical guard of the
-    rc contract.
+    """**`SystemExit` may only carry an integer** -- the rc contract guard
+    (0 green / 1 criterion red / 2 broken config).
 
-    `SystemExit(code)`'s semantics fork on `code`'s type:
-      - `int`  => the exit code is it (contract: 0 green / 1 criterion red / 2 broken
-        config);
-      - `str`  => **print and exit 1** (Python's convention), so a `FATAL:` lands
-        with rc 1;
-      - `None` => exit 0 -- a "broken config" exit reported as green.
+    `SystemExit(code)` forks on type: `int` => that exit code; `str` => print and
+    exit 1; `None` => exit 0, broken config reported as green.
 
-    All four FATAL paths in this repo were
-    `raise SystemExit(machine().emit("fatal", ...))` (emit returns str) => **all
-    reported as rc=1**. The caller `registry._record` classifies by rc, so
-    "configuration accident" was filed under "criterion red", with the fix pointing
-    at the wrong file.
-
-    "Write it right in one place" is not enough -- this is a **shape** criterion, so
-    it scans the whole repo: every `SystemExit(<expression>)` in the suite must take
-    an integer constant, or a call that **looks like it returns an integer**
-    (`fatal_exit` is the one allowed). AST-level; no runtime involved.
+    Criterion (AST): every `SystemExit(<expression>)` in `zreflect/` +
+    `reflect-hooks/` must take an integer constant or a call that looks like it
+    returns an integer (`gate.fatal_exit` is allowed); the bare form is reported.
+    Bad syntax is skipped.
     """
     import ast  # noqa: PLC0415
     import os  # noqa: PLC0415
@@ -382,24 +332,14 @@ def _non_int_exits(tree):
 
 
 def suite_scope_problems(repo_root=None):
-    """**Suite gates audit only the suite's own code** -- the feasibility guard for
-    wiring into a real project.
+    """**Suite gates audit only the suite's own code**: "suite code" is identified
+    by a module-level declaration (`MODULE = ...` / `GATE = ...`), the same
+    convention as `registry.modules()` / `gates()` -- no hand-written rosters.
 
-    Why it deserves a criterion: `check_lint` / `check_i18n` / `check_snapshots`
-    used to scan the **whole repo**. After one real project wired in,
-    `registry --run commit` reported 149 ruff findings, 59 i18n findings, 3 snapshot
-    findings -- **all pointing at that project's own files**. The user could neither
-    fix them all nor understand why someone else's suite was nitpicking their code.
-
-    The criterion for "suite code" is the **declaration** (module-level `MODULE = ...`
-    / `GATE = ...`), the same convention as `registry.modules()` / `gates()`
-    (discovery-based, no hand-written rosters).
-
-    What this criterion scans: `.py` files in the suite directories **without a
-    declaration** (data modules the user dropped in) must not be counted into the
-    suite surface; meanwhile every `.py` of the suite **must** carry a declaration
-    (otherwise it silently falls to the consumer's side and gates stop auditing it --
-    that is a new way to switch a gate off).
+    Scans `zreflect/` and `reflect-hooks/`. A `.py` **without** a declaration
+    is consumer data (`measure_*` is exempt), but a suite `.py` lacking one is
+    reported, because gates would silently stop auditing it. Missing dirs are
+    skipped.
     """
     import os  # noqa: PLC0415
     root = repo_root or gate.GATE_REPO
@@ -480,29 +420,14 @@ def _encoding_problems(name, src):
 
 
 def shell_surface_problems(repo_root=None):
-    """The **suite's own** `.sh` files may only appear in `ALLOWED_SHELL` -- the guard
-    of the all-Python goal.
+    """The **suite's own** `.sh` files may only appear in `ALLOWED_SHELL` -- a
+    bounded whitelist where every exception carries a reason.
 
-    Why it deserves a criterion: before this round there were 4 shells (662 lines,
-    67 `echo` lines of Chinese) that bypassed the no-language regime wholesale
-    (`check_i18n` is an AST scanner and only reads `.py`). Once they moved into
-    Python, without this guard someone would sooner or later "just jot down a .sh"
-    -- and the same incident would replay. The whitelist is **bounded**: every
-    exception must be written here and must carry a reason.
-
-    ⚠️ **Scans only the suite directories (`zreflect/` + `reflect-hooks/`), never the
-    consumer's repo.** This used to be the **most lethal** blocker when wiring the
-    suite into a real project (observed: an empty repo with only `build.sh` -- then
-    `--render-doc` FATALs, `--check` FATALs, pre-commit goes red, and **no knob can
-    let it through**):
-
-        FATAL: registry reconciliation failed, refusing to render:
-          - unregistered shell file `build.sh` -- full-Python goal ...
-
-    "All Python" is **this repo's discipline for itself**, not a requirement on every
-    consumer -- telling someone else's repo it may not have a `deploy.sh` imposes an
-    internal preference on the user. A criterion's scan surface must share a domain
-    with what it guards.
+    Scans only `zreflect/` + `reflect-hooks/`, never the consumer's repo: a
+    consumer's `build.sh` / `deploy.sh` is out of scope. `_shell_files_of`
+    excludes `.git` / `node_modules` and normalizes `os.sep` before comparing,
+    so Windows backslashes cannot bypass the whitelist. Missing directories are
+    skipped.
     """
     import os  # noqa: PLC0415
     root = repo_root or gate.GATE_REPO
@@ -780,24 +705,15 @@ def exec_position_problems(spec, name):
 
 
 def off_reason_problems(gs, sources=None):
-    """C4 reconciliation (6): **a gate that can `off()` must declare why it may be
-    not-enabled**.
+    """**A gate that can `off()` must declare why it may be not-enabled**: an
+    `off` without a reason is indistinguishable from "this repo does not use
+    that mechanism".
 
-    Why this needs a criterion: this repo really did go through "8 of 13 gates off
-    while 'all green' hid it" (the C2 lesson). `off` is a legitimate state, but an
-    **off without a reason** is indistinguishable from "this repo doesn't use that
-    mechanism at all" -- so "the gate never runs" can pass as "by design".
-
-    Criterion (three-way, AST):
-      - the source **does call `off(`** but the declaration has no `off_reason` (or
-        it is too short) => report
-      - the declaration has `off_reason` but the source **never calls `off(`** =>
-        report (a lie: the reason written for nothing)
-    Discovery-based: scans `gs` (declarations already extracted by registry) + each
-    file's source; no roster is hand-written.
-
-    The two groups are each a named helper (shape / truthfulness): merged, 6 branches
-    push complexity to 12, while the groups share no state at all.
+    Criterion (AST): source calls `off(` but the declaration has no (or a
+    too-short) `off_reason` => report; declaration has `off_reason` but the
+    source never calls `off(` => report (a lie); threshold is `MUST_REASON_MIN`.
+    Discovery-based: `gs` + source, no roster. Shape and truthfulness are
+    separate helpers sharing no state.
     """
     out = []
     for g in gs:
@@ -900,17 +816,15 @@ def _returns_self_computed_dir(text):
 
 
 def path_rule_problems(sources=None):
-    """C4 reconciliation (8): **"the tool's zreflect/" may have only one source**.
+    """**"the tool's zreflect/" may have exactly one source** (`gate.zdir`).
 
-    Previously `knobs._zdir()` / `registry._zdir()` / `i18n`'s `_TOOL_DIR` each
-    computed `dirname(abspath(__file__))` -- equal today (by coincidence); changing
-    any one would split them. The location rule follows the same pattern as every
-    "must agree" pair: **one source + one reconciler**.
+    Criterion (AST): a function whose return self-computes
+    `dirname(os.path.abspath(__file__))` is reported, except in `gate.py`. A
+    proxy `return gate.zdir()` is not self-computation.
 
-    Criterion (AST, discovery-based): wherever the scan surface self-computes the
-    tool directory via `dirname(os.path.abspath(__file__))`, report -- except
-    `gate.py` (the single source lives there). `i18n`'s lazy proxy
-    `return gate.zdir()` is not self-computation (it lacks that expression).
+    Injection mode judges **only** the injected surface: `sources=[]` means an
+    empty surface to judge, never "scan the real directory". Returns
+    `registry.path_rule_split` entries with file and function names.
     """
     # Injection mode judges **the injected surface only** -- an empty injection
     # means "nothing to judge", never "scan the real directory". Judging the host
@@ -1239,20 +1153,13 @@ def _undeclared_suite_file_case():
 
 
 def _scanned_sources_two_ways_case():
-    """Both scopes of `gate.scanned_sources` are **tested once each** (`configured`
-    and not).
+    """Both scopes of `gate.scanned_sources` are tested once each (`configured`
+    and not), with one declared and one undeclared file.
 
-    Why both must be tested: this is the **sole** criterion born of the "gates
-    audit the consumer's code" fix. Testing only one half lets the other silently
-    drift back -- and the two drift directions have opposite, both fatal, costs:
-
-      - unset yet collecting everything => the consumer's repo gets all 149 ruff /
-        59 CJK findings reported to them (the suite imposing its discipline on
-        someone else);
-      - set yet collecting only declared files => `REFLECT_I18N_ROOT=<dir>` reports
-        a `scan_empty_dir` FATAL (breaking manual opt-in).
-
-    The fixture uses one declared and one undeclared file, looked at once per scope.
+    Both halves must be pinned: if unset collects everything, the consumer's
+    repo is reported against the suite's own discipline; if set collects only
+    declared files, `REFLECT_I18N_ROOT=<dir>` reports a `scan_empty_dir` FATAL
+    and breaks manual opt-in. The two drift directions have opposite costs.
     """
     import os  # noqa: PLC0415
     import shutil  # noqa: PLC0415
@@ -1363,20 +1270,13 @@ def _dependency_coverage_ok():
 
 
 def _selftest_refuses_empty():
-    """`gate.selftest(name, [])` must SystemExit (the 0/0 hole may not exit green),
+    """`gate.selftest(name, [])` must SystemExit (the 0/0 hole may not exit green)
     **and exit 2**.
 
-    ⚠️ Asserting only "a SystemExit was raised" is not enough:
-    `raise SystemExit("a string")` is also a SystemExit, but Python's convention is
-    **print and exit 1** -- so it prints `FATAL:` yet reports rc=1, and a caller
-    classifying by rc files it under "criterion red / code problem", while the truth
-    is "broken config / input shape". Observed: all four
-    `SystemExit(machine().emit("fatal", ...))` copies had this shape
-    (`require_nonempty` / `selftest` / `ledger._require_pairs` /
-    `collect.parse_prev_values`), all reporting FATAL as rc=1.
-
-    So this case also pins rc == 2 -- what was printed doesn't count; the exit code
-    does.
+    Asserting only "a SystemExit was raised" is insufficient:
+    `raise SystemExit("a string")` prints and exits 1, so a caller classifying
+    by rc files a broken config under "criterion red". This case pins `rc == 2`;
+    what was printed does not count.
     """
     try:
         gate.selftest("probe", [])

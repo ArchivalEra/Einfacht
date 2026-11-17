@@ -59,13 +59,8 @@ def lang_names():
     """The trilingual README list -- delegates to `knobs.readme_names()` (the
     single source of truth).
 
-    Warning: this used to do its own `os.environ.get("REFLECT_READMES",
-    READMES)` here: the **empty string did not fall back** --
-    `REFLECT_READMES=` (empty = unset) returned `()`, and the downstream
-    zero-value guard reported it as "judging the README group against an
-    empty list"; while `knobs.readme_names()` under the same environment
-    fell back to the registry correctly. Two criteria, forked empty-string
-    semantics (measured).
+    Empty `REFLECT_READMES` is a deliberate "no README group" and yields `()`;
+    unset yields the registry default. Both criteria here report an empty list.
     """
     import knobs  # noqa: PLC0415
     return tuple(knobs.readme_names())
@@ -103,41 +98,36 @@ def problems_structure(files, langs):
 
 
 def problems_push(changed, langs):
-    """Push-set criterion (pure function). `changed` = the set of file paths
-    changed in this push.
+    """Push-set criterion (pure function). `changed` = paths changed in this push;
+    `langs` = the README list.
 
-    **Conditional** (matching AGENTS' wording: "touch any one copy => this
-    push's change set must contain all copies"):
-      - no README touched at all => not applicable (pure code / pure docs
-        commits should not be blocked)
-      - at least one touched => all copies must be in the push set (one miss
-        reported per missing copy)
-
-    **Two list shapes, two criteria** (the distinction from doc lines 12/19):
-
-      - **Multi-entry** (the default trilingual trio) => **conditional**:
-        "touch any one copy => this push's change set must contain all
-        copies". None touched => not applicable (pure code commits should
-        not be blocked).
-      - **Single-entry** (`REFLECT_READMES=maintaince.md`, the "use a living
-        doc as the README" usage) => **unconditional**: "every push must
-        update it". This is the stronger one -- a single-entry list has no
-        "same batch" to speak of; its criterion is simply "must be present".
-
-    Warning: this used to be unconditional for **multi-entry** too, so any
-    commit not touching a README went red (consecutive CI reds: `0cef263`
-    only changed `i18n.py` + the ledger). For multi-entry the documented
-    form is conditional.
+    An empty `langs` is `readme.names_empty_push`; an empty `changed` is
+    `readme.changed_empty` (empty is not a pass). Otherwise the two list shapes
+    are judged by `_push_missing_copies`, which returns one
+    `readme.not_in_push` per missing copy in list order.
     """
-    out = []
     if not langs:
         return [M("readme.names_empty_push")]
     if not changed:
         return [M("readme.changed_empty")]
-    multi = len(langs) > 1
+    return _push_missing_copies(changed, langs)
+
+
+def _push_missing_copies(changed, langs):
+    """Two list shapes, two criteria.
+
+    **Multi-entry** (the default trilingual trio) => **conditional**: "touch any
+    one copy => this push's change set must contain all copies". None touched =>
+    not applicable, so pure code / pure docs commits are not blocked.
+
+    **Single-entry** => **unconditional**: "every push must update it" -- a
+    single-entry list has no "same batch", so its criterion is simply "must be
+    present" in `changed`.
+    """
+    out = []
     # Multi-entry conditional form: none touched => not applicable
-    if multi and not any(name in changed for name in langs):
-        return []
+    if len(langs) > 1 and not any(name in changed for name in langs):
+        return out
     for name in langs:
         if name not in changed:
             out.append(M("readme.not_in_push", name=name))

@@ -64,28 +64,15 @@ def _gitignored(path):
 
 
 def write_target_problems(path, knob_set, ignored=None, carrier_exists=None):
-    """**Blind-write guard** (issue #20 item 2): check the target before
-    writing to disk. Returns (fatal sentence, warn sentence).
+    """Blind-write guard: check the target before writing. Returns
+    `(fatal sentence, warn sentence)`; either may be None.
 
-    The disease of having two origins: `Einfacht.env` is only sourced in
-    hook context (issue #8); on a manual bare run the **code defaults** take
-    over -- if a default path happens to be covered by .gitignore, the write
-    "succeeds" and nothing ever shouts (measured downstream: re-measurement
-    kept "succeeding" while pre-commit read a different ledger, 40 minutes
-    of debugging -- writing into an ignored location equals not writing).
-
-    - Target gitignored => **FATAL** (version control cannot see it, hooks
-      read the old ledger forever) -- context-independent, always checked
-      (C3 discipline: a criterion's home does not move with context);
-    - `ignored=None` (non-git repo / git absent, undecidable) => let it
-      through but say so in one line (many fixture scenarios are non-git
-      directories; do not block, but do not stay silent);
-    - An Einfacht.env carrier exists in the repo while this process set no
-      knob => **warn**: the carrier is there and this run did not use it --
-      the two origins diverge at this moment, and the write target may
-      differ from hook context.
-      (The criterion is precise about "carrier exists": a bare run in a repo
-      with no carrier is normal usage and warns not.)
+    `ignored=True` => FATAL (hooks would read a stale ledger), always checked.
+    `ignored=None` => `guard.write_target_no_git` warn: undecidable is not a
+    pass. An `Einfacht.env` carrier while no knob was set =>
+    `guard.write_target_env_carrier` warn; with an earlier warn the pack
+    assembles both via `guard.write_target_env_carrier_after`. Both inputs are
+    injectable for the self-proof.
     """
     fatal = warn = None
     ig = _gitignored(path) if ignored is None else ignored
@@ -174,15 +161,14 @@ def _change_verdict(old_facts, new_facts, accepted, notes):
 
 
 def decide(old_facts, new_facts, accepted=False, allow_drop=False):
-    """The **decision** for writing a re-measurement to disk (pure function:
-    the selftest depends on that, printing forbidden).
+    """The decision for writing a re-measurement to disk (pure; printing forbidden).
+    Returns `(verdict, problems, notes)` -- verdict is "write" | "refuse",
+    `problems` is the refusal reason, `notes` is `{"err": [...], "out": [...]}`
+    saying explicitly what was let through.
 
-    The two guards are separate named helpers: they judge **different**
-    damage (keys vanishing vs values swapped), and their refusal messages
-    differ entirely (one advises `--allow-drop`, the other
-    `--accept-changes`). Jammed into one function, the two `return "refuse"`
-    statements interleave with their notes side effects, and the reader must
-    track "which notes have been written already".
+    Each guard is its own named helper: dropped keys advise `--allow-drop`,
+    changed values advise `--accept-changes`. An empty `new_facts` is refused
+    as `guard.empty_ledger`, not treated as "no changes".
     """
     notes = {"err": [], "out": []}
     problems, refused = _drop_verdict(old_facts, new_facts, allow_drop, notes)

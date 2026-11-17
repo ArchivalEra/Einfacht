@@ -217,22 +217,12 @@ def scan_surface_problems(py_dir=None):
 
 
 def readme_names():
-    """The list of three-language READMEs (`REFLECT_READMES`; default is the one
-    registered in `REGISTRY`).
+    """The list of three-language READMEs (`REFLECT_READMES`; default from `REGISTRY`).
 
-    ⚠️ Two reconcilers previously each wrote the same "parse env var + default
-    literal" block, so the default list had **three** producers (two literals +
-    one REGISTRY entry) -- exactly the shape "a number is produced once" is meant
-    to eliminate. Now only `REGISTRY` remains.
-
-    ⚠️ **"unset" and "explicitly empty" are different intents** and must not be
-    collapsed: unset means "I did not decide, use the default"; empty means "this
-    repo deliberately has no README group". Collapsing them (the earlier shape)
-    turned a deliberate single-language repo into "README.zh.md is missing" -- a
-    file-existence complaint standing in for an intent the user already stated.
-    `check_readme_sync` relies on this distinction; `docs_names()` deliberately
-    keeps the collapsing behaviour because an empty doc group is genuinely
-    meaningless (a repo must have a state document).
+    ⚠️ **"unset" and "explicitly empty" are different intents**: unset means "use
+    the default"; empty means "this repo deliberately has no README group" and
+    returns `[]`. `check_readme_sync` relies on this distinction;
+    `docs_names()` deliberately collapses empty to the default.
     """
     raw = os.environ.get("REFLECT_READMES")
     if raw is None or not raw.strip():
@@ -243,18 +233,10 @@ def readme_names():
 
 
 def docs_names():
-    """The list of live state documents (`REFLECT_DOCS`; default is the one
-    registered in `REGISTRY`).
+    """The list of live state documents (`REFLECT_DOCS`; default from `REGISTRY`).
 
-    ⚠️ Same disease as `readme_names()`, and it had **already drifted**:
-    `check_stale` and `check_retractions` each hard-coded a **five-doc** literal
-    default while the registry had **six** (plus `PRINCIPLES.md`). Observed:
-    with the knob unset, neither gate's `DOCS` contained `PRINCIPLES.md` -- so
-    "the single producer of the rules" was never in their scan surface, and
-    retraction text or stale assertions written in the principles document would
-    never be seen by those two gates.
-
-    The cure for "two copies that must agree" is one producer, not fixing both copies.
+    Unlike `readme_names()`, an empty value means "use the default": a repo must
+    have a state document. The registry is the single producer of that default.
     """
     raw = os.environ.get("REFLECT_DOCS", "").strip()
     if not raw:
@@ -263,18 +245,12 @@ def docs_names():
 
 
 def served_langs():
-    """The languages this repo **declares it serves** (`REFLECT_LANGS`, issue #35).
+    """The languages this repo **declares it serves** (`REFLECT_LANGS`).
 
-    Unset => empty list = "every installed pack counts" (the back-compat default:
-    judgment surface unchanged for repos that never set the knob). Set => only
-    these languages are judged by `pack_coverage_problems` / `pack_sync_problems`;
-    the other pack directories are **suite self-evidence samples** -- a single-
-    pack repo (e.g. `REFLECT_LANG=zh` with en/de copies present only for
-    check_i18n) no longer has to write translations nobody reads.
-
-    ⚠️ "Served" is not "maintained" -- the rejected alternative name implied a
-    promise about translation workload, while declaring a service language is a
-    promise about **readers**.
+    Unset => empty list = "every installed pack counts". Set => only these
+    languages are judged by `pack_coverage_problems` / `pack_sync_problems`; the
+    other pack directories are suite self-evidence samples. "Served" is a promise
+    about **readers**, not about translation workload.
     """
     raw = os.environ.get("REFLECT_LANGS", "").strip()
     if not raw:
@@ -287,24 +263,12 @@ FLAG_FALSY = ("0", "false", "no", "off")
 
 
 def flag(name):
-    """Read a flag-kind knob; returns three states: `True` (on) / `False` (off) /
-    `None` (unset).
+    """Read a flag-kind knob; returns `True` (on) / `False` (off) / `None` (unset).
 
-    ⚠️ The flag **vocabulary** previously existed twice with different case
-    handling:
-      · `gate._maybe_hint` / `check_facts_replay` used `.lower() == "off"`
-        (case-insensitive, only recognizing `off`);
-      · `doc.accepts_principles` used `.strip() in ("1", "true", "yes")`
-        (**case-sensitive** -- observed: `REFLECT_NO_PRINCIPLES=TRUE` silently
-        did nothing; the user thought principle replay was off but it kept
-        running).
-    Both were registered in `REGISTRY` as `kind="flag"`, yet nobody defined
-    "what a flag is".
-
-    Three states, not two: `None` = unset (the caller applies its own default),
-    which is a different decision from "explicitly off", and callers often need
-    to distinguish (the off state must be **stated explicitly**; silence = fake
-    green).
+    Matching is case-insensitive and whitespace-trimmed for `FLAG_TRUTHY` /
+    `FLAG_FALSY`. `None` = unset or an unrecognized word (the caller applies its
+    own default), a different decision from "explicitly off"; an unrecognized
+    word is never silently treated as on.
     """
     raw = os.environ.get(name, "").strip().lower()
     if not raw:
@@ -317,20 +281,13 @@ def flag(name):
 
 
 def questions_dir(repo_root=None):
-    """The open-questions directory name (`REFLECT_QUESTIONS`; default is the
-    registry's `questions`).
+    """The open-questions directory name (`REFLECT_QUESTIONS`; default from
+    `REGISTRY`). The value is stripped; empty => registry default.
 
-    ⚠️ **Must `.strip()`**: `REFLECT_QUESTIONS=` (set to the empty string) is a
-    common form of "unset" -- `export X=$MAYBE_UNSET` in git hooks does exactly
-    that. `check_questions.collect` previously used `os.environ.get(...)`
-    without stripping; the empty string resolved through
-    `os.path.join(repo_root, "")` to **the repo root itself**, pulling
-    `STATE.md` / `README.md` / `AGENTS.md` all in as open questions and
-    reporting a pile of false `questions.missing_status` problems (observed).
-
-    The other two consumers of the same value (`facts._init_questions_dir` /
-    `next._open_question_names`) already stripped -- three copies of the
-    judgment, one wrong.
+    ⚠️ **Must `.strip()`**: `export X=$MAYBE_UNSET` in git hooks commonly yields
+    an empty string. Joining an empty name onto the repo root would scan the repo
+    root itself and report its documents as open questions. `questions_path()`
+    and the other consumers share this one normalized value.
     """
     raw = os.environ.get("REFLECT_QUESTIONS", "").strip()
     return raw or REGISTRY["REFLECT_QUESTIONS"][1]
@@ -393,22 +350,13 @@ def readme_problems(files=None):
 
 
 def declared_vs_read_problems(gates, sources=None):
-    """C4 reconciliation (1): knobs a gate **declares** it consumes subset of the knobs it
-    **actually reads**.
+    """C4 reconciliation (1): declared knobs subset of knobs the source reads.
 
-    The declaration lives in `GATE = meta(..., knobs=(...))`; the actual read in
-    `os.environ.get("REFLECT_...")` in the source (a knob name must appear as a
-    literal somewhere in the source -- otherwise it could not read that env
-    var). Nothing compared the two before -- the AUTO:GATES table could list
-    knobs the gate never reads (declaration vs implementation mismatch,
-    silent).
-
-    `gates` = the result of registry.gates() (with file / knobs).
-    `sources` is injectable (`{file: source text}`) -- that **seam did not
-    exist** before; it read `gate.GATE_REPO` directly, so this judgment had
-    **zero self-evidence cases**: a guard never once proven red since landing
-    (a hard violation of AGENTS rule 4). Only with the seam can the reverse
-    assertion test it.
+    `gates` = `registry.gates()` rows (with `file` / `knobs`); `sources` is an
+    injectable `{file: source text}` seam for self-evidence. A declared name must
+    appear as a `REFLECT_*` literal in that source; a missing literal yields one
+    `knobs.declared_not_read` problem naming the absent knobs. A gate declaring
+    no knobs or with unreadable source is skipped.
     """
     out = []
     for g in gates:
@@ -426,62 +374,44 @@ def declared_vs_read_problems(gates, sources=None):
     return out
 
 
+def _kind_vocabulary_used(registry):
+    """Kinds actually used by the roster."""
+    return {kind for kind, _d, _w in registry.values()}
+
+
+def _kind_vocabulary_reports(used, existence_kinds):
+    """Report each roster kind the checking half does not handle.
+
+    `number` / `flag` / `value` are legal kinds with a vacuously absent
+    existence check, so they are listed explicitly in `existence_kinds`; a new
+    registered kind without a matching arm reports here.
+    """
+    return [M("knobs.kind_unhandled", kind=kind)
+            for kind in sorted(used - set(existence_kinds))]
+
+
 def kind_vocabulary_problems(existence_kinds=None, registry=None):
     """C4 reconciliation (5): the kind vocabulary's **two producers** must agree.
 
-    The kind of every knob lives twice: in `REGISTRY` (the declared half) and
-    in `check_envfile._existence_targets` (the half that decides whether a
-    knob's default gets an existence check). Nothing compared them -- register
-    a new kind and forget the other half, and the existence criterion **silently
-    skips** every knob of that kind (the silent degradation this repo exists to
-    eliminate). `KINDS` (the vocabulary tuple in this file) is not one of the
-    two producers -- it is a third copy and is not consulted here.
-
     `existence_kinds` is injectable (fake vocabulary for self-evidence); the
-    default pins the **half that does the checking** (the kinds
-    `check_envfile._existence_targets` recognizes -- see its `return None`
-    arm) so a new registered kind without a matching arm reports here.
-
-    ⚠️ `number` / `flag` / `value` are legal roster kinds whose existence
-    check is **vacuously absent** (`_existence_targets` returns `None` by
-    design, not by omission) -- they are listed explicitly rather than
-    inverted, so "the roster grew a kind nobody handles" reports while
-    "the checking half learned an extra kind" stays a positive control,
-    not a report.
+    default pins the half that does the checking (`check_envfile` is the
+    consumer). `registry` is injectable for the same reason. Each unhandled
+    registered kind reports `knobs.kind_unhandled`.
     """
     reg = REGISTRY if registry is None else registry
-    out = []
     if existence_kinds is None:
         existence_kinds = ("file", "list", "dir", "number", "flag", "value")
-    used = {kind for kind, _d, _w in reg.values()}
-    unknown = sorted(used - set(existence_kinds))
-    for kind in unknown:
-        out.append(M("knobs.kind_unhandled", kind=kind))
-    return out
+    return _kind_vocabulary_reports(_kind_vocabulary_used(reg), existence_kinds)
 
 
 def registry_vs_readme_problems(tables=None, names=None):
-    """C4 reconciliation (2): knobs in the roster subset of the config tables of the
-    three-language READMEs.
+    """C4 reconciliation (2): every registered knob needs a README config row.
 
-    `knobs.REGISTRY` and the README config tables are two copies of the "knob
-    list"; previously only one direction was checked (README subset of REGISTRY, see
-    readme_problems). This checks the reverse: every registered knob must have a
-    config row in the three-language READMEs -- otherwise a new knob gets
-    registered and nobody knows how to configure it (documentation gap,
-    silent).
-
-    `tables` is injectable (fake READMEs for self-evidence); `names` is
-    injectable (a **pinned list** for self-evidence).
-
-    ⚠️ The `names` seam is necessary, not convenient: without it the list comes
-    from `readme_names()` -- which reads `REFLECT_READMES`. So **the self-test's
-    outcome depended on whatever environment the machine ran it with**: `--init`
-    writes `REFLECT_READMES=README.md` for a single-README repo, and after
-    sourcing that this self-test went from 3 red to 1 red and `harness` went red
-    on the spot. Observed: in a freshly bootstrapped repo, `registry --run
-    commit` and `harness` **could not both be green** -- a deadlock. A judgment
-    must not read the environment to decide how many rounds it runs.
+    `tables` is an injectable `{name: text}` seam; `names` is an injectable
+    **pinned list**. Without `names`, the list comes from `readme_names()` and
+    reads `REFLECT_READMES`: self-evidence would then depend on the machine's
+    environment. A judgment must not read the environment to decide how many
+    rounds it runs. Missing rows yield `knobs.readme_missing_rows` per README.
     """
     out = []
     for name in (readme_names() if names is None else names):
@@ -543,26 +473,12 @@ def _all_packs_render_text(tables):
 
 
 def _semantic_packs_intact(langs=None):
-    """**Every installed language pack** must contain all knob semantics, with
-    placeholder names matching the reference side, and actually render sentences
-    under its own pack (not falling back to bare codes).
+    """Every installed pack must carry all semantics and render them as text.
 
-    This is the **falsifiable** evidence for `_Semantic`'s lazy rendering: if an
-    entry went missing while semantics moved from the core into packs, this goes
-    red on the spot (rather than waiting for someone to spot a bare code like
-    `knobs.sem.reflect_facts`).
-
-    `langs=None` => use `installed_langs()` (same discovery basis as the
-    reconcilers).
-    ⚠️ It previously hard-coded `zh` / `en`: when a downstream repo installs
-    exactly one pack (**the product's main scenario**: "pick one from a pile of
-    packs"), this self-test went straight red (observed: a zh-only pack
-    directory => 16 PASS / 1 FAIL) -- the product was fine, the judgment was too
-    narrow.
-
-    The four segments are each a named helper (load / code set / placeholders /
-    rendering): when four "must not go green" exits are crowded mid-function, a
-    reader has to count returns before claiming which checks already ran.
+    `langs=None` uses `installed_langs()`, so single-pack installations are
+    legal. Broken / empty packs, missing codes, placeholder drift or bare-code
+    rendering => False. Load / code set / placeholders / rendering are separate
+    helpers; no stage passes vacuously.
     """
     langs = installed_langs() if langs is None else list(langs)
     codes = [w.code for _k, _d, w in REGISTRY.values()
@@ -776,15 +692,10 @@ def _dead_default_ok():
 
 
 def a_pack_lang():
-    """Pick an **installed** language pack name (for self-evidence judgments of the
-    "read a real pack" kind); none installed => None.
+    """Pick an **installed** language pack name for self-evidence; none => None.
 
-    Those judgments verify "rendering fidelity" (are the placeholders in message
-    templates right, are the sentences still there) -- **which language it is
-    doesn't matter**, so it must not be hard-coded to `zh`. A downstream repo
-    installing exactly one pack is the product's main scenario ("pick one from a
-    pile of packs"); hard-coding zh would false-rot the
-    `REFLECT_I18N=<en-only>` self-test.
+    Rendering-fidelity judgments do not depend on which language it is, so this
+    is discovered, never a hard-coded `zh`: a single-pack installation is legal.
     """
     langs = installed_langs()
     return langs[0] if langs else None
@@ -805,16 +716,11 @@ def used_codes(py_dir=None):
     """Message codes the core source would **actually send to users**
     (`M("...")` / `_Semantic("...")`).
 
-    **Discovered**: scan the source, keep no written roster. This is the
-    reference surface for the "pack completeness" judgment -- without it, "both
-    packs missing the same entry" would go all green (a zh↔en set-difference
-    comparison cannot see a shared omission).
-
-    **Strip docstrings**: examples in docs (`M(...)` shapes) are not output;
-    without stripping, doc examples get taken for real messages (observed false
-    positive).
-    Prefixes in `_SELFTEST_CODE_PREFIXES` are self-evidence-only codes (also
-    never sent to users).
+    **Discovered**: scan the source, keep no written roster; this is the
+    reference surface for the "pack completeness" judgment (a set-difference
+    between packs cannot see a shared omission). Docstrings are stripped, so
+    examples in docs are not counted; `_SELFTEST_CODE_PREFIXES` codes are
+    self-evidence-only and also excluded.
     """
     import ast  # noqa: PLC0415
     d = py_dir if py_dir is not None else gate.zdir()
@@ -1004,15 +910,11 @@ def _empty_pack_verdict(tables):
     """The two verdicts for "zero packs / broken packs". Returns `None` = keep
     comparing.
 
-    **Zero packs is a legal state** (the user wants "the core works without any
-    language expression"): no pack installed => there is no "mutual agreement" to
-    speak of, but the configuration is not broken -- return empty (no report).
-    "A pack was requested but can't be read" is handled by `pack_unreadable` /
-    the activation path's `i18n.pack_absent`; that's a different matter: **not
-    requested** vs **requested but absent**.
-
-    Installed but all tables empty => that is a **broken pack** (a directory is
-    claimed but has no content); report.
+    **Zero packs is a legal state**: no pack installed => return empty (no
+    report). "A pack was requested but can't be read" is another matter,
+    handled by `pack_unreadable` / the activation path's `i18n.pack_absent`.
+    Installed but all tables empty => a broken pack: report
+    `knobs.pack_sync_empty`.
     """
     if not tables:
         return []
@@ -1024,13 +926,11 @@ def _empty_pack_verdict(tables):
 def _load_tables(langs, load):
     """Load all installed packs. Returns `(tables, error list or None)`.
 
-    ⚠️ **Must catch `load_pack` exceptions**: it raises `MissingPack` for broken
-    shards, and `pack_sync_problems` can be called **outside**
-    `activate_or_fatal()` (the `registry --gates` roster reconciliation is one
-    such call), so the exception would bubble to the top as a bare traceback
-    rc=1 -- escaping this repo's rc contract (broken config = FATAL rc 2).
-    Observed: `REFLECT_LANG` unset + a broken shard => rc=1 traceback; the same
-    input with `REFLECT_LANG=zh` gives rc=2.
+    ⚠️ **Must catch `load_pack` exceptions**: `pack_sync_problems` can be called
+    outside `activate_or_fatal()` (the `registry --gates` roster reconciliation
+    is one such call), so an escaping exception would violate the rc contract
+    (broken config = FATAL rc 2). A load failure yields `({}, [problem])`;
+    success yields `(tables, None)`.
     """
     tables = {}
     for lang in langs:
@@ -1522,19 +1422,13 @@ def _flag_case():
 
 
 def _docs_names_follows():
-    """**The two scanning gates' default surface must equal the registry** -- not
-    "the function returns the registry".
+    """The scanning gates' default surface must equal the registry.
 
-    ⚠️ The first version wrote `docs_names() == REGISTRY["REFLECT_DOCS"]`, which
-    is **circular reasoning** (the function itself reads REGISTRY; both sides
-    change together, so a broken change stays vacuously true -- observed: putting
-    the old five-doc default back into REGISTRY kept this green). A vacuous
-    judgment is worse than none.
-
-    The real judgment is at the **consumer end**: which files `check_stale` /
-    `check_retractions` actually scan when the knob is **unset**. They each used
-    to hand-copy a five-doc literal while the registry had six -- only reading
-    from the consumer end reveals that difference.
+    ⚠️ The judgment is at the **consumer end** -- which files `check_stale` /
+    `check_retractions` scan when the knob is unset -- not `docs_names()` reading
+    the registry (a circular comparison would stay green when both sides drift).
+    With the knob set it must not fall back to the registry; otherwise the knob
+    would be dead. Returns False on either failure.
     """
     import os  # noqa: PLC0415
     registered = [s.strip() for s in REGISTRY["REFLECT_DOCS"][1].split(",")

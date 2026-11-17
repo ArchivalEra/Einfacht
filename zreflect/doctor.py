@@ -305,13 +305,10 @@ def _load_checks():
     """Load the spec and take `checks`. Returns `(checks, done_rc)`.
 
     `done_rc is not None` => the caller **must return it directly** (it may be 0;
-    `off` is 0). `None` => keep judging below.
-
-    ⚠️ "rc non-zero" must not be used here as the "already handled" signal:
-    `off()`'s rc is **0** (off is not a failure). When this was written as
-    `if rc: return rc`, execution kept going after `off` and ran
-    `spec_problems(None)` anyway, turning "disabled" into `doctor.empty_spec`
-    + rc=2 (observed: doctor went red on every cross-repo fixture run).
+    `off` is 0). `None` => keep judging below. "rc non-zero" must **not** be
+    used here as the "already handled" signal, because `off()`'s rc is **0**
+    (off is not a failure). A missing default spec => `off`; a
+    configured-but-missing spec or load error => `fatal` (rc 2).
     """
     p = _spec_path()
     if p is None:

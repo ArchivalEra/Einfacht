@@ -104,17 +104,28 @@ def classify(path, src, chosen="mismatch"):
 
 
 def classify_tree(zdir=None):
-    """Classify every file under `zdir` (default: the suite's own directory)."""
+    """Classify every file under `zdir`. Returns `(merged, functions_seen)`.
+
+    `functions_seen` is the zero-value guard: if the classifier is broken and
+    returns nothing at all, "0 undecided" is indistinguishable from "it never
+    looked". Measured: replacing `classify()` with a constant empty result made
+    `--classify` print all zeros and exit 0 -- the settlement criterion was
+    blind to the classifier failing. A repo with zero functions is not a
+    passing classification, it is an environment accident.
+    """
     import os.path  # noqa: PLC0415
     base = zdir or gate.zdir()
     merged = {k: [] for k in CLASSES}
+    seen = 0
     for name in sorted(os.listdir(base)):
         if not name.endswith(".py"):
             continue
         src = open(os.path.join(base, name), encoding="utf-8").read()
+        seen += sum(1 for node in ast.walk(ast.parse(src))
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)))
         for key, rows in classify(name, src).items():
             merged[key].extend(rows)
-    return merged
+    return merged, seen
 
 
 def mode():
@@ -162,6 +173,22 @@ def problems(paths, chosen):
             for p in function_reports(name, src, chosen)]
 
 
+def _classifier_has_teeth():
+    """The classifier must still recognise a known history sample.
+
+    Without this, deleting the body of `classify()` produces three empty groups
+    and `--classify` exits 0 -- the settlement criterion would certify a broken
+    classifier (measured). This is the same "a criterion must be able to go red"
+    rule applied to the classifier itself.
+    """
+    sample = ('def f():\n    """Does the thing.\n\n'
+              + "A sentence of rationale that runs on. " * 20 + "\n\n"
+              + 'The first version returned None.\n    """\n    return 1\n')
+    merged = classify("teeth.py", sample)
+    return (len(merged["history"]) == 1
+            and not merged["contract"] and not merged["undecided"])
+
+
 def _print_classification(merged):
     """The `--classify` report: three groups, then the exit code the ticket names."""
     for key in CLASSES:
@@ -176,7 +203,18 @@ def _print_classification(merged):
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if "--classify" in argv:
-        return _print_classification(classify_tree())
+        merged, seen = classify_tree()
+        if seen == 0:
+            return fatal(M("comments.classify_scanned_nothing"))
+        if not _classifier_has_teeth():
+            return fatal(M("comments.classifier_cannot_go_red"))
+        if not any(merged.values()):
+            # Nothing at all in scope is legitimate only when the suite really
+            # has no over-long docstrings -- which is a *measured* state, not an
+            # empty result from a broken classifier. Pin that with a selftest
+            # case below rather than accepting it silently.
+            print(M("comments.classify_empty_scope"))
+        return _print_classification(merged)
     chosen = mode()
     if chosen == "off":
         return off(M("comments.off"))
@@ -190,6 +228,16 @@ def run(argv=None):
     return gate.finish(M("comments.title"), probs,
                        M("comments.ok", mode=chosen, files=len(paths),
                          count=len(probs)))
+
+
+def _hollow_classifier_case():
+    """A classifier returning three empty groups must fail the red sample."""
+    saved = globals()["classify"]
+    try:
+        globals()["classify"] = lambda *a, **k: {x: [] for x in CLASSES}
+        return not _classifier_has_teeth()
+    finally:
+        globals()["classify"] = saved
 
 
 def _classify_case():
@@ -239,6 +287,12 @@ def _cases():
         # private one carrying neither signal is what a human has to rule on.
         ("comments.classify_splits_three_ways",
          lambda: _classify_case()),
+        # The classifier must fail its own red sample: a hollow classifier
+        # returning three empty groups made `--classify` certify success.
+        ("comments.classifier_red_sample",
+         lambda: _classifier_has_teeth()),
+        ("★ comments.hollow_classifier_is_rejected",
+         lambda: _hollow_classifier_case()),
     ]
 
 

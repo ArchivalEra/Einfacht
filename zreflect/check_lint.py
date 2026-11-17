@@ -57,18 +57,12 @@ CONFIG = "ruff.toml"
 
 def suite_files():
     """Paths of the **suite's own** `.py` files (those for which `declares_itself()`
-    is true).
-
-    Warning: this previously ran `ruff check .` -- the **whole repo**. When wired
-    into a real project, the host's `examples/` / `scripts/` got audited as if
-    they were the suite: observed on a real integration, `registry --run commit`
-    reported **149** ruff findings, all pointing at the host's own files. The user
-    could neither fix them all nor understand why someone else's suite was nitpicking
-    their code.
+    is true), sorted.
 
     The criterion for "suite code" is a **declaration** (`MODULE = ...` /
     `GATE = ...`), not a directory name -- discovery-based, the same yardstick as
-    `registry.modules()` / `gates()`.
+    `registry.modules()` / `gates()`. Only `zreflect/` and `reflect-hooks/` under
+    `GATE_REPO` are walked.
     """
     out = []
     for sub in ("zreflect", "reflect-hooks"):

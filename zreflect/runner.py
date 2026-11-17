@@ -49,14 +49,11 @@ def default_timeout():
 
 
 def timeout_with_status():
-    """`(seconds, bad_value)`: bad value => fall back to 10 and carry the **original** value out (caller decides whether to sound off).
+    """Return `(seconds, bad_value)`.
 
-    ⚠️ Previously `default_timeout` fell back silently, while
-    `check_facts_replay.run` probed again with its own `float(raw)` to warn --
-    the same bad value, one silent and one loud (observed: with
-    `REFLECT_REPLAY_TIMEOUT=""` replay reported `bad_timeout` but the runner
-    itself said nothing). Two copies of the criterion, each doing half. Parsing
-    now lives in exactly one place.
+    Unset (including empty) or a valid float => `(value, None)`. An invalid
+    value => `(10.0, raw)`, where `raw` is the original string, so the caller
+    decides whether to report it. Parsing lives only here.
     """
     raw = os.environ.get("REFLECT_REPLAY_TIMEOUT")
     if raw is None or not raw.strip():
@@ -74,24 +71,13 @@ def quote(s, n=60):
 
 
 def _shell_argv(cmd):
-    """Wrap a `cmd` into the argv of "whichever shell can run it".
+    """Wrap `cmd` into `(argv, strength label)` for the first available shell.
 
-    Three tiers, and **the drop in strength with the environment must be
-    visible** (never silent):
-
-      1. `bash -o pipefail -c` -- the best: a failure in any stage of a pipe
-         is carried out (the "fails but green" shape where `cat is gone |
-         wc -l` prints 0 with rc=0 is exactly what this kills).
-      2. `/bin/sh -c` -- systems without bash (some containers / minimal
-         distros). No `pipefail`, so **a failure in the middle of a pipe
-         can be lost**.
-      3. **Windows**: no `bash` and no `/bin/sh`. Fall back to `cmd.exe` --
-         it can run the `python3 ...` / `git ...` single commands in this
-         repo's ledger, but has no POSIX pipe semantics (`|` is interpreted
-         as a pipe by cmd, but `$(...)` and friends are not understood).
-
-    Returns `(argv, strength label)`; the label rides along in run_cmd's
-    failure diagnostics (`[shell=...]`).
+    Tiers, in order: `bash -o pipefail -c` (pipe failures propagate);
+    `/bin/sh -c` (no pipefail: a failure in the middle of a pipe can be lost);
+    `(None, "no-shell")` on Windows, where the caller must build an argv itself.
+    The label is carried into `run_cmd` diagnostics as `[shell=...]`; the drop
+    in strength must never be silent.
     """
     bash = shutil.which("bash")
     if bash:
@@ -116,18 +102,12 @@ _QUOTED = re.compile(r'"([^"]*)"|(\S+)')
 
 
 def _windows_argv(cmd):
-    """Split a `cmd` into an argv (Windows, no shell in between).
+    """Split `cmd` into an argv on Windows, with no shell in between.
 
-    Rule: **everything inside double quotes is kept verbatim** (spaces and
-    backslashes included), split on whitespace outside quotes. This is an
-    approximation of Windows `CommandLineToArgvW` -- good enough for the
-    "interpreter + script + a few args" shape, and it never touches
-    backslashes.
-
-    Shell syntax (`|` / `&&` / redirections) is **not supported**. Every
-    `cmd` in this repo's ledger is a single command; a consumer who needs a
-    pipe has to get bash installed on that machine (`_shell_argv` picks it
-    first, and that path has `pipefail`).
+    Double-quoted text is kept verbatim (spaces and backslashes included);
+    everything else splits on whitespace. Backslashes are never treated as
+    escapes. Shell syntax (`|`, `&&`, redirections) is not supported: every
+    ledger `cmd` is a single command.
     """
     return [m.group(1) if m.group(1) is not None else m.group(2)
             for m in _QUOTED.finditer(cmd)]
@@ -147,17 +127,12 @@ _PY_CMD = re.compile(r"^\s*python3(?=\s)")
 
 
 def _python_of(cmd):
-    """Rewrite a leading `python3` to the current interpreter (Windows compat); everything else verbatim.
+    """Rewrite a leading `python3` to the current interpreter (quoted), and rewrite
+    a `zreflect/<script>.py` to an absolute path under the tool repo. Everything
+    else is passed through verbatim.
 
-    ⚠️ Along the way, the `zreflect/<script>` right after it is resolved to
-    an **absolute path into the tool repo**. Why this is necessary: in the
-    ledger `cmd`, `zreflect/facts.py` is a **relative path**, while `run_cmd`'s
-    cwd is the **repo being audited** (`gate.GATE_REPO`). When the two
-    coincide (suite measures itself) it works; when they don't (suite copied
-    elsewhere, or a fixture repo that only fabricates data) the re-run dies
-    with `No such file` -- and the error message points at "command failed",
-    not at "path resolution broke". Observed: the harness's rename fixture
-    hit exactly this.
+    Both rewrites are required: Windows has no `python3` name, and `run_cmd`
+    runs with cwd = the audited repo, not the tool repo.
     """
     interp = _quote_for_shell(sys.executable)
     out = _PY_CMD.sub(lambda _m: interp, cmd, count=1)
@@ -173,18 +148,11 @@ _NEEDS_QUOTING = re.compile(r"""[\s\\$`"'|&;<>()*?{}\[\]#~]""")
 
 
 def _quote_for_shell(path):
-    """Wrap a path in a form **no shell can misread**.
+    """Quote a path so no shell can misread it.
 
-    ⚠️ This one was paid for with a full CI round on the Windows leg: GitHub's
-    windows-latest **has Git Bash installed**, so `shutil.which("bash")` hits
-    => the bash branch runs. And `sys.executable` looks like
-    `C:/hostedtoolcache/windows/Python/3.13/x64/python.exe` -- in bash
-    **the backslash is an escape character**: a `C:` followed by backslashes
-    gets eaten into `C:hosted`, so `python` is not found => **rc=127**
-    (observed: all 19 replay entries red).
-
-    A `" " in path` criterion is not enough: `C:/...` has no spaces but it
-    does have backslashes.
+    A path containing whitespace, a backslash, or a shell metacharacter is
+    wrapped in single quotes; if it contains a single quote, double quotes are
+    used with `"` escaped. Paths needing no quoting are returned unchanged.
     """
     if not _NEEDS_QUOTING.search(path):
         return path

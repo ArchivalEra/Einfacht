@@ -321,14 +321,10 @@ def _render(code, params, table):
 
 
 def _validate(table, lang):
-    """Validate pack shape: values must not masquerade as machine lines (contract strings are structurally untranslatable).
-
-    ⚠️ Judged **line by line** (`machine.reject`), not just the first line --
-    a `^`-anchored `.match()` used to look only at line one, so `"ctx\\nOFF: x"`
-    was accepted and, once rendered, became a standalone `OFF:` line (observed:
-    all ten line breaks hit). A language pack is a **static** asset the author
-    can fix by rephrasing => here we **reject loudly** (FATAL rc 2), unlike
-    render output which is only sanitized.
+    """Validate pack shape: no value may masquerade as a machine line.
+    
+    Judged **line by line** (`machine.reject`): a value whose second line starts
+    `OFF:` is rejected, because rendering it would emit a standalone machine row.
     """
     if not isinstance(table, dict) or not table:
         raise MissingPack("i18n.pack_empty", lang=lang)
@@ -351,18 +347,13 @@ def _validate(table, lang):
 # -- Pack location and reading (the repo-wide single resolution point) -------
 
 def pack_dir():
-    """Absolute path of the language pack directory -- the **repo-wide single resolution point**. Three conventions:
+    """Absolute path of the language pack directory -- the single resolution point.
 
-      · **`REFLECT_I18N` unset** => the suite's bundled built-in packs
-        `BUILTIN_PACKS`, anchored at the **tool repo root** ("pull the suite
-        and it works"; cross-repo fixtures depend on this -- anchored relative
-        to GATE_REPO, every gate in the fixture raised MissingPack, observed
-        0/15 all red).
-      · **Relative path set** => relative to the **audited repo root**
-        (`GATE_REPO`). Same convention as name-type knobs like `REFLECT_DOCS`
-        -- only then does "a name relative to the repo root" written in the
-        env file match.
-      · **Absolute path set** => used as-is.
+    Three conventions, in order:
+    · `REFLECT_I18N` unset => the bundled `BUILTIN_PACKS`, anchored at the tool
+      repo root (a cross-repo fixture must not resolve against `GATE_REPO`).
+    · `REFLECT_I18N` relative => joined onto `GATE_REPO`.
+    · `REFLECT_I18N` absolute => used as-is.
     """
     raw = os.environ.get("REFLECT_I18N", "").strip()
     if not raw:
@@ -423,23 +414,14 @@ def _load_single(base, lang):
 
 def load_pack(lang):
     """Read a language pack's **merged table** (the same table `Catalog.load` sees).
-
-    Both shapes are recognized, and **always merged**: `<lang>/*.json` shards +
-    `<lang>.json` single file (the latter overrides the same code).
-
-    The merge must mirror the real loader -- any reader that reads only one
-    shard forks from the loader (stepped on: self-proof read per shard while a
-    doc-endorsed single-file pack was judged red).
-
-    Missing / empty => `{}` (no raise): self-proof assertions that "read the
-    real pack" go red on the spot against an empty table. What is distinguished
-    is "absent" vs "present but broken": the latter is a configuration incident
-    and must be loud.
-
-    The two shapes are one helper each (`_load_shards` / `_load_single`): each
-    has its own error codes (`shard_*` / `single_*`); fused together, those two
-    try/except blocks would make "which code belongs to which shape" something
-    you can only learn by reading the code.
+    
+    Both shapes are recognized and always merged: `<lang>/*.json` shards plus a
+    `<lang>.json` single file (the latter overrides the same code). The merge must
+    mirror the real loader.
+    
+    Missing / empty => `{}` (no raise); "present but broken" is a different,
+    reported state. `_load_shards` / `_load_single` carry their own error codes so
+    the report says which shape failed.
     """
     base = pack_dir()
     table = _load_shards(base, lang)
@@ -716,14 +698,11 @@ def _activate_ok(lang, tables):
 
 
 def _null_consistent():
-    """The `NULL` sentinel means the same thing at all three entries: `bind` / `resolve` / `activate`.
-
-    ⚠️ **Must set `REFLECT_LANG` before verifying**: previously this case was
-    green even in the default (unset) environment while `resolve(NULL)`
-    wrongly fell back to the env var -- the whitewashed shape of "tested by
-    whatever environment it happens to run in" (observed: env unset -> True,
-    env=zh -> False). The assertion builds the environment that **can make it
-    red** itself, instead of waiting for the outside environment to oblige.
+    """The `NULL` sentinel means the same thing at `bind` / `resolve` / `activate`.
+    
+    `REFLECT_LANG` must be set before verifying: with it unset, `resolve(NULL)`
+    would otherwise fall back to the environment and the assertion would test
+    whichever environment it happened to run in.
     """
     prev = _DEFAULT[0]
     saved_env = os.environ.get("REFLECT_LANG")

@@ -198,15 +198,9 @@ def is_summary(line):
 def scan(text, keepends=False):
     """Return the machine lines in `text`: `[(lineno, kind, line body)]`.
 
-    Line splitting uses the **same** semantics as `str.splitlines()`
-    (`LINE_BREAKS` is exactly its separator set), so this module and
-    `run_phase` / `grep` cannot disagree about "how many lines".
-
-    `keepends=False` (default) => returned **line bodies carry no** trailing
-    separator (callers print / compare them; a stray `\\n` only sets traps).
-    `keepends=True` => separators kept (for reassembling the whole text).
-    The two branches used to be reversed: the default path returned lines
-    **with** separators.
+    Line splitting uses the same separators as `str.splitlines()`. With
+    `keepends=False` (default) line bodies carry no trailing separator; with
+    `keepends=True` separators are kept for reassembling the text.
     """
     out = []
     for i, part in enumerate((text or "").splitlines(keepends=True), 1):
@@ -251,16 +245,13 @@ def emit_summary(passed, failed):
 
 
 def clean(text, kinds=None, preserve_first=False):
-    """**Break up** forged machine lines in a rendered result. Returns `(neutralised text, neutralised lines)`.
+    """Break up forged machine lines in a rendered result. Returns
+    `(neutralised text, neutralised lines)`.
 
-    `kinds` can restrict which tiers get broken. By default every shape in the
-    narrow table is broken -- the set consumers actually parse.
-
-    `preserve_first=True`: the **first line is kept verbatim** (used by
-    `emit` -- its first line is exactly "the machine line we want"; breaking
-    it would void our own emitted command line). The remaining lines get
-    broken as usual: forged lines smuggled in via the body may not take
-    advantage of the moment to become rows.
+    `kinds` restricts which tiers are broken; by default every shape in the
+    narrow table is broken. With `preserve_first=True` the first line is kept
+    verbatim (for `emit`, whose first line is the wanted machine line); the
+    remaining lines are still neutralised.
     """
     parts = (text or "").splitlines(keepends=True)
     hits = []
@@ -278,19 +269,13 @@ def clean(text, kinds=None, preserve_first=False):
 
 
 def reject(value):
-    """Load-time criterion for language-pack values: returns the **first** forged line `(lineno, line body)`, or None.
+    """Load-time criterion for language-pack values: returns the first forged line
+    `(lineno, line body)`, or None.
 
-    Broad table: any whole line starting with a capitalized word + colon
-    counts. **Per line**, not just the first -- that was exactly what used to
-    be missed.
-
-    ⚠️ This uses only the **two explicit tables** (`_BROAD` covers
-    capitalized word + colon; `_SHARP` covers the narrow set consumers really
-    parse), not "all kinds". Otherwise `human_summary` (`=== ... ===`,
-    human-readable, translatable) would be misjudged as a forgery --
-    masquerading as a human-readable summary is not a hole, since no consumer
-    parses it; masquerading as a **machine** summary is (that one is in
-    `_SHARP`).
+    Uses only the two explicit tables: `_BROAD` (any capitalized word + colon)
+    and `_SHARP` (the narrow set consumers parse). Every line is checked, not
+    only the first. `human_summary` (`=== ... ===`) is deliberately not judged:
+    no consumer parses it, but a forged machine summary is in `_SHARP`.
     """
     for i, ln in enumerate((value or "").splitlines(), 1):
         if _is_broad(ln) or _is_sharp(ln):

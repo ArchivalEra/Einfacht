@@ -109,31 +109,28 @@ def _sha_facts(f):
 # "history" marker, it is a **re-playable** anchor.
 
 
+def _has_dated_record(line):
+    """A delivery-package name with an 8-digit date, or a commit sha inside
+    backticks, is verifiable provenance (`DATED_RECORD`).
+    """
+    return bool(DATED_RECORD.search(line))
+
+
+def _has_ledger_citation(line):
+    """`[[key]]` is a re-playable citation of a ledger fact (`CITE_RE`)."""
+    return bool(CITE_RE.search(line))
+
+
 def _is_sourced(line):
     """Does this line carry **explicit, verifiable** provenance?
 
-    Before issue #25: `HIST_MARK` (the two characters meaning "history") was
-    **by itself** enough to count as provenance => any assertion became
-    whole-line exempt by adding a "history" label. Measured downstream: the
-    same fabricated sha, plus only the word "history", went from red to
-    green. The gate's own error message said "or add a historical
-    marker/provenance" -- it was **teaching users to bypass itself**
-    (`living.py:11-19` already admitted this miss, but only in a comment).
-
-    Now: "history" **does not exempt the content**; it only means "not
-    reconciled against today". The line must still give one of the verifiable
-    provenance forms:
-
-      - `DATED_RECORD` -- a delivery-package name (with an 8-digit date) or a
-        commit sha **inside backticks**;
-      - `[[key]]` -- a citation of a ledger fact (re-playable).
-
-    Bare "history" no longer suffices -- it is a **hint**, not evidence. To
-    genuinely exempt a historical assertion, register it in
-    `retractions.json` / `REFLECT_RETIRED` (single source of truth), or give a
-    delivery-name/sha citation.
+    A bare "history" marker is a **hint**, not evidence: it means "not reconciled
+    against today", not an exemption. To exempt a historical assertion, register
+    it in `retractions.json` / `REFLECT_RETIRED`, or give a delivery-name/sha
+    citation. The two accepted forms are judged by `_has_dated_record` and
+    `_has_ledger_citation`.
     """
-    return bool(DATED_RECORD.search(line) or CITE_RE.search(line))
+    return _has_dated_record(line) or _has_ledger_citation(line)
 
 
 def _sha_assertion_problems(f, docs, hist):
@@ -219,24 +216,30 @@ def _retired_name_problems(docs, hist, retired):
 
 def problems(ledger, docs, retired=None, hist_secs=None, stale_days=None):
     """Return the problem list (pure function: the selftest depends on that).
-    `docs` = {file name: body}.
+    `ledger` = the loaded ledger; `docs` = {file name: body}.
 
-    One criterion layer = one function, concatenated in the order
-    R1 -> age check -> R2 (order is the report order).
-
-    `hist_secs=None` => use the module-level `REFLECT_HISTORY_SECS`; the
-    selftest passes it explicitly, which is the only way to test it.
-    `stale_days=None` => use `REFLECT_STALE_DAYS` (unset => age rule off).
-    `retired=None` => use `REFLECT_RETIRED` (unset => retired-name rule off;
-    the `RETIRED` module constant is None = unset, so `run` can tell
-    "declared off" apart from an empty list).
+    Empty ledger => `stale.ledger_empty`; empty `docs` => `stale.no_docs`
+    (empty is not a pass). Otherwise `_problem_layers` resolves the three knobs
+    and returns reports in R1 -> age -> R2 order.
     """
-    hist = HIST_SECS if hist_secs is None else hist_secs
     f = facts_of(ledger)
     if not f:
         return [M("stale.ledger_empty")]
     if not docs:
         return [M("stale.no_docs")]
+    return _problem_layers(f, docs, hist_secs, stale_days, retired)
+
+
+def _problem_layers(f, docs, hist_secs, stale_days, retired):
+    """The three criterion layers in report order: R1 sha provenance, age check,
+    R2 retired names. One layer = one function, concatenated.
+
+    `hist_secs=None` => `HIST_SECS` (the selftest passes it explicitly);
+    `stale_days=None` => `_stale_days()` (unset => age rule off); `retired=None`
+    => `_retired()` (unset => retired-name rule off; `RETIRED is None` lets
+    `run` tell "declared off" apart from an empty list).
+    """
+    hist = HIST_SECS if hist_secs is None else hist_secs
     sd = _stale_days() if stale_days is None else stale_days
     retired_names = _retired() if retired is None else retired
     return (_sha_assertion_problems(f, docs, hist)

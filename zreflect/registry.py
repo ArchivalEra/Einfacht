@@ -609,17 +609,14 @@ def _arg_after(argv, flag):
 
 
 def _emit_gate_output(text):
-    """Relay one red gate's output to the user: the **problem lines + all diagnostic
-    lines**, the rest dropped.
+    """Relay one red gate's output to the user: the **first problem line + all
+    diagnostic lines**, the rest dropped.
 
-    ⚠️ The truncation rule is "stop after the first problem line", but the `ℹ `
-    diagnostic lines must **not lose a single one** -- they are the only sentence
-    that can save the user. Observed: after one bootstrap, registry reported 3
-    red, and `check_facts.py`'s diagnostic right after the problem line was
-    `ℹ gate.env_hint(file='Einfacht.env')` ("source it first, then run by
-    hand"). The old rule dropped it entirely, so the user, seeing "missing
-    README.zh.md", went and created that file -- right symptom, wrong cause, and
-    creating it only made the red worse.
+    The truncation rule is "stop after the first `· ` problem line", but `ℹ `
+    diagnostic lines must **not lose a single one** -- they are the only
+    sentence that can save the user. Lines are printed with a six-space indent;
+    blank lines and non-diagnostic lines after the first problem line are
+    omitted.
     """
     lines = [ln.rstrip() for ln in (text or "").splitlines() if ln.strip()]
     shown_problem = False

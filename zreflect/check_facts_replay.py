@@ -109,34 +109,15 @@ def _replay_one(k, raw_entry, run, seconds, out, stats):
 
 
 def _judge_ok(k, entry, cmd, stdout, out, stats):
-    """The judgment after rc==0: principle entries check for a "stance", numeric entries check bare-value equality.
+    """Judge one rc==0 replay; append to `out`, increment `stats["ok"]` on a pass.
 
-    ⚠️ The principle-entry contract is **both conditions together** (a
-    directional mistake was made here once -- exactly the thing this repo was
-    founded to kill: recreating fake green inside a mechanism built to kill
-    fake green):
-
-      · stdout **non-empty** -- a gate that really ran takes a stance
-        (`ok(...)` or `OFF: ...`); a command that says nothing cannot be
-        distinguished between "ran and passed" and "never ran at all".
-      · stdout **contains no `OFF:` line** -- that is "not enabled", not
-        "passed".
-
-    rc-only judging launders off into green (this repo's history: "8 of 13
-    gates off, all green, invisible"); stdout-only judging misreads a
-    "silent pass". Both conditions are required.
+    Numeric entries: stdout stripped must equal `str(value_of(entry))`, else
+    `replay.mismatch`. Principle entries go to `_judge_principle`, which checks
+    for a stance. This function never raises and prints nothing.
     """
     if entry.get("kind") == "principle":
-        got = stdout.strip()
-        if not got:
-            out.append(M("replay.principle_said_nothing", key=k, command=cmd))
-            return
-        import machine  # noqa: PLC0415
-        if any(kind == "off" for _i, kind, _ln in machine.scan(got)):
-            out.append(M("replay.principle_is_off", key=k,
-                         command=cmd, detail=quote(got[:120])))
-            return
-        stats["ok"] += 1
+        if _judge_principle(k, cmd, stdout, out):
+            stats["ok"] += 1
         return
     got = stdout.strip()
     want = str(value_of(entry))
@@ -147,6 +128,26 @@ def _judge_ok(k, entry, cmd, stdout, out, stats):
     stats["ok"] += 1
 
 
+def _judge_principle(k, cmd, stdout, out):
+    """Principle entries take a stance: **both** conditions are required.
+
+    stdout must be non-empty (a gate that really ran prints `ok(...)` or
+    `OFF: ...`; a silent command cannot be told from one that never ran) and
+    must contain no `OFF:` line ("not enabled", not "passed"). An empty result
+    is `replay.principle_said_nothing`; an off line is `replay.principle_is_off`.
+    rc-only judging launders off into green, stdout-only judging misreads a
+    silent pass.
+    """
+    got = stdout.strip()
+    if not got:
+        out.append(M("replay.principle_said_nothing", key=k, command=cmd))
+        return False
+    import machine  # noqa: PLC0415
+    if any(kind == "off" for _i, kind, _ln in machine.scan(got)):
+        out.append(M("replay.principle_is_off", key=k,
+                     command=cmd, detail=quote(got[:120])))
+        return False
+    return True
 
 
 # ⚠️ **Cycle guard** (observed blowing memory: OOM).

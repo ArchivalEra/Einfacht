@@ -98,7 +98,12 @@ _AUTO_BLOCK = re.compile(r"^\s*<!--\s*(/?AUTO:[A-Z]+)\s*-->\s*$")
 
 
 def _count_file_lines(path):
-    """Lines **outside machine blocks** in one `.md` file. Unreadable => 0 (better absent than fake)."""
+    """Lines **outside machine blocks** in one `.md` file. Unreadable => 0.
+
+    A marker counts as a block boundary only when it occupies the line by
+    itself; one merely mentioned in prose must not start a block. State resets
+    per file, and every `AUTO:*` block is excluded, not just FACTS.
+    """
     total = 0
     in_block = False
     try:
@@ -116,32 +121,15 @@ def _count_file_lines(path):
 
 
 def count_md_lines(root):
-    """Lines **outside machine blocks** in `.md` files (cross-platform, pure Python).
+    """Lines **outside machine blocks** in `.md` files: the single replayable
+    implementation of the `md_lines` fact (pure Python, cross-platform).
 
-    This is the **single implementation** of `md_lines` -- it used to be a
-    `find | awk | wc` shell pipeline:
-      - Windows has no `find` / `awk` / `wc` (the CI Windows leg would go red);
-      - and shell quoting / escaping has its own dialect on each platform.
-    The counting logic now lives here; `cmd` is down to "call this one line",
-    still replayable verbatim.
+    Excludes **all** `AUTO:*` blocks, not just FACTS -- `AUTO:GATES` and
+    `AUTO:RULES` are render output too; counting them makes every render shift
+    the total, so `check_facts_replay` stays permanently red. The ledger's `cmd`
+    calls this function: measurement and replay share one source.
 
-    Excludes **all** machine blocks (not just FACTS): `AUTO:GATES` and `AUTO:RULES`
-    are also render output; missing them => every render adds +47 lines,
-    `check_facts_replay` goes permanently red, and the fix *looks like* "measure
-    again" -- re-measuring only writes the new value into the ledger, and the next
-    render shifts it again.
-
-    ⚠️ **A marker must be on a line by itself to count as a block boundary** (`^...$`).
-    The old awk version (`/<!-- AUTO:[A-Z]+ -->/{b=1; next}`) treated a marker merely
-    *mentioned* in prose as a block start -- observed cost: `AGENTS.md` has a line
-    saying "`STATE.md` pre-seeds the `<!-- AUTO:FACTS -->` / `<!-- AUTO:GATES -->`
-    markers" (describing what `--init` does); from that line on, the **remaining 22
-    lines of the file were all excluded**, while the ledger's `md_lines` stayed
-    undercounted at 2663 -- no output line anywhere said it was wrong. This is the
-    shape this repo hates most.
-
-    The per-file block state machine is factored into `_count_file_lines`: it has its
-    own "unreadable => 0" exit.
+    Per-file state is owned by `_count_file_lines`; unreadable files count 0.
     """
     total = 0
     for dirpath, dirnames, filenames in os.walk(root):
@@ -236,15 +224,12 @@ def _has_principles_doc():
 
 
 def _doc_names():
-    """Names of docs that carry machine blocks (derived from `_block_homes`'s
-    ownership mapping, not a hand-written list).
+    """Names of docs carrying machine blocks, derived from `_block_homes`'s
+    ownership mapping (never a hand-written list).
 
-    ⚠️ **Must respect `REFLECT_NO_PRINCIPLES`** (#27(2)): `doc.accepts_principles()`
-    honors the opt-out, but this used to return both docs unconditionally => a repo
-    without a principles doc hit FATAL `doc_missing_check` on `--check`, and
-    `gate._prepare(push)` hardcodes `facts.py --check` without doc names =>
-    **pre-push always red** -- the same opt-out behaving differently in two places
-    is exactly the "one rule, two sources" shape (observed downstream).
+    Must respect `REFLECT_NO_PRINCIPLES`: `PRINCIPLES.md` is included only when
+    `doc.accepts_principles()`. Without that opt-out, `--check` hits
+    `doc_missing_check` and pre-push goes red on a repo without a principles doc.
     """
     import doc  # noqa: PLC0415
     names = [_doc()]
@@ -256,18 +241,14 @@ def _doc_names():
 def _block_homes(ledger):
     """**Block <- doc** ownership (data, not ifs scattered through code).
 
-        AUTO:FACTS -> STATE.md        ledger render, the **single source of the numbers**
-        AUTO:GATES -> STATE.md        discovery-based roster render, the **single source of gate narration**
-        AUTO:RULES -> PRINCIPLES.md   discipline table render, the **single source of the rules narration**
+        AUTO:FACTS -> STATE.md        ledger render (numbers)
+        AUTO:GATES -> STATE.md        roster render (gate narration)
+        AUTO:RULES -> PRINCIPLES.md   rules render (rules narration)
 
-    Why the discipline block gets its own doc: discipline is "unchanging design
-    rules", state is "what is true now", history is "what happened back then".
-    Merged into one doc => `check_stale` can only scan the whole thing as live
-    state, and any old number surfacing from history goes red.
-
-    Returns ([(doc_name, [(begin, end, rendered), ...]), ...], error message).
-    If the roster reconciliation fails (missing declaration / orphans / bad flags)
-    => refuse to render -- the criteria have a single source.
+    `AUTO:RULES` has its own doc so `check_stale` never reads history as live
+    state. Returns `(homes, error)`: `homes` is
+    `[(doc_name, [(begin, end, rendered), ...]), ...]`; a non-empty `error`
+    refuses to render.
     """
     gs, missing = registry.gates()
     probs = registry.problems(gs, missing)
@@ -306,16 +287,13 @@ def _read_doc(p, path_rel):
 
 
 def _own_blocks(path_rel, ledger):
-    """The machine blocks **owned by** this doc. Returns `(blocks, rc)`; rc != 0 = must report.
+    """The machine blocks **owned by** this doc. Returns `(blocks, rc)`; rc != 0
+    means the failure was already reported.
 
-    ⚠️ **No owner found => must report** (zero-trust guard), no silent-green
-    `blocks=[]`. A doc not in the ownership table (say, an old user
-    passing a custom name) has no blocks to validate; returning 0 there would be
-    saying "no block is stale" -- a sentence that checked nothing.
-
-    `write_doc` and `check_doc` each used to carry a copy of this (comments
-    included), so any change had to be made twice -- exactly this repo's assumption
-    that "two copies that must agree will eventually disagree".
+    No owner found => rc 2, never a silent-green `blocks=[]`: a doc outside the
+    ownership table has nothing to validate, and "no block is stale" would be a
+    sentence that checked nothing. Only markers belonging to this doc are
+    returned; other docs' markers are expected to be absent here.
     """
     homes, err = _block_homes(ledger)
     if err:
@@ -358,15 +336,14 @@ def _replace_blocks(text, blocks, path_rel):
 
 
 def _swallowed_marker_problems(new, blocks, path_rel):
-    """Integrity guard before writing: the replacement must preserve the markers of
-    **all** blocks.
+    """Integrity guard run before writing: the replacement must preserve the markers
+    of **all** blocks.
 
-    If a marker literal got written into the body (even inside inline code), the
-    first-occurrence replacement swallows everything between the two blocks and
-    makes other blocks vanish -- observed: a bullet quoting a marker literal wiped
-    the whole facts block on one render. Ambiguity => refuse to write; a human fixes
-    the doc first (a block's cmd quoting the begin literal is legitimate nesting --
-    the `md_lines` awk criterion -- hence no pre-replacement count assertion).
+    A marker literal written into a body makes first-occurrence replacement
+    swallow the text between two blocks, so other blocks vanish. Ambiguity =>
+    refuse to write and let a human fix the doc. There is deliberately no
+    pre-replacement count assertion: a block's `cmd` may legitimately quote a
+    begin literal.
     """
     out = []
     for begin, end, _ in blocks:
@@ -644,20 +621,15 @@ def measure(argv):
 
 
 def _shape_guard(facts):
-    """Shape of `measure()`'s return value: every entry must have `ledger.fact()`'s shape.
+    """Shape of `measure()`'s return value: every entry must have `ledger.fact()`'s
+    shape -- `{"key": {"value": ..., "cmd": ..., "source": ...}}`, never a bare
+    `{"key": 12}`.
 
-    Compliant: `{"key": {"value": ..., "cmd": ..., "source": ...}}`.
-    Non-compliant (most common): bare value `{"key": 12}`.
-
-    ⚠️ **Checked before writing**. Bad shapes used to land on disk first and crash
-    with a traceback at print time, leaving value-less entries in the ledger with a
-    single `TypeError` line as the error. That is "half-written + no field name + no
-    guidance" -- the worst possible shape.
-
-    Three legitimate origins: `ledger.fact()` (normal), dicts already in the old
-    ledger (the `--accept*` rewrite path), dicts merged via `facts_of(ledger)`. All
-    carry a `value` key (or are already of the `{"value": ...}` shape), so the
-    criterion is "has a `value` key".
+    Checked **before writing**: a bad shape reported after the write leaves a
+    half-written ledger and a bare traceback. Legitimate origins all carry a
+    `value` key (`ledger.fact()`, old-ledger dicts on the `--accept*` path,
+    `facts_of(ledger)` merges), so "has a `value` key" is the criterion. Returns
+    0 or 2 (FATAL already emitted).
     """
     bad = sorted(k for k, v in (facts or {}).items()
                  if not (isinstance(v, dict) and "value" in v))
@@ -697,15 +669,13 @@ def _guarded_write(argv, old, facts):
 
 
 def get_value(ledger, key):
-    """Fetch a ledger value by key -- the **official read-only exit** for consumers in
-    any language (issue #4 (4)).
+    """Fetch a ledger value by key -- the **official read-only exit** for consumers
+    (CI, test processes in other languages).
 
-    Consumers (CI, test processes in other languages) must go through
-    `facts.py --get KEY`, **never parse FACTS.json themselves**: the classic
-    hand-written-parser trap is finding the substring `"value"` and grabbing what is
-    between the quotes -- the same file is full of `"value": ...`, so you grab the
-    value of a **different key**. This fetches the value completely.
-    Key absent => (False, error message); present => (True, value).
+    Consumers must call `facts.py --get KEY`, never parse `FACTS.json`: a
+    substring search for `"value"` picks the value of a different key, because
+    every entry carries that field. Returns `(False, error message)` when the key
+    is absent, `(True, value)` when present.
     """
     f = facts_of(ledger)
     if key not in f:
@@ -751,14 +721,13 @@ def _load_or_die():
 
 
 def main(argv):
-    """Command dispatch. **Dispatch only** -- one `cmd_*` handler per command.
+    """Command dispatch. **Dispatch only** -- one `cmd_*` handler per command;
+    handlers do not share a local scope.
 
-    ⚠️ This split is not just about complexity: previously 8 commands shared one
-    function body, and `--accept-principles`'s `import doc as _doc` made `_doc` a
-    local variable across **all of `main`** => `--render-doc` (no filename; one of
-    AGENTS.md's primary commands) threw `UnboundLocalError` before reaching that
-    line (see `retractions.json` R-004). Commands no longer share a scope => this
-    class of cross-command name pollution disappears structurally.
+    `_classify(argv)` decides the branch: `measure` (also for `--allow-drop` /
+    `--accept-changes*` modifiers), `help` and `unknown` both print usage, and a
+    registered command is looked up in `_command_table()`. Unknown commands exit
+    2; they never fall back to `measure()`, which would write the ledger.
     """
     kind = _classify(argv)
     if kind == "measure":
@@ -775,17 +744,14 @@ def main(argv):
 
 
 def _classify(argv):
-    """First arg -> `"measure"` / `"help"` / `"command"` / `"unknown"`. **Pure function**.
+    """First arg -> `"measure"` / `"help"` / `"command"` / `"unknown"`. Pure.
 
-    To prove "an unknown command never falls back to measure", selftests used to call
-    `main(["--bogus"])` directly -- but `main(["--accept-changes=k1"])` **really runs
-    measure and writes to disk**, so `facts.py --selftest` would pollute the caller's
-    `FACTS.json` (observed: the md5 changed while the README said "selftests ...
-    never touch the real repo").
-
-    Once the dispatch decision is a pure function, selftests test the **decision**,
-    not the **execution** -- the "in the table / is a modifier" judgment still has a
-    single source (`_classify`), but proving it no longer requires running the command.
+    Table membership decides `command`; `--allow-drop` / `--accept-changes*`
+    are **modifiers of measure**, not commands; anything else unregistered is
+    `unknown`. An unknown command must never fall back to `measure()` (that
+    would write the ledger on `--help` / a typo); empty argv means `measure`.
+    Selftests assert this decision without executing a command, so they never
+    touch the caller's `FACTS.json`.
     """
     if not argv:
         return "measure"
@@ -821,15 +787,12 @@ _COMMANDS: dict = {}
 
 
 def _usage():
-    """Usage text (`--help` / unknown command). **Goes through the language pack** --
-    the same regime as every other text in the core.
+    """Usage text for `--help` and unknown commands, obtained from the language pack.
 
-    ⚠️ I once hardcoded English here, arguing "this is the only place a CLI is
-    discovered, it shouldn't depend on a pack". That was wrong: it bypassed the hard
-    invariant "the core speaks no language", and `check_i18n` only catches CJK, not
-    English -- i.e. it slipped through a blind spot this repo itself declared. The
-    front door for discovering commands is the **README** (three languages), not
-    `--help`. A repo without a pack installed seeing `facts.usage` is the honest state.
+    The core speaks no language: hardcoding English here would bypass that
+    invariant, and `check_i18n` cannot see English prose. A repo without a pack
+    installed sees the code `facts.usage` instead. The README trio is the human
+    front door for discovering commands, not `--help`.
     """
     return M("facts.usage")
 
@@ -1001,19 +964,16 @@ def _init_questions_dir(root):
 
 
 def _init_env_file(root, state):
-    """Write an `Einfacht.env` **matching the docs actually generated**: the default
-    knobs assume you already have six docs (STATE/AGENTS/PRINCIPLES/README x3), while
-    a new repo only has the few just generated. Skipping this => every gate reports
-    "cannot find README.zh.md".
+    """Write an `Einfacht.env` matching the docs actually generated.
 
-    ⚠️ **If `reflect-hooks/Einfacht.env` already exists, do not create a second one.**
-    The plugin (`einfacht-env.sh`) looks in the hooks dir first, then the repo root --
-    with both present, **hooks read A while the README tells you to source B**, and
-    the doc set `check_facts` scans forks. Observed: one repo had
-    `REFLECT_MEASURE_MODULE=...` and `REFLECT_DOCS=STATE.md,README.md,maintaince.md`
-    in `reflect-hooks/`, while `--init` wrote
-    `REFLECT_DOCS=STATE.md,PRINCIPLES.md,AGENTS.md` at the repo root -- two criteria
-    sets running at once, and `--init` said not one word about it.
+    Default knobs assume six docs (STATE / AGENTS / PRINCIPLES / README x3); a
+    fresh repo has only the skeleton, so without this file gates report a
+    missing `README.zh.md`. `REFLECT_DOC` / `REFLECT_DOCS` / `REFLECT_READMES`
+    come from the files present.
+
+    **Never create a second carrier**: if `reflect-hooks/Einfacht.env` exists,
+    report and return -- the plugin reads hooks first, so two files fork the doc
+    set. Root files are untouched.
     """
     import doc  # noqa: PLC0415
     env_path = os.path.join(root, "Einfacht.env")
@@ -1056,23 +1016,14 @@ def cmd_count(argv):
 
 
 def cmd_init(argv):
-    """The `--init` command.
+    """The `--init` command: fresh-repo bootstrap that generates a qualified
+    skeleton in one shot (`STATE.md` seeded with both AUTO markers, principles in
+    the ledger, `questions/`, and a matching `Einfacht.env`).
 
-    **Fresh-repo bootstrap**: generate a qualified skeleton in one shot instead of
-    making people guess marker names from the docs.
-
-    ⚠️ This command is acceptance-driven (a subagent following `AGENTS.md` verbatim
-    in a brand-new repo got stuck on `FATAL: facts.doc_missing_render` -- the docs
-    say "create STATE.md" but never say it must contain `<!-- AUTO:FACTS -->` /
-    `<!-- AUTO:GATES -->`, and those two strings lived only inside `render.py`'s
-    source).
-
-    It **does not overwrite** existing files (only fills gaps) and prints clearly
-    what each step did.
-
-    The four artifacts are each a named helper (skeleton / principles into ledger /
-    questions dir / env file): merged into one function it was 103 lines of four
-    unrelated side effects.
+    Never overwrites existing files -- only gaps are filled, and each step prints
+    what it did. Returns 0 immediately when nothing was created, so running
+    `--init` twice is idempotent. The four artifacts are owned by separate named
+    helpers; a failing principles write returns its rc.
     """
     import doc  # noqa: PLC0415
     root = gate.GATE_REPO
@@ -1320,18 +1271,12 @@ def _help_rc():
 
 
 def _is_unknown_cmd(first):
-    """Would this first arg land on the "unknown command" branch? **Goes through the
-    pure function `_classify`**.
+    """Would this first arg land on the "unknown command" branch?
 
-    ⚠️ This used to call `main([first])` -- for `--accept-changes=k1` that **really
-    runs measure and writes to disk**, so `facts.py --selftest` polluted the caller's
-    `FACTS.json` (observed: the md5 changed, `--check` then went red, while the README
-    said "selftests ... never touch the real repo"). Selftests must be **side-effect
-    free**.
-
-    Still not "a copied second judgment": `_classify` is exactly the function `main`
-    dispatches with -- the assertion tests the **same logic**, just without executing
-    its consequences.
+    Delegates to the pure `_classify`, so selftests can assert the dispatch
+    decision without executing a command. Selftests must be side-effect free:
+    calling `main([first])` here would run `measure()` for `--accept-changes*`
+    and write the caller's ledger.
     """
     return _classify([first]) == "unknown"
 

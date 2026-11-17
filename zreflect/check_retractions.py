@@ -57,7 +57,13 @@ def _evidence_problems(retractions):
 
 def _resurfaced_problems(retractions, docs, hist):
     """Resurfacing: the living-state line containing `text` **must carry a
-    correction marker**."""
+    correction marker**.
+
+    Only **living state** is scanned (`zreflect/living.py`'s judgment):
+    append-only history sections declared via `REFLECT_HISTORY_SECS` are exempt
+    -- their "as it was then" is not "as it is now". Resurfacings inside them do
+    **not** need a correction marker.
+    """
     out = []
     for r in retractions:
         text = r.get("text") or ""
@@ -73,19 +79,11 @@ def _resurfaced_problems(retractions, docs, hist):
 
 def problems(retractions, docs, hist_secs=None):
     """Return the problem list (pure function: the selftest needs that).
-    `docs` = {filename: body}.
+    `retractions` = the retraction structure; `docs` = {filename: body}.
 
-    Only **living state** is scanned (`zreflect/living.py`'s judgment):
-    append-only history sections, once declared via `REFLECT_HISTORY_SECS`, are
-    exempt -- their "as it was then" is not "as it is now"; comparing it against
-    the present would only force people to destroy the record. Do resurfacings
-    inside history sections **still need a marker**? No -- a history section is
-    inherently a record of "then"; this exemption is the discipline migrated
-    from Octave.
-
-    Each rule is its own named helper (field completeness / evidence
-    re-runnability / resurfacing): they scan different things (the ledger itself vs the
-    documents); merging them only made the call site look shorter.
+    A missing `retractions` key => `retractions.missing_key`; empty `docs` =>
+    `retractions.no_docs` (empty is not a pass). Otherwise `_entry_problems`
+    concatenates the three rule reports; `hist_secs=None` uses `HIST_SECS`.
     """
     hist = HIST_SECS if hist_secs is None else hist_secs
     if retractions is None or "retractions" not in (retractions or {}):
@@ -98,10 +96,19 @@ def problems(retractions, docs, hist_secs=None):
         return [M("retractions.no_docs")]
     entries = [r for r in (retractions.get("retractions") or [])
                if isinstance(r, dict)]
+    return _entry_problems(entries, docs, hist)
+
+
+def _entry_problems(entries, docs, hist):
+    """Three named helpers, each scanning a different thing, concatenated in
+    this order: field completeness (`_entry_field_problems`), evidence
+    re-runnability (`_evidence_problems`) and resurfacing in documents
+    (`_resurfaced_problems`). Only dict entries are passed to them; the first
+    two judge the ledger itself, the third the documents.
+    """
     return (_entry_field_problems(entries)
             + _evidence_problems(entries)
-            + _resurfaced_problems(
-                [r for r in entries if isinstance(r, dict)], docs, hist))
+            + _resurfaced_problems(entries, docs, hist))
 
 
 def scanned_docs():

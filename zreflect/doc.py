@@ -268,22 +268,14 @@ RULES_END = "<!-- /AUTO:RULES -->"
 
 
 def render_rules(rows=None):
-    """Principles registry → the `AUTO:RULES` machine block. **Pure function**.
+    """Principles registry -> the `AUTO:RULES` machine block. Pure function.
 
-    Every line is a **fact in the ledger** (key `principle.<id>`) -- on the
-    surface it is documentation, but it is actually the only human-readable
-    view of "what this principle's cmd is and whether it passes right now".
-    Whether it passes is answered by `check_facts_replay` at every commit,
-    not here.
+    PINNED: this block is fixed to one language and does not follow
+    `REFLECT_LANG` -- it lands in `PRINCIPLES.md` and is reconciled
+    byte-for-byte by `facts.py --check`, so following the language would make
+    the same commit give different results in different environments.
 
-    PINNED: this block is **fixed to one language** and does not follow
-    `REFLECT_LANG`. The reason is **verifiable**: it lands in `PRINCIPLES.md`
-    and is **reconciled byte-for-byte** by `facts.py --check` (`PRINCIPLES.md`
-    is in `_block_homes`, part of `--check`'s validation surface). Following
-    the language => after `REFLECT_LANG=de --render-doc`, a subsequent
-    `REFLECT_LANG=zh --check` is guaranteed red -- the same commit would give
-    different results in different environments, and `--check` would never
-    converge.
+    Rows are rendered sorted by id; `rows` is injectable for the self-proof.
     """
     rows = RULES if rows is None else rows
     lines = [RULES_BEGIN,
@@ -368,24 +360,14 @@ def facts_of_rules():
 # -- Self-evidence ------------------------------------------------------------
 
 def _cmd_shape_problems(rows=None):
-    """Each principle's cmd shape: non-empty, **starts with an interpreter**, **contains no environment-mutating call**.
+    """Each principle's cmd shape: non-empty, starts with an interpreter, no
+    environment-mutating call. Returns `[(id, problem)]`.
 
-    The criteria are about **shape** (can `check_facts_replay` execute it
-    verbatim), not semantics. All three were learned the hard way:
-
-      · `empty_cmd` -- a principle without a command is just prose (the shape
-        this repo despises most);
-      · `not_an_interpreter` -- the command must be an explicit interpreter
-        like `python3 ...` / `sh ...`. A bare `check_x.py` depends on the execute
-        bit and the shebang, unreliable under `bash -c` (the re-runner uses
-        `bash -o pipefail -c`; without the execute bit it is rc=126);
-      · `mutates_env` -- `export` / `set -a` / file-writing commands turn the
-        re-run into a side-effecting action. A principle's judgment must be
-        **read-only**, otherwise "really run at every commit" gets dirtier
-        with every run.
-
-    This is not a complete check (there is no sandbox); it blocks only the
-    **three known** bad shapes.
+    `empty_cmd`: no command is just prose. `not_an_interpreter`: must start with
+    `python3` / `python` / `sh` / `bash` / `env` plus whitespace; a bare script
+    depends on the execute bit. `mutates_env`: `export`, `set -a`, or a
+    redirection makes the re-run side-effecting, so judgments must be read-only.
+    Shape only: no sandbox, only these three bad shapes are blocked.
     """
     import re  # noqa: PLC0415
     out = []

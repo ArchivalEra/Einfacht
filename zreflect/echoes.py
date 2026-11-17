@@ -102,18 +102,14 @@ def forms_from_rules(rules):
 
 
 def forms_from_ledger(ledger, rules=()):
-    """Ledger facts -> forms.
+    """Ledger facts -> `[(label, note, refs)]` forms.
 
     A `principle.<id>` entry is a **quotation**, and the edge that explains its
     overlap is granted only when its note is **byte-identical** to `RULES[id]`'s
-    sentence. Granting it on the key prefix alone was the first shape here and it
-    was wrong: rewriting that note into a paraphrase kept the edge and the copy
-    went unreported -- which is exactly the failure this module exists to catch
-    (measured: a two-word paraphrase of the same note scored 0.916 and passed).
-
-    So the edge is **earned by content**, not by name. `rules` is the `RULES`
-    list; when it is empty no edge is granted and every principle note is
-    compared like any other text.
+    sentence: the edge is **earned by content**, not by name. `rules` is the
+    `RULES` list; when it is empty no edge is granted and every principle note
+    is compared like any other text. Labels are `state:<key>`; earned refs are a
+    one-tuple `("principle:<id>",)`, else empty.
     """
     by_id = {r.id: r.text for r in rules}
     facts = ledger.get("facts") if isinstance(ledger, dict) and "facts" in ledger \

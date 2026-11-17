@@ -82,13 +82,12 @@ def prose_of(doc_text):
     """The document's prose **outside blocks** (bare numbers are looked for in
     there).
 
-    #14: strip **all** `<!-- AUTO:... -->...<!-- /AUTO:... -->` regions, not just
-    the facts block's pair -- from Phase 3 on, documents carry two machine blocks
-    (FACTS + GATES); stripping only FACTS would push the whole gate roster into
-    the bare-number scan (the roster's `sha256` gets cut into 256, colliding with
-    a ledger fact whose value happens to be 256 => false red; two downstreams hit
-    it independently, and the upstream only escaped because its sample ledger had
-    no 256 -- an accident that was mechanically bound to fire).
+    Strip **all** `<!-- AUTO:... -->...<!-- /AUTO:... -->` regions, not just the
+    facts block's pair -- documents carry two machine blocks (FACTS + GATES),
+    and a roster's `sha256` in the prose scan would collide with a ledger fact
+    whose value happens to be 256. A begin marker with no matching end is kept
+    verbatim (marker checks have their own zero-value guard); the return is the
+    concatenation of the remaining spans.
     """
     out, i = [], 0
     while True:

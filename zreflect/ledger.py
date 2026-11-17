@@ -39,16 +39,11 @@ class Unreadable(RuntimeError):
 
 
 def load(path):
-    """Read JSON. A missing file is a hard error: the caller must check
-    existence itself before calling, so a mistyped path isn't silently taken
-    for "no ledger yet" (`facts.py`'s `--accept*` path checks first and
-    builds the empty ledger itself).
+    """Read JSON from `path`. A missing file is a hard error: the caller must check
+    existence first.
 
-    ⚠️ Bad JSON / permissions / encoding always raise `Unreadable` (not a bare
-    `JSONDecodeError`): the caller converts that into FATAL rc=2. Previously
-    everything bubbled to the top -- observed: `facts.py --check` printed a
-    traceback for a broken ledger with **rc=0**, and the caller believed it
-    had been audited.
+    Bad JSON, permissions, or encoding errors always raise `Unreadable`, which
+    the caller converts into FATAL rc=2 -- never a bare `JSONDecodeError`.
     """
     try:
         with open(path, encoding="utf-8") as fh:
@@ -112,14 +107,11 @@ def short_value(v, n=24):
 
 
 def changed_keys(old_facts, new_facts):
-    """Which keys' **values** this re-measurement would change. Returns `[(key, old value, new value)]`.
+    """Which keys' values this re-measurement would change. Returns
+    `[(key, old value, new value)]`, sorted by key.
 
-    ⚠️ **Compares `value` only**, not `cmd`/`source`/`note` -- those describe
-    "how to replay", and editing them is normal doc maintenance. If those also
-    had to be explicitly accepted, the guard would turn into noise and end up
-    being waved through wholesale by `--accept-changes`, dead as a guard.
-    This also means: **a newly added key is not a changed value** (that's an
-    addition, which this guard must not block).
+    Compares `value` only: editing `cmd` / `source` / `note` is normal
+    maintenance, and a newly added key is an addition, not a change.
     """
     olds = old_facts or {}
     out = []

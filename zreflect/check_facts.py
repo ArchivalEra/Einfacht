@@ -311,14 +311,6 @@ def _docs_to_scan(argv):
 
     `argv[0]` given => scan only that one (explicit wins).
     Otherwise => **all of `REFLECT_DOCS`**, not just `REFLECT_DOC`.
-
-    ⚠️ Previously only `REFLECT_DOC` was scanned (by default the single
-    `STATE.md`), so bare numbers written into a README were **never caught** --
-    even though the `REFLECT_DOCS` knob had existed all along, defaulting to
-    six documents (STATE / AGENTS / PRINCIPLES / READMEx3). A repo's "living
-    state documents" number six, and the criterion checked one: that is fake
-    green (subagent acceptance observed: write 4242 into a README and
-    `facts.ok(count=17)` still goes green).
     """
     if argv:
         return [argv[0]]

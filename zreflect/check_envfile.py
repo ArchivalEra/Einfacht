@@ -88,26 +88,29 @@ from knobs import _TOKEN_RE  # noqa: E402  (single source; this file used to kee
 
 
 def known_knobs(py_dir=None):
-    """Discovery scan: the full set of REFLECT_* tokens appearing in zreflect/*.py.
+    """Discovery scan: the set of `REFLECT_*` tokens in `zreflect/*.py`.
 
-    Used for auditing (not the roster itself -- the roster is knobs.REGISTRY):
-    a token that appears in the scan surface but is missing from the registry
-    = phantom / typo, reported by this gate. `py_dir` is injectable
-    (selftest uses a fake source tree -- if real files entered the selftest,
-    the selftest would depend on the machine).
-
-    ⚠️ **The default directory is the checked repo's zreflect** (`repo("zreflect")`),
-    not the tool's own -- this gate guards **the checked repo's** carrier, not
-    the tool itself. `knobs._py_sources()` is the shared read loop, but the
-    base is passed explicitly here: the two default directories coincide in
-    production but differ under fixtures (that difference must be kept, not
-    left to coincidence).
+    Used for auditing phantoms / typos against `knobs.REGISTRY` (the roster
+    itself). `py_dir` is injectable (the selftest uses a fake source tree; real
+    files would make it depend on the machine). `_scan_dir` owns the default
+    base; this function only collects tokens from `knobs._py_sources()`.
     """
-    d = py_dir if py_dir is not None else repo("zreflect")
+    d = _scan_dir() if py_dir is None else py_dir
     found = set()
     for _name, text in knobs._py_sources(d):
         found.update(_TOKEN_RE.findall(text))
     return found
+
+
+def _scan_dir():
+    """The **checked repo's** `zreflect` (`repo("zreflect")`), not the tool's own.
+
+    This gate guards the checked repo's carrier, not the tool. `knobs._py_sources()`
+    is the shared read loop, but the base is passed explicitly: the two default
+    directories coincide in production and differ under fixtures -- that
+    difference must be kept, not left to coincidence.
+    """
+    return repo("zreflect")
 
 
 def _known_knobs_scans_repo():

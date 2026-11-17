@@ -57,12 +57,8 @@ def repo_path(path, root=None):
     """Anchor a relative path to `root` (default: the audited repo root); absolute
     paths pass through unchanged -- the single source.
 
-    The expression `p if os.path.isabs(p) else os.path.join(root, p)` used to be
-    copied verbatim five times across check_ab / check_locks / check_pins /
-    check_facts / facts (plus a variant in `i18n.pack_dir`). The absolute/relative
-    boundary criterion may exist in exactly one place: if "starts with / means the
-    user's absolute path" drifts in even one copy, that gate will join the user's
-    absolute spec path onto the repo root and then report "file not found".
+    A relative path whose leading `/` is interpreted as the user's absolute spec
+    path must not be joined onto the repo root: that boundary is defined here.
     """
     root = GATE_REPO if root is None else root
     return path if os.path.isabs(path) else os.path.join(root, path)
@@ -75,11 +71,6 @@ def zdir():
     coverage). This is a different thing from `GATE_REPO` (the **audited** repo
     root): in a cross-repo fixture `GATE_REPO` points at a temp directory while the
     tool's source still lives in the suite.
-
-    ⚠️ Previously `knobs._zdir()` / `registry._zdir()` / assorted
-    `dirname(abspath(__file__))` calls each computed it -- equal today (by
-    coincidence); changing any one would split them. A location rule deserves one
-    source.
     """
     return os.path.dirname(os.path.abspath(__file__))
 
@@ -151,10 +142,7 @@ def off(notice):
     rc 0 (off is not a failure; hooks' `|| exit` should not treat it as red), but off
     prints a machine-readable `OFF: ...` marker line on stdout -- the executor
     (`gate.run_phase`) uses it to split gates into ran / off / failed instead of
-    counting "didn't run" as green. off used to print only free text on stderr, so
-    "all gates green" was in reality "N passed + M never ran", invisible (observed in
-    this repo: 8 of 13 gates off -- the same shape as the fake green this repo exists
-    to eliminate).
+    counting "didn't run" as green.
     """
     print(machine().emit("off", notice))
     _maybe_hint()
@@ -173,17 +161,7 @@ def fatal_exit(msg):
     ⚠️ **Must be `SystemExit(2)`, not `SystemExit(msg)`**: the latter is Python's
     "print and exit 1" convention -- it prints the letters `FATAL:` while the exit
     code is **1**. Callers (`registry._record`) classify by rc: 1 = criterion red /
-    failed, 2 = broken config / fatal. Those four copies of
-    `raise SystemExit(machine().emit("fatal", ...))` were all misaligned here:
-    **configuration accidents reported as code problems**, the fix pointing at the
-    wrong file.
-
-    Observed: `gate.selftest('x', [])` printed `FATAL: gate.selftest_empty_cases`
-    with rc 1.
-
-    One function, four call sites (`require_nonempty` / `selftest` /
-    `ledger._require_pairs` / `collect.parse_prev_values`) --
-    previously four hand copies, all four wrong.
+    failed, 2 = broken config / fatal.
     """
     print(machine().emit("fatal", msg), file=sys.stderr)
     raise SystemExit(2)
@@ -193,21 +171,10 @@ def declares_itself(path):
     """Is this `.py` one of the **suite's own** files (a module-level `MODULE =` /
     `GATE =` declaration)?
 
-    **Single source**: the judgment "is this part of the suite or the consumer's
-    code" used to be scattered across gates (`registry.modules()` recognized
-    platform modules by `MODULE`, `gates()` recognized gates by `GATE`), while
-    `check_lint` / `check_i18n` / `check_snapshots` did **no** check at all and
-    scanned the whole repo -- auditing the consumer's `examples/` and `scripts/` as
-    if they were suite code.
-
-    Observed cost: after one real project wired in, `registry --run commit` reported
-    149 ruff findings, 59 i18n findings, 3 snapshot findings, **all pointing at that
-    project's own files**. The user could neither fix nor understand them -- it was
-    the suite's preferences imposed on someone else.
-
-    Criterion: the module body contains a `MODULE = ...` or `GATE = ...` assignment.
-    All 36 .py files in this repo **satisfy** it (verified before making it a
-    criterion), so "scan only these" never misses the suite itself.
+    Criterion: the module body contains a `MODULE = ...` or `GATE = ...` assignment;
+    unreadable / unparseable => False. `declares_itself()` is the boundary between
+    the suite's own scan surface and a consumer's `examples/` / `scripts/`, so
+    gates auditing the suite must call it rather than collecting every `.py`.
     """
     import ast  # noqa: PLC0415
     try:
@@ -239,18 +206,10 @@ def scanned_sources(base, configured=False):
     """Which `.py` files a gate should collect -- **two scopes, split on "was the knob
     explicitly configured"**.
 
-    **Single source**: `check_i18n.sources_for` and `check_snapshots.collect` each
-    wrote the same ternary once (`py_sources if configured else suite_sources`) --
-    two wordings, one criterion: exactly the "two copies that must agree" shape this
-    repo dreads.
-
-      - **Unset** (default surface = the suite itself) => `suite_sources`: audit only
-        files with declarations. When wired into a real project, the consumer's
-        `examples/` / `scripts/` are not the core -- observed: one real project got
-        149 ruff / 59 CJK / 3 snapshot findings, all in its own files.
+      - **Unset** => `suite_sources`: audit only files with declarations.
       - **Set** (the user points and says "audit here") => `py_sources`: take
-        everything. Narrowing would make `REFLECT_I18N_ROOT=<your dir>` report a
-        `scan_empty_dir` FATAL (observed), i.e. breaking opt-in.
+        everything. Narrowing here would make an explicitly configured directory
+        report `scan_empty_dir` FATAL and break opt-in.
     """
     return py_sources(base) if configured else suite_sources(base)
 
@@ -307,15 +266,9 @@ def resolve_spec(argv, knob, default):
     """Spec name resolution: explicit `--spec` > knob > default name. Returns
     `(name, was_explicit)`.
 
-    A pure function; three gates (ab / locks / pins) each used to carry a
-    **verbatim-identical** copy differing only in their `DEFAULT_SPEC` constants --
-    three copies destined to drift (C4). Those sites now just pass their own default
-    name in.
-
-    Explicitly specified (argv / knob) but the file is missing => the caller must
-    FATAL (a configured-but-absent spec is in the "deployed != running" family;
-    silently treating it as "not enabled" hides broken config);
-    default name absent => not enabled, exit 0.
+    A pure function. `was_explicit` tells the caller how to handle a missing file:
+    explicitly specified (argv / knob) but absent => FATAL; default name absent =>
+    not enabled, exit 0.
     """
     for i, a in enumerate(argv):
         if a == "--spec":
@@ -483,43 +436,48 @@ def env_hint(consumed=(), module=None):
     return i18n.M("gate.env_hint", file=rel)
 
 
+def _meta_shape(name, desc, knobs):
+    """The declaration's identity fields: name, one-sentence description, consumed knobs."""
+    return {"name": name, "desc": desc, "knobs": tuple(knobs)}
+
+
+def _meta_execution(name_dependent, runs_at, off_reason):
+    """The declaration's execution fields.
+
+    `name_dependent=True` marks gates whose default input gets renamed by the
+    rename selftest; both the fixture and `registry.problems` judge them. `runs_at`
+    declares frequency positively: `"commit"` (hooks / CI) or `"start-of-work"`
+    (manual doctor-style checks). `off_reason` states why a gate that can call
+    `off()` would be not-enabled; it must be >= 8 chars (same discipline as
+    `PINNED:`). Names carry no semantics.
+    """
+    return {"name_dependent": bool(name_dependent),
+            "runs_at": str(runs_at),
+            "off_reason": (None if off_reason is None else str(off_reason))}
+
+
 def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit",
          off_reason=None):
     """Gate declaration line (registry's ast extraction target): name + one sentence +
     consumed knobs.
 
     Declaring is registering -- a hand-written roster drifts; only facts may be
-    written here.
-
-    - `name_dependent=True` marks gates whose "default input gets renamed by the
-      rename selftest" (the batch that must go red in gates-selftest's cross-repo
-      section): marked gates are caught from both ends -- the fixture demands they
-      really go red, and registry.problems demands they really consume the renamed
-      default name.
-    - `runs_at` (C1) **declares the frequency positively**: `"commit"` (run on every
-      commit; wired into hooks / CI) or `"start-of-work"` (run manually before
-      starting work -- the doctor kind of "checks things that could be dead";
-      hanging it on pre-commit is the wrong frequency). Previously frequency could
-      only be expressed by the **accident of negative naming** ("the file isn't named
-      check_"), and the executor's glob knew nothing of it => renaming would turn
-      doctor into a per-commit probe of live processes with nothing to stop it. Now
-      frequency is a field in the declaration and the executor (gate.run_phase)
-      filters on it -- the name is no longer load-bearing.
-
-    registry derives from these declarations: the execution list (filtered by
-    runs_at), narration (AUTO:GATES), the red list, the selftest list. Names only
-    serve the `check_*.py` file convention (descriptive); they carry no semantics.
+    written here. `runs_at` is `"commit"` or `"start-of-work"`; registry derives
+    the execution list, narration, red list and selftest list from these fields.
     """
-    return {"name": name, "desc": desc, "knobs": tuple(knobs),
-            "name_dependent": bool(name_dependent),
-            "runs_at": str(runs_at),
-            # `off_reason` (round 12): **why** this gate would be not-enabled. Any
-            # gate that can call `off()` must state it -- otherwise "off" has no
-            # reason, and "a permanently off gate" is indistinguishable from "this
-            # repo doesn't use that mechanism" (this repo really did have 8 of 13
-            # gates off while "all green" hid it). The reason must be >= 8 chars
-            # (same discipline as `PINNED:`).
-            "off_reason": (None if off_reason is None else str(off_reason))}
+    value = _meta_shape(name, desc, knobs)
+    value.update(_meta_execution(name_dependent, runs_at, off_reason))
+    return value
+
+
+def _module_meta_shape(name, desc):
+    """Identity fields of a platform-module declaration."""
+    return {"name": name, "desc": desc}
+
+
+def _module_meta_obligation(selftest):
+    """Whether registry must demand that the module supports `--selftest`."""
+    return {"selftest": bool(selftest)}
 
 
 def module_meta(name, desc, selftest=True):
@@ -527,13 +485,14 @@ def module_meta(name, desc, selftest=True):
 
     Gates declare with `GATE = meta(...)`; **platform modules** (gate / runner /
     knobs / registry / guard / ledger / render / facts ...) declare their existence
-    and "whether they owe a selftest" with `MODULE = module_meta(...)`. Previously
-    "should have a selftest" could only be **guessed from text** (scanning for
-    `_cases` literals) -- nobody asked when a module owed a selftest but had none;
-    now it is a field in the declaration: `selftest=True` => registry demands it
-    actually supports `--selftest` and is actually run.
+    and "whether they owe a selftest" with `MODULE = module_meta(...)`.
+    `selftest=True` makes registry demand an entry that actually supports
+    `--selftest`; `False` means the module provides `selftest()` itself, where
+    bootstrapping a second entry would collide.
     """
-    return {"name": name, "desc": desc, "selftest": bool(selftest)}
+    value = _module_meta_shape(name, desc)
+    value.update(_module_meta_obligation(selftest))
+    return value
 
 
 def raises(fn):
@@ -565,17 +524,10 @@ def _ast_for(fname):
 def _lambda_nodes(tree, lineno):
     """**All** Lambda nodes whose starting line == lineno (ascending by col_offset).
 
-    ⚠️ Why a list rather than a single node: **one line can hold several lambdas**
-    (`return [("a", lambda: ...), ("b", lambda: ...)]` all on one line) -- then the
-    code objects share `co_firstlineno` and `co_positions()` only gives the outer
-    position, so there is **no way to tell which one**. Taking the smallest
-    col_offset would judge every other same-line assertion by the first one
-    (observed: `lambda: 1 == 2` was dragged into always-true by a same-line
-    `lambda: ... or True`).
-
-    So return all candidates on the line; the caller scans **each** of them, and any
-    always-true one reports -- "any assertion on the line is always-true" deserves to
-    be caught anyway; over-reporting here is not a false positive.
+    ⚠️ **One line can hold several lambdas**: their code objects share
+    `co_firstlineno`, and `co_positions()` only gives the outer position, so there
+    is no way to tell which one the callable came from. The caller must scan
+    **each** candidate; any always-true assertion on the line reports.
     """
     import ast as _ast  # noqa: PLC0415
     nodes = [n for n in _ast.walk(tree)
@@ -649,11 +601,8 @@ def _delegation_reason(nodes):
     """**Pure delegation** (the lambda body is a single non-builtin Call) => the
     assertion logic lives inside the called function, invisible to this criterion.
 
-    ⚠️ This used to return None (indistinguishable from "scanned and clean"), so
-    "extract into a helper" became a legitimate way to switch off always-true
-    detection (observed: after a helper was changed to `return True`, the selftest
-    went 26 PASS / 0 FAIL all green). It is now **declared explicitly as unaudited**
-    -- the same discipline as "say so when unreadable".
+    Returns the `delegated` code rather than None, so callers can print the case as
+    `note |` and count it separately -- never silently treated as clean.
     """
     import i18n  # noqa: PLC0415
     for node in nodes:
@@ -676,65 +625,42 @@ def _short_circuit_reason_of(nodes):
     return None
 
 
-def never_falsifiable(fn):
-    """**Always-true assertion detection** (issue #23): does this selftest case have
-    falsification power?
+def _falsifiability_located(nodes):
+    """Select the lambda only when its source position is unambiguous.
 
-    The incident observed downstream: an `or True` assertion was forever PASS in
-    `--selftest` -- `gates-selftest` judges "returned 0 + printed a summary line", on
-    which a real assertion and an always-true assertion are completely isomorphic.
-    `AGENTS.md` discipline 4 says "assertions must be falsifiable", but there was no
-    machine criterion for it.
-
-    Criterion (AST; zero execution, zero side effects): **parse the whole file +
-    locate** lambda nodes by co_firstlineno (not inspect.getsourcelines -- for a
-    lambda inside a list it only gives the first line, reconstruction is fragile;
-    observed blind three times). Once nodes are found, scan for always-true short
-    circuits:
-
-      - `or <truthy constant>` / `and <falsy constant>` -- the boolean is short-
-        circuited by a constant, forever PASS/fail;
-      - `x == x`-style self-comparison (**excluding** the legitimate purity check of
-        calling a bare function twice).
-
-    Returns a reason string (unfalsifiable) or None (looks like it has teeth).
-
-    ## Three honest boundaries (documented gaps; do not treat as full coverage)
-
-    1. **More subtle always-true forms are not caught** (same variable, different
-       spelling). The static shape criterion only recognizes explicit short circuits
-       and self-comparisons; the stronger guarantee is mutation testing (inject a
-       breaker into every assertion) -- too costly; see the issue #23 discussion.
-       This criterion's value: it turns several known unconscious spellings from
-       "found in manual review" into "selftest goes red on the spot".
-    2. **"Delegation" is only reported when the body is a** single `Call`** (see
-       `_delegation_reason`). If the body is a `Compare`/`BoolOp` wrapping one
-       helper call -- e.g. `lambda: _nf_catches("x") is not None` -- it **does not
-       count as delegation**, and this criterion cannot see inside the helper.
-       Observed: in round 22 I wrote `never_falsifiable`'s own selftest in that
-       shape; the four assertions did have teeth semantically (mutation test
-       RED-OK) but **formally** dodged the audit. Loosening the criterion would
-       false-positive many "compound assertions", so the choice here is to **state
-       the gap** rather than widen the net.
-    3. **When the source file is unreadable, don't guess** (a lambda from `-c` has no
-       `co_filename` => returns None). Selftest cases must live in real files --
-       learned while adding `never_falsifiable`'s selftest in round 22 (testing it
-       inside `python -c` always yields None).
-
-    The three stages are each a named helper (locate / delegate / short-circuit):
-    independent of each other; merged, 73 lines with the three "no guessing" exits
-    scattered in the middle.
+    An unlocatable assertion, or several lambdas sharing one starting line, yields
+    no candidates: no guessing. A single candidate can be judged for delegation
+    and short circuits.
     """
-    nodes = _assertion_node(fn)
-    if not nodes:
-        return None                                      # unlocatable => no guessing
-    if len(nodes) > 1:
-        # Several lambdas on one line: the code object cannot tell us which one
-        # (same co_firstlineno, co_positions only gives the outer position).
-        # **When unsure, don't guess** -- prefer under-reporting over false
-        # positives (99% of this repo's assertions own their line).
+    if not nodes or len(nodes) > 1:
         return None
-    return _delegation_reason(nodes) or _short_circuit_reason_of(nodes)
+    return nodes[0]
+
+
+def _falsifiability_reason(node):
+    """Judge one located lambda: delegation before short circuits.
+
+    Delegation must be reported explicitly: the called helper's body is outside
+    the static scan. `_short_circuit_reason_of` then recognizes `or <truthy>` /
+    `and <falsy>` / `x == x`, excluding the purity check of calling a bare
+    function twice.
+    """
+    if node is None:
+        return None
+    return (_delegation_reason([node])
+            or _short_circuit_reason_of([node]))
+
+
+def never_falsifiable(fn):
+    """Does this selftest case have falsification power?
+
+    Returns a reason string (unfalsifiable or explicitly delegated) or None
+    (looks like it has teeth). Static AST inspection: zero execution, zero side
+    effects, no guessing when the source cannot be read. Only explicit short
+    circuits, self-comparisons and a lambda body that is a single `Call` are
+    judged; subtler forms and helper internals are outside this criterion.
+    """
+    return _falsifiability_reason(_falsifiability_located(_assertion_node(fn)))
 
 
 def _is_delegated(why):
@@ -770,26 +696,10 @@ def _run_safely(label, fn):
 def _case_verdict(label, fn):
     """Run one case. Returns `(passed?, delegated?, failure line or None)`.
 
-    ⚠️ **Always-true assertion detection** (issue #23): an `or True` assertion and a
-    real assertion are isomorphic on the "returned 0 + printed a summary line"
-    surface and must be judged separately.
-
-    ⚠️ **"Delegated" is acceptable but must be visible**: the assertion body lives in
-    a helper (scenarios building temp fixtures cannot inline it). Allowed, but
-    printed as `note |` (machine-readable) and counted separately in the summary --
-    never silently treated as clean (it used to return None, indistinguishable from
-    "scanned and clean", so extracting a helper became a legitimate way to switch off
-    always-true detection).
-
-    ⚠️ **Delegated cases still run**: the delegated branch used to `return True`
-    directly, so assertions delegated to helpers **never executed** and `False` was
-    isomorphic to `True` (observed: after `_utf8_forced_case`'s fix was gutted it
-    returned False, yet the selftest still reported "19 PASS / 0 FAIL"). "Acceptable
-    but visible" means the always-true detection **cannot see its insides**, not
-    "don't run it".
-
-    The three stages (always-true judgment / delegated branch / normal execution) are
-    each one place: after extracting "execution + exceptions", only dispatch remains.
+    An unfalsifiable assertion fails without executing. A delegated assertion is
+    **still executed**: its verdict returns `delegated=True` so `_report_one`
+    prints `note |` and counts it separately. Any other assertion executes
+    normally. In all three branches `_run_safely` keeps exceptions from escaping.
     """
     import i18n  # noqa: PLC0415
     why = never_falsifiable(fn)
@@ -809,14 +719,11 @@ def _print_banner(name, total, bad, delegated):
     """The summary's three lines: delegated count (listed separately) / human summary /
     machine summary line.
 
-    ⚠️ Delegated is **listed separately** in the summary: it is not a failure, but it
-    is also not "scanned and clean" -- silently counting it into PASS is the fake
-    green this repo hates most.
-
-    ⚠️ The machine summary line (issue #3 (3)) is independent of the checker name and
-    has a fixed format; runner/CI grep it directly. The `=== ` prefix and trailing
-    ` ===` are emission-point literals (language pack values must not start with
-    `^===`).
+    Delegated is not a failure, but it is also not "scanned and clean" -- it gets
+    its own human line. The machine summary line is independent of the checker
+    name and has a fixed format; runner/CI grep it directly. The `=== ` prefix
+    and trailing ` ===` are emission-point literals (language pack values must
+    not start with `^===`).
     """
     import i18n  # noqa: PLC0415
     if delegated:
@@ -857,18 +764,13 @@ def _report_one(label, fn):
 
 
 def selftest(name, cases):
-    """Run the three tiers of cases. Each case = (label, callable) -> bool.
+    """Run cases, each `(label, callable) -> bool`; empty cases => FATAL rc 2.
 
-    All three classes must be present:
-      (1) normal runs don't report (positive control -- otherwise "always errors"
-          can fool the selftest too)
-      (2) what should report does report (reverse assertion -- otherwise this
-          checker may be decoration)
-      (3) empty input reports (zero-trust guard)
-
-    The three layers are each a named helper (per-case verdict `_case_verdict` /
-    per-case output `_report_one` / summary `_print_banner`): this function only
-    accumulates counts.
+    All three case classes must be present: normal runs that don't report
+    (positive control), cases that do report (reverse assertion), and empty
+    input that reports (zero-trust guard). `_report_one` decides per-case output
+    and `_print_banner` emits the summary; this function only accumulates counts.
+    Returns 0 when all cases pass, 1 otherwise.
     """
     import i18n  # noqa: PLC0415
     if not cases:
@@ -889,21 +791,11 @@ def selftest(name, cases):
 def _force_utf8_streams():
     """Force stdout/stderr to UTF-8 (**mandatory on Windows**).
 
-    Why: on Windows `sys.stdout.encoding` defaults to `cp1252` (the code page), while
-    this repo prints **gate names and descriptions** (`GATE = meta("A/B gate", ...)`).
-    Observed:
-
-        UnicodeEncodeError: 'charmap' codec can't encode characters
-                            in position 25-26: character maps to <undefined>
-
-    -- one `registry.py --gates` could turn the CI Windows leg red wholesale, and it
-    never reproduces on Linux (UTF-8 is the default there).
-
-    ⚠️ Only done on streams that **really support reconfigure** (`io.StringIO` /
-    redirected custom streams lack the method); on failure, skip silently -- this is
-    not a criterion, it is environment adaptation. The side effect is **global**
-    (it mutates `sys.stdout`), so it is only called at CLI entries:
-    `activate_or_fatal` happens to be the mandatory pass-through for all of them.
+    On Windows `sys.stdout.encoding` defaults to the code page, while gate names
+    and descriptions are printed; a single `registry.py --gates` can raise
+    `UnicodeEncodeError`. Only streams supporting `reconfigure` are touched;
+    failures are skipped silently. The side effect is **global**, so this is
+    called only at CLI entries, via `activate_or_fatal`.
     """
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
@@ -915,42 +807,36 @@ def _force_utf8_streams():
             continue                # already closed / unsupported -- no guessing
 
 
+def _activate_pack(lang):
+    """Assemble one language pack. Returns `(ok?, fatal message or None)`.
+
+    `MissingPack` / broken shards must not escape as a traceback rc=1: this
+    module is called outside the normal rc contract, so an assembly failure is
+    turned into a machine-readable FATAL message for rc 2. On failure the
+    process still holds its previous-tier `Catalog`, so `M()` can render.
+    """
+    import i18n  # noqa: PLC0415
+    try:
+        i18n.activate(lang)
+    except Exception as e:                               # noqa: BLE001
+        return False, i18n.M("gate.pack_assembly_failed", error=e)
+    return True, None
+
+
 def activate_or_fatal(lang=None):
     """The process-level language-pack activation point. Returns 0 on success; on
     assembly failure prints FATAL and returns 2.
 
     `lang` lets **one process** assemble a specific pack (unset = read
-    `REFLECT_LANG`). Reason it exists: some entries serve consumers other than gates
-    -- e.g. a consumer wraps a layer to feed some output to humans; that layer can
-    name its own language while the suite's gates keep honoring only `REFLECT_LANG`.
-    **"Affects only that one process" is therefore structural**, not dependent on
-    someone remembering to behave; the suite gains no extra knob for it.
-
-    **Must be called before `--selftest` dispatch** (issue #26 retrospective):
-    `main_selftest_or` used to test `--selftest` before `activate()`, so
-    `REFLECT_LANG=zh <gate> --selftest` rendered messages as bare codes via the null
-    pack, while `REFLECT_LANG=de <gate> --selftest` **silently rc=0 on a nonexistent
-    pack** -- directly contradicting "set but pack missing => FATAL rc 2, never a
-    silent fallback" (observed: all four entries -- render / ledger / runner /
-    registry -- were hit).
-
-    It became a function so that **entries not going through `main_selftest_or`**
-    (render/ledger's `_selftest()`, registry's `__main__`, gate's own `__main__`)
-    need not each copy an activate+FATAL pair (registry had a copy; gate's own copy
-    had no FATAL at all -- a bare traceback exiting 1).
+    `REFLECT_LANG`); it affects only that process and adds no knob. Activation
+    must happen **before** `--selftest` dispatch: unset => null pack; set but
+    missing pack => FATAL rc 2, never a silent fallback. Entries outside
+    `main_selftest_or` share the same activate+FATAL wiring.
     """
-    import i18n  # noqa: PLC0415
-
     _force_utf8_streams()
-    try:
-        i18n.activate(lang)
-    except Exception as e:                               # noqa: BLE001
-        # On assembly failure the process still holds the previous-tier `Catalog`
-        # (usually the null pack) => M() still renders (`MissingPack`'s `str()` is
-        # itself a null-shaped code).
-        print(machine().emit("fatal",
-                           i18n.M("gate.pack_assembly_failed", error=e)),
-              file=sys.stderr)
+    ok, failure = _activate_pack(lang)
+    if not ok:
+        print(machine().emit("fatal", failure), file=sys.stderr)
         return 2
     return 0
 
@@ -960,13 +846,10 @@ def main_selftest_or(args, name, cases, run):
     this.
 
     `cases` can be a list or a **factory callable** (selftests that need to build a
-    temp fixture -- the ab/locks/pins style -- pass a function, invoked here).
-
-    **This is the language pack's process-level activation point** (issue #26):
-    `REFLECT_LANG` unset => null pack (the core speaks no language); set but the pack
-    is missing => `MissingPack` => FATAL rc 2 (no "fall back if not installed").
-    Every gate passes through here => one wiring, everyone benefits. Activation
-    happens **before** the `--selftest` dispatch; reasoning in `activate_or_fatal`.
+    temp fixture pass a function, invoked here). Activation happens **before**
+    `--selftest` dispatch: `REFLECT_LANG` unset => null pack; set but the pack is
+    missing => FATAL rc 2, never a silent fallback. Reasoning in
+    `activate_or_fatal`.
     """
     rc = activate_or_fatal()
     if rc:
@@ -1009,18 +892,14 @@ def _empty_result():
 def _record(res, f, rc, out):
     """Classify one gate into one of five tiers by rc and the `OFF:` marker.
 
-    The five tiers are **non-overlapping fix categories**:
+    The tiers are **non-overlapping fix categories**:
 
       rc=2   broken config / environment -> fix the config
-      rc<0   killed by a signal
-      rc>2   an uncontracted code was used -> broken at the executor level
+      rc<0   killed by a signal          -> error at executor level
+      rc>2   an uncontracted code        -> error at executor level
       rc=1   criterion red               -> fix the problems
       rc=0 + `OFF:` marker           -> not enabled (not a pass)
       rc=0 clean                     -> ran and passed
-
-    ⚠️ rc<0 / rc>2 are listed separately as `error`: they used to be lumped into
-    `failed`, making "the gate reported a problem" indistinguishable from "the gate
-    was SIGKILLed" (review observed rc=3 / rc=-9 both landing in failed).
     """
     if rc == 2:
         res["fatal"] += 1
@@ -1039,34 +918,30 @@ def _record(res, f, rc, out):
         res["ran"] += 1
 
 
-def run_phase(phase, gates, runner=None, repo_root=None):
-    """Run a group of gates by phase and **aggregate ran / off / failed** (the
-    executor side of C1+C2).
-
-    This is the **single execution entry** for hooks / CI / runner -- replacing the
-    `for g in zreflect/check_*.py` glob previously scattered across 6 sites.
-    `gates` = registry-derived (file, runs_at) list (the caller filters by `phase`,
-    or passes everything and this filters).
-
-    Why aggregate three tiers instead of only reading rc: off and "ran and passed"
-    both have rc 0; reading only rc counts "didn't run" as green (observed in this
-    repo: 8 of 13 gates off). This reads the `OFF:` machine marker from the child
-    process's stdout to list off separately, so "all green" always carries "N of them
-    off (not checked)". `runner` is injectable (selftests use a fake executor).
-
-    Returns `{ran, off, failed, fatal, off_list, fail_list, fatal_list}`.
-
-    The classification logic lives in `_record` (five non-overlapping tiers; see its
-    docstring): this function only filters and iterates.
-    """
-    run = runner or (lambda f: default_runner(f, repo_root))
-    res = _empty_result()
+def _run_phase_gates(phase, gates, run, res):
+    """Execute the phase's gates through one runner and classify each result."""
     for item in gates:
         f = item["file"] if isinstance(item, dict) else item
         if isinstance(item, dict) and item.get("runs_at") not in (None, phase):
             continue
         rc, out = run(f)
         _record(res, f, rc, out)
+
+
+def run_phase(phase, gates, runner=None, repo_root=None):
+    """Run gates for one phase; returns the aggregate result.
+
+    `gates` is the registry-derived `(file, runs_at)` list; an item supplying
+    `runs_at` is filtered on `phase`. `runner` is injectable (selftests use a
+    fake executor) and defaults to `default_runner(f, repo_root)`.
+
+    Off and "ran and passed" both have rc 0, so `_record` reads the `OFF:`
+    marker from child stdout to list off separately. The result carries counts,
+    the corresponding `_list` names, and `fail_out` (raw failed-gate output).
+    """
+    run = runner or (lambda f: default_runner(f, repo_root))
+    res = _empty_result()
+    _run_phase_gates(phase, gates, run, res)
     return res
 
 

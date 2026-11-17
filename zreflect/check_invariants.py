@@ -126,25 +126,30 @@ def problems(checks, read=None):
     """Pure function: return the problem list (empty = green). No printing during
     the selftest.
 
-    `read(path) -> str` is injectable (a fake filesystem for the selftest -- if
-    real files entered the selftest, the selftest would depend on the machine).
-    The criterion is the **presence/absence** of a snippet (grep level; see the
-    boundary in the module docstring).
-
-    Each half is its own helper (shape / content): with a bad shape there is no
-    comparable snippet, so an early exit is mandatory -- merged into one body,
-    5 shape guards + 2 content guards = complexity 14.
+    `read(path) -> str` is injectable (a fake filesystem for the selftest; real
+    files would make it depend on the machine). The criterion is the
+    **presence/absence** of a snippet (grep level; see the module docstring).
+    Empty `checks` => `invariants.empty`; otherwise `_check_one_problems` judges
+    each check in order.
     """
     if not checks:
         return [M("invariants.empty")]
     read = read or (lambda p: open(repo(p), encoding="utf-8").read())
     out = []
     for c in checks:
-        shape_probs, spec = _shape_problems(c)
-        out += shape_probs
-        if spec is not None:
-            out += _content_problems(*spec, read=read)
+        out += _check_one_problems(c, read)
     return out
+
+
+def _check_one_problems(c, read):
+    """Shape first, then content: with a bad shape there is no comparable
+    snippet, so an early exit is mandatory. Returns shape problems plus content
+    problems from `_content_problems(*spec, read=read)` when a spec exists.
+    """
+    shape_probs, spec = _shape_problems(c)
+    if spec is None:
+        return shape_probs
+    return shape_probs + _content_problems(*spec, read=read)
 
 
 def run(argv=None):

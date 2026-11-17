@@ -176,16 +176,9 @@ def _tree_lines(repo, last, pending):
 
 
 def _question_lines(repo, pending):
-    """**Unresolved open questions = what is next**.
-
-    This used to be deliberately empty (rationale: "`inject-state.py` already
-    has an open-questions section; listing in both places duplicates") -- but
-    that section only reports "how many are open", not "which ones", and what
-    the agent needs most after compaction is exactly the **names**. Now this
-    gives the names and that section gives the status; each has its job.
-
-    Budget: the commits and worktree sections may already have consumed part
-    of `MAX_LISTED`; the remainder goes to open questions.
+    """Append unresolved open-question names to `pending`, up to the remaining
+    `MAX_LISTED` budget (the commits and worktree sections may already have
+    consumed part of it).
     """
     room = MAX_LISTED - len(pending)
     if room <= 0:
@@ -195,24 +188,13 @@ def _question_lines(repo, pending):
 
 
 def collect(repo):
-    """Collect the "pick up from the last turn" inputs. Returns `(last_turn, pending)`, two **Message lists**.
+    """Collect the pick-up-from-last-turn inputs. Returns `(last_turn, pending)`,
+    two `Message` lists.
 
-    Both may be empty -- empty is **not** a pass; `section()` says explicitly
-    "no record". Keeping `Message` (rather than `str()`-ing early) lets the
-    self-proof assert on **codes**, unaffected by which language packs are
-    installed.
-
-    ⚠️ These lines are **user-visible text** (injected into agent context)
-    => always go through `M()`. This used to be bare Chinese plus a one-line
-    PINNED, on the rationale "it lands in STATE.md and gets byte-exactly
-    reconciled by --check" -- **that rationale was false** (that block never
-    made it into a document and never took part in reconciliation). Claiming
-    an exemption on a rationale that does not hold is exactly the mistake
-    this repo caught on `machine_vocab_ok`.
-
-    The three sections are each a named helper (commits / worktree / open
-    questions): they read three different sources, and merged together "how
-    the budget is split" would become implicit knowledge.
+    Both may be empty; that is not a pass. All text goes through `M()` so the
+    self-proof can assert on codes regardless of installed language packs.
+    Three named helpers read the three sources (commits / worktree / questions)
+    and split the `MAX_LISTED` budget.
     """
     last, pending = [], []
     _commit_lines(repo, last)
@@ -254,29 +236,14 @@ def _read_question(d, name):
 
 
 def section(repo):
-    """The whole "pick up from the last turn" section (including its own header line). At most `SECTION_MAX` lines.
+    """The whole pick-up section, including its header line. At most `SECTION_MAX`
+    lines; returns lines only (envelope / JSON / hook semantics belong to the
+    caller).
 
-    **Unreadable is not an exception**: git missing / not a repo / no open-
-    questions directory all become explicit lines (`next.commits_unreadable`
-    and the like) -- never fabricate a 0, and never fall silently empty.
-
-    **But real bugs still raise** (empty input lists, missing templates,
-    encoding errors). The two outcomes must stay distinguishable: wrapping
-    this in `except Exception` would make "the collector is broken" and
-    "nothing to report" the same shape. The host side can then separate them
-    by exit code: unreadable => a block of explicit lines + rc 0; truly
-    broken => nonzero exit, visible in the host's own logs (the suite does
-    not judge on the host's behalf).
-
-    User-visible text injected into agent context => everything goes through
-    `M()` (under the null pack that is a bare code, which is the honest form:
-    no language pack installed, so say the code).
-
-    `section` produces only **lines**: envelope, JSON, and hook semantics all
-    belong to the caller -- which lets it be asserted with zero I/O
-    (`_format`) and also run by hand (`python3 zreflect/next.py`). The output
-    of a manual run is the contract itself: a consumer just wraps it in
-    whatever shape its host needs.
+    Unreadable git or questions directory becomes explicit `next.*_unreadable`
+    lines, never a fabricated 0 or a silent empty block. Real bugs (missing
+    templates, encoding errors) still raise, so a host can tell "broken" from
+    "nothing to report" by exit code. All text goes through `M()`.
     """
     last, pending = collect(repo)
     return _format(last, pending)
@@ -369,16 +336,11 @@ def _cases():
 
 
 def _resolved_question_dropped():
-    """**Resolved open questions must not appear under "what is next"** (the `**Status:**` asterisk spelling).
+    """Resolved questions must not appear under "what is next".
 
-    The fixture deliberately has one resolved and one unresolved:
-    `**Status:** resolved` must not be listed, `**Status:** ready-for-agent`
-    must be. Either side wrong => red -- that is the criterion for the
-    "split out `"** resolved"`" bug.
-
-    ⚠️ **Never use the real repo**: real questions eventually get resolved,
-    and then this case verifies nothing (green with zero meaning). So build a
-    temp directory.
+    The fixture has one resolved and one unresolved question; only the latter
+    may be listed. A temp directory is mandatory: real questions eventually get
+    resolved, which would make this case verify nothing.
     """
     import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()

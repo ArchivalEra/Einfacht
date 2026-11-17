@@ -1,5 +1,8 @@
 {
  "comments.bad_mode": "REFLECT_COMMENTS=%(mode)r ist kein Modus (unterstützt: %(supported)s)",
+ "comments.classifier_cannot_go_red": "der Klassifikator besteht seine eigene Rotprobe nicht: er erkennt einen Docstring mit Zeitmarker nicht mehr -- ein leeres Ergebnis wird nicht als Bestehen zertifiziert",
+ "comments.classify_empty_scope": "classify: keine überlangen Docstrings im Bereich (Nullwert-Wache: das ist ein gemessener Zustand, kein defekter Klassifikator)",
+ "comments.classify_scanned_nothing": "der Klassifikator fand null Funktionen -- `zreflect/` fehlt oder ist unlesbar; eine leere Klassifikation ist kein Bestehen",
  "comments.docstring_in_strict_mode": "%(file)s:%(line)d `%(name)s` trägt einen Docstring, und dieses Repo deklariert `strict`: eine Funktion muss aus Signatur und Rumpf lesbar sein",
  "comments.docstring_wider_than_interface": "%(file)s:%(line)d `%(name)s` erklärt sich in %(chars)d Zeichen über %(body)d Codezeilen -- das ist Designbegründung, kein Aufrufvertrag; sie gehört nach HISTORY.md",
  "comments.off": "REFLECT_COMMENTS ist nicht gesetzt => dieses Repo hat nicht erklärt, ob ein Kommentar eine Behauptung oder eine Krücke ist; sagen und stillstehen",

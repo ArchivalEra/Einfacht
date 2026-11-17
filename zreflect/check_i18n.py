@@ -274,33 +274,7 @@ def _bare_text_problems(name, tree, src):
     return out
 
 def _non_literal_code_problems(name, tree):
-    """The first argument of `M(...)` must **not be computed** (conditional expression / concatenation / f-string / call).
-
-    Why this deserves its own criterion: `i18n.M`'s docstring said from day
-    one that "`code` must be a literal (the coverage gate will reject variable
-    codes)" -- yet **no gate enforced it**. The measured cost: `check_envfile`
-    contained `M("a" if is_dir else "b", ...)`; both codes really exist in the
-    language pack and really do render for users, but `knobs.used_codes()`
-    (a regex scanning literal `M("..."`) only catches the first => the other
-    is **completely invisible** to `pack_coverage`. In the pack-integrity
-    reconciliation that is a hole, not a violation -- a hole is worse than a
-    violation, because no line of output ever says it exists.
-
-    **Forwarding is not a violation**: thin shells like `_say(code)`,
-    `_Semantic`'s deferred rendering, and probes that walk language packs for
-    integrity self-proofs have codes that are literals **at their own call
-    site** or **are keys of the pack itself**. Forcing them to contort in
-    order to satisfy one shape criterion is putting the cart before the horse.
-    So this catches only **expressions**: `IfExp` / `BinOp` / `JoinedStr` /
-    `Call` / `Subscript` -- the class that is "assembled at runtime, not
-    statically enumerable".
-
-    **Honest boundary**: when the first argument is a `Name` / `Attribute`,
-    it is **not checked**. It may be legitimate forwarding or a non-literal
-    passed from elsewhere; statically the two are indistinguishable, and
-    per-call-site type analysis is too expensive. This boundary is written
-    here rather than pretending the criterion covers it.
-    """
+    """The first argument of `M(...)` must **not be computed** (conditional expression / concatenation / f-string / call)."""
     computed = (ast.IfExp, ast.BinOp, ast.JoinedStr, ast.Call, ast.Subscript)
     out = []
     for node in ast.walk(tree):
@@ -318,20 +292,7 @@ def _non_literal_code_problems(name, tree):
 
 
 def _plain_english_problems(name, src, tree):
-    """**Source must read as English**: no non-ASCII prose outside the protocol marks.
-
-    Line-level, not node-level: docstrings and comments are prose too, and a
-    node-level scan used to skip both. `★` / `·` / `ℹ` / `⚠️` / `→` are
-    machine-row prefixes (`machine.ROWS`), so they are exempt by `i18n.PROSE_MARKS`
-    -- ASCII-fying them would break a contract, not clean up prose.
-
-    ⚠️ **Exemption surfaces must respect one another** (the same lesson family 3
-    learned): this gate's own fixtures deliberately contain CJK — built from
-    codepoints, placed in PINNED declarations, docstrings, and `_cases()` labels.
-    Those are the *inputs* of the other four families, not prose that leaked.
-    Scanning them here made every fixture-based case fail, which is the criterion
-    reporting the gate's test data instead of the gate's source.
-    """
+    """**Source must read as English**: no non-ASCII prose outside the protocol marks."""
     _, docstring_lines = _docstring_both(tree)
     exempt_lines = _fixture_scope_lines(tree) | _pinned_lines(tree) | docstring_lines
     out = []
@@ -414,21 +375,7 @@ def problems(paths):
 
 
 def _cases_scope(tree):
-    """Self-proof scan scope: `_cases()` itself plus the **same-file top-level helpers it references**.
-
-    ⚠️ The scope must cover helper functions: same-file helpers called by
-    `_cases()` are also on the self-proof path (actually hit: a criterion
-    anchor was written into `_streams_documented()`, invisible to this
-    criterion => bare_text got reported by the main criterion while this one
-    missed it).
-
-    ⚠️ **PINNED functions do not count as fixture helpers**: `_cases()` calls
-    `render_gates()` to test "rendering determinism", but that function's text
-    is an AUTO machine block, **language-fixed by design** (already exempted
-    by family 3). Pulling it into the fixture scan false-positives (measured:
-    7 PINNED lines caught by `fixture_literal`). The exemption surfaces must
-    respect one another.
-    """
+    """Self-proof scan scope: `_cases()` itself plus the **same-file top-level helpers it references**."""
     fns = [n for n in ast.walk(tree)
            if isinstance(n, ast.FunctionDef) and n.name == "_cases"]
     if not fns:
@@ -466,29 +413,7 @@ def _label_nodes(bodies):
 
 
 def _fixture_literal_problems(name, tree):
-    """**No Chinese source-code literals in self-proof fixtures** (they must be codepoint-constructed).
-
-    Why this deserves its own criterion: I stepped on it **three times**
-    (round 8 PINNED reason, round 9, round 13) -- every time the sequence was
-    "write a Chinese fixture/assertion -> `check_i18n` reports bare_text ->
-    only then notice this very file is inside its own scan surface". After
-    the third time it had to become a machine criterion.
-
-    Within `_cases()`, CJK string constants may appear in only two legal
-    positions:
-      - self-proof **labels** (first element of a `(label, callable)` tuple)
-        -- per decision 1C, labels are id-shaped and may carry a Chinese
-        gloss to aid skimming
-      - **docstrings** -- maintainer documentation, not output
-    Anything else (Chinese strings in fixture source samples / assertions)
-    => report. Values produced by codepoint construction (`chr(CJK_LO)` /
-    `_cj(n)`) are **not in the AST** and naturally never report -- that is
-    the correct spelling.
-
-    Each of the three steps is a helper (scope / the two exemption surfaces):
-    merged together, the two independent node-collection loops plus the
-    deciding loop pushed complexity to 13.
-    """
+    """**No Chinese source-code literals in self-proof fixtures** (they must be codepoint-constructed)."""
     bodies = _cases_scope(tree)
     if not bodies:
         return []
@@ -560,19 +485,7 @@ def _params_for(template):
 
 
 def _null_output_has_no_cjk():
-    """Render every code **with no language pack installed** and assert the output contains zero CJK.
-
-    The null pack only outputs `code(param=...)` -- this is the **behavioral**
-    criterion for "no language pack requested => zero natural language". It
-    enumerates **all** keys rather than hand-picking: a hand-picked roster
-    missed a namespace added after one such miss (the injected templates were
-    what got missed), and the missed part stayed green.
-
-    ⚠️ Note it **cannot** prove "the templates contain no Chinese": the null
-    pack never consults a table. That is covered by
-    `_packs_match_their_language()` (render with packs installed + judge CJK
-    per language).
-    """
+    """Render every code **with no language pack installed** and assert the output contains zero CJK."""
     import i18n  # noqa: PLC0415
     try:
         table = i18n.load_pack("en")

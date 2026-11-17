@@ -101,33 +101,20 @@ def status_of(text):
     """The **normalized** `Status` value (lowercased, first word) -- the single
     yardstick for "is this question closed".
 
-    Warning: "is it closed?" previously had **three** implementations, two of them
-    in live code:
-      - `_status_problems` took the first word without lowercasing (`Resolved`
-        was reported as bad_status);
-      - `run()` compared the whole field (`**Status:** resolved` followed by prose
-        => always "unresolved"; observed in this repo: after 01-example.md was
-        closed, `questions.ok(open=1)` still counted it as open);
-      - `next._question_status` had yet another copy (the R-017 `"** resolved"`).
-
-    One question, three answers -- the gate disagreed with itself. Normalization
-    has exactly this one origin; `field()`'s **continuation-line semantics** (there
-    for Settling) are truncated here -- Status is one word.
+    `field()`'s continuation-line semantics (there for Settling) are truncated
+    here: Status is one word. Callers must use this origin, never re-normalize.
     """
     raw = (field(text, "Status") or "").strip().lower()
     return raw.split()[0] if raw else ""
 
 
 def is_resolved(text):
-    """Terminal-state check. **All closed states, not just "resolved"** (issue #38).
+    """Terminal-state check. **All closed states, not just "resolved"**.
 
-    wontfix is a legal terminal state (VALID_STATUS member): a question closed
-    as "we decided not to do this" is just as closed as one closed with an
-    answer. next.py used to filter `!= "resolved"` with its own copy of the
-    closed-set -- a wontfix ticket was re-raised every turn, i.e. the user was
-    asked to redo the same decision forever. The set lives here (single
-    origin, R-017 lineage); callers ask via `is_resolved`, never by
-    re-listing states.
+    wontfix is a legal terminal state (`VALID_STATUS` member): a question closed
+    as "we decided not to do this" is as closed as one closed with an answer.
+    The closed set lives in `CLOSED_STATUS` (single origin); callers ask via
+    `is_resolved`, never by re-listing states.
     """
     return status_of(text) in CLOSED_STATUS
 
@@ -184,12 +171,10 @@ def problems(files, exists=None):
     `files` = {filename: body}.
 
     `exists` is injectable (for test fixtures) -- by default it checks whether a
-    repo-root-relative path exists.
-
-    Each field has its own named helpers (Status / Settling): they judge different
-    fields, and `Settling` has three mutually exclusive branches (missing /
-    declared-none / has a command); when they were crammed together, the call
-    site's `continue` turned "which branch was handled" into implicit state.
+    repo-root-relative path exists. Each field has its own named helpers (Status
+    / Settling): they judge different fields, and `Settling` has three mutually
+    exclusive branches (missing / declared-none / has a command). An empty
+    `files` is `questions.empty`, not a pass.
     """
     if not files:
         # Zero-value guard: no questions received at all => "no question lacks a

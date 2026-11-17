@@ -1,5 +1,8 @@
 {
  "comments.bad_mode": "REFLECT_COMMENTS=%(mode)r 不是合法模式（支持：%(supported)s）",
+ "comments.classifier_cannot_go_red": "分类器没通过自己的红样本：它已认不出带时态标记的 docstring —— 拒绝把空结果认证为通过",
+ "comments.classify_empty_scope": "classify：范围内没有超长 docstring（零值守卫：这是量出来的状态，不是分类器坏了）",
+ "comments.classify_scanned_nothing": "分类器扫到 0 个函数 —— `zreflect/` 缺失或读不出；空分类不算通过",
  "comments.docstring_in_strict_mode": "%(file)s:%(line)d 的 `%(name)s` 带 docstring，而本仓声明了 `strict`：函数必须能从签名与函数体读懂",
  "comments.docstring_wider_than_interface": "%(file)s:%(line)d 的 `%(name)s` 用 %(chars)d 字符解释 %(body)d 行代码 —— 那是设计理由，不是调用契约；它该进 HISTORY.md",
  "comments.off": "REFLECT_COMMENTS 未设 ⇒ 本仓没有声明「注释是断言还是拐杖」；明说并退出",
