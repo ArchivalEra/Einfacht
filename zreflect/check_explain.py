@@ -196,18 +196,26 @@ def temporal_reports(zdir=None):
 has no length floor: history does not become a contract by being brief.
 """
     import os.path  # noqa: PLC0415
-    base = zdir or gate.zdir()
+    # **Both halves of the suite**: `reflect-hooks/` ships with the suite and has
+    # docstrings of its own. Scanning only `zreflect/` left them unguarded --
+    # a temporal marker there would never be reported, so the cleanup could not
+    # stay clean.
+    bases = ([zdir] if zdir else
+             [gate.zdir(), os.path.join(gate.tool_repo(), "reflect-hooks")])
     out = []
-    for name in sorted(os.listdir(base)):
-        if not name.endswith(".py"):
+    for base in bases:
+        if not os.path.isdir(base):
             continue
-        src = open(os.path.join(base, name), encoding="utf-8").read()
-        for node in ast.walk(ast.parse(src)):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        for name in sorted(os.listdir(base)):
+            if not name.endswith(".py"):
                 continue
-            doc = ast.get_docstring(node) or ""
-            if doc.strip() and TEMPORAL.search(doc):
-                out.append((name, node.lineno, node.name, len(doc)))
+            src = open(os.path.join(base, name), encoding="utf-8").read()
+            for node in ast.walk(ast.parse(src)):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                doc = ast.get_docstring(node) or ""
+                if doc.strip() and TEMPORAL.search(doc):
+                    out.append((name, node.lineno, node.name, len(doc)))
     return out
 
 
@@ -259,6 +267,28 @@ def run(argv=None):
     return gate.finish(M("comments.title"), probs,
                        M("comments.ok", mode=chosen, files=len(paths),
                          count=len(probs)))
+
+
+def _temporal_scope_case():
+    """A marker inside each half must be found; neither half may be skipped."""
+    import tempfile  # noqa: PLC0415
+    q = chr(34) * 3
+    body = ("def f():\n    " + q + "Does the thing.\n\n"
+            + "A sentence that runs on. " * 6
+            + "\n\nThe first version returned None.\n    " + q + "\n    return 1\n")
+    with tempfile.TemporaryDirectory() as root:
+        for half in ("zreflect", "reflect-hooks"):
+            os.makedirs(os.path.join(root, half))
+            with open(os.path.join(root, half, "x.py"), "w", encoding="utf-8") as fh:
+                fh.write(body)
+        saved_zdir, saved_tool = gate.zdir, gate.tool_repo
+        try:
+            gate.zdir = lambda: os.path.join(root, "zreflect")
+            gate.tool_repo = lambda: root
+            rows = temporal_reports()
+        finally:
+            gate.zdir, gate.tool_repo = saved_zdir, saved_tool
+    return len(rows) == 2
 
 
 def _hollow_classifier_case():
@@ -324,6 +354,11 @@ def _cases():
          lambda: _classifier_has_teeth()),
         ("★ comments.hollow_classifier_is_rejected",
          lambda: _hollow_classifier_case()),
+        # `--temporal` must cover **both** suite halves. Scanning only
+        # `zreflect/` left `reflect-hooks/` unguarded, so a marker there would
+        # never be reported and the cleanup could silently regrow.
+        ("comments.temporal_covers_both_halves",
+         lambda: _temporal_scope_case()),
     ]
 
 
