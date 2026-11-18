@@ -15,7 +15,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Settling:** python3 -c "import os,sys; sys.path.insert(0,'zreflect'); import check_facts,check_facts_replay,facts,gate,registry; ph=gate.run_phase('commit',['ok.py','off.py','bad.py','fat.py'],runner=lambda f:{'ok.py':(0,''),'off.py':(0,'OFF: x'),'bad.py':(1,'h\n  · p1\n  · p2\n  · p3\n'),'fat.py':(2,'FATAL: bad_cfg\n')}[f]); assert 'fat.py' in ph['fail_out'] and 'FATAL: bad_cfg' in ph['fail_out']['fat.py']; cf=check_facts.problems({'facts':{'n':{'value':1,'cmd':'c'}}},'p 999\n'+facts.render_block({'facts':{'n':{'value':1,'cmd':'c'}}}),doc_name='README.md'); assert cf and cf[0].params.get('file')=='README.md'; rp=[]; check_facts_replay._judge_ok('k',{'value':1,'cmd':'echo 2'},'echo 2','2',rp,{'ok':0}); assert rp and rp[0].params.get('command')=='echo 2'" && python3 -c "import json; packs=[json.load(open(f'zreflect/lang/{l}.json',encoding='utf-8')) for l in ('en','zh','de')]; bad=[(l,k) for l,d in zip(('en','zh','de'),packs) for k,v in d.items() if any(t in v for t in ('**','✓','✗','❌','──'))]; assert not bad, bad" && python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/harness.py —— rc=0 ⇒ 失败日志（FATAL output/多条问题/文件名/复跑命令/block_stale rc=1）完整不吞错，off 已聚合为单行且语言包与输出已去花哨去重复；rc≠0 ⇒ 仍有失败上下文缺失、重复刷屏或花哨装饰残留
 

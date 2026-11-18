@@ -412,8 +412,6 @@ def selftest(name, cases):
         else:
             print(i18n.emit("pass" if passed else "fail", label))
             bad += 0 if passed else 1
-    print(i18n.emit("human_summary", i18n.M("gate.selftest_summary",
-                                            name=name, passed=len(cases) - bad, failed=bad)))
     print(i18n.emit_summary(len(cases) - bad, bad))
     return 1 if bad else 0
 
@@ -469,9 +467,11 @@ def run_phase(phase, gates, runner=None, repo_root=None):
         if rc == 2:
             res["fatal"] += 1
             res["fatal_list"].append(f)
+            res["fail_out"][f] = out or ""
         elif rc < 0 or rc > 2:
             res["error"] += 1
             res["error_list"].append(f)
+            res["fail_out"][f] = out or ""
         elif rc != 0:
             res["failed"] += 1
             res["fail_list"].append(f)
@@ -488,10 +488,11 @@ def _cases():
     return [
         ("★ gate.empty_input_fatals", lambda: raises(lambda: require_nonempty("x", []))),
         ("★ gate.phase_tracks_four_tiers",
-         lambda: run_phase("commit", ["a.py", "b.py", "c.py", "d.py"],
-                           runner=lambda f: {"a.py": (0, ""), "b.py": (0, "OFF: x"),
-                                             "c.py": (1, "bad"), "d.py": (2, "FATAL: cfg")}[f]
-                           )["fatal_list"] == ["d.py"]),
+         lambda: (lambda ph: ph["fatal_list"] == ["d.py"]
+                  and "FATAL: cfg" in ph["fail_out"].get("d.py", ""))(
+             run_phase("commit", ["a.py", "b.py", "c.py", "d.py"],
+                       runner=lambda f: {"a.py": (0, ""), "b.py": (0, "OFF: x"),
+                                         "c.py": (1, "bad"), "d.py": (2, "FATAL: cfg")}[f]))),
         ("★ gate.prose_in_exec_rejected",
          lambda: [p.code for p in prose_in_exec_problems("w", "cmd", "not a command")]
          == ["criteria.exec_position_is_prose"]),

@@ -212,8 +212,9 @@ def _step_problems(manifest, target):
     problems = []
     for index, step in enumerate(manifest["steps"], 1):
         output, current = _run_step(step, target, manifest)
+        cmd = " ".join(_argv(step["argv"], target))
         problems += [M("examples.step_entry", example=manifest["description"],
-                       step=index, detail=problem) for problem in current]
+                       step=index, command=cmd, detail=problem) for problem in current]
         if current:
             problems.append(M("examples.step_output", output=output[-OUTPUT_TAIL:]))
             break
@@ -319,13 +320,15 @@ def _check(root):
 
 def _one(name, root):
     current, was_skipped = run_example(name, root)
-    _print_problems(current)
     if was_skipped:
         print(M("examples.skip", example=name, platform=platform_name()))
         return 0
-    print(M("examples.fail", example=name) if current
-          else M("examples.pass", example=name))
-    return 1 if current else 0
+    if current:
+        print(M("examples.fail", example=name), file=sys.stderr)
+        _print_problems(current)
+        return 1
+    print(M("examples.pass", example=name))
+    return 0
 
 
 def run(argv):

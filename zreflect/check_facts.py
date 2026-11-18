@@ -61,7 +61,7 @@ def _number_lines(doc_text):
     return out
 
 
-def _line_unaccounted(line, lineno, f, bm, known, strip_re):
+def _line_unaccounted(line, lineno, f, bm, known, strip_re, doc_name="STATE.md"):
     cleaned = strip_re.sub(" ", line)
     cites = ledger.CITE_RE.findall(cleaned)
     cited_vals = {
@@ -73,29 +73,29 @@ def _line_unaccounted(line, lineno, f, bm, known, strip_re):
         val = int(tok)
         if val < bm or val in known or val in cited_vals:
             continue
-        out.append(M("facts.bare_number_unaccounted", line=lineno, number=tok))
+        out.append(M("facts.bare_number_unaccounted", file=doc_name, line=lineno, number=tok))
     return out
 
 
-def _unaccounted_numbers(f, bm, nlines):
+def _unaccounted_numbers(f, bm, nlines, doc_name="STATE.md"):
     known = {v for e in f.values() if isinstance((v := ledger.value_of(e)), int) and not isinstance(v, bool)}
     strip_re = re.compile("|".join(_SHAPE_PATTERNS))
     out = []
     for lineno, line in nlines:
         if ledger.DATED_RECORD.search(line):
             continue
-        out.extend(_line_unaccounted(line, lineno, f, bm, known, strip_re))
+        out.extend(_line_unaccounted(line, lineno, f, bm, known, strip_re, doc_name))
     return out
 
 
-def _cite_problems(doc_or_nlines, f):
+def _cite_problems(doc_or_nlines, f, doc_name="STATE.md"):
     nlines = _number_lines(doc_or_nlines) if isinstance(doc_or_nlines, str) else doc_or_nlines
-    return [M("facts.missing_key_cite", line=i, key=k)
+    return [M("facts.missing_key_cite", file=doc_name, line=i, key=k)
             for i, line in nlines
             for k in ledger.CITE_RE.findall(line) if k not in f]
 
 
-def _copied_fact_problems(f, nlines, bm):
+def _copied_fact_problems(f, nlines, bm, doc_name="STATE.md"):
     out = []
     for k, entry in sorted(f.items()):
         v = ledger.value_of(entry)
@@ -103,7 +103,7 @@ def _copied_fact_problems(f, nlines, bm):
             continue
         for i, line in nlines:
             if str(v) in line and ("[[%s]]" % k) not in line:
-                out.append(M("facts.copied_value", line=i, value=v, key=k))
+                out.append(M("facts.copied_value", file=doc_name, line=i, value=v, key=k))
     return out
 
 
@@ -124,7 +124,7 @@ def hand_written_problems(doc_text, name="STATE.md"):
     return out
 
 
-def problems(led, doc_text, bare_min=None):
+def problems(led, doc_text, bare_min=None, doc_name="STATE.md"):
     """Check block consistency, `[[key]]` citations, copied numbers, and unaccounted numbers."""
     bm = _bare_min() if bare_min is None else bare_min
     f = ledger.facts_of(led)
@@ -136,8 +136,9 @@ def problems(led, doc_text, bare_min=None):
     if ledger.body_of(doc_text).strip() != ledger.body_of(ledger.render_block(led)).strip():
         out.append(M("facts.block_mismatch"))
     nlines = _number_lines(doc_text)
-    out += _cite_problems(nlines, f)
-    return out + _copied_fact_problems(f, nlines, bm) + _unaccounted_numbers(f, bm, nlines)
+    out += _cite_problems(nlines, f, doc_name)
+    return (out + _copied_fact_problems(f, nlines, bm, doc_name)
+            + _unaccounted_numbers(f, bm, nlines, doc_name))
 
 
 def extra_block_problems(docs_by_name, homes):
@@ -183,11 +184,11 @@ def run(argv):
         text = open(p, encoding="utf-8").read()
         loaded[doc_name] = text
         if ledger.BLOCK_BEGIN in text and ledger.BLOCK_END in text:
-            probs += problems(led, text)
+            probs += problems(led, text, doc_name=doc_name)
         else:
             nlines = _number_lines(text)
-            probs += _cite_problems(nlines, f)
-            probs += _copied_fact_problems(f, nlines, _bare_min())
+            probs += _cite_problems(nlines, f, doc_name)
+            probs += _copied_fact_problems(f, nlines, _bare_min(), doc_name)
         if os.path.basename(doc_name) in rendered_docs():
             probs += hand_written_problems(ledger.prose_of(text), doc_name)
     homes, err = ledger.block_homes(led)

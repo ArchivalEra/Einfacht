@@ -65,19 +65,16 @@ def _run(argv, cwd=None, env=None):
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
-def _tail(text, n=3):
-    """Lines to relay on failure: **prefer** `fail |` / `FATAL:` lines; fall
-    back to the last n lines only if none are found.
-
-    ⚠️ A selftest's layout is "fail lines first, summary line last", so taking
-    the last n lines relays only a summary and hides which case went red.
-    """
+def _tail(text, n=5):
+    """Lines to relay on failure: prefer `fail |` / `FATAL:` lines; keep head+tail on crashes."""
     all_lines = [ln for ln in (text or "").splitlines() if ln.strip()]
     notable = [ln for ln in all_lines
                if ln.lstrip().startswith(("fail |", "FATAL:"))]
     if notable:
         return notable[:n]
-    return all_lines[-n:]
+    if len(all_lines) <= n or n <= 2:
+        return all_lines[-n:]
+    return [all_lines[0], all_lines[1], "...", *all_lines[-(n - 2):]]
 
 
 def _has_summary(text):
@@ -90,6 +87,12 @@ def _derive_listing(repo):
     import registry  # noqa: PLC0415
     gs, _ = registry.gates(os.path.join(repo, "zreflect"))
     return [g["file"] for g in gs]
+
+
+def _ok_msg(path, out):
+    last = _tail(out, 1)
+    summary = last[0].strip("= ") if last else ""
+    return str(M("harness.gate_ok", file=path, summary=summary))
 
 
 def _check_one_gate(repo, rel):
@@ -111,9 +114,7 @@ def _check_one_gate(repo, rel):
                        + ["      " + ln for ln in _tail(out)])
     if not _has_summary(out):
         return False, [str(M("harness.no_machine_summary", file=rel))]
-    last = _tail(out, 1)
-    return True, [str(M("harness.gate_ok", file=rel,
-                        summary=last[0] if last else ""))]
+    return True, [_ok_msg(rel, out)]
 
 
 def run_gates(repo, listing=None):
@@ -171,9 +172,7 @@ def _one_plugin(repo, p):
                        + ["      " + ln for ln in _tail(out)])
     if not _has_summary(out):
         return False, [str(M("harness.no_machine_summary", file=p))]
-    last = _tail(out, 1)
-    return True, [str(M("harness.gate_ok", file=p,
-                        summary=last[0] if last else ""))]
+    return True, [_ok_msg(p, out)]
 
 
 def run_modules(repo):
@@ -201,9 +200,7 @@ def run_modules(repo):
             lines.append(str(M("harness.no_machine_summary", file=m)))
             bad += 1
             continue
-        last = _tail(out, 1)
-        lines.append(str(M("harness.gate_ok", file=m,
-                           summary=last[0] if last else "")))
+        lines.append(_ok_msg(m, out))
     if n == 0:
         lines.append(str(M("harness.no_modules_found")))
         return False, lines
@@ -269,12 +266,12 @@ def _configurable_fixture(repo, tmp, registry):
 
 
 def _renamed_all_green(repo, gates, env):
-    """After renaming, **every single** gate must be green. Returns `(ok, list of failures)`."""
+    """After renaming, every single gate must be green. Returns `(ok_count, [(rel, detail)])`."""
     bad = []
     for rel in gates:
-        rc, _o = _run([sys.executable, os.path.join(repo, rel)], cwd=repo, env=env)
+        rc, out = _run([sys.executable, os.path.join(repo, rel)], cwd=repo, env=env)
         if rc != 0:
-            bad.append(rel)
+            bad.append((rel, " | ".join(_tail(out, 2)) or ("rc=%d" % rc)))
     return len(gates) - len(bad), bad
 
 
@@ -313,8 +310,8 @@ def _configurable_impl(repo, tmp, registry):
         return False, lines
 
     ok, bad = _renamed_all_green(repo, gates, env)
-    for rel in bad:
-        lines.append(str(M("harness.rename_failed", file=rel)))
+    for rel, detail in bad:
+        lines.append(str(M("harness.rename_failed", file=rel, detail=detail)))
 
     red_need, not_red = _default_names_go_red(repo, gates, tmp)
     if not red_need:

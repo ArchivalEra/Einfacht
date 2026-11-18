@@ -257,17 +257,36 @@ def _arg_after(argv, flag):
     return argv[i + 1] if len(argv) > i + 1 and not argv[i + 1].startswith("-") else "commit"
 
 
-def _emit_gate_output(text):
+_MAX_GATE_BULLETS = 5
+_MAX_GATE_LINES = 6
+
+
+def _format_gate_output(text):
     lines = [ln.rstrip() for ln in (text or "").splitlines() if ln.strip()]
-    shown = False
-    for ln in lines:
-        if ln.startswith("  \u00b7 "):
-            if shown:
-                continue
-            shown = True
-        elif not ln.lstrip().startswith("\u2139 ") and shown:
-            continue
-        print("      " + ln)
+    if not lines:
+        return []
+    bullets = [ln for ln in lines if ln.startswith("  \u00b7 ")]
+    if bullets:
+        out, shown = [], 0
+        for ln in lines:
+            if ln.startswith("  \u00b7 "):
+                if shown >= _MAX_GATE_BULLETS:
+                    continue
+                shown += 1
+            out.append("      " + ln)
+        extra = len(bullets) - shown
+        if extra > 0:
+            out.append("      " + str(M("registry.more_items", count=extra)))
+        return out
+    selected = lines if len(lines) <= _MAX_GATE_LINES else [lines[0], lines[1], "...", *lines[-4:]]
+    return ["      " + ln for ln in selected]
+
+
+def _emit_phase_group(files, code, fail_out):
+    for f in files:
+        print(M(code, file=f))
+        for ln in _format_gate_output(fail_out.get(f) or ""):
+            print(ln)
 
 
 def _main_run(argv):
@@ -278,15 +297,13 @@ def _main_run(argv):
     res = gate.run_phase(phase, gs)
     print(M("registry.phase_summary", phase=phase, ran=res["ran"], off=res["off"],
             failed=res["failed"], fatal=res.get("fatal", 0), error=res.get("error", 0)))
-    for f in res["off_list"]:
-        print(M("registry.phase_off", file=f))
-    for f in res.get("fatal_list", ()):
-        print(M("registry.phase_fatal", file=f))
-    for f in res.get("error_list", ()):
-        print(M("registry.phase_error", file=f))
-    for f in res["fail_list"]:
-        print("  FAILED %s" % f)
-        _emit_gate_output(res.get("fail_out", {}).get(f) or "")
+    fail_out = res.get("fail_out", {})
+    _emit_phase_group(res["fail_list"], "registry.phase_failed", fail_out)
+    _emit_phase_group(res.get("fatal_list", ()), "registry.phase_fatal", fail_out)
+    _emit_phase_group(res.get("error_list", ()), "registry.phase_error", fail_out)
+    if res["off_list"]:
+        print(M("registry.phase_off_list", count=len(res["off_list"]),
+                files=", ".join(res["off_list"])))
     return 1 if (res["failed"] or res.get("fatal") or res.get("error")) else 0
 
 
@@ -405,7 +422,14 @@ def _cases():
         ("registry.plugins_discovered",
          lambda: "reflect-hooks/hook.py" in plugins()
          and any(g["file"] == "zreflect/doctor.py" for g in gs)),
+        ("registry.emit_multi_bullets_bounded", lambda: _emit_bullets_ok()),
     ]
+
+
+def _emit_bullets_ok():
+    joined = "\n".join(_format_gate_output(
+        "hdr\n" + "\n".join("  \u00b7 p%d" % i for i in range(1, 8))))
+    return "  \u00b7 p1" in joined and "  \u00b7 p5" in joined and "  \u00b7 p6" not in joined and "2" in joined
 
 
 MODULE = module_meta("Roster registry", "discovered rosters, phase runner, and seal CLI",

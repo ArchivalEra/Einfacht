@@ -40,7 +40,7 @@ def _judge_ok(k, entry, cmd, stdout, out, stats):
         stats["ok"] += 1
         return
     if stdout.strip() != str(value_of(entry)):
-        out.append(M("replay.mismatch", key=k,
+        out.append(M("replay.mismatch", key=k, command=cmd,
                      actual=quote(stdout.strip()), expected=quote(str(value_of(entry)))))
         return
     stats["ok"] += 1
@@ -128,7 +128,7 @@ def run(argv):
         return off(M("replay.off"))
     seconds, bad_timeout = timeout_with_status()
     if bad_timeout is not None:
-        print("⚠ %s" % M("replay.bad_timeout", value=bad_timeout, default=seconds), file=sys.stderr)
+        print("WARN: %s" % M("replay.bad_timeout", value=bad_timeout, default=seconds), file=sys.stderr)
     name = knobs.get("REFLECT_FACTS")
     p = repo(name)
     if not os.path.exists(p):

@@ -444,8 +444,11 @@ def check_doc(path_rel, ledger, homes=None):
         return rc
     probs = doc_block_problems(path_rel, text, blocks)
     if probs:
-        fatal(probs[0])
-        return 2 if probs[0].code == "facts.markers_missing_check" else 1
+        if probs[0].code == "facts.markers_missing_check":
+            return fatal(probs[0])
+        for prob in probs:
+            print(prob, file=sys.stderr)
+        return 1
     print(M("facts.block_consistent", path=path_rel))
     return 0
 
@@ -470,7 +473,7 @@ def _measure():
             fatal_exit(M("facts.measure_module_unusable", module=mod_name,
                          error=repr(e), hint=M("facts.measure_module_where")))
         return fn()
-    print("⚠ %s" % M("facts.measure_placeholder_used"), file=sys.stderr)
+    print("WARN: %s" % M("facts.measure_placeholder_used"), file=sys.stderr)
     found = [d for d in _OWN_CODE_DIRS if os.path.isdir(os.path.join(gate.GATE_REPO, d))]
     if found:
         print("  %s" % M("facts.measure_own_code_hint", dirs=", ".join(found)), file=sys.stderr)
@@ -503,7 +506,7 @@ def _write_guarded(out, old, facts, argv, accept_all=False):
     accepted = None if accept_all else accepted_keys(argv)
     verdict, probs, notes = decide(old, facts, accepted=accepted, allow_drop="--allow-drop" in argv)
     for x in notes["err"]:
-        print(x, file=sys.stderr)
+        print("WARN: %s" % x, file=sys.stderr)
     for x in notes["out"]:
         print(x)
     if verdict == "refuse":
@@ -512,7 +515,7 @@ def _write_guarded(out, old, facts, argv, accept_all=False):
         return 2
     fatal_w, warn_w = write_target_problems(out)
     if warn_w:
-        print("⚠ %s" % warn_w, file=sys.stderr)
+        print("WARN: %s" % warn_w, file=sys.stderr)
     if fatal_w:
         return fatal(fatal_w)
     _write_ledger_doc(out, facts)
@@ -739,7 +742,6 @@ def main(argv):
         return 0
     if argv[0] in _COMMANDS:
         return _COMMANDS[argv[0]](argv)
-    print(M("facts.usage"), file=sys.stderr)
     return fatal(M("facts.unknown_command", command=argv[0]))
 
 
@@ -796,7 +798,14 @@ def _inproc_bootstrap_ok(d):
             mk_rc = check_doc("STATE.md", led)
         no_markers = (mk_rc == 2 and ("facts.markers_missing_check" in err_buf.getvalue()
                                       or "AUTO:FACTS" in err_buf.getvalue()))
-    return unwritable and no_markers and opt_out
+        open(os.path.join(d, "STATE.md"), "w", encoding="utf-8").write(
+            "<!-- AUTO:FACTS -->\nstale\n<!-- /AUTO:FACTS -->\n"
+            "<!-- AUTO:GATES -->\nstale\n<!-- /AUTO:GATES -->\n")
+        stale_buf = io.StringIO()
+        with contextlib.redirect_stderr(stale_buf):
+            stale_rc = check_doc("STATE.md", led)
+        stale_ok = (stale_rc == 1 and "FATAL:" not in stale_buf.getvalue())
+    return unwritable and no_markers and opt_out and stale_ok
 
 
 def _quiet(fn):
