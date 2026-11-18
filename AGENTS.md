@@ -120,10 +120,11 @@ fatal=0**. If not, check `--init` output for `already exists, left alone`
 ⚠️ **`docs/` does not work** -- it is outside the suite; gates cannot see it.
 
 ⚠️ The measured target defaults to **the suite itself**
-(`zreflect/measure_example.py` placeholder). To measure your project, set
-`REFLECT_MEASURE_MODULE` in `knobs.json`, or edit
-`measure_example()` directly. Unset = the suite is measured -- then the numbers
-in `STATE.md` are **about Einfacht**, not about your project.
+(`facts.measure_example()`, the placeholder in `zreflect/facts.py`). To measure
+your project, add an unsealed `zreflect/measure_<name>.py` and set
+`REFLECT_MEASURE_MODULE=measure_<name>` in `knobs.json`. Unset = the suite is
+measured -- then the numbers in `STATE.md` are **about Einfacht**, not about
+your project.
 
 ## Where configuration lives: three places, one resolution order
 
