@@ -61,28 +61,28 @@
    "file_sha256": "8cca071ac749e606c5869df6719f66a3be7a5804880d2707682bb613569c0711"
   },
   "zreflect/doc.py": {
-   "file_sha256": "8dadad6766e0d739b3cdbbc5a324a191f3cc5a6f96647859bcda4382472ef488"
+   "file_sha256": "3299766e5ebf69434152d8db3bcb0fa852d900b4a48d851a2cd46576f12b36c3"
   },
   "zreflect/doctor.py": {
-   "file_sha256": "11ad781a9da4463d012b1ec894391d493425e37005c71160576c8775d126714a"
+   "file_sha256": "872be3c49b35f855e6e2d5612bac0c349d4a7bb9dad7af15b2ee2a199452adc4"
   },
   "zreflect/examples.py": {
-   "file_sha256": "71db5866e1cf53dc27ac438856ba3d1ef0ca9a1ee4a2a320885c89dddaee2cb2"
+   "file_sha256": "43bbf80eae7e7444ce493f61f1a293e95ddf033fc93471bc9239fc1b7821d26c"
   },
   "zreflect/facts.py": {
-   "file_sha256": "35137ff1fd6e1983afa0948aa61cc83da4d429031ddbd7632b7b0d4b2dd08f7f"
+   "file_sha256": "6a286ef6ab25d15f13a259a1ed184547553a5c013e5f131ed7dcffae4f77fa0b"
   },
   "zreflect/gate.py": {
-   "file_sha256": "0bd85a646e636e0381faba8c7bb317e329b6be321b350f3b5550cca0cfc8a381"
+   "file_sha256": "38eb3474d061a32c5c56aec9adb545d1c302f9fc563906ad17c315fac1b246d7"
   },
   "zreflect/harness.py": {
    "file_sha256": "ebc6dba88e491e5eb9a947d2c1a33d7811cfa8426780665af9f677723f2762fd"
   },
   "zreflect/i18n.py": {
-   "file_sha256": "c7decde6720bf639f6ab21f4aec4e3f539ec7fcbccef6b54bdfca1f960152f45"
+   "file_sha256": "75696a7e219fcf4fc9e27dec0a58619cdf5eccf53bb1b40c5698d0092c1b3639"
   },
   "zreflect/knobs.py": {
-   "file_sha256": "29c1f024b66fd5d738fda542c85561e0f4ff96e52d2b696cbd6f5ac18b5aa424"
+   "file_sha256": "074dd8212e0312efdbd8b50fa6c410042d288032c1173aea4a5f9ccac6177d92"
   },
   "zreflect/lang/de.json": {
    "file_sha256": "5b40ac813443c165adf6d33a6ca1b1ab7f6c89ea0441251b375c97dcdb99a260"
@@ -94,15 +94,15 @@
    "file_sha256": "21aee06bc72f1349b4d93ebf1cf7963bee541ca06721a977eb68dfd6bbbf6bc6"
   },
   "zreflect/next.py": {
-   "file_sha256": "04063603cef521810d73770e57745b163682e8999ff6d44e7dc7200d1a9602a8"
+   "file_sha256": "e3bfff1b5686f1ef747126aafefd4aa2d2e3874a6929a575ee8c6cfe00c9888f"
   },
   "zreflect/registry.py": {
-   "file_sha256": "048ca6f9a6aee752763f5133af2e05758e2d19f680982be0eede5a2e3c318ff3"
+   "file_sha256": "84997a3568753d60222e64bda1d4c5d2426d92d3b344c783b05c265aaf1089b7"
   },
   "zreflect/seal.py": {
    "file_sha256": "d3bfdfb44295024127f146e8a116bf34aa145beb2a48e0cc684457d27851f6c7"
   }
  },
  "schema": 1,
- "tree_sha256": "f8aaa7ca1decd279b12ac506553a40d788a30e975c2f01d2a8f29e7832ec19e6"
+ "tree_sha256": "d3215fafb5124152cd43b54b0ed36194284172bb41cf1fd8777e060fdf28c96c"
 }

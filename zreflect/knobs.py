@@ -11,6 +11,7 @@ import sys
 class _Semantic(str):
     """Lazily rendered one-line knob description resolved against the active language pack."""
 
+    code: str
     __slots__ = ("code",)
 
     def __new__(cls, code):

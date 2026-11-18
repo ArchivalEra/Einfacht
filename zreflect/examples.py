@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate  # noqa: E402
@@ -93,7 +94,8 @@ def _step_shape_problems(step, index):
 
 def discover(root):
     """Return ``({name: manifest}, problems)``; no directory means no examples."""
-    manifests, problems = {}, []
+    manifests: dict[str, dict[str, Any]] = {}
+    problems: list[Any] = []
     if not os.path.isdir(root):
         return manifests, [M("examples.root_missing", path=root)]
     for name in sorted(os.listdir(root)):
@@ -186,6 +188,13 @@ def judge_step(step, rc, output):
     return out
 
 
+def _decode_output(val):
+    """Normalize `bytes | str | None` subprocess streams before concatenation."""
+    if not val:
+        return ""
+    return val.decode("utf-8", "replace") if isinstance(val, bytes) else val
+
+
 def _run_step(step, target, manifest):
     argv = _argv(step["argv"], target)
     env = _environment(target, manifest, step)
@@ -197,9 +206,7 @@ def _run_step(step, target, manifest):
     except subprocess.TimeoutExpired as exc:
         # A timeout must keep whatever the step managed to print, otherwise the
         # one case where output matters most is the one case with no output.
-        partial = (exc.stdout or "") + (exc.stderr or "")
-        if isinstance(partial, bytes):
-            partial = partial.decode("utf-8", "replace")
+        partial = _decode_output(exc.stdout) + _decode_output(exc.stderr)
         return partial, [M("examples.step_timeout",
                            command=argv, seconds=step.get("timeout", DEFAULT_TIMEOUT))]
     except (OSError, subprocess.SubprocessError) as exc:
@@ -384,6 +391,9 @@ def _cases():
          lambda: applies_to({"platforms": ["posix"]}, "nt") is False
          and applies_to({"platforms": ["posix"]}, "posix") is True
          and applies_to({"platforms": ["posix", "windows"]}, "nt") is True),
+        ("★ examples.timeout_stream_mix",
+         lambda: _decode_output(b"out") + _decode_output(None) == "out"
+         and _decode_output(b"a") + _decode_output("b") == "ab"),
     ]
 
 

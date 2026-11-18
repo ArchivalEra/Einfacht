@@ -43,7 +43,7 @@ def _read_json_safe(path):
 
 def _question_exec_problems(qdir):
     import glob  # noqa: PLC0415
-    out = []
+    out: list[str] = []
     if not qdir or not os.path.isdir(qdir):
         return out
     for qp in sorted(glob.glob(os.path.join(qdir, "*.md"))):

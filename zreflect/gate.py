@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import hashlib  # noqa: E402
@@ -109,7 +110,7 @@ def declares_itself(path):
 def suite_sources(sub="zreflect"):
     """Collect `[(relpath, src)]` for undeclared/unskipped `.py` files in `zreflect/`."""
     d = zdir()
-    out = []
+    out: list[tuple[str, str]] = []
     if not os.path.isdir(d):
         return out
     for n in sorted(os.listdir(d)):
@@ -122,7 +123,7 @@ def suite_sources(sub="zreflect"):
 
 def scanned_sources(d, configured=False):
     """Collect `[(relpath, src)]` from `d` (filtered by declaration only when unconfigured)."""
-    out = []
+    out: list[tuple[str, str]] = []
     if not os.path.isdir(d):
         return out
     for dirpath, dirnames, filenames in os.walk(d):
@@ -139,7 +140,7 @@ def scanned_sources(d, configured=False):
 
 def py_sources(base):
     """Collect `[(relpath, source)]` for all `.py` files under `base` with forward slashes."""
-    out = []
+    out: list[tuple[str, str]] = []
     if not os.path.isdir(base):
         return out
     for dirpath, dirnames, filenames in os.walk(base):
@@ -457,8 +458,10 @@ def default_runner(f, repo_root=None):
 def run_phase(phase, gates, runner=None, repo_root=None):
     """Run phase gates and aggregate `{ran, off, failed, fatal, error, *_list, fail_out}`."""
     run = runner or (lambda f: default_runner(f, repo_root))
-    res = {"ran": 0, "off": 0, "failed": 0, "fatal": 0, "error": 0,
-           "off_list": [], "fail_list": [], "fatal_list": [], "error_list": [], "fail_out": {}}
+    res: dict[str, Any] = {
+        "ran": 0, "off": 0, "failed": 0, "fatal": 0, "error": 0,
+        "off_list": [], "fail_list": [], "fatal_list": [], "error_list": [], "fail_out": {},
+    }
     for item in gates:
         f = item["file"] if isinstance(item, dict) else item
         if isinstance(item, dict) and item.get("runs_at") not in (None, phase):

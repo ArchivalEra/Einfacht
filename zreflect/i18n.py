@@ -7,7 +7,7 @@ import os
 import re
 import sys
 from types import MappingProxyType
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import knobs  # noqa: E402
@@ -262,6 +262,8 @@ def a_pack_lang():
 class Catalog:
     """Immutable loaded language pack (or null pack when `lang=None`)."""
 
+    lang: str | None
+    table: MappingProxyType[str, str] | None
     __slots__ = ("lang", "table")
 
     def __init__(self, lang, table, _sealed=False):
@@ -305,6 +307,9 @@ class Catalog:
 class Message(str):
     """Rendered string carrying `.code`, `.params`, and `.forged`."""
 
+    code: str
+    params: dict[str, Any]
+    forged: tuple[tuple[int, str | None, str], ...]
     __slots__ = ("code", "params", "forged")
 
     def __new__(cls, code, params, catalog):

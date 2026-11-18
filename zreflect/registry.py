@@ -217,7 +217,7 @@ def red_need(gs=None):
 def plugins(hooks_dir=None):
     """Discover hook scripts under `reflect-hooks/` exposing `--selftest`."""
     d = hooks_dir if hooks_dir is not None else repo("reflect-hooks")
-    out = []
+    out: list[str] = []
     if not os.path.isdir(d):
         return out
     for n in sorted(os.listdir(d)):

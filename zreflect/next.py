@@ -161,7 +161,8 @@ def _question_lines(repo, pending):
 
 def collect(repo):
     """Return `(last_turn, pending)` Message lists from commits, worktree, and questions."""
-    last, pending = [], []
+    last: list[str] = []
+    pending: list[str] = []
     _commit_lines(repo, last)
     _tree_lines(repo, last, pending)
     _question_lines(repo, pending)

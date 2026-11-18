@@ -184,7 +184,7 @@ def accepted_keys(argv):
 
 def decide(old_facts, new_facts, accepted=False, allow_drop=False):
     """Evaluate drop and change guards; return `('write'|'refuse', problems, notes)`."""
-    notes = {"err": [], "out": []}
+    notes: dict[str, list[str]] = {"err": [], "out": []}
     dropped = dropped_keys(old_facts, new_facts)
     if dropped and not allow_drop:
         return "refuse", [M("guard.refuse_dropped", count=len(dropped), keys=", ".join(dropped)),
@@ -639,7 +639,8 @@ def _init_skeleton(root, state):
 
 
 def _create_missing(root, files):
-    created, kept = [], []
+    created: list[str] = []
+    kept: list[str] = []
     for name, body in files.items():
         p = os.path.join(root, name)
         (kept if os.path.exists(p) else created).append(name)

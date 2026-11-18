@@ -12,7 +12,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Settling:** python3 -c "import os,subprocess,sys; files=['zreflect/i18n.py','zreflect/knobs.py','zreflect/gate.py','zreflect/registry.py','zreflect/examples.py','zreflect/doctor.py','zreflect/doc.py','zreflect/facts.py','zreflect/next.py']; env=dict(os.environ, MYPYPATH='zreflect'); r=subprocess.run([sys.executable,'-m','mypy']+files+['--check-untyped-defs','--ignore-missing-imports','--no-error-summary'], env=env); sys.exit(r.returncode)" && python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/harness.py —— rc=0 ⇒ 核心与基础 9 个模块在 mypy 1.13.0 下零报错、TimeoutExpired 安全处理验证成立、seal 与全部门禁全绿；rc≠0 ⇒ 仍有 mypy 报错、核心破坏或门禁失败
 
