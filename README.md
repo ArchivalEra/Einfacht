@@ -128,4 +128,4 @@ This file is the English member of the trio — [README.zh.md](README.zh.md) ·
 
 ## License
 
-MIT
+MPL-2.0

@@ -131,4 +131,4 @@ Diese Datei README.de.md ist das deutsche Mitglied des Trios — [README.md](REA
 
 ## Lizenz
 
-MIT
+MPL-2.0

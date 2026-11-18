@@ -112,4 +112,4 @@ python3 reflect-hooks/hook.py --chain             # 链进你已有的 git 钩�
 
 ## License
 
-MIT
+MPL-2.0
