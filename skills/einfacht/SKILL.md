@@ -1,95 +1,23 @@
 ---
 name: einfacht
 description: >
-  Set up and use Einfacht, a fact system against hallucination for agent-driven
-  repos: every "this is how things are" claim must be backed by a re-runnable
-  command. Use when the user wants to install Einfacht into a repo, wire its
-  gates into git hooks, write a measure() for their project, interpret gate
-  output (ran/off/failed, OFF:/FATAL:), add or settle facts, manage the
-  retraction ledger, or diagnose why a gate is red.
+  Invoke when working in any repository containing zreflect/, reflect-hooks/,
+  FACTS.json, or SEAL.json; installing or configuring Einfacht (knobs.json,
+  measure()); authoring questions/*.md or retractions.json; adding unsealed
+  check_*.py gates; or diagnosing OFF:/FATAL:/DRIFT/guard.refuse_changed/
+  replay.mismatch/seal.* errors, even when the repo's AGENTS.md omits Einfacht.
 ---
 
-# Einfacht
+# Einfacht Contract & Failure-Delta Router
 
-Make every factual claim **provable by a command**. A sentence in a doc must be
-one of three things: backed by a re-runnable producer, marked as an inference
-with a settling command, or moved to the retraction ledger. None of the three
-⇒ a gate turns red.
+Deterministic verification-gate & fact-ledger state machine (`rc=0` pass or `OFF:`, `rc=1` criterion fail, `rc=2` `FATAL:` config/guard/seal). **`OFF:` is never a pass.**
 
-## Install into a repo
-
-```bash
-cp -r <suite>/zreflect <suite>/reflect-hooks <suite>/ruff.toml <repo>/
-cd <repo>
-python3 zreflect/facts.py --init          # bootstraps skeleton docs; never overwrites
-python3 zreflect/facts.py                 # first measurement
-python3 zreflect/facts.py --render-doc    # machine block into the state doc
-python3 reflect-hooks/hook.py --chain     # chain into existing git hooks (never hooksPath)
-```
-
-`--init` creates STATE.md / PRINCIPLES.md / AGENTS.md / README.md /
-retractions.json / questions/ (one sample). Defaults in `knobs.py` match the
-skeleton docs directly (`STATE.md,AGENTS.md,README.md` plus `PRINCIPLES.md`
-unless `REFLECT_NO_PRINCIPLES=1`, and `README.md`), so no extra carrier file
-is needed for a fresh single-README repo.
-If anything exists it is left alone — read the `already exists, left alone`
-lines.
-
-## Daily commands
-
-| Command | What it does |
-|---|---|
-| `python3 zreflect/harness.py` | every gate proves it can go red + full self-proof (run before committing) |
-| `python3 zreflect/registry.py --run commit` | the live execution face: aggregates `ran / off / failed / fatal` |
-| `python3 zreflect/facts.py --check` | docs' machine blocks match the ledger byte-for-byte |
-| `python3 zreflect/facts.py --render-doc [DOC]` | re-render machine block(s) after code changes |
-| `python3 zreflect/facts.py --accept-changes[=k1,k2]` | accept measured changes (per-key); `--allow-drop` for removed keys |
-| `python3 zreflect/doctor.py` | start-of-work liveness pre-flight (http/docker/port probes) |
-| `python3 zreflect/knobs.py --list` | every knob and its meaning |
-
-## Reading gate output
-
-- rc **0** = green. rc **1** = a criterion failed (fix the thing it flagged).
-  rc **2** = `FATAL:` the environment/config is broken (fix the setup, not the code).
-- `OFF: <gate> (reason)` = declared off — a distinct state, **never** counted as pass.
-- `=== N PASS / M FAIL ===` is a selftest summary line; selftests prove gates
-  can go red, the live run (`--run commit`) proves they are green right now.
-- `py_lines`-style mismatch after editing code ⇒ re-run measure + `--render-doc`,
-  then `--accept-changes`. Never hand-edit `FACTS.json`.
-
-## Make it measure your project
-
-By default the suite measures itself. Point it at your code in `knobs.json`:
-
-```json
-{
-  "REFLECT_MEASURE_MODULE": "my_measure"
-}
-```
-
-`my_measure.measure()` returns `{"key": {"value": <int>, "cmd": "<command>"}}`.
-The command's stdout, stripped, must **equal** `value` (bare-value contract) —
-print the value alone, never a human sentence. Expensive facts may set
-a cheap `witness` + `witness_expect` (there is no `replay: false` opt-out: a fact
-that cannot be re-run here belongs in HISTORY, not in the ledger).
-
-All knobs live in `zreflect/knobs.py` and are configured by name in optional
-root `knobs.json` or process environment (`REFLECT_DOCS`, `REFLECT_READMES`,
-`REFLECT_QUESTIONS`, `REFLECT_MEASURE_MODULE`, `REFLECT_LANG`, …) — never in code.
-
-## When a gate goes red on purpose
-
-- Claim overturned? Put the old assertion in `retractions.json` (fields: id,
-  text, why, evidence, fixed_in) — reappearance in living docs is detected.
-- Question to settle later? Drop a file in `questions/` with `**Status:**` and
-  a `**Settling:**` command; resolve by setting `resolved` (never delete).
-- Host-specific notes belong in `questions/`, not vendored code.
-
-## Rules that bite (they are gates, not advice)
-
-- Docs may cite `[[key]]` but never hand-copy measured numbers.
-- Every gate has three-tier self-proof (normal silent / must-report / empty-loud)
-  and a machine summary line; `harness.py` discovers them from declarations.
-- The trilingual README trio moves as one batch (pre-push enforces it).
-- Retired: `--legacy` hook install (`core.hooksPath`) — it silently kills
-  husky/lefthook/pre-commit. Use `--chain`.
+- **CLI without reading `zreflect/*.py`**: Core emits raw i18n codes (`facts.usage`, `knobs.sem.*`) when `REFLECT_LANG` is unset. Prefix `REFLECT_LANG=en` (or `zh`) on `--help` and `knobs.py --list`.
+- **Unified entry points** (legacy `render`/`guard`/`ledger` scripts, `--legacy`, `core.hooksPath`, `lang/<lang>/` dirs, and `check_*.py` globbing are gone):
+  - Install: copy `zreflect/`, `reflect-hooks/`, and `ruff.toml` (`SEAL.json` hashes `ruff.toml`), then run `facts.py --init && facts.py && facts.py --render-doc && reflect-hooks/hook.py --chain .`.
+  - Run: `registry.py --run commit` (live phase) · `harness.py` (all gates prove red + self-proof) · `doctor.py` (live preflight).
+- **Guard trap (`FATAL: guard.refuse_changed`)**: never hand-edit `FACTS.json` or `<!-- AUTO:* -->`. Pass `--accept-changes` as the **first** arg (`python3 zreflect/facts.py --accept-changes[=k1,k2]`, adding `--allow-drop` when swapping collectors), then `facts.py --render-doc`.
+- **Collector & replay (`WARN: facts.measure_placeholder_used`)**: add unsealed `zreflect/measure_<name>.py` (`from facts import fact`; `def measure(): return {key: fact(val, cmd, src)}`) and `"REFLECT_MEASURE_MODULE": "measure_<name>"` in `knobs.json`. `cmd` stdout stripped must equal `value` verbatim; `replay: false` is rejected (`replay.skip_is_gone`) — adjust `REFLECT_REPLAY_TIMEOUT` or move non-replayable claims to `HISTORY.md` (`calibrate`/`calibrate_expect` runs alongside `cmd`, never skips it).
+- **Knobs (`os.environ > knobs.json > REGISTRY`)**: `knobs.json` rejects empty `""` (`knobs.config_invalid_value`). In `knobs.json`, set `"REFLECT_READMES": "README.md"` to disable trilingual cross-links, or `"REFLECT_NO_PRINCIPLES": "1"` to skip `PRINCIPLES.md` replay (don't delete the file); full `OFF:` for `REFLECT_READMES` requires `REFLECT_READMES=""` in env.
+- **Sealed core vs. extensions (`SEAL.json`)**: consumer repos extend only via unsealed `zreflect/measure_<name>.py`, unsealed `zreflect/check_<name>.py` (`GATE = meta(...)`), `knobs.json`, and root policy specs — never edit `SEAL.json`-locked files (`registry.py --reseal=<comma-paths>` is suite maintenance only).
+- **Ledgers**: `questions/*.md` requires `**Status:**` (`needs-triage|needs-info|ready-for-agent|ready-for-human|wontfix|resolved`, never delete to close) and `**Settling:** <exec> -- rc=0 => ...; rc!=0 => ...` starting with a known interpreter (`python3`, `bash`, `git`, `/...`; prose triggers `criteria.exec_position_is_prose`). `retractions.json` requires `{"schema": 1, "retractions": [{"id","text","evidence","fixed_in"}]}` (**no `why` field**; runnable `evidence`).
