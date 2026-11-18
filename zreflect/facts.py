@@ -25,9 +25,10 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate  # noqa: E402
-import guard  # noqa: E402
 import knobs  # noqa: E402
+import ledger  # noqa: E402
 import registry  # noqa: E402
+from check_facts import block_homes  # noqa: E402
 from gate import (  # noqa: E402
     machine,  # noqa: E402
     main_selftest_or,
@@ -35,8 +36,14 @@ from gate import (  # noqa: E402
     repo,
 )
 from i18n import M  # noqa: E402
-from ledger import age_days, fact, facts_of, load_or_fatal, value_of  # noqa: E402
-from render import BLOCK_BEGIN, BLOCK_END, render_block  # noqa: E402
+from ledger import (  # noqa: E402
+     age_days,
+    fact,
+    facts_of,
+    load_or_fatal,
+    render_block,
+    value_of,
+)
 
 REPO_REAL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -142,9 +149,8 @@ def measure_example():
     n_py = 0
     n_md = 0
     lines_py = 0
-    for root, _dirs, files in os.walk(gate.GATE_REPO):
-        if "/.git" in root:
-            continue
+    for root, dirs, files in os.walk(gate.GATE_REPO):
+        dirs[:] = [d for d in dirs if d != ".git"]
         for f in files:
             if f.endswith(".py"):
                 n_py += 1
@@ -182,35 +188,12 @@ def _has_principles_doc():
 
 
 def _doc_names():
-    """Names of docs carrying machine blocks, derived from `block_homes`'s
-    ownership mapping (never a hand-written list).
-
-    Must respect `REFLECT_NO_PRINCIPLES`: `PRINCIPLES.md` is included only when
-    `doc.accepts_principles()`. Without that opt-out, `--check` hits
-    `doc_missing_check` and pre-push goes red on a repo without a principles doc.
-    """
+    """Names of docs carrying machine blocks (`STATE.md` and `PRINCIPLES.md` unless opted out)."""
     import doc  # noqa: PLC0415
     names = [_doc()]
     if _has_principles_doc():
         names.append(doc.PRINCIPLES)
     return tuple(names)
-
-
-def block_homes(ledger):
-    """Map docs to owned machine blocks (`AUTO:FACTS`, `AUTO:GATES`, `AUTO:RULES`). Returns `(homes, err)`."""
-    gs, missing = registry.gates()
-    probs = registry.problems(gs, missing)
-    if probs:
-        return None, M("facts.registry_mismatch", entries="\n  · ".join(probs))
-    import doc  # noqa: PLC0415
-    homes = [(_doc(), [(BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
-                       (registry.GATES_BEGIN, registry.GATES_END,
-                        registry.render_gates(gs))])]
-    if _has_principles_doc():
-        homes.append((doc.PRINCIPLES,
-                      [(doc.RULES_BEGIN, doc.RULES_END, doc.render_rules())]))
-    return homes, None
-
 
 
 def _read_doc(p, path_rel):
@@ -364,6 +347,8 @@ def _write_or_fatal(p, new, path_rel):
 
 
 def check_doc(path_rel, ledger):
+    """Check one document's machine blocks via `check_facts.doc_block_problems`."""
+    import check_facts  # noqa: PLC0415
     p = gate.repo_path(path_rel)
     if not os.path.exists(p):
         print(machine().emit("fatal", M("facts.doc_missing_check", path=p)), file=sys.stderr)
@@ -374,21 +359,10 @@ def check_doc(path_rel, ledger):
     text, rc = _read_doc(p, path_rel)
     if rc:
         return rc
-    for begin, end, body in blocks:
-        if begin not in text or end not in text:
-            print(machine().emit("fatal",
-                                  M("facts.markers_missing_check",
-                                    path=path_rel, begin=begin, end=end)),
-                  file=sys.stderr)
-            return 2
-        cur = text.split(begin, 1)[1].split(end, 1)[0]
-        fresh = body.split(begin, 1)[1].split(end, 1)[0]
-        if cur != fresh:
-            print(machine().emit("fatal",
-                                  M("facts.block_stale",
-                                    path=path_rel, begin=begin)),
-                  file=sys.stderr)
-            return 1
+    probs = check_facts.doc_block_problems(path_rel, text, blocks)
+    if probs:
+        print(machine().emit("fatal", probs[0]), file=sys.stderr)
+        return 2 if probs[0].code == "facts.markers_missing_check" else 1
     print(M("facts.block_consistent", path=path_rel))
     return 0
 
@@ -489,11 +463,8 @@ def _attach_core_seal(facts):
 
 
 def measure(argv):
-    """Measure facts + rules, run drop/change guards via `guard.decide`, and write ledger."""
+    """Measure facts, run drop/change guards via `ledger.decide`, and write ledger."""
     facts = _measure()
-    import doc  # noqa: PLC0415
-    if _has_principles_doc():
-        facts.update(doc.facts_of_rules())
     rc = _attach_core_seal(facts)
     if rc:
         return rc
@@ -543,9 +514,9 @@ def _shape_guard(facts):
 
 def _guarded_write(argv, old, facts):
     """The two guards (drop / rewrite) plus the blind-write guard. Returns rc (0 = pass, 2 = refuse)."""
-    verdict, problems, notes = guard.decide(old, facts,
-                                            accepted=guard.accepted_keys(argv),
-                                            allow_drop="--allow-drop" in argv)
+    verdict, problems, notes = ledger.decide(old, facts,
+                                             accepted=ledger.accepted_keys(argv),
+                                             allow_drop="--allow-drop" in argv)
     for x in notes["err"]:
         print(x, file=sys.stderr)
     for x in notes["out"]:
@@ -554,11 +525,7 @@ def _guarded_write(argv, old, facts):
         for x in problems:
             print(machine().emit("fatal", x), file=sys.stderr)
         return 2
-    # Blind-write guard (issue #20 (2)): check the target before writing -- covered by
-    # gitignore => FATAL; repo has an Einfacht.env but the knob is unset this run =>
-    # warn (the two sources have diverged at this moment).
-    fatal_w, warn_w = guard.write_target_problems(
-        _out(), knob_set=bool(os.environ.get("REFLECT_FACTS", "").strip()))
+    fatal_w, warn_w = ledger.write_target_problems(_out())
     if warn_w:
         print("⚠ %s" % warn_w, file=sys.stderr)
     if fatal_w:
@@ -567,16 +534,18 @@ def _guarded_write(argv, old, facts):
     return 0
 
 
-def get_value(ledger, key):
-    """Fetch a ledger value by key -- the **official read-only exit** for consumers
-    (CI, test processes in other languages).
+def _facts_with_principles(led):
+    """Combine `facts_of(led)` with `doc.facts_of_rules()` when principles are active."""
+    import doc  # noqa: PLC0415
+    f = dict(facts_of(led))
+    if _has_principles_doc():
+        f.update(doc.facts_of_rules())
+    return f
 
-    Consumers must call `facts.py --get KEY`, never parse `FACTS.json`: a
-    substring search for `"value"` picks the value of a different key, because
-    every entry carries that field. Returns `(False, error message)` when the key
-    is absent, `(True, value)` when present.
-    """
-    f = facts_of(ledger)
+
+def get_value(led, key):
+    """Fetch a ledger or principle value by key (`(True, val)` or `(False, err_msg)`)."""
+    f = _facts_with_principles(led)
     if key not in f:
         return False, M("facts.unknown_key", key=key,
                         existing=", ".join(sorted(f)) or M("facts.none"))
@@ -733,7 +702,7 @@ def _init_skeleton(root, state):
             "# " + state + "\n\n"
             "> live state: only what is true **now**, and every line below is\n"
             "> rendered from the ledger; never copy a number into prose.\n\n"
-            + BLOCK_BEGIN + "\n" + BLOCK_END + "\n\n"
+            + ledger.BLOCK_BEGIN + "\n" + ledger.BLOCK_END + "\n\n"
             + _reg.GATES_BEGIN + "\n" + _reg.GATES_END + "\n"),
         doc.PRINCIPLES: (
             "# PRINCIPLES\n\n"
@@ -782,20 +751,12 @@ def _create_missing(root, files):
     return created, kept
 
 
-def _init_principles_into_ledger():
-    """Principles must enter the ledger too -- otherwise the `[[RULES:...]]` citations
-    in `PRINCIPLES.md` are all broken references in a fresh repo."""
+def _init_principles_doc():
+    """Render `PRINCIPLES.md` (`AUTO:RULES` block) from `doc.RULES`."""
     import doc  # noqa: PLC0415
     if not doc.accepts_principles():
         return 0
-    out = _out()
-    facts = dict(facts_of(_load_or_empty()))
-    facts.update(doc.facts_of_rules())
-    rc, err = _write_ledger_doc(out, facts)
-    if err:
-        print(machine().emit("fatal", err), file=sys.stderr)
-        return 2
-    return write_doc(doc.PRINCIPLES, {"schema": 1, "facts": facts})
+    return write_doc(doc.PRINCIPLES, {"schema": 1, "facts": {}})
 
 
 def _init_questions_dir(root):
@@ -824,36 +785,6 @@ def _init_questions_dir(root):
             "once you have some.\n")
 
 
-def _init_env_file(root, state):
-    """Write an `Einfacht.env` matching the docs actually generated.
-
-    Default knobs assume six docs (STATE / AGENTS / PRINCIPLES / README x3); a
-    fresh repo has only the skeleton, so without this file gates report a
-    missing `README.zh.md`. `REFLECT_DOC` / `REFLECT_DOCS` / `REFLECT_READMES`
-    come from the files present.
-
-    **Never create a second carrier**: if `reflect-hooks/Einfacht.env` exists,
-    report and return -- the plugin reads hooks first, so two files fork the doc
-    set. Root files are untouched.
-    """
-    import doc  # noqa: PLC0415
-    env_path = os.path.join(root, "Einfacht.env")
-    if os.path.exists(env_path):
-        return
-    hooks_env = os.path.join(root, "reflect-hooks", "Einfacht.env")
-    if os.path.exists(hooks_env):
-        # A carrier already exists (hooks read that one first) -- a second copy only forks.
-        print(str(M("facts.init_env_exists_in_hooks")))
-        return
-    docs = ",".join(n for n in (state, doc.PRINCIPLES, "AGENTS.md")
-                    if os.path.exists(os.path.join(root, n)))
-    with open(env_path, "w", encoding="utf-8") as fh:
-        fh.write("export REFLECT_DOC=%s\n" % state)
-        fh.write("export REFLECT_DOCS=%s\n" % docs)
-        fh.write("export REFLECT_READMES=README.md\n")
-    print(str(M("facts.init_created", name="Einfacht.env")))
-
-
 def cmd_count(argv):
     """`--count-files SUF` / `--count-lines SUF` / `--count-md`: the ledger's replay commands.
 
@@ -878,13 +809,12 @@ def cmd_count(argv):
 
 def cmd_init(argv):
     """The `--init` command: fresh-repo bootstrap that generates a qualified
-    skeleton in one shot (`STATE.md` seeded with both AUTO markers, principles in
-    the ledger, `questions/`, and a matching `Einfacht.env`).
+    skeleton in one shot (`STATE.md` seeded with both AUTO markers, `PRINCIPLES.md`
+    rendered with `AUTO:RULES`, and `questions/`).
 
     Never overwrites existing files -- only gaps are filled, and each step prints
     what it did. Returns 0 immediately when nothing was created, so running
-    `--init` twice is idempotent. The four artifacts are owned by separate named
-    helpers; a failing principles write returns its rc.
+    `--init` twice is idempotent.
     """
     import doc  # noqa: PLC0415
     root = gate.GATE_REPO
@@ -896,11 +826,10 @@ def cmd_init(argv):
         print(str(M("facts.init_kept", name=name)))
     if not created:
         return 0
-    rc = _init_principles_into_ledger()
+    rc = _init_principles_doc()
     if rc:
         return rc
     _init_questions_dir(root)
-    _init_env_file(root, state)
     print(str(M("facts.init_next")))
     return 0
 
@@ -927,7 +856,7 @@ def cmd_accept(argv):
 def cmd_show(argv):
     """The `show` command."""
     led = _load_or_die()
-    f = facts_of(led)
+    f = _facts_with_principles(led)
     keys = [argv[1]] if len(argv) > 1 else sorted(f)
     rc = 0
     for k in keys:
@@ -953,23 +882,16 @@ def _write_ledger(led, facts, argv, accept_all=False):
     """Write `facts` back to the ledger (through the same guard). `accept_all` => accept all rewrites this run."""
     out = _out()
     old = facts_of(led)
-    accepted = None if accept_all else guard.accepted_keys(argv)
-    verdict, problems, notes = guard.decide(old, facts, accepted=accepted,
-                                            allow_drop="--allow-drop" in argv)
+    accepted = None if accept_all else ledger.accepted_keys(argv)
+    verdict, problems, notes = ledger.decide(old, facts, accepted=accepted,
+                                             allow_drop="--allow-drop" in argv)
     for x in notes["err"]:
         print(x, file=sys.stderr)
     if verdict == "refuse":
         for x in problems:
             print(machine().emit("fatal", x), file=sys.stderr)
         return 2
-    # ⚠️ **The same blind-write guard**: `measure()` checks the write target first
-    # (covered by gitignore => FATAL; carrier present but knob unset => warn).
-    # `--accept*` is the **second write path** -- without this check it could write
-    # into a gitignored path with rc=0 (observed: with L.json in `.gitignore`,
-    # `--accept` wrote anyway while `measure` FATALed). Both paths must pass the same
-    # guard (C4).
-    fatal_w, warn_w = guard.write_target_problems(
-        out, knob_set=bool(os.environ.get("REFLECT_FACTS", "").strip()))
+    fatal_w, warn_w = ledger.write_target_problems(out)
     if warn_w:
         print("⚠ %s" % warn_w, file=sys.stderr)
     if fatal_w:
@@ -1035,15 +957,6 @@ CASES = [
     # **Bootstrap end-to-end convergence**: `--init` -> measure -> two renders ->
     # registry all green.
     ("★ facts.fresh_repo_bootstraps_green", lambda: _fresh_bootstraps()),
-    # **Host-local knob carriers must never enter a fixture**: the fresh repo
-    # gets the carrier `--init` generates; a copytree of reflect-hooks/ used to
-    # smuggle the host's Einfacht.env in and made both bootstrap cases
-    # always-red (only in repos that have a local carrier -- CI stayed green).
-    ("★ facts.host_env_carrier_not_copied",
-     lambda: _host_env_carrier_not_copied()),
-    # A private-phase gate (runs_at not in BUILTIN_PHASES) must not enter a
-    # fixture: its enabling knob (REFLECT_PHASES) lives in the env file #34
-    # excludes -- gate without its living condition = unknown_phase FATAL.
     ("★ facts.private_phase_gate_not_copied",
      lambda: _private_phase_gate_not_copied()),
     # **Real-project shape**: a repo with build.sh / src / an existing README must
@@ -1182,7 +1095,7 @@ def _copy_suite_into(d):
 
 
 def _copy_hooks_roster(src_z, d):
-    """Copy the hook platform files (never the host's local knob carrier)."""
+    """Copy the hook platform files."""
     import shutil  # noqa: PLC0415
     hooks_src = os.path.join(os.path.dirname(src_z), "reflect-hooks")
     if not os.path.isdir(hooks_src):
@@ -1191,7 +1104,6 @@ def _copy_hooks_roster(src_z, d):
     for name in sorted(os.listdir(hooks_src)):
         src = os.path.join(hooks_src, name)
         if (os.path.isfile(src) and not name.startswith(".")
-                and name != "Einfacht.env"
                 and not name.endswith((".pyc", ".mypy_cache"))):
             shutil.copy(src, os.path.join(d, "reflect-hooks", name))
 
@@ -1287,19 +1199,6 @@ def _corrupt_load_raises():
         os.unlink(path)
 
 
-def _env_from_envfile(d, base_env):
-    """Parse `Einfacht.env` into env vars via `check_envfile.parse_exports`."""
-    out = dict(base_env)
-    path = os.path.join(d, "Einfacht.env")
-    if not os.path.isfile(path):
-        return out
-    with open(path, encoding="utf-8", errors="replace") as fh:
-        text = fh.read()
-    import check_envfile  # noqa: PLC0415
-    out.update(check_envfile.parse_exports(text))
-    return out
-
-
 def _bootstrap_steps():
     """Steps to run after `--init` (`(argv, whether to apply env)`)."""
     return [
@@ -1307,27 +1206,6 @@ def _bootstrap_steps():
         ([sys.executable, "zreflect/facts.py", "--render-doc"], True),
         ([sys.executable, "zreflect/registry.py", "--run", "commit"], True),
     ]
-
-
-def _host_env_carrier_not_copied():
-    """A fixture repo must not inherit this repo's local `Einfacht.env`.
-
-    Three-tier: with the carrier present (normal) => absent in fixture; with a
-    sentinel carrier => still absent (not just "this repo has none"); and the
-    platform files are still there (the copy did happen -- an empty fixture
-    would pass by doing nothing).
-    """
-    import shutil  # noqa: PLC0415
-    import tempfile  # noqa: PLC0415
-    d = tempfile.mkdtemp()
-    try:
-        _copy_suite_into(d)
-        hooks = os.path.join(d, "reflect-hooks")
-        return (not os.path.isfile(os.path.join(hooks, "Einfacht.env"))
-                and os.path.isfile(os.path.join(hooks, "gate.py"))
-                and os.path.isfile(os.path.join(hooks, "einfacht-env.sh")))
-    finally:
-        shutil.rmtree(d, True)
 
 
 def _private_phase_gate_not_copied():
@@ -1407,14 +1285,14 @@ def _real_repo_shaped():
                            encoding="utf-8", errors="replace")
         for argv in ([sys.executable, "zreflect/facts.py", "--accept-changes"],
                      [sys.executable, "zreflect/facts.py", "--render-doc"]):
-            p = subprocess.run(argv, cwd=d, env=_env_from_envfile(d, base),
+            p = subprocess.run(argv, cwd=d, env=base,
                                capture_output=True, text=True, timeout=180,
-                           encoding="utf-8", errors="replace")
+                               encoding="utf-8", errors="replace")
             if p.returncode != 0:
                 return False
         p = subprocess.run([sys.executable, "zreflect/registry.py",
                             "--run", "commit"],
-                           cwd=d, env=_env_from_envfile(d, base),
+                           cwd=d, env=base,
                            capture_output=True, text=True, timeout=180,
                            encoding="utf-8", errors="replace")
         return p.returncode == 0
@@ -1436,14 +1314,9 @@ def _opt_out_check_case():
         base = fixture_env()
         subprocess.run([sys.executable, "zreflect/facts.py", "--init"],
                        cwd=d, env=base, capture_output=True, timeout=180)
-        # Complete the bootstrap's measure and render (as in `_fresh_bootstraps`):
-        # init generates an empty STATE.md block; without these two steps --check
-        # would report block_stale -- that is the fixture not finishing the flow, not
-        # the behavior under test.
-        env_run = _env_from_envfile(d, base)
         for argv in ([sys.executable, "zreflect/facts.py", "--accept-changes"],
                      [sys.executable, "zreflect/facts.py", "--render-doc"]):
-            subprocess.run(argv, cwd=d, env=env_run, capture_output=True,
+            subprocess.run(argv, cwd=d, env=base, capture_output=True,
                            timeout=180)
         os.remove(os.path.join(d, "PRINCIPLES.md"))
         env_opt = dict(base)
@@ -1459,14 +1332,7 @@ def _opt_out_check_case():
 
 
 def _fresh_bootstraps():
-    """A brand-new repo: `--init` -> measure -> two renders -> `registry --run commit`
-    all green.
-
-    **End-to-end**: spawns subprocesses, so it covers the env, the machine
-    block line counts, and command dispatch together. The three stages
-    (prepare fixture / resolve env / run step by step) are each a helper to
-    keep the merged complexity below `check_lint`'s threshold.
-    """
+    """A brand-new repo: `--init` -> measure -> render -> `registry --run commit` all green."""
     import shutil  # noqa: PLC0415
     import subprocess  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
@@ -1480,11 +1346,10 @@ def _fresh_bootstraps():
                        cwd=d, env=base, capture_output=True, text=True,
                        timeout=180,
                            encoding="utf-8", errors="replace")
-        for argv, with_env in _bootstrap_steps():
-            env = _env_from_envfile(d, base) if with_env else base
-            p = subprocess.run(argv, cwd=d, env=env, capture_output=True,
+        for argv, _with_env in _bootstrap_steps():
+            p = subprocess.run(argv, cwd=d, env=base, capture_output=True,
                                text=True, timeout=180,
-                           encoding="utf-8", errors="replace")
+                               encoding="utf-8", errors="replace")
             if p.returncode != 0:
                 return False
         return True

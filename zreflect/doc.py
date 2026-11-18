@@ -266,7 +266,7 @@ def render_rules(rows=None):
     lines = [RULES_BEGIN,
              ("> This block is rendered by `zreflect/facts.py --render-doc` from the "
              "`RULES` table in `zreflect/doc.py`; **do not hand-edit**."),
-             ("> Every row's judging command is in `FACTS.json` and is executed verbatim "
+             ("> Every row's judging command is executed verbatim "
              "at every commit (`check_facts_replay`)."),
              "",
              "| id | principle | judging command |",
@@ -419,6 +419,9 @@ def _cases():
         ("doc.every_rule_has_text", lambda: _every_rule_has_text()),
         ("doc.cmds_reference_real_files", lambda: _every_cmd_references_a_real_file()),
         ("doc.lookup_works", lambda: _lookup_works()),
+        ("doc.render_rules_has_markers",
+         lambda: RULES_BEGIN in render_rules() and RULES_END in render_rules()
+         and "nope_rule" in render_rules([Rule("nope_rule", "t", "python3 -c 'pass'")])),
         ("★ doc.empty_cmd_is_rejected",
          lambda: _cmd_shape_problems([Rule("x", "t", "")]) == [("x", "empty_cmd")]),
         ("★ doc.missing_text_is_rejected",
@@ -613,7 +616,7 @@ def _dir_mds(base, sub):
     p = os.path.join(base, sub)
     if not os.path.isdir(p):
         return []
-    return [os.path.join(sub, f) for f in sorted(os.listdir(p)) if f.endswith(".md")]
+    return [sub + "/" + f for f in sorted(os.listdir(p)) if f.endswith(".md")]
 
 
 def _skill_docs(base):
@@ -623,7 +626,7 @@ def _skill_docs(base):
         return []
     out = []
     for entry in sorted(os.listdir(sk)):
-        cand = os.path.join("skills", entry, "SKILL.md")
+        cand = "skills/" + entry + "/SKILL.md"
         if os.path.exists(os.path.join(base, cand)):
             out.append(cand)
     return out
@@ -633,7 +636,7 @@ def _reference_docs(base):
     """Docs an agent reads (living docs, `docs/*.md`, `examples/README.md`, skills)."""
     import knobs  # noqa: PLC0415
     seen = list(knobs.docs_names()) + _dir_mds(base, "docs") + _skill_docs(base)
-    ex = os.path.join("examples", "README.md")
+    ex = "examples/README.md"
     if os.path.exists(os.path.join(base, ex)):
         seen.append(ex)
     return sorted(set(seen))
@@ -696,7 +699,7 @@ def _py_docstrings(base):
                 parts = [ast.get_docstring(n, clean=False) for n in ast.walk(tree)
                          if isinstance(n, (ast.Module, ast.ClassDef,
                                            ast.FunctionDef, ast.AsyncFunctionDef))]
-                out.append((os.path.join(sub, f), "\n".join(p for p in parts if p)))
+                out.append((sub + "/" + f, "\n".join(p for p in parts if p)))
     return out
 
 

@@ -9,5 +9,6 @@
  "hookgate.ref_has_nothing": "%(ref)s trägt keinen neuen Inhalt ⇒ das README-Kriterium hat dafür nichts zu prüfen (laut gesagt)",
  "hookgate.repo_missing": "Repo-Wurzel '%(repo)s' existiert nicht (das zweite Argument muss ein absoluter Pfad sein)",
  "hookgate.unknown_phase": "unbekannte Phase '%(phase)s' (nur commit / push)",
- "hookgate.usage": "Aufruf: python3 reflect-hooks/gate.py <commit|push> <Repo-Wurzel>"
+ "hookgate.unstaged_facts": "`%(path)s` hat nicht gestagte Änderungen — vor dem Commit stagen oder verwerfen, damit `--render-doc` kein ungestagtes Register in das gestagte Dokument rendert",
+ "hookgate.usage": "Aufruf: python3 reflect-hooks/hook.py <commit|push> <Repo-Wurzel>"
 }

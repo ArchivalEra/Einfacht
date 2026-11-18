@@ -15,7 +15,6 @@
  "registry.off_without_reason": "`%(file)s` can call `off()` but declares no `off_reason` in `meta()` — a reasonless off is indistinguishable from 'this repo does not use this mechanism'",
  "registry.open_without_encoding": "text `open()` without `encoding=` (`%(file)s:%(lineno)d`, mode=%(mode)s) — Windows defaults to cp1252; UTF-8 files raise UnicodeDecodeError",
  "registry.path_rule_split": "`%(file)s`'s `%(function)s()` computes the tool directory itself (`dirname(abspath(__file__))`) — that value must have exactly one producer (`gate.zdir()`), otherwise changing one place splits it",
- "registry.reason_bases_disagree": "`criteria._REASON_BASES` disagrees with `einfacht-env.sh`'s carrier lookup locations — an off_reason referencing a carrier in `reflect-hooks/` would be misjudged",
  "registry.phase_error": "  ERROR %(file)s (executor-level breakage: rc<0 killed by signal, or >2 an unagreed code)",
  "registry.phase_fatal": "  FATAL %(file)s (config/environment broken — not a check failure; different fix)",
  "registry.phase_off": "  off    %(file)s (off — never checked, not a pass)",
@@ -29,17 +28,14 @@
  "registry.undeclared_module": "these .py files are neither gates (no GATE declaration) nor declared platform modules (no MODULE = module_meta(…)) — a platform module must declare itself, even with selftest=False (state plainly that it needs no self-test): %(files)s",
  "registry.unexpected_shell": "unregistered shell file inside the suite: `%(file)s` — full-Python goal: shell is an exception; each one must be listed in `ALLOWED_SHELL` in `zreflect/criteria.py` (with a reason). **Your own repo's .sh files are not subject to this**",
  "registry.unknown_phase": "`%(file)s` declares runs_at=%(runs_at)r which is not a known phase (%(phases)s) — the frequency is a declaration field; a bad value makes the execution surface skip it",
- "registry.usage": "usage: registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--verify-seal|--reseal=PATHS|--reseal-yardstick=PATHS [--allow-case-drop]|--selftest]",
+ "registry.usage": "usage: registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--verify-seal|--reseal=PATHS|--selftest]",
  "seal.corrupt": "core seal `SEAL.json` is corrupt: %(error)s",
  "seal.file_missing": "sealed core file missing: `%(file)s`",
  "seal.file_tampered": "sealed core file modified: `%(file)s` (sha256 mismatch; run `registry.py --reseal=%(file)s` only after authorized edit)",
- "seal.missing": "core seal `%(path)s` is missing — run `python3 zreflect/registry.py --reseal-yardstick=ALL`",
+ "seal.missing": "core seal `%(path)s` is missing — run `python3 zreflect/registry.py --reseal=ALL`",
  "seal.ok": "core seal OK (%(tree)s, %(files)d files)",
- "seal.reseal_refused_case_drop": "refused `--reseal-yardstick` on `%(file)s`: cases %(old_cases)d→%(new_cases)d, red %(old_red)d→%(new_red)d (pass `--allow-case-drop` to override)",
- "seal.reseal_refused_yardstick": "refused `--reseal` on `%(file)s`: yardstick changed (use `--reseal-yardstick`)",
  "seal.reseal_unknown_target": "reseal target not in core surface: %(file)s",
  "seal.resealed": "updated core seal: %(tree)s (%(count)d targets)",
  "seal.tree_mismatch": "core seal `tree_sha256` Merkle root disagrees with file hashes in `SEAL.json`",
- "seal.unsealed_core_file": "core file `%(file)s` exists on disk but is missing from `SEAL.json`",
- "seal.yardstick_tampered": "sealed yardstick modified in `%(file)s` (`_cases*` / `GATE` / `MODULE` / `RULES`)"
+ "seal.unsealed_core_file": "core file `%(file)s` exists on disk but is missing from `SEAL.json`"
 }

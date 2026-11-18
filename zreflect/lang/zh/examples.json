@@ -1,6 +1,5 @@
 {
  "examples.argv_bad": "第 %(step)d 步 argv 必须是非空字符串数组",
- "examples.carrier_unreadable": "生成的 Einfacht.env 读不出来（%(path)s）：%(error)s —— 步骤会在没有旋钮的情况下运行",
  "examples.coverage_failed": "示范覆盖失败",
  "examples.coverage_missing": "闸门 %(example)s 没有同名示范",
  "examples.coverage_ok": "示范覆盖通过（%(count)d 个示范）",

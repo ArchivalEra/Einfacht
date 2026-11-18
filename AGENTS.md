@@ -38,8 +38,9 @@ same batch (`check_readme_sync.py` enforces).
 | **Principles** | [`PRINCIPLES.md`](PRINCIPLES.md) | each principle = one sentence + one judging command | every commit really runs it (`check_facts_replay`) |
 | **State** | [`STATE.md`](STATE.md) | what things are now; numbers only as `[[key]]` | `--check` compares machine block vs ledger |
 
-Principles and state both land in `FACTS.json` (principle keys are
-`principle.<id>`) -- one re-run path, no second executor.
+Principles are rendered directly from `zreflect/doc.py` `RULES` and replayed at
+every commit alongside numeric facts in `FACTS.json` -- one re-run path, no
+second executor.
 
 Notes and other md files can be **manually registered** as facts, but are not
 on the default surface.
@@ -55,7 +56,7 @@ python3 zreflect/registry.py --run commit   # all commit-phase gates (ran/off/fa
 python3 zreflect/examples.py --all          # every capability, run for real in a temp repo
 python3 zreflect/harness.py                 # every gate proves it can go red first
 python3 zreflect/facts.py                   # re-measure
-python3 zreflect/facts.py --render-doc      # render machine block (no filename = state doc)
+python3 zreflect/facts.py --render-doc      # render machine blocks (STATE.md + PRINCIPLES.md)
 ```
 
 `registry.py --run` is the **only execution entry** -- never glob `check_*.py`.
@@ -67,7 +68,6 @@ the phase is a declaration field (`runs_at`).
 | Want | Go to |
 |---|---|
 | principles and their commands | `AUTO:RULES` block in `PRINCIPLES.md` |
-| whether one principle passes now | `python3 zreflect/facts.py --get principle.<id>` |
 | re-run all principles | `python3 zreflect/check_facts_replay.py` |
 | knob semantics | `python3 zreflect/knobs.py --list` |
 | gate roster | `python3 zreflect/registry.py --gates` |
@@ -101,20 +101,18 @@ Copy `zreflect/` + `reflect-hooks/` over, then in that repo:
 ```bash
 python3 zreflect/facts.py --init     # generate a qualified skeleton (never overwrites)
 python3 zreflect/facts.py            # measure once
-python3 zreflect/facts.py --render-doc STATE.md   # render machine block
+python3 zreflect/facts.py --render-doc            # render machine blocks
 python3 reflect-hooks/install.py --chain          # wire git hooks
 ```
 
 `--init` creates `STATE.md` / `PRINCIPLES.md` / `AGENTS.md` / `README.md` /
-`retractions.json` / `questions/` (one example question) / `Einfacht.env`, and:
+`retractions.json` / `questions/` (one example question), and:
 
 - **`STATE.md` comes pre-seeded with `<!-- AUTO:FACTS -->` / `<!-- AUTO:GATES -->`
   markers** -- without them `--render-doc` fails with
   `FATAL: facts.markers_missing_render`;
-- **`Einfacht.env` matches the docs actually generated** (`REFLECT_DOCS` /
-  `REFLECT_READMES`) -- the defaults assume six docs (STATE / AGENTS /
-  PRINCIPLES / README×3); a new repo with one README must narrow them or every
-  gate reports "cannot find README.zh.md".
+- **`REGISTRY` defaults match the skeleton docs** (`STATE.md,PRINCIPLES.md,AGENTS.md,README.md`
+  and `README.md`) so a fresh repo needs no extra carrier file to pass.
 
 After those four commands, `registry --run commit` must be **failed=0 /
 fatal=0**. If not, check `--init` output for `already exists, left alone`
@@ -124,22 +122,19 @@ fatal=0**. If not, check `--init` output for `already exists, left alone`
 
 ⚠️ The measured target defaults to **the suite itself**
 (`zreflect/measure_example.py` placeholder). To measure your project, set
-`REFLECT_MEASURE_MODULE=<your module>` in `Einfacht.env`, or edit
+`REFLECT_MEASURE_MODULE` in `knobs.json`, or edit
 `measure_example()` directly. Unset = the suite is measured -- then the numbers
 in `STATE.md` are **about Einfacht**, not about your project.
 
-## Where configuration lives: three places, three scopes
+## Where configuration lives: three places, one resolution order
 
-⚠️ **`Einfacht.env` is not "the config file"** -- it is the **hook carrier**.
-`reflect-hooks/einfacht-env.sh` sources it, so `pre-commit` / `pre-push` see its
-values. Running a gate directly (`python3 zreflect/facts.py --check`,
-`registry.py --run commit`, CI steps) **never reads it**. Put a knob only there
-and it silently does nothing outside hook context.
+Every invocation (CLI, git hooks, CI) resolves knobs in the same order:
+`os.environ > repo_config("knobs.json") > REGISTRY`.
 
 | Place | Takes effect in | Use for |
 |---|---|---|
-| `reflect-hooks/Einfacht.env` | hook context only (pre-commit / pre-push, via `einfacht-env.sh`) | knobs the hooks must honour, e.g. `REFLECT_LANG`, `REFLECT_DOC` |
-| process environment / CI `env:` | every direct invocation | knobs CI and manual runs must honour, e.g. `REFLECT_READMES`, `REFLECT_PHASES`, `REFLECT_MEASURE_MODULE` |
+| process environment / CI `env:` | one invocation | temporary overrides, e.g. `REFLECT_LANG=zh` |
+| `knobs.json` (optional, repo root) | every invocation (hooks, CLI, CI) | per-repo knob values, e.g. `REFLECT_DOCS`, `REFLECT_READMES`, `REFLECT_MEASURE_MODULE` |
 | `zreflect/knobs.py` `REGISTRY` | the default for everything | declarations: name, kind, default, meaning -- never a per-repo value |
 
 Policy data is a **fourth** thing and is neither: `ab.json`, `doctor.json`,

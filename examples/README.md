@@ -28,9 +28,8 @@ manifest level applies to every step; step-level `env` extends it. Inherited
 `REFLECT_*` variables are deliberately removed so an example does not depend on
 the caller's checkout.
 
-The generated `Einfacht.env` is loaded before each step, then manifest and step
-environment override it. This matches the hook carrier without requiring a
-particular shell. Phase aggregation prints ran/off/failed lists; successful
+Manifest and step environment override the repository's `knobs.json` defaults.
+Phase aggregation prints ran/off/failed lists; successful
 gates' stdout is not relayed, so examples assert the phase summary rather than
 expecting an individual gate's success line.
 

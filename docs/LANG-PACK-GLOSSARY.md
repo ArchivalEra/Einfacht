@@ -36,7 +36,7 @@
 | falsifiable | widerlegbar |
 | zero-value guard | Nullwert-Wächter |
 | knob (REFLECT_*) | Knopf (REFLECT_*) |
-| carrier (Einfacht.env) | Träger |
+| carrier | Träger |
 | registry / roster | Verzeichnis / Namensliste |
 | discovery-based | entdeckungsbasiert |
 | pin | Pin |

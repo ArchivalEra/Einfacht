@@ -47,14 +47,14 @@ python3 zreflect/facts.py --render-doc            # 渲染状态文档
 python3 reflect-hooks/install.py --chain          # 链进你已有的 git 钩子
 ```
 
-`--init` 会写一份 `Einfacht.env`，内容按它**实际生成**的文档裁剪：登记表默认值
-假设你有六份（状态、原则、路由、三份 README），而新仓只有少数几份，载体就是
-防止每道闸门都报「找不到 README.zh.md」的那一环。
+`--init` 会写出骨架文档（`STATE.md`、`PRINCIPLES.md`、`AGENTS.md`、`README.md`）、
+`retractions.json` 与 `questions/`。登记表默认值直接匹配这套单 README 骨架；
+需要自定义旋钮的仓库可在仓根放一份可选的 `knobs.json`（钩子、CLI 与 CI 读同一份）：
 
-**载体由钩子读取，裸跑 `python3 zreflect/...` 不读它。** 手工跑闸门时先 source：
-
-```bash
-set -a; . ./Einfacht.env; set +a
+```json
+{
+  "REFLECT_MEASURE_MODULE": "my_measure"
+}
 ```
 
 它自身不需要安装步骤：就是几个脚本加一份配置文件，`install.py --chain` 把它的

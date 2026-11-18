@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Two-tier hard SHA-256 seal for shared suite code and selftest yardsticks.
+"""Single-tier SHA-256 seal for shared suite files (`file_sha256` + `tree_sha256`).
 
-Tier 1 (`yardstick_sha256` + case counts): `_cases*`, `_fixture*`, `GATE`,
-`MODULE`, `RULES`, `CASES`, and `ruff.toml`. Tier 2 (`file_sha256` + Merkle root
-`tree_sha256`): full normalized file contents across shared suite surfaces.
-Consumer files (`measure_*.py`, `Einfacht.env`, custom-phase gates) stay outside.
+Locks shared core modules, built-in gates, language packs, hooks, and `ruff.toml`
+while leaving consumer `measure_*.py` and consumer-added `check_*.py` unsealed.
 """
 from __future__ import annotations
 
@@ -20,8 +18,6 @@ from gate import fatal, main_selftest_or, module_meta  # noqa: E402
 from i18n import M  # noqa: E402
 
 SEAL_NAME = "SEAL.json"
-DECL_NAMES = frozenset({"GATE", "MODULE", "RULES", "CASES"})
-OPTIONAL_ROOT_FILES = ("gates-selftest.sh",)
 
 
 def seal_path(zdir=None):
@@ -46,52 +42,6 @@ def _sha256_text(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _is_yardstick_stmt(stmt):
-    """Is `stmt` a Tier-1 declaration, case builder, or case-append statement?"""
-    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        return stmt.name.startswith(("_cases", "_fixture"))
-    if isinstance(stmt, ast.Assign):
-        return any(isinstance(t, ast.Name) and t.id in DECL_NAMES for t in stmt.targets)
-    if (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
-            and isinstance(stmt.value.func, ast.Attribute)
-            and isinstance(stmt.value.func.value, ast.Name)):
-        return stmt.value.func.value.id == "CASES"
-    return False
-
-
-def _case_counts_in_node(node):
-    """Count `(total_cases, red_cases)` static 2-tuple case literals inside `node`."""
-    total = red = 0
-    for sub in ast.walk(node):
-        if not (isinstance(sub, ast.Tuple) and len(sub.elts) == 2):
-            continue
-        first = sub.elts[0]
-        if isinstance(first, ast.Constant) and isinstance(first.value, str):
-            total += 1
-            if first.value.lstrip().startswith("\u2605"):
-                red += 1
-    return total, red
-
-
-def _py_yardstick(norm_text):
-    """Compute `(yardstick_sha256, cases, red_cases)` for one normalized `.py` file."""
-    tree = ast.parse(norm_text)
-    lines = norm_text.splitlines()
-    segments = []
-    total = red = 0
-    for stmt in tree.body:
-        if not _is_yardstick_stmt(stmt):
-            continue
-        end = stmt.end_lineno or stmt.lineno
-        segments.append("\n".join(lines[stmt.lineno - 1:end]))
-        t, r = _case_counts_in_node(stmt)
-        total += t
-        red += r
-    if not segments:
-        return None, 0, 0
-    return _sha256_text("\n---\n".join(segments)), total, red
-
-
 def _runs_at_from_call(call):
     """Extract string literal `runs_at` keyword from a `meta(...)` call, default `'commit'`."""
     for kw in call.keywords:
@@ -100,21 +50,22 @@ def _runs_at_from_call(call):
     return "commit"
 
 
-def _core_decl_ok(path, builtin):
-    """Should this `.py` file be sealed? Built-in gates and declared modules only."""
+def _decl_kind(path, builtin):
+    """Return `'module'`, `'builtin_gate'`, or `None` for `.py` file at `path`."""
     try:
         tree = ast.parse(_read_norm(path))
     except (OSError, SyntaxError, UnicodeError):
-        return False
+        return None
     for stmt in tree.body:
         if not isinstance(stmt, ast.Assign):
             continue
         names = {t.id for t in stmt.targets if isinstance(t, ast.Name)}
         if "MODULE" in names:
-            return True
-        if "GATE" in names and isinstance(stmt.value, ast.Call):
-            return _runs_at_from_call(stmt.value) in builtin
-    return False
+            return "module"
+        if ("GATE" in names and isinstance(stmt.value, ast.Call)
+                and _runs_at_from_call(stmt.value) in builtin):
+            return "builtin_gate"
+    return None
 
 
 def _builtin_phases():
@@ -127,18 +78,6 @@ def _allowed_shell():
     """Shell whitelist owned by criteria (lazy import avoids module cycle)."""
     import criteria  # noqa: PLC0415
     return set(criteria.ALLOWED_SHELL)
-
-
-def _sealed_zreflect(root, zdir, builtin):
-    """Collect sorted repo-relative paths of sealed files inside `zreflect/`."""
-    out = []
-    for name in sorted(os.listdir(zdir)):
-        if name.endswith(".py") and not name.startswith("measure_") and name != "__init__.py":
-            full = os.path.join(zdir, name)
-            if _core_decl_ok(full, builtin):
-                out.append(os.path.relpath(full, root).replace(os.sep, "/"))
-    _collect_lang_packs(root, zdir, out)
-    return out
 
 
 def _collect_lang_packs(root, zdir, out):
@@ -156,6 +95,19 @@ def _collect_lang_packs(root, zdir, out):
                 out.append(os.path.relpath(full, root).replace(os.sep, "/"))
 
 
+def _sealed_zreflect(root, zdir, builtin, include_gates=True):
+    """Collect sorted repo-relative paths of sealed files inside `zreflect/`."""
+    out = []
+    for name in sorted(os.listdir(zdir)):
+        if name.endswith(".py") and not name.startswith("measure_") and name != "__init__.py":
+            full = os.path.join(zdir, name)
+            kind = _decl_kind(full, builtin)
+            if kind == "module" or (include_gates and kind == "builtin_gate"):
+                out.append(os.path.relpath(full, root).replace(os.sep, "/"))
+    _collect_lang_packs(root, zdir, out)
+    return out
+
+
 def _sealed_hooks(root, allowed_sh):
     """Collect sorted repo-relative paths of sealed files under `reflect-hooks/`."""
     hooks = os.path.join(root, "reflect-hooks")
@@ -163,8 +115,6 @@ def _sealed_hooks(root, allowed_sh):
         return []
     out = []
     for name in sorted(os.listdir(hooks)):
-        if name == "Einfacht.env":
-            continue
         rel = "reflect-hooks/" + name
         full = os.path.join(hooks, name)
         if os.path.isfile(full) and (name.endswith(".py") or rel in allowed_sh):
@@ -172,48 +122,44 @@ def _sealed_hooks(root, allowed_sh):
     return out
 
 
-def _sealed_targets(root, zdir):
-    """All core files in `(root, zdir)` that belong under the SHA-256 seal."""
+def _sealed_targets(root, zdir, include_gates=True):
+    """Core files in `(root, zdir)` that belong under the SHA-256 seal."""
     builtin = _builtin_phases()
     allowed_sh = _allowed_shell()
-    targets = _sealed_zreflect(root, zdir, builtin) + _sealed_hooks(root, allowed_sh)
-    for rel in ("ruff.toml", "gates-selftest.sh"):
-        if os.path.isfile(os.path.join(root, rel)):
-            targets.append(rel)
+    targets = _sealed_zreflect(root, zdir, builtin, include_gates) + _sealed_hooks(root, allowed_sh)
+    if os.path.isfile(os.path.join(root, "ruff.toml")):
+        targets.append("ruff.toml")
     return sorted(set(targets))
 
 
 def _entry_for(root, rel):
-    """Build seal metadata dict `{file_sha256, [yardstick_sha256, cases, red_cases]}`."""
-    norm = _read_norm(os.path.join(root, rel))
-    entry = {"file_sha256": _sha256_text(norm)}
-    if rel.endswith(".py"):
-        ysha, cases, red = _py_yardstick(norm)
-        if ysha is not None:
-            entry["yardstick_sha256"] = ysha
-            entry["cases"] = cases
-            entry["red_cases"] = red
-    elif rel == "ruff.toml":
-        entry["yardstick_sha256"] = entry["file_sha256"]
-    return entry
+    """Build seal metadata dict `{'file_sha256': <hex>}`."""
+    return {"file_sha256": _sha256_text(_read_norm(os.path.join(root, rel)))}
 
 
 def _merkle_root(files_map):
-    """Deterministic Merkle root SHA-256 over sorted `(rel, file_sha256, yardstick_sha256)`."""
-    lines = ["%s:%s:%s" % (rel, e["file_sha256"], e.get("yardstick_sha256") or "")
-             for rel, e in sorted(files_map.items())]
+    """Deterministic Merkle root SHA-256 over sorted `rel:file_sha256`."""
+    lines = ["%s:%s" % (rel, e["file_sha256"]) for rel, e in sorted(files_map.items())]
     return _sha256_text("\n".join(lines))
 
 
+def _valid_entry(entry):
+    """Is `entry` a valid single-tier file hash dictionary?"""
+    return (isinstance(entry, dict)
+            and isinstance(entry.get("file_sha256"), str)
+            and len(entry["file_sha256"]) == 64)
+
+
 def _load_seal(path):
-    """Read and minimally validate `SEAL.json`. Returns `(data, err_msg)`."""
+    """Read and validate `SEAL.json`. Returns `(data, err_msg)`."""
     try:
         data = json.loads(open(path, encoding="utf-8").read())
     except (OSError, ValueError, UnicodeError) as exc:
         return None, M("seal.corrupt", error=exc)
     if (not isinstance(data, dict) or data.get("schema") != 1
             or not isinstance(data.get("files"), dict)
-            or not isinstance(data.get("tree_sha256"), str)):
+            or not isinstance(data.get("tree_sha256"), str)
+            or not all(_valid_entry(v) for v in data["files"].values())):
         return None, M("seal.corrupt", error="schema")
     return data, None
 
@@ -229,24 +175,14 @@ def current_tree_sha(root=None, zdir=None, verified=False):
     return data["tree_sha256"]
 
 
-def _compare_entry(rel, expected, actual, out):
-    """Compare one disk file's computed entry against sealed `expected` entry."""
-    if expected.get("yardstick_sha256") != actual.get("yardstick_sha256"):
-        out.append(M("seal.yardstick_tampered", file=rel))
-    elif expected.get("file_sha256") != actual.get("file_sha256"):
-        out.append(M("seal.file_tampered", file=rel))
-
-
 def _skip_optional(root, rel):
-    """Optional files absent in minimal bootstrap copies (`gates-selftest.sh`, hooks if absent)."""
-    if rel in OPTIONAL_ROOT_FILES:
-        return True
+    """Allow hooks to be absent in minimal unit-test fixtures that omit `reflect-hooks/`."""
     return rel.startswith("reflect-hooks/") and not os.path.isdir(
         os.path.join(root, "reflect-hooks"))
 
 
 def _verify_entry(root, rel, expected, out):
-    """Verify one sealed file path on disk against its `expected` metadata."""
+    """Verify one sealed file path on disk against its `expected` SHA-256."""
     full = os.path.join(root, rel)
     if not os.path.isfile(full):
         if not _skip_optional(root, rel):
@@ -254,10 +190,11 @@ def _verify_entry(root, rel, expected, out):
         return
     try:
         actual = _entry_for(root, rel)
-    except (OSError, SyntaxError, UnicodeError):
+    except (OSError, UnicodeError):
         out.append(M("seal.file_tampered", file=rel))
         return
-    _compare_entry(rel, expected, actual, out)
+    if expected.get("file_sha256") != actual.get("file_sha256"):
+        out.append(M("seal.file_tampered", file=rel))
 
 
 def verify_problems(root=None, zdir=None):
@@ -276,24 +213,10 @@ def verify_problems(root=None, zdir=None):
         out.append(M("seal.tree_mismatch"))
     for rel, expected in sorted(sealed_files.items()):
         _verify_entry(rt, rel, expected, out)
-    for rel in _sealed_targets(rt, zd):
+    for rel in _sealed_targets(rt, zd, include_gates=False):
         if rel not in sealed_files:
             out.append(M("seal.unsealed_core_file", file=rel))
     return out
-
-
-def _reseal_guard(rel, old, new, yardstick, allow_drop):
-    """Enforce Tier-1 / Tier-2 reseal separation and case-count monotonicity."""
-    if not yardstick and old is not None and (
-            old.get("yardstick_sha256") != new.get("yardstick_sha256")):
-        return M("seal.reseal_refused_yardstick", file=rel)
-    if yardstick and old is not None and not allow_drop:
-        oc, nc = old.get("cases", 0), new.get("cases", 0)
-        ored, nred = old.get("red_cases", 0), new.get("red_cases", 0)
-        if nc < oc or nred < ored:
-            return M("seal.reseal_refused_case_drop", file=rel,
-                     old_cases=oc, new_cases=nc, old_red=ored, new_red=nred)
-    return None
 
 
 def _norm_target_names(targets, disk_targets):
@@ -311,33 +234,23 @@ def _norm_target_names(targets, disk_targets):
     return resolved, unknown
 
 
-def reseal(targets, yardstick=False, allow_case_drop=False, root=None, zdir=None):
+def reseal(targets, root=None, zdir=None):
     """Update `SEAL.json` for nominated files. Returns `(tree_sha256, error_msg)`."""
     zd = zdir or gate.zdir()
     rt = root or gate.tool_repo()
-    disk_targets = _sealed_targets(rt, zd)
+    disk_targets = _sealed_targets(rt, zd, include_gates=True)
     resolved, unknown = _norm_target_names(list(targets), disk_targets)
     if unknown:
         return None, M("seal.reseal_unknown_target", file=", ".join(unknown))
     sp = seal_path(zd)
-    existing = {}
-    if os.path.isfile(sp):
+    files_map = {}
+    if os.path.isfile(sp) and list(targets) != ["ALL"]:
         data, err = _load_seal(sp)
         if err:
             return None, err
-        existing = dict(data["files"])
-    return _apply_reseal(rt, sp, existing, resolved, yardstick, allow_case_drop)
-
-
-def _apply_reseal(root, sp, files_map, resolved, yardstick, allow_drop):
-    """Validate and write updated entries for `resolved` into `sp`."""
+        files_map = dict(data["files"])
     for rel in resolved:
-        old = files_map.get(rel)
-        new = _entry_for(root, rel)
-        err = _reseal_guard(rel, old, new, yardstick, allow_drop)
-        if err:
-            return None, err
-        files_map[rel] = new
+        files_map[rel] = _entry_for(rt, rel)
     tree = _merkle_root(files_map)
     payload = {"schema": 1, "tree_sha256": tree, "files": files_map}
     with open(sp, "w", encoding="utf-8") as fh:
@@ -362,10 +275,7 @@ def _base_fixture_files():
     """Minimal valid core module + language pack for temp-repo seal selftests."""
     sample_py = (
         "def run():\n    return 0\n"
-        "def _cases():\n    return [\n"
-        "        ('ok', lambda: True),\n"
-        "        ('\u2605 red', lambda: 1 > 2),\n"
-        "    ]\n"
+        "def _cases():\n    return [('ok', lambda: 1 == 1), ('\u2605 red', lambda: 1 > 2)]\n"
         "MODULE = {'name': 'm', 'desc': 'd', 'selftest': True}\n"
     )
     return {"zreflect/mod_a.py": sample_py,
@@ -373,85 +283,71 @@ def _base_fixture_files():
 
 
 def _case_tamper_and_exempt():
-    """Clean verify + 1-byte code/yardstick/merkle tamper + consumer exemption."""
+    """Clean verify + 1-byte tamper + consumer measure/custom-gate exemption."""
     import tempfile  # noqa: PLC0415
     with tempfile.TemporaryDirectory() as tmp:
         rt, zd = _make_seal_fixture(tmp, _base_fixture_files())
-        sha, err = reseal(["ALL"], yardstick=True, root=rt, zdir=zd)
+        sha, err = reseal(["ALL"], root=rt, zdir=zd)
         if err or not sha or not seal_exists(zd) or current_tree_sha(rt, zd) != sha:
             return False
         if verify_problems(rt, zd) != []:
             return False
-        # Consumer additions must never trip seal
         with open(os.path.join(zd, "measure_custom.py"), "w", encoding="utf-8") as fh:
             fh.write("def measure():\n    return {}\n")
         with open(os.path.join(zd, "check_custom.py"), "w", encoding="utf-8") as fh:
-            fh.write("GATE = meta('x', 'y', runs_at='lab')\n")
+            fh.write("GATE = meta('x', 'y', runs_at='commit')\n")
         if verify_problems(rt, zd) != []:
             return False
-        # 1-byte code tamper -> seal.file_tampered
         p = os.path.join(zd, "mod_a.py")
         orig = open(p, encoding="utf-8").read()
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(orig.replace("return 0", "return 1"))
-        if [x.code for x in verify_problems(rt, zd)] != ["seal.file_tampered"]:
-            return False
-        # 1-byte yardstick tamper -> seal.yardstick_tampered
-        with open(p, "w", encoding="utf-8") as fh:
-            fh.write(orig.replace("1 > 2", "2 > 1"))
-        return [x.code for x in verify_problems(rt, zd)] == ["seal.yardstick_tampered"]
+        return [x.code for x in verify_problems(rt, zd)] == ["seal.file_tampered"]
 
 
-def _case_reseal_guards():
-    """Reseal refuses yardstick drift and case drops; allows with explicit flags."""
+def _case_reseal_and_unsealed():
+    """Reseal updates hash; unsealed platform module is caught."""
     import tempfile  # noqa: PLC0415
     with tempfile.TemporaryDirectory() as tmp:
         rt, zd = _make_seal_fixture(tmp, _base_fixture_files())
-        reseal(["ALL"], yardstick=True, root=rt, zdir=zd)
+        reseal(["ALL"], root=rt, zdir=zd)
         p = os.path.join(zd, "mod_a.py")
         orig = open(p, encoding="utf-8").read()
-        # Implementation edit succeeds under --reseal
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(orig.replace("return 0", "return 1"))
-        sha2, err2 = reseal(["zreflect/mod_a.py"], yardstick=False, root=rt, zdir=zd)
-        if err2 or not sha2 or verify_problems(rt, zd):
+        sha2, err2 = reseal(["zreflect/mod_a.py"], root=rt, zdir=zd)
+        if err2 or not sha2 or verify_problems(rt, zd) != []:
             return False
-        # Yardstick edit refused under --reseal
-        with open(p, "w", encoding="utf-8") as fh:
-            fh.write(orig.replace("        ('\u2605 red', lambda: 1 > 2),\n", ""))
-        _s3, err3 = reseal(["zreflect/mod_a.py"], yardstick=False, root=rt, zdir=zd)
-        if not err3 or err3.code != "seal.reseal_refused_yardstick":
-            return False
-        # Case drop refused without allow_case_drop
-        _s4, err4 = reseal(["zreflect/mod_a.py"], yardstick=True, root=rt, zdir=zd)
-        if not err4 or err4.code != "seal.reseal_refused_case_drop":
-            return False
-        # Succeeds when allow_case_drop=True
-        sha5, err5 = reseal(["zreflect/mod_a.py"], yardstick=True, allow_case_drop=True,
-                            root=rt, zdir=zd)
-        return err5 is None and bool(sha5) and verify_problems(rt, zd) == []
+        with open(os.path.join(zd, "mod_b.py"), "w", encoding="utf-8") as fh:
+            fh.write("MODULE = {'name': 'b', 'desc': 'd', 'selftest': False}\n")
+        return [x.code for x in verify_problems(rt, zd)] == ["seal.unsealed_core_file"]
 
 
 def _case_merkle_and_missing():
-    """Missing SEAL.json and tampered tree_sha256 are both reported."""
+    """Missing SEAL.json, corrupt entry schema, and tampered tree_sha256 report."""
     import tempfile  # noqa: PLC0415
     with tempfile.TemporaryDirectory() as tmp:
         rt, zd = _make_seal_fixture(tmp, _base_fixture_files())
         if [x.code for x in verify_problems(rt, zd)] != ["seal.missing"]:
             return False
-        reseal(["ALL"], yardstick=True, root=rt, zdir=zd)
+        reseal(["ALL"], root=rt, zdir=zd)
         sp = seal_path(zd)
         data = json.loads(open(sp, encoding="utf-8").read())
         data["tree_sha256"] = "0" * 64
         with open(sp, "w", encoding="utf-8") as fh:
             fh.write(json.dumps(data))
-        return "seal.tree_mismatch" in [x.code for x in verify_problems(rt, zd)]
+        if "seal.tree_mismatch" not in [x.code for x in verify_problems(rt, zd)]:
+            return False
+        data["files"]["zreflect/mod_a.py"] = {"file_sha256": "short"}
+        with open(sp, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(data))
+        return [x.code for x in verify_problems(rt, zd)] == ["seal.corrupt"]
 
 
 def _cases():
     return [
         ("★ seal.tamper_and_consumer_exempt", lambda: _case_tamper_and_exempt()),
-        ("★ seal.reseal_guards", lambda: _case_reseal_guards()),
+        ("★ seal.reseal_and_unsealed_module", lambda: _case_reseal_and_unsealed()),
         ("★ seal.merkle_and_missing", lambda: _case_merkle_and_missing()),
     ]
 
@@ -470,7 +366,7 @@ def _cli(argv):
 
 MODULE = module_meta(
     "Core seal",
-    "two-tier SHA-256 verification and monotonic reseal for the shared core",
+    "single-tier SHA-256 verification and reseal for the shared core",
     selftest=True)
 
 if __name__ == "__main__":

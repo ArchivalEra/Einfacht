@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Settling:** python3 -c "import json,os,sys; gone=('reflect-hooks/Einfacht.env','reflect-hooks/Einfacht.env.example','reflect-hooks/einfacht-env.sh','zreflect/check_envfile.py','zreflect/guard.py','zreflect/render.py','reflect-hooks/pre-commit','reflect-hooks/pre-push','reflect-hooks/gate.py','gates-selftest.sh'); facts=json.load(open('FACTS.json',encoding='utf-8')).get('facts',{}); sys.exit(0 if (not any(os.path.exists(p) for p in gone) and os.path.isfile('reflect-hooks/hook.py') and not any(k.startswith('principle.') for k in facts)) else 1)" && python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/harness.py —— rc=0 ⇒ 壳层载体、冗余台账模块、旧钩子垫片与 `gates-selftest.sh` 已移除，`hook.py` 与单层封条就位且全量闸门与自证通过；rc≠0 ⇒ 仍有待删文件/`principle.*` 残留或闸门未绿
 

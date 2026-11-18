@@ -43,7 +43,6 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import knobs  # noqa: E402
 from gate import (  # noqa: E402
     finish,
     machine,  # noqa: E402
@@ -180,7 +179,7 @@ def run(argv):
                   M("readme.ok_structure", count=len(langs)))
 
 
-LANGS = tuple(knobs.REGISTRY["REFLECT_READMES"][1].split(","))
+LANGS = ("README.md", "README.zh.md", "README.de.md")
 
 
 def _trio():
@@ -257,18 +256,22 @@ def _cases_push():
 
 def _cases_knob():
     """(3) Unset vs explicitly empty: two different intents, never collapsed."""
+    import gate as _gate  # noqa: PLC0415
     import knobs  # noqa: PLC0415
 
     def names(value):
         """`readme_names()` under one environment: `value=None` = unset."""
         saved = os.environ.get("REFLECT_READMES")
+        saved_repo = _gate.GATE_REPO
         try:
+            _gate.GATE_REPO = "/nonexistent-repo"
             if value is None:
                 os.environ.pop("REFLECT_READMES", None)
             else:
                 os.environ["REFLECT_READMES"] = value
             return knobs.readme_names()
         finally:
+            _gate.GATE_REPO = saved_repo
             if saved is None:
                 os.environ.pop("REFLECT_READMES", None)
             else:

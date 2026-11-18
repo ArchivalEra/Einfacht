@@ -9,5 +9,6 @@
  "hookgate.ref_has_nothing": "%(ref)s carries no new content ⇒ the README criterion has nothing to check for it (said out loud)",
  "hookgate.repo_missing": "repo root '%(repo)s' does not exist (the second argument must be an absolute path)",
  "hookgate.unknown_phase": "unknown phase '%(phase)s' (only commit / push)",
- "hookgate.usage": "usage: python3 reflect-hooks/gate.py <commit|push> <repo root>"
+ "hookgate.unstaged_facts": "`%(path)s` has unstaged changes — stage or discard them before committing so `--render-doc` does not render an unstaged ledger into the staged document",
+ "hookgate.usage": "usage: python3 reflect-hooks/hook.py <commit|push> <repo root>"
 }

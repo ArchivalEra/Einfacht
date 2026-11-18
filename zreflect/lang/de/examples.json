@@ -1,6 +1,5 @@
 {
  "examples.argv_bad": "Schritt %(step)d argv muss ein nichtleeres String-Array sein",
- "examples.carrier_unreadable": "erzeugte Einfacht.env nicht lesbar (%(path)s): %(error)s — Schritte liefen ohne Knöpfe",
  "examples.coverage_failed": "Beispielabdeckung fehlgeschlagen",
  "examples.coverage_missing": "Tor %(example)s hat kein gleichnamiges Beispiel",
  "examples.coverage_ok": "Beispielabdeckung ok (%(count)d Beispiele)",

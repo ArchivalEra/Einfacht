@@ -130,7 +130,7 @@ def _suite_sources():
         if not os.path.isdir(base):
             continue
         for name in sorted(os.listdir(base)):
-            if name.endswith(".py"):
+            if name.endswith(".py") and not name.startswith("measure_"):
                 rel = sub + "/" + name
                 out.append((rel, open(os.path.join(base, name), encoding="utf-8").read()))
     return out
@@ -168,13 +168,15 @@ def _mode_resolution_case():
 
 
 def _suite_scope_case():
-    """`_suite_sources` covers both `zreflect/` and `reflect-hooks/`."""
+    """`_suite_sources` covers `zreflect/` and `reflect-hooks/`, skipping `measure_*`."""
     import tempfile  # noqa: PLC0415
     with tempfile.TemporaryDirectory() as root:
         for half in ("zreflect", "reflect-hooks"):
             os.makedirs(os.path.join(root, half))
             with open(os.path.join(root, half, "x.py"), "w", encoding="utf-8") as fh:
                 fh.write("def f():\n    return 1\n")
+        with open(os.path.join(root, "zreflect", "measure_custom.py"), "w", encoding="utf-8") as fh:
+            fh.write("def measure():\n    return {}\n")
         saved_tool = gate.tool_repo
         try:
             gate.tool_repo = lambda: root

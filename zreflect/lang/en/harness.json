@@ -13,7 +13,7 @@
  "harness.no_gates_in_fixture": "  ✗ no gate ran in the fixture",
  "harness.no_machine_summary": "  ✗ %(file)s selftest lacks the machine summary line (=== N PASS / M FAIL ===)",
  "harness.no_modules_found": "  ✗ no platform-module selftest discovered — zero-value guard",
- "harness.no_plugins": "  ✗ plugin roster is empty — zero-value guard: einfacht-env.sh / doctor must be listed",
+ "harness.no_plugins": "  ✗ plugin roster is empty — zero-value guard: install.py / doctor must be listed",
  "harness.no_probes": "  ✗ zero-language probe list is empty — zero-value guard",
  "harness.no_selftest_entry": "  ✗ %(file)s has no --selftest (an unregistered gate is an unwatched gate)",
  "harness.not_red_under_defaults": "  ✗ %(gate)s did NOT go red under default names ⇒ the rename test proves nothing about it",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gate entry point: **meant to be called by other hook systems**; it never
+"""Hook entry point: **meant to be called by other hook systems**; it never
 takes over hook slots.
 
 `git config core.hooksPath` is git's **global override switch** -- once it is
@@ -12,8 +12,8 @@ from its own hook. Hook locations, ordering, other tools -- all yours; we
 provide the criteria and never take the seat.
 
     Usage (from any hook script):
-        python3 <repo>/reflect-hooks/gate.py commit "$(git rev-parse --show-toplevel)"
-        python3 <repo>/reflect-hooks/gate.py push   "$(git rev-parse --show-toplevel)"
+        python3 <repo>/reflect-hooks/hook.py commit "$(git rev-parse --show-toplevel)"
+        python3 <repo>/reflect-hooks/hook.py push   "$(git rev-parse --show-toplevel)"
 
     commit  re-render the machine block (and `git add`) + run every gate with
             runs_at="commit"
@@ -26,10 +26,6 @@ provide the criteria and never take the seat.
 Python keeps the entry inside `check_i18n`'s AST-scanned surface (shell output
 is invisible to it), avoids depending on `sh` on Windows, and makes pre-push's
 text-parsing ref protocol explicit.
-
-The `pre-commit` / `pre-push` files in this directory remain as thin shells
-around this entry, so the `core.hooksPath reflect-hooks` install style keeps
-working.
 """
 from __future__ import annotations
 
@@ -56,56 +52,13 @@ def _sh(cmd, stdin=None, env=None):
                            env=env,
                            encoding="utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError) as e:
-        return 127, "gate: %r" % (e,)
+        return 127, "hook: %r" % (e,)
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
 def _usage():
     print(str(M("hookgate.usage")), file=sys.stderr)
     return 0
-
-
-def _plugin_exports(plugin, env):
-    """Run the carrier plugin and return its `REFLECT_*` exports.
-
-    ⚠️ `env -0` is a **GNU** extension, so its failure is a property of the host,
-    not of the suite. A failed probe must not silently drop the carrier: the two
-    parsers below are the same retrieval with different separators, and dropping
-    either one means `REFLECT_LANG` / `REFLECT_DOCS` fall back to defaults and a
-    renamed repo goes red inside the hooks with nothing said.
-
-    NUL-separated is exact (values may contain newlines); one `NAME=VALUE` per
-    line is what every `env` prints.
-    """
-    rc, out = _sh(["sh", "-c",
-                   '. "$1" >/dev/null 2>&1; env -0', "sh", plugin], env=env)
-    if rc == 0:
-        chunks = out.split("\0")
-    else:
-        rc, out = _sh(["sh", "-c",
-                       '. "$1" >/dev/null 2>&1; env', "sh", plugin], env=env)
-        if rc != 0:
-            return {}
-        chunks = out.splitlines()
-    exports = {}
-    for chunk in chunks:
-        if "=" not in chunk:
-            continue
-        k, v = chunk.split("=", 1)
-        if k.startswith("REFLECT_"):
-            exports[k] = v
-    return exports
-
-
-def _load_env_plugin(tool_dir):
-    """Load `REFLECT_*` exports from `einfacht-env.sh` inside `tool_dir`."""
-    plugin = os.path.join(tool_dir, "einfacht-env.sh")
-    if not os.path.isfile(plugin):
-        return
-    env = dict(os.environ)
-    env["EINFACHT_PLUGIN_DIR"] = tool_dir
-    exports = _plugin_exports(plugin, env)
-    os.environ.update(exports)
 
 
 def _refs_from_stdin():
@@ -158,8 +111,9 @@ def _push_readmes_together(repo, refs):
             lines.append(str(M("hookgate.ref_has_nothing", ref=lref)))
             checked += 1
             continue
+        rev_args = [r for r in revs.splitlines() if r.strip()]
         rc, log = _sh(["git", "-C", repo, "log", "--name-only",
-                       "--pretty=format:", revs])
+                       "--pretty=format:", *rev_args])
         changed = [ln for ln in (log or "").splitlines() if ln.strip()]
         fd, path = tempfile.mkstemp()
         try:
@@ -180,27 +134,54 @@ def _push_readmes_together(repo, refs):
     return True, lines
 
 
+def _has_unstaged_facts(repo):
+    """Does `FACTS.json` have unstaged changes in `repo`?"""
+    facts_rel = knobs.get("REFLECT_FACTS", root=repo)
+    if not os.path.isfile(os.path.join(repo, facts_rel)):
+        return False, facts_rel
+    rc, diff_out = _sh(["git", "-C", repo, "diff", "--name-only", "--", facts_rel])
+    return (rc != 0 or bool(diff_out.strip())), facts_rel
+
+
+def _stage_rendered_docs(repo, doc):
+    """`git add` rendered machine-block documents; returns `True` on error."""
+    for name in (doc, "PRINCIPLES.md"):
+        if os.path.isfile(os.path.join(repo, name)):
+            rc, out = _sh(["git", "-C", repo, "add", "--", name])
+            if rc != 0:
+                if out:
+                    print(out, file=sys.stderr)
+                return True
+    return False
+
+
 def _prepare(phase, repo, doc):
     """(1) The phase's setup step. Returns `(whether to reject)`.
 
     The two phases do **opposite** things, hence one named branch each:
 
       - commit -- re-render the machine block and `git add` (**render only,
-        do not re-measure**; re-measuring is a human's job)
+        do not re-measure**; re-measuring is a human's job). Refuses when
+        `FACTS.json` has unstaged edits so an unstaged ledger cannot be
+        rendered into the staged `STATE.md`.
       - push   -- **touches no files, rewrites no history**: a stale block is
         an outright rejection
     """
     facts = os.path.join(repo, "zreflect", "facts.py")
     if phase == "commit":
+        unstaged, facts_rel = _has_unstaged_facts(repo)
+        if unstaged:
+            print(str(M("hookgate.unstaged_facts", path=facts_rel)),
+                  file=sys.stderr)
+            return True
         if os.path.isfile(os.path.join(repo, doc)):
             rc, out = _sh([sys.executable, facts, "--render-doc"])
             if rc != 0:
                 if out:
                     print(out, file=sys.stderr)
                 return True
-            for name in (doc, "PRINCIPLES.md"):
-                if os.path.isfile(os.path.join(repo, name)):
-                    _sh(["git", "-C", repo, "add", name])
+            if _stage_rendered_docs(repo, doc):
+                return True
         return False
     rc, out = _sh([sys.executable, facts, "--check"])
     if rc == 0:
@@ -220,8 +201,8 @@ def run(phase, repo, stdin_rows=None):
         print(str(M("hookgate.repo_missing", repo=repo)), file=sys.stderr)
         return 2
 
-    _load_env_plugin(HERE)
-    doc = knobs.get("REFLECT_DOC")
+    os.environ["GATE_REPO"] = repo
+    doc = knobs.get("REFLECT_DOC", root=repo)
 
     if _prepare(phase, repo, doc):
         return 1
@@ -244,33 +225,24 @@ def run(phase, repo, stdin_rows=None):
 
 # -- Self-verification -------------------------------------------------------
 
-def _plugin_export_case():
-    """Both parsers must yield the same `REFLECT_*` set.
-
-    Drives `_plugin_exports` with a fake `_sh` that refuses `env -0` (what BSD
-    `env` on macOS does), so the fallback path is exercised rather than assumed.
-    """
-    import tempfile  # noqa: PLC0415
-    saved = _sh
+def _unstaged_facts_case(mk_repo, shutil):
+    """Unstaged edits in `FACTS.json` must be detected by `_has_unstaged_facts`."""
+    d = mk_repo(True)
     try:
-        with tempfile.TemporaryDirectory() as d:
-            plugin = os.path.join(d, "env.sh")
-            with open(plugin, "w", encoding="utf-8") as fh:
-                fh.write("export REFLECT_LANG=zz\nexport REFLECT_DOC=STATE.md\n")
-            env = dict(os.environ)
-            env["EINFACHT_PLUGIN_DIR"] = d
-            nul = _plugin_exports(plugin, env)
-
-            def refuse_nul(cmd, stdin=None, env=None):
-                if any("env -0" in str(c) for c in cmd):
-                    return 1, ""
-                return saved(cmd, stdin, env)
-
-            globals()["_sh"] = refuse_nul
-            lines = _plugin_exports(plugin, env)
+        _sh(["git", "-C", d, "config", "user.email", "a@b"])
+        _sh(["git", "-C", d, "config", "user.name", "a"])
+        fp = os.path.join(d, "FACTS.json")
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write("{}\n")
+        _sh(["git", "-C", d, "add", "FACTS.json"])
+        _sh(["git", "-C", d, "commit", "-q", "-m", "init"])
+        clean, _rel = _has_unstaged_facts(d)
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write('{"facts": {}}\n')
+        dirty, _rel2 = _has_unstaged_facts(d)
+        return (not clean) and dirty
     finally:
-        globals()["_sh"] = saved
-    return nul == lines and nul.get("REFLECT_LANG") == "zz"
+        shutil.rmtree(d, True)
 
 
 def _cases():
@@ -289,8 +261,8 @@ def _cases():
 
     return [
         ("hookgate.no_args_prints_usage", lambda: case([]) == 0),
-        ("\u2605 hookgate.plugin_exports_nul_and_lines",
-         lambda: _plugin_export_case()),
+        ("★ hookgate.unstaged_facts_rejected",
+         lambda: _unstaged_facts_case(mk_repo, shutil)),
         ("★ hookgate.unknown_phase_is_2", lambda: case(["bogus", "/tmp"]) == 2),
         ("★ hookgate.missing_repo_is_2",
          lambda: case(["commit", "/nonexistent-xyz"]) == 2),

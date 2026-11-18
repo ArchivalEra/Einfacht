@@ -9,8 +9,5 @@
  "guard.empty_ledger": "一条事实都没量到。空台账不是通过（零值守卫）。",
  "guard.write_target_gitignored": "台账目标 %(path)s 被 .gitignore 覆盖 —— 写进去等于没写（版本控制看不见，钩子读的是另一份）；撤销该 ignore 规则，或显式设 REFLECT_FACTS 指向被跟踪的位置",
  "guard.write_target_no_git": "（非 git 仓库或 git 不可用：跳过 gitignore 检查）",
- "guard.write_target_env_carrier": "仓里有 Einfacht.env 但本次进程未加载它（REFLECT_FACTS 用了代码默认值）—— 手工跑请先 source，否则写盘目标可能与钩子语境不同（issue #20 ②）",
- "guard.write_target_env_carrier_after": "%(prefix)s；仓里有 Einfacht.env 但本次进程未加载它（REFLECT_FACTS 用了代码默认值）—— 手工跑请先 source，否则写盘目标可能与钩子语境不同（issue #20 ②）",
- "guard.module_banner": "guard 是模块（被 facts.measure 调用）；不单独跑。--selftest 看自证。",
  "guard.note_accept_changes": "破坏性改口已按 --accept-changes 接受 %(count)d 条（值已更新）："
 }

@@ -27,16 +27,12 @@ python3 zreflect/facts.py --render-doc    # machine block into the state doc
 python3 reflect-hooks/install.py --chain  # chain into existing git hooks (never hooksPath)
 ```
 
-Then **source the env carrier** before any hand-run (hooks source it themselves):
-
-```bash
-set -a; . ./Einfacht.env; set +a   # or reflect-hooks/Einfacht.env if that one exists
-```
-
 `--init` creates STATE.md / PRINCIPLES.md / AGENTS.md / README.md /
-retractions.json / questions/ (one sample) / Einfacht.env trimmed to the docs
-it actually made. If anything exists it is left alone — read the
-`already exists, left alone` lines.
+retractions.json / questions/ (one sample). Defaults in `knobs.py` match the
+skeleton docs directly (`STATE.md,PRINCIPLES.md,AGENTS.md,README.md` and
+`README.md`), so no extra carrier file is needed for a fresh single-README repo.
+If anything exists it is left alone — read the `already exists, left alone`
+lines.
 
 ## Daily commands
 
@@ -62,10 +58,12 @@ it actually made. If anything exists it is left alone — read the
 
 ## Make it measure your project
 
-By default the suite measures itself. Point it at your code:
+By default the suite measures itself. Point it at your code in `knobs.json`:
 
-```bash
-echo "export REFLECT_MEASURE_MODULE=my_measure" >> Einfacht.env
+```json
+{
+  "REFLECT_MEASURE_MODULE": "my_measure"
+}
 ```
 
 `my_measure.measure()` returns `{"key": {"value": <int>, "cmd": "<command>"}}`.
@@ -74,9 +72,9 @@ print the value alone, never a human sentence. Expensive facts may set
 a cheap `witness` + `witness_expect` (there is no `replay: false` opt-out: a fact
 that cannot be re-run here belongs in HISTORY, not in the ledger).
 
-All knobs live in `zreflect/knobs.py` and are configured by name in
-`Einfacht.env` (`REFLECT_DOCS`, `REFLECT_READMES`, `REFLECT_QUESTIONS`,
-`REFLECT_MEASURE_MODULE`, `REFLECT_LANG`, …) — never in code.
+All knobs live in `zreflect/knobs.py` and are configured by name in optional
+root `knobs.json` or process environment (`REFLECT_DOCS`, `REFLECT_READMES`,
+`REFLECT_QUESTIONS`, `REFLECT_MEASURE_MODULE`, `REFLECT_LANG`, …) — never in code.
 
 ## When a gate goes red on purpose
 

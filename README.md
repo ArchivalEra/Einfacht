@@ -51,16 +51,15 @@ python3 zreflect/facts.py --render-doc            # render the state document
 python3 reflect-hooks/install.py --chain          # chain into your git hooks
 ```
 
-`--init` writes an `Einfacht.env` trimmed to the documents it actually made: the
-registry defaults assume six (state, principles, routing, three READMEs), and a
-new repo has fewer, so the carrier is what stops every gate from reporting
-"README.zh.md is missing".
+`--init` writes the skeleton documents (`STATE.md`, `PRINCIPLES.md`, `AGENTS.md`,
+`README.md`), `retractions.json`, and `questions/`. Registry defaults match that
+single-README skeleton out of the box; repos that customize knobs can place an
+optional `knobs.json` in the repo root (read identically by hooks, CLI, and CI):
 
-**The carrier is read by the hooks, not by a bare `python3 zreflect/...`.** When
-you run a gate by hand, source it first:
-
-```bash
-set -a; . ./Einfacht.env; set +a
+```json
+{
+  "REFLECT_MEASURE_MODULE": "my_measure"
+}
 ```
 
 The suite needs no install step of its own: it is scripts plus a config file, and

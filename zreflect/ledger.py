@@ -1,50 +1,42 @@
 #!/usr/bin/env python3
-"""Data layer of the facts ledger: read/write + two guards. **Pure functions, and therefore self-provable.**
+"""Facts ledger data layer, write guards, and machine-block rendering.
 
-Re-measurement has two silent rot modes, each paired with one guard:
-
-  · **dropped entry** -- the input is gone => the fact silently **disappears**.
-    Guard: `dropped_keys()`.
-  · **changed value** -- the input changed, or was measured wrong => the fact
-    silently **becomes a different number**. Guard: `changed_keys()`.
-
-The changed-value mode is nastier: if a gate only spot-checks a few shas,
-then once the old values of the other entries get overwritten there is
-**no way left to find out they ever changed**. So the guard's scope must be
-narrow and precise.
+Combines pure ledger storage (`load`, `fact`, `changed_keys`, `dropped_keys`),
+write-guard decisions (`decide`, `accepted_keys`, `write_target_problems`), and
+`AUTO:FACTS` block rendering (`render_block`, `body_of`, `prose_of`).
 """
+from __future__ import annotations
+
 import json
+import os
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 
-from gate import (
-    fatal_exit,  # noqa: E402
-    machine,
-    module_meta,
-)
-from i18n import M
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gate  # noqa: E402
+from gate import fatal_exit, machine, module_meta  # noqa: E402
+from i18n import M  # noqa: E402
+
+BLOCK_BEGIN = "<!-- AUTO:FACTS -->"
+BLOCK_END = "<!-- /AUTO:FACTS -->"
+
+# PINNED: AUTO machine block fixed language (does not follow REFLECT_LANG).
+PREAMBLE = [
+    ("> This block is rendered by `zreflect/facts.py --render-doc` from"
+     " `FACTS.json`; **do not edit by hand**"
+     " (pre-commit recomputes and `git add`s it)."),
+    ("> 'Measured numbers' in the prose are produced only here: to cite one, write"
+     " `[[key]]`; never copy the number by hand."),
+]
 
 
 class Unreadable(RuntimeError):
-    """The ledger file exists but can't be read (bad JSON / permissions / encoding).
-
-    **This is a different thing from "no ledger"**: the latter is the normal
-    shape of a fresh repo -- the caller checks `os.path.exists` itself (the
-    guards in `facts.py` must handle "there is no previous version") -- the
-    former is a configuration accident -- it must reach FATAL rc=2 and
-    must never surface as a bare traceback (that would escape this repo's rc
-    contract, and a traceback with rc=0 is even worse: the caller believes
-    it succeeded).
-    """
+    """The ledger file exists but can't be read (bad JSON / permissions / encoding)."""
 
 
 def load(path):
-    """Read JSON from `path`. A missing file is a hard error: the caller must check
-    existence first.
-
-    Bad JSON, permissions, or encoding errors always raise `Unreadable`, which
-    the caller converts into FATAL rc=2 -- never a bare `JSONDecodeError`.
-    """
+    """Read JSON from `path`; bad JSON / permissions / encoding raise `Unreadable`."""
     try:
         with open(path, encoding="utf-8") as fh:
             return json.load(fh)
@@ -53,17 +45,7 @@ def load(path):
 
 
 def load_or_fatal(path):
-    """Read the ledger; **broken file → FATAL rc=2** (`SystemExit(2)`).
-
-    Gates use this instead of a bare `load()`: a broken ledger is a
-    **configuration accident** and must take the FATAL tier, not surface as a
-    traceback (Python would exit 1, and rc=1 in `registry --run` means
-    "criterion red" -- a completely different fix: fix the configuration vs
-    fix the problem).
-    """
-    import sys  # noqa: PLC0415
-
-    from i18n import M  # noqa: PLC0415
+    """Read the ledger; broken file -> FATAL rc=2 (`SystemExit(2)`)."""
     try:
         return load(path)
     except Unreadable as e:
@@ -75,28 +57,23 @@ def load_or_fatal(path):
 
 
 def facts_of(ledger):
-    """The facts table inside a ledger (tolerates two shapes: wrapped doc / the table itself)."""
+    """The facts table inside a ledger (tolerates wrapped doc or bare table)."""
     led = ledger or {}
     return led.get("facts") if isinstance(led, dict) and "facts" in led else (led or {})
 
 
 def dropped_keys(old_facts, new_facts):
-    """Which **keys** this re-measurement would drop (pure function: the selftest needs it)."""
+    """Which keys this re-measurement would drop."""
     return sorted(set(old_facts or {}) - set(new_facts or {}))
 
 
 def value_of(entry):
-    """A fact's **value**. Tolerates both the dict shape and the bare-value shape.
-
-    (Originally `_value`: consumed as an interface by check_facts /
-    check_facts_replay / check_stale -- the underscore-private name was private
-    in name only, promoted on 2026-10-07.)
-    """
+    """A fact's value (tolerates both dict shape and bare-value shape)."""
     return entry.get("value") if isinstance(entry, dict) else entry
 
 
 def short_value(v, n=24):
-    """Shrink a value to one line (a 64-char sha keeps only its first 16), for the "changed value" hint."""
+    """Shrink a value to one line (64-char sha keeps its first 16)."""
     s = v if isinstance(v, str) else str(v)
     if len(s) == 64:
         return s[:16] + "..."
@@ -123,13 +100,7 @@ def _first_diff(old_e, new_e):
 
 
 def changed_keys(old_facts, new_facts):
-    """Which keys' protected fields (`value`, `cmd`, `calibrate`,
-    `calibrate_expect`) this re-measurement would change. Returns
-    `[(key, old, new)]`, sorted by key.
-
-    Editing `note` / `source` / `measured_at` is metadata; newly added keys are
-    additions, not changes.
-    """
+    """Which keys' protected fields (`value`, `cmd`, `calibrate`, `calibrate_expect`) changed."""
     olds = old_facts or {}
     out = []
     for k, nv in sorted((new_facts or {}).items()):
@@ -153,47 +124,25 @@ def fact(value, cmd, source, note="",
 
 
 def _require_pairs(*pairs):
-    """Paired parameters must be given **together** -- one alone is an incomplete
-    shape, rejected on the spot.
-
-    A half assertion is easier to catch than a silent absence: an entry with
-    `calibrate` but no `calibrate_expect` would make the replay gate compare
-    against `None`, reporting "value mismatch" instead of "shape incomplete".
-    """
+    """Paired parameters must be given together; one alone fails FATAL."""
     for a, b, name in pairs:
         if (a is None) != (b is None):
             fatal_exit(M("ledger.shape_incomplete", name=name))
 
 
 def _fill_optional(d, note, calibrate, calibrate_expect, kind):
-    """Fill the optional fields into the entry, only when given.
-
-    ⚠️ **Fields not given are not written as empty values**: `"replay": True`
-    and "no replay key" are the same thing downstream, but writing it in would
-    litter the ledger with noise fields (and `changed_keys` would misjudge if
-    it ever compared keys beyond `value`).
-    """
+    """Fill optional fields into `d` only when given."""
     if note:
         d["note"] = note
     if calibrate is not None:
         d["calibrate"] = calibrate
         d["calibrate_expect"] = calibrate_expect
-    # `kind` picks the **replay contract**:
-    #   "value"     stdout must equal value (a numeric fact)
-    #   "principle" rc==0 suffices (a verdict, not a numeric value)
-    # Both contracts live in the same executor (`check_facts_replay`); no new
-    # replay path is added.
     if kind != "value":
         d["kind"] = kind
 
 
 def age_days(entry):
-    """Days since this fact's collection time (non-negative float, issue #3 (2)).
-
-    `measured_at` missing / unparseable => None -- if it can't be read, say so;
-    guessing 0 is not allowed (0 would be read as "just measured", a false
-    assertion).
-    """
+    """Days since this fact's `measured_at` timestamp (missing/invalid => `None`)."""
     ts = entry.get("measured_at") if isinstance(entry, dict) else None
     if not ts:
         return None
@@ -204,11 +153,158 @@ def age_days(entry):
     return (datetime.now(timezone.utc) - when).total_seconds() / 86400.0
 
 
-# -- Self-verification (three tiers: clean reports nothing / what must report
-#    reports / empty input reports) ---------------------------------------------
+def _gitignored(path):
+    """Is `path` covered by `.gitignore`; non-git repo / git absent => `None`."""
+    import subprocess  # noqa: PLC0415
+    try:
+        r = subprocess.run(["git", "-C", gate.GATE_REPO, "check-ignore", "-q", path],
+                           capture_output=True)
+    except OSError:
+        return None
+    if r.returncode == 0:
+        return True
+    if r.returncode == 1:
+        return False
+    return None
+
+
+def write_target_problems(path, ignored=None):
+    """Check whether ledger write target `path` is gitignored (`(fatal, warn)`)."""
+    ig = _gitignored(path) if ignored is None else ignored
+    if ig is True:
+        return M("guard.write_target_gitignored", path=path), None
+    if ig is None:
+        return None, M("guard.write_target_no_git")
+    return None, None
+
+
+def accepted_keys(argv):
+    """Parse `--accept-changes[=k1,k2]`: bare => `None`, list => `set`, absent => `False`."""
+    for a in argv or []:
+        if a == "--accept-changes":
+            return None
+        if a.startswith("--accept-changes="):
+            raw = a.split("=", 1)[1].strip()
+            return {k.strip() for k in raw.split(",") if k.strip()}
+    return False
+
+
+def _filter_accepted(changed, accepted):
+    """Filter `changed` down to entries not covered by `accepted`."""
+    if accepted is None:
+        return []
+    if accepted is False:
+        return list(changed or [])
+    return [c for c in (changed or []) if c[0] not in accepted]
+
+
+def _drop_verdict(old_facts, new_facts, allow_drop, notes):
+    """Guard one: dropped entries (keys vanished)."""
+    dropped = dropped_keys(old_facts, new_facts)
+    if not dropped:
+        return [], False
+    if not allow_drop:
+        return [M("guard.refuse_dropped", count=len(dropped),
+                  keys=", ".join(dropped)),
+                M("guard.refuse_dropped_advice")], True
+    notes["err"].append(M("guard.note_allow_drop", count=len(dropped),
+                          keys=", ".join(dropped)))
+    return [], False
+
+
+def _change_verdict(old_facts, new_facts, accepted, notes):
+    """Guard two: changed values/commands."""
+    changed = changed_keys(old_facts, new_facts)
+    remaining = _filter_accepted(changed, accepted)
+    if remaining:
+        problems = [M("guard.refuse_changed", count=len(remaining))]
+        problems += [M("guard.changed_row", key=k, before=short_value(o),
+                       after=short_value(n)) for k, o, n in remaining]
+        if accepted:
+            problems.append(M("guard.accepted_boundary",
+                              accepted=len(changed) - len(remaining),
+                              keys=", ".join(sorted(accepted))))
+        problems.append(M("guard.refuse_changed_advice"))
+        return problems, True
+    if changed:
+        notes["out"].append(M("guard.note_accept_changes", count=len(changed)))
+        notes["out"] += [M("guard.changed_row", key=k, before=short_value(o),
+                           after=short_value(n)) for k, o, n in changed]
+    return [], False
+
+
+def decide(old_facts, new_facts, accepted=False, allow_drop=False):
+    """Decide whether a re-measurement may write to disk (`(verdict, problems, notes)`)."""
+    notes = {"err": [], "out": []}
+    problems, refused = _drop_verdict(old_facts, new_facts, allow_drop, notes)
+    if refused:
+        return "refuse", problems, notes
+    problems, refused = _change_verdict(old_facts, new_facts, accepted, notes)
+    if refused:
+        return "refuse", problems, notes
+    if not new_facts:
+        return "refuse", [M("guard.empty_ledger")], notes
+    return "write", problems, notes
+
+
+def _fmt(v):
+    if isinstance(v, str) and len(v) == 64:
+        return "`%s...`" % v[:16]
+    return "**%s**" % (v if isinstance(v, str) else str(v))
+
+
+def render_block(ledger):
+    """Render `ledger` into an `AUTO:FACTS` machine block (PINNED fixed language)."""
+    f = facts_of(ledger)
+    lines = [BLOCK_BEGIN] + list(PREAMBLE) + [""]
+    if not f:
+        lines += [("**The ledger is empty** -- not a single fact. Empty is not"
+                   " \"pass\": first check whether measure() is broken."), ""]
+    else:
+        lines += ["| key | value | measured at | replay cmd |", "|---|---|---|---|"]
+        for k in sorted(f):
+            e = f[k] if isinstance(f[k], dict) else {"value": f[k]}
+            lines.append("| `%s` | %s | %s | `%s` |"
+                         % (k, _fmt(e.get("value")), e.get("measured_at", "--"),
+                            e.get("cmd", "?")))
+        lines += ["", "%d facts." % len(f)]
+    lines.append(BLOCK_END)
+    return "\n".join(lines)
+
+
+def body_of(block):
+    """Extract the body inside `BLOCK_BEGIN` / `BLOCK_END`."""
+    if BLOCK_BEGIN not in block:
+        return ""
+    return block.split(BLOCK_BEGIN, 1)[1].split(BLOCK_END, 1)[0]
+
+
+def prose_of(doc_text):
+    """Return document prose with all `<!-- AUTO:... -->...<!-- /AUTO:... -->` blocks stripped."""
+    out, i = [], 0
+    while True:
+        b = doc_text.find("<!-- AUTO:", i)
+        if b < 0:
+            out.append(doc_text[i:])
+            break
+        out.append(doc_text[i:b])
+        e = doc_text.find("-->", b + len("<!-- AUTO:"))
+        end = doc_text.find("<!-- /AUTO:", e) if e >= 0 else -1
+        if end < 0:
+            out.append(doc_text[b:])
+            break
+        close = doc_text.find("-->", end)
+        i = close + 3 if close >= 0 else len(doc_text)
+    return "".join(out)
+
+
+def _extra_lines(block):
+    return [ln for ln in body_of(block).splitlines()
+            if ln.strip() and ln not in PREAMBLE]
+
+
 def _cases_guards():
-    """(1) Dropped-entry / changed-value guards: clean reports nothing + what
-    must report reports + a fresh start is legal."""
+    """Dropped-entry and changed-value pure function cases."""
     from gate import raises  # noqa: PLC0415
     return [
         ("ledger.dropped_clean",
@@ -233,8 +329,6 @@ def _cases_guards():
         ("\u2605 ledger.changed_keys",
          lambda: changed_keys({"a": {"value": 1}}, {"a": {"value": 2}})
          == [("a", 1, 2)]),
-        # (3) Empty input must report (here the opposite of "must not report":
-        #     a fresh start is a legal first generation)
         ("ledger.first_run_dropped_silent",
          lambda: dropped_keys({}, {"a": 1}) == []),
         ("ledger.first_run_changed_silent",
@@ -245,25 +339,20 @@ def _cases_guards():
 
 
 def _cases_shapes():
-    """Appendix: ledger shapes -- the three interfaces `facts_of` / `short_value`
-    / `value_of`."""
+    """Ledger shape helper cases (`facts_of`, `short_value`, `value_of`)."""
     return [
         ("ledger.facts_of_both_shapes",
          lambda: facts_of({"facts": {"a": 1}}) == {"a": 1}
          and facts_of({"a": 1}) == {"a": 1}),
-        # ASCII ellipsis, not U+2026: this value is rendered into a **machine
-        # row** (`guard.changed_row`), and a machine row may not carry
-        # typographic characters (see `i18n.non_ascii_prose`).
         ("ledger.short_value_sha",
          lambda: short_value("a" * 64) == "a" * 16 + "..."),
-        # Steady state: `value_of` tolerates both the dict shape and the bare value
         ("ledger.value_of_both_shapes",
          lambda: value_of({"value": 3}) == 3 and value_of(7) == 7),
     ]
 
 
 def _cases_measurement():
-    """(2) Fact age + `first_seen` (issue #3 (2) / #6 (1))."""
+    """Fact age and `first_seen` cases."""
     return [
         ("ledger.fact_stamps_measured_at",
          lambda: isinstance(fact(1, "c", "s").get("measured_at"), str)),
@@ -284,8 +373,7 @@ def _cases_measurement():
 
 
 def _cases_probes():
-    """(3) Witness / (4) instrument calibration (issue #5 / #6 (1)): paired
-    fields -- one alone must raise."""
+    """Instrument calibration pair cases."""
     from gate import raises  # noqa: PLC0415
     return [
         ("ledger.calibrate_fields",
@@ -298,29 +386,130 @@ def _cases_probes():
     ]
 
 
+def _cases_decide():
+    """Write-guard `decide`, `accepted_keys`, and `write_target_problems` cases."""
+    old = {"a": {"value": 1}, "b": {"value": 2}}
+    same = {"a": {"value": 1}, "b": {"value": 2}}
+    new_val = {"a": {"value": 1}, "b": {"value": 9}}
+    dropped = {"a": {"value": 1}}
+    return [
+        ("guard.decide_clean",
+         lambda: decide(old, same) == ("write", [], {"err": [], "out": []})),
+        ("guard.decide_added_key_not_a_change",
+         lambda: decide(old, dict(same, c={"value": 3}))[0] == "write"),
+        ("guard.decide_note_only_not_a_change",
+         lambda: decide({"a": {"value": 1, "note": "old"}},
+                        {"a": {"value": 1, "note": "new"}})[0] == "write"),
+        ("★ guard.refuse_cmd_changed",
+         lambda: decide({"a": {"value": 1, "cmd": "old"}},
+                        {"a": {"value": 1, "cmd": "new"}})[0] == "refuse"),
+        ("★ guard.refuse_dropped",
+         lambda: (lambda v, p, n: v == "refuse"
+                  and p[0].code == "guard.refuse_dropped"
+                  and "b" in p[0].params["keys"])(*decide(old, dropped))),
+        ("★ guard.note_allow_drop",
+         lambda: (lambda v, p, n: v == "write"
+                  and n["err"][0].code == "guard.note_allow_drop"
+                  and n["err"][0].params["keys"] == "b"
+                  )(*decide(old, dropped, allow_drop=True))),
+        ("★ guard.changed_row",
+         lambda: (lambda v, p, n: v == "refuse"
+                  and any(x.code == "guard.changed_row"
+                          and x.params["before"] == "2"
+                          and x.params["after"] == "9" for x in p)
+                  )(*decide(old, new_val))),
+        ("★ guard.note_accept_changes",
+         lambda: (lambda v, p, n: v == "write"
+                  and any(x.code == "guard.note_accept_changes" for x in n["out"])
+                  )(*decide(old, new_val, accepted={"b"}))),
+        ("★ guard.accept_changes_per_key",
+         lambda: decide(old, new_val, accepted={"zzz"})[0] == "refuse"),
+        ("★ guard.accepted_boundary",
+         lambda: any(x.code == "guard.accepted_boundary" for x in decide(
+             old, {"a": {"value": 8}, "b": {"value": 9}},
+             accepted={"a"})[1])),
+        ("★ guard.accept_changes_bare_flag",
+         lambda: decide(old, new_val, accepted=None)[0] == "write"),
+        ("guard.accepted_keys_bare",
+         lambda: accepted_keys(["--accept-changes"]) is None),
+        ("guard.accepted_keys_list",
+         lambda: accepted_keys(["--accept-changes=a,b"]) == {"a", "b"}),
+        ("guard.accepted_keys_absent",
+         lambda: accepted_keys([]) is False),
+        ("guard.accepted_keys_empty_set",
+         lambda: accepted_keys(["--accept-changes="]) == set()),
+        ("★ guard.empty_ledger",
+         lambda: decide(old, {})[0] == "refuse"),
+        ("★ guard.accepted_keys_empty_set_refuses",
+         lambda: decide(old, new_val, accepted=set())[0] == "refuse"),
+        ("guard.write_target_clean",
+         lambda: write_target_problems("/x/FACTS.json", ignored=False) == (None, None)),
+        ("★ guard.write_target_gitignored",
+         lambda: write_target_problems("/x/FACTS.json", ignored=True)[0] is not None),
+        ("guard.write_target_no_git",
+         lambda: getattr(write_target_problems("/x/F.json", ignored=None)[1],
+                         "code", None) == "guard.write_target_no_git"),
+    ]
+
+
+def _cases_render():
+    """Machine-block rendering and prose-extraction cases."""
+    full = {"facts": {"a": 4752, "s": {"value": "b" * 64, "cmd": "c"}}}
+    header = next(ln for ln in body_of(render_block(full)).splitlines()
+                  if ln.startswith("|"))
+    return [
+        ("render.keys_in_block",
+         lambda: all(k in render_block(full) for k in ("a", "s"))),
+        ("render.raw_value", lambda: "**4752**" in render_block(full)),
+        ("render.sha_truncated", lambda: "`" + "b" * 16 + "...`" in render_block(full)),
+        ("render.block_pure",
+         lambda: render_block(full) == render_block(full)),
+        ("render.prose_only_outside_block",
+         lambda: (lambda d: ("body" in prose_of(d) and "tail" in prose_of(d)
+                             and header not in prose_of(d) and header in d))(
+             "body\n" + render_block(full) + "\ntail")),
+        ("render.prose_fallback_whole_doc",
+         lambda: prose_of("a document without markers") == "a document without markers"),
+        ("render.prose_strips_all_blocks",
+         lambda: (lambda d: ("sha256" not in prose_of(d)
+                             and "GATES_TABLE" not in prose_of(d)
+                             and "body" in prose_of(d) and "tail" in prose_of(d)))(
+             "body\n<!-- AUTO:FACTS -->\nFACTS_TABLE\n<!-- /AUTO:FACTS -->\n"
+             "<!-- AUTO:GATES -->\n| x | sha256 |\n<!-- /AUTO:GATES -->\ntail")),
+        ("render.prose_nested_begin_literal",
+         lambda: (lambda d: "awk" not in prose_of(d) and "tail" in prose_of(d))(
+             "head\n<!-- AUTO:FACTS -->\ncmd: awk '<!-- AUTO:FACTS -->'\n"
+             "<!-- /AUTO:FACTS -->\ntail")),
+        ("★ render.block_not_constant",
+         lambda: render_block(full) != render_block({"facts": {"a": 4752}})),
+        ("★ render.empty_ledger_says_so",
+         lambda: (lambda b: _extra_lines(b) != []
+                  and not any(ln.lstrip().startswith("|")
+                              for ln in body_of(b).splitlines()))(
+             render_block({"facts": {}}))),
+        ("★ render.empty_differs_from_full",
+         lambda: render_block({"facts": {}}) != render_block(full)),
+    ]
+
+
 def _cases():
-    """Four groups: guards / shapes / fact age / probes. They test four
-    different facets of the ledger."""
+    """Assemble all ledger, guard, and render selftest groups."""
     return (_cases_guards() + _cases_shapes()
-            + _cases_measurement() + _cases_probes())
+            + _cases_measurement() + _cases_probes()
+            + _cases_decide() + _cases_render())
 
 
 def _selftest():
     from gate import activate_or_fatal, selftest  # noqa: PLC0415
-    # Activation **precedes** self-verification: a pack set but absent =>
-    # FATAL rc 2 (this entry previously never activated, so with
-    # REFLECT_LANG=de a nonexistent pack was silently accepted).
     rc = activate_or_fatal()
     if rc:
         return rc
     return selftest(M("gate.title.ledger"), _cases())
 
 
-MODULE = module_meta("facts ledger data layer",
-                     "pure functions: read/write + two guards", selftest=True)
+MODULE = module_meta("facts ledger",
+                     "read/write + drop/change guards + AUTO:FACTS rendering", selftest=True)
 
 
 if __name__ == "__main__":
-    import sys  # noqa: PLC0415
-    sys.path.insert(0, __import__("os").path.dirname(__import__("os").path.abspath(__file__)))
     sys.exit(_selftest())

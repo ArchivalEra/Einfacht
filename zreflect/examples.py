@@ -23,9 +23,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import check_envfile  # noqa: E402
 import gate  # noqa: E402
-import knobs  # noqa: E402
 import registry  # noqa: E402
 from gate import main_selftest_or, module_meta  # noqa: E402
 from i18n import M  # noqa: E402
@@ -34,7 +32,7 @@ DEFAULT_ROOT = os.path.join(gate.tool_repo(), "examples")
 DEFAULT_TIMEOUT = 120
 OUTPUT_TAIL = 4000   # kept on failure: enough for a traceback, bounded for a report
 IGNORE = shutil.ignore_patterns(
-    ".git", "__pycache__", ".mypy_cache", ".ruff_cache", "Einfacht.env")
+    ".git", "__pycache__", ".mypy_cache", ".ruff_cache")
 # ``posix`` means the payload shells out to ``sh`` or a Unix-only binary.
 # Windows cannot run those, and a silent pass there would claim coverage the
 # platform never exercised -- so a skip is reported and counted, never green.
@@ -154,44 +152,15 @@ def _copy_payload(example_dir, target):
             shutil.copy2(src, dst)
 
 
-def _carrier_exports(target, requested):
-    """Read the generated ``Einfacht.env`` as a knob carrier.
-
-    A carrier that exists but cannot be parsed is a **problem**, not an empty
-    mapping: silently running knob-less lets a broken carrier pass every step.
-    """
-    name = requested.get("REFLECT_ENV_FILE") or knobs.get("REFLECT_ENV_FILE")
-    relative = name if os.path.isabs(name) else os.path.join(target, name)
-    hooked = os.path.join(target, "reflect-hooks", name)
-    path = hooked if not os.path.isabs(name) and os.path.exists(hooked) else relative
-    # "No carrier" and "a carrier I cannot read" are different answers. The
-    # first version tested `isfile` and returned `{}` for both -- so a path that
-    # existed but was not a readable file (a directory, a permission wall) was
-    # silently treated as "this repo has no carrier", and the steps then ran
-    # knob-less and could still pass.
-    if not os.path.exists(path):
-        return {}, None
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return check_envfile.parse_exports(fh.read()), None
-    except OSError as exc:
-        return {}, M("examples.carrier_unreadable", path=name, error=exc)
-
-
 def _environment(target, manifest, step):
     env = {key: value for key, value in os.environ.items()
            if not key.startswith("REFLECT_")}
     env["GATE_REPO"] = target
     env["PYTHONPATH"] = os.path.join(target, "zreflect")
-    # Byte-code caches are noise the audited step never asked for: a step that
-    # inspects `git status` would see `__pycache__/` as untracked work.
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    requested = dict(manifest.get("env", {}))
-    requested.update(step.get("env", {}))
-    carrier, problem = _carrier_exports(target, {**env, **requested})
-    env.update(carrier)
-    env.update(requested)
-    return env, problem
+    env.update(manifest.get("env", {}))
+    env.update(step.get("env", {}))
+    return env
 
 
 def _argv(argv, target):
@@ -219,9 +188,7 @@ def judge_step(step, rc, output):
 
 def _run_step(step, target, manifest):
     argv = _argv(step["argv"], target)
-    env, carrier_problem = _environment(target, manifest, step)
-    if carrier_problem:
-        return "", [carrier_problem]
+    env = _environment(target, manifest, step)
     try:
         proc = subprocess.run(
             argv, cwd=target, env=env,
@@ -414,34 +381,7 @@ def _cases():
          lambda: applies_to({"platforms": ["posix"]}, "nt") is False
          and applies_to({"platforms": ["posix"]}, "posix") is True
          and applies_to({"platforms": ["posix", "windows"]}, "nt") is True),
-        # the carrier is the knob source; an unreadable one must be a problem,
-        # not an empty mapping that lets every step pass knob-less
-        ("★ examples.carrier_unreadable",
-         lambda: _carrier_case()),
     ]
-
-
-def _carrier_case():
-    """A readable carrier parses; an unreadable one is a **problem**, not `{}`.
-
-    The unreadable half is simulated by pointing the carrier name at a
-    **directory** (`Einfacht.env` exists but is a directory, so `open` raises
-    `IsADirectoryError`). A directory is unreadable on every platform.
-    """
-    import tempfile  # noqa: PLC0415
-    with tempfile.TemporaryDirectory() as root:
-        os.makedirs(os.path.join(root, "reflect-hooks"))
-        carrier = os.path.join(root, "Einfacht.env")
-        with open(carrier, "w", encoding="utf-8") as fh:
-            fh.write("REFLECT_DOCS=STATE.md\n")
-        exports, problem = _carrier_exports(root, {})
-        if problem is not None or exports.get("REFLECT_DOCS") != "STATE.md":
-            return False
-        os.remove(carrier)
-        os.makedirs(carrier)                      # a directory where a file is expected
-        _exports, broken = _carrier_exports(root, {})
-        return (broken is not None
-                and getattr(broken, "code", "") == "examples.carrier_unreadable")
 
 
 MODULE = module_meta("Example runner", "isolated runnable examples with discovered coverage")

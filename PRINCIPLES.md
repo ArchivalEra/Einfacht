@@ -5,7 +5,7 @@
 
 <!-- AUTO:RULES -->
 > This block is rendered by `zreflect/facts.py --render-doc` from the `RULES` table in `zreflect/doc.py`; **do not hand-edit**.
-> Every row's judging command is in `FACTS.json` and is executed verbatim at every commit (`check_facts_replay`).
+> Every row's judging command is executed verbatim at every commit (`check_facts_replay`).
 
 | id | principle | judging command |
 |---|---|---|

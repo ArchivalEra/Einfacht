@@ -17,13 +17,12 @@ Mixed in one file, changing either side meant finding a spot in an 1800-line fil
 After the split, `registry.py` keeps discovery + rendering + CLI; `criteria.py`
 holds only criteria.
 
-## The seven reconciliations housed here
+## The six reconciliations housed here
 
     dead_interface_problems      public functions with zero consumers (zombie interfaces)
     shell_surface_problems       .sh whitelist (guard of the all-Python goal)
     trailing_newline_problems    files must end with a newline (the gap between `py_lines`'s two measuring methods)
     off_reason_problems          gates that can off must declare a reason (three-way + truthfulness + location)
-    reason_bases_agree           filename locations inside reasons match the env plugin's convention (C4)
     path_rule_problems           "the tool's zreflect/" may have exactly one source (C4 (8))
     dependency_coverage_problems consumed platform functions must have assertions (C4 (9))
 
@@ -58,41 +57,15 @@ MUST_REASON_MIN = 8      # minimum length of an off reason (same discipline as `
 # shell is the exception; every exception needs a reason. New arrivals (or
 # unregistered ones) => report.
 ALLOWED_SHELL = (
-    # Compatibility shim: old repos' `sh gates-selftest.sh` keeps working (one exec
-    # line, zero prose)
-    "gates-selftest.sh",
-    # Hook env plugin: **must** be shell (sourced to export variables); its prose
-    # already goes through M()
-    "reflect-hooks/einfacht-env.sh",
-    # The two hook names of the old install (git requires these names; content is a
-    # one-line exec)
-    "reflect-hooks/pre-commit",
-    "reflect-hooks/pre-push",
-    # Assessment recorder template (issue #41): a sourced shell helper -- the
-    # record/declare/finish trio and its selftest are shell-shaped by nature
-    # (consumers source it from their CI steps); output goes to stdout, the
-    # consumer decides where it lands (host_agnostic preserved: no CI platform
-    # name appears here or in the template).
+    # Assessment recorder template (issue #41): a sourced shell helper.
     "reflect-hooks/quality-record.sh",
 )
 
-
-# Legal locations for name-type knobs: repo root + `reflect-hooks/` (the latter
-# wins). Same convention as `reflect-hooks/einfacht-env.sh` (it checks the hooks dir
-# first, then the repo root).
-_REASON_BASES = ("", "reflect-hooks")
+_REASON_BASES = ("",)
 
 
 def _reason_files(reason, repo_root=None):
-    """Filenames mentioned in an `off_reason` -> `[(name, exists at any legal
-    location)]`.
-
-    Only tokens with an extension count (`ab.json` / `Einfacht.env` /
-    `world.json`); ordinary words in the sentence are not filenames. Both
-    `_REASON_BASES` (repo root and `reflect-hooks/`) are checked, matching
-    `einfacht-env.sh`'s lookup order -- checking only the root misses a carrier
-    that legitimately sits in the hooks dir.
-    """
+    """Filenames mentioned in an `off_reason` -> `[(name, exists at repo root)]`."""
     if not reason:
         return []
     root = repo_root if repo_root is not None else gate.GATE_REPO
@@ -824,48 +797,6 @@ def off_reason_problems(gs, sources=None):
     return out
 
 
-def reason_bases_agree(hook=False):
-    """C4 reconciliation (7): `_REASON_BASES` must agree with `einfacht-env.sh`'s
-    carrier-lookup convention.
-
-    `einfacht-env.sh` checks the **hooks dir** first, then the **repo root** (two
-    locations). This file's `_REASON_BASES` (the legal locations for the reason
-    truthfulness criterion) must share that convention -- otherwise a carrier in
-    reflect-hooks/ is invisible to the criterion.
-
-    The criterion is **behavioral**, not a text match: put a carrier at both
-    locations in a temp repo and require `_reason_files` to see both. That way it
-    does not depend on `einfacht-env.sh`'s exact wording (changing it to a `.env`
-    suffix or renaming variables won't false-positive).
-
-    `hook` is injectable (selftests use a fake). Real code runs by default.
-    """
-    import shutil  # noqa: PLC0415
-    import tempfile  # noqa: PLC0415
-    probe = hook or _reason_files
-    d = tempfile.mkdtemp()
-    try:
-        name = "ProbeCarrier" + ".env"                   # joined, not a bare literal
-        reason = "no " + name + " here"
-        ok_both = True
-        for base in ("", "reflect-hooks"):
-            target = os.path.join(d, base) if base else d
-            if base:
-                os.makedirs(target, exist_ok=True)
-            path = os.path.join(target, name)
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write("export X=1\n")
-            try:
-                got = probe(reason, repo_root=d)
-            finally:
-                os.remove(path)
-            if not got or not got[0][1]:
-                ok_both = False
-        return ok_both
-    finally:
-        shutil.rmtree(d, True)
-
-
 def _scan_sources(sources, base):
     """Scan surface: use `sources` when given (selftests inject a fake filesystem),
     otherwise scan the real directory.
@@ -1157,10 +1088,10 @@ def _unexpected_shell_case():
             fh.write("# probe\n")
         if not shell_surface_problems(repo_root=d):
             return False
-        # A registered name (`reflect-hooks/einfacht-env.sh`) must not report
+        # A registered name (`reflect-hooks/quality-record.sh`) must not report
         hooks = os.path.join(d, "reflect-hooks")
         os.makedirs(hooks)
-        with open(os.path.join(hooks, "einfacht-env.sh"), "w",
+        with open(os.path.join(hooks, "quality-record.sh"), "w",
                   encoding="utf-8") as fh:
             fh.write("# ok\n")
         got = [str(p) for p in shell_surface_problems(repo_root=d)]
@@ -1398,34 +1329,6 @@ def _off_reason_stale_ok():
         shutil.rmtree(d, True)
 
 
-
-def _stale_in_hooks_dir():
-    """When the carrier sits in `reflect-hooks/` (not the repo root), the stale
-    criterion must still report."""
-    import shutil  # noqa: PLC0415
-    import tempfile  # noqa: PLC0415
-    d = tempfile.mkdtemp()
-    try:
-        hooks = os.path.join(d, "reflect-hooks")
-        os.makedirs(hooks)
-        name = "Probe" + ".env"                          # joined: not hardcoded in the repo
-        with open(os.path.join(hooks, name), "w", encoding="utf-8") as fh:
-            fh.write("export X=1\n")
-        reason = "no " + name + " carrier in this repo"   # ASCII
-        gs = [{"file": "check_probe.py", "off_reason": reason}]
-        src = {"check_probe.py": "def run():\n    return off(null)\n"}
-        old = gate.GATE_REPO
-        gate.GATE_REPO = d
-        try:
-            return [p.code for p in off_reason_problems(gs, sources=src)] \
-                == ["registry.off_reason_stale"]
-        finally:
-            gate.GATE_REPO = old
-    finally:
-        shutil.rmtree(d, True)
-
-
-
 def _exec_position_every_carrier():
     """All three carriers must be scanned: spec, Settling, evidence.
 
@@ -1492,10 +1395,6 @@ def _cases_off_reason():
         "complete", {"check_x.py": "_off()"}, ok=True,
         reason="a real justification long enough")),
     ("★ registry.off_reason_stale", lambda: _off_reason_stale_ok()),
-    ("★ registry.off_reason_stale_in_hooks_dir",
-     lambda: _stale_in_hooks_dir()),
-    ("★ registry.reason_bases_match_env_plugin",
-     lambda: reason_bases_agree()),
     ]
 
 

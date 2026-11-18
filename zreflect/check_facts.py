@@ -24,16 +24,20 @@ import knobs  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M, load_pack  # noqa: E402
 from knobs import a_pack_lang  # noqa: E402
-from ledger import facts_of, load_or_fatal, value_of  # noqa: E402
-
-# How prose cites a number: `[[key]]`. Deliberately a shape that cannot be
-# natural language -- so "is there a citation" is **decidable**, without
-# regex-guessing at prose.
+from ledger import (  # noqa: E402
+    BLOCK_BEGIN,
+    BLOCK_END,
+    body_of,
+    facts_of,
+    load_or_fatal,
+    prose_of,
+    render_block,
+    value_of,
+)
 from living import (
     CITE_RE,  # noqa: E402
     DATED_RECORD,  # noqa: E402
 )
-from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
 
 FENCE_RE = re.compile(r"^\s*```")
 INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
@@ -224,15 +228,7 @@ def rendered_docs():
 
 
 def hand_written_problems(doc_text, name="STATE.md"):
-    """Lines of a fully rendered doc that are narration rather than render.
-
-    `doc_text` is the prose **outside** the machine blocks (callers pass
-    `render.prose_of(...)`, the single owner of that split -- re-implementing the
-    block scan here would be a second source for "what counts as a block").
-
-    Measured: STATE.md carried 55 such lines, four `issue #N` references and a
-    paragraph about a hand-written roster that had drifted.
-    """
+    """Lines of a fully rendered doc (`ledger.prose_of(...)`) that are narration rather than render."""
     # **Position matters, not just shape.** An earlier version exempted any
     # `#`-prefixed or `>`-prefixed line wherever it appeared, which made
     # "# a whole hand-written section" and a `>` paragraph in the middle of the
@@ -320,6 +316,34 @@ def _lookup_doc(docs_by_name, target):
     return None, None
 
 
+def block_homes(ledger):
+    """Map docs to owned machine blocks (`AUTO:FACTS`, `AUTO:GATES`, `AUTO:RULES`). Returns `(homes, err)`."""
+    import doc  # noqa: PLC0415
+    import registry  # noqa: PLC0415
+    gs, missing = registry.gates()
+    probs = registry.problems(gs, missing)
+    if probs:
+        return None, M("facts.registry_mismatch", entries="\n  · ".join(probs))
+    homes = [(doc.state_name(), [(BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
+                                 (registry.GATES_BEGIN, registry.GATES_END,
+                                  registry.render_gates(gs))])]
+    if doc.accepts_principles():
+        homes.append((doc.PRINCIPLES,
+                      [(doc.RULES_BEGIN, doc.RULES_END, doc.render_rules())]))
+    return homes, None
+
+
+def doc_block_problems(path_rel, text, blocks):
+    """Compare each `(begin, end, expected)` block in `blocks` against `text`."""
+    out = []
+    for begin, end, expected in blocks:
+        if begin not in text or end not in text:
+            out.append(M("facts.markers_missing_check", path=path_rel, begin=begin, end=end))
+        elif _block_body(text, begin, end) != _block_body(expected, begin, end):
+            out.append(M("facts.block_stale", path=path_rel, begin=begin))
+    return out
+
+
 def extra_block_problems(docs_by_name, homes):
     """Check non-`AUTO:FACTS` machine blocks (`AUTO:GATES`, `AUTO:RULES`) against `homes`."""
     out = []
@@ -327,45 +351,17 @@ def extra_block_problems(docs_by_name, homes):
         doc_key, text = _lookup_doc(docs_by_name, name)
         if text is None:
             continue
-        for begin, end, expected in blocks:
-            if begin == BLOCK_BEGIN:
-                continue
-            if begin not in text or end not in text:
-                out.append(M("facts.markers_missing_check", path=doc_key, begin=begin, end=end))
-            elif _block_body(text, begin, end) != _block_body(expected, begin, end):
-                out.append(M("facts.block_stale", path=doc_key, begin=begin))
-    return out
-
-
-def principle_sync_problems(led, expected=None):
-    """Check `FACTS.json` `principle.*` `cmd`/`note` agree byte-for-byte with `doc.RULES`."""
-    if expected is None:
-        import doc  # noqa: PLC0415
-        expected = doc.facts_of_rules()
-    f = facts_of(led)
-    keys = sorted(set(expected) | {k for k in f if k.startswith("principle.")})
-    out = []
-    for k in keys:
-        exp, got = expected.get(k), f.get(k)
-        ok = (isinstance(exp, dict) and isinstance(got, dict)
-              and got.get("cmd") == exp.get("cmd")
-              and got.get("note") == exp.get("note"))
-        if not ok:
-            out.append(M("facts.principle_ledger_drift", key=k))
+        rest = [(b, e, exp) for b, e, exp in blocks if b != BLOCK_BEGIN]
+        out += doc_block_problems(doc_key, text, rest)
     return out
 
 
 def _repo_sync_problems(led, loaded):
-    """Repo-level `block_homes` agreement + `principle.*` ledger sync."""
-    import doc  # noqa: PLC0415
-    import facts  # noqa: PLC0415
-    homes, err = facts.block_homes(led)
+    """Repo-level `block_homes` agreement (`AUTO:GATES`, `AUTO:RULES`)."""
+    homes, err = block_homes(led)
     if err:
         return None, err
-    probs = extra_block_problems(loaded, homes)
-    if doc.accepts_principles():
-        probs += principle_sync_problems(led)
-    return probs, None
+    return extra_block_problems(loaded, homes), None
 
 
 def _question_paths():
@@ -567,14 +563,6 @@ def _cases_misc(fx):
          [("PRINCIPLES.md", [("<!-- AUTO:RULES -->", "<!-- /AUTO:RULES -->",
                              "<!-- AUTO:RULES -->\nfresh\n<!-- /AUTO:RULES -->")])])]
      == ["facts.block_stale"]),
-    ("★ facts.principle_cmd_drift",
-     lambda: [p.code for p in principle_sync_problems(
-         {"facts": {"principle.x": {"value": "ok", "cmd": "wrong", "note": "n", "kind": "principle"}}},
-         {"principle.x": {"value": "ok", "cmd": "right", "note": "n", "kind": "principle"}})]
-     == ["facts.principle_ledger_drift"]
-     and principle_sync_problems(
-         {"facts": {"principle.x": {"value": "ok", "cmd": "right", "note": "n", "kind": "principle"}}},
-         {"principle.x": {"value": "ok", "cmd": "right", "note": "n", "kind": "principle"}}) == []),
     ]
 
 

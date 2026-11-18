@@ -1,4 +1,7 @@
 {
+ "knobs.config_corrupt": "`%(path)s` kann nicht als JSON-Objekt gelesen werden: %(error)s",
+ "knobs.config_invalid_value": "`knobs.json` setzt für `%(knob)s` einen leeren oder Nicht-String-Wert",
+ "knobs.config_missing_target": "`knobs.json` zeigt mit `%(knob)s` auf den fehlenden Pfad `%(target)s`",
  "knobs.dead_default": "`%(file)s` definiert `%(name)s`, nutzt es aber **nie** — ein deklarierter Standardwert ohne Wirkung ist schlimmer als keiner (man glaubt, es sei konfiguriert)",
  "knobs.declared_not_read": "`%(file)s` deklariert, %(knobs)s zu konsumieren, aber der Quelltext liest diese Knöpfe nie — Deklaration widerspricht der Implementierung (die AUTO:GATES-Tabelle würde lügen)",
  "knobs.inline_default_literal": "`%(file)s:%(lineno)d` kodiert außerhalb von `knobs.py` den Fallback %(literal)r für `%(knob)s` fest — Standardwerte leben nur in `knobs.REGISTRY`; rufe `knobs.get(%(knob)r)` auf",
@@ -21,8 +24,6 @@
  "knobs.sem.reflect_docs": "Lebendzustand-Dokumente, die von den Widerruf- / Veraltet-Toren gescannt werden",
  "knobs.sem.reflect_doctor": "doctor-Spezifikation (Arbeitsbeginn-Vorabprüfung, kein Tor)",
  "knobs.sem.reflect_doctor_timeout": "Sekunden pro doctor-Probe",
- "knobs.sem.reflect_env_file": "Dateiname des Hook-Knopf-Trägers",
- "knobs.sem.reflect_env_hint": "off ⇒ schaltet den freundlichen Hinweis ab, der bei einem blanken Lauf Einfacht.env vorschlägt (der Hinweis ist kein Kriterium)",
  "knobs.sem.reflect_facts": "das Faktenregister",
  "knobs.sem.reflect_history": "das Historien-Dokument: der einzige Träger, in dem Prosa erlaubt ist (Pfad konfigurierbar)",
  "knobs.sem.reflect_history_secs": "nur anhängbare Historien-Abschnittsnummern (z. B. 5,9,10)",

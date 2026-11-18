@@ -9,5 +9,6 @@
  "hookgate.ref_has_nothing": "%(ref)s 没有要发布的新内容 ⇒ 三语判据对其无事可查（明说，不假装查过）",
  "hookgate.repo_missing": "仓库根 '%(repo)s' 不存在（第二个参数必须是绝对路径）",
  "hookgate.unknown_phase": "未知相位 '%(phase)s'（只认 commit / push）",
- "hookgate.usage": "用法: python3 reflect-hooks/gate.py <commit|push> <仓库根>"
+ "hookgate.unstaged_facts": "`%(path)s` 有未暂存的改动 —— 提交前请先 git add 或丢弃它，免得 `--render-doc` 把未暂存的台账渲染进已暂存的文档",
+ "hookgate.usage": "用法: python3 reflect-hooks/hook.py <commit|push> <仓库根>"
 }

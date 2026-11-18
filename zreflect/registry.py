@@ -390,6 +390,7 @@ def _knob_problems(knob_problems, gs):
     if knob_problems is None:
         import knobs  # noqa: PLC0415
         knob_problems = (knobs.scan_surface_problems()
+                         + knobs.config_problems()
                          + knobs.readme_problems()
                          + knobs.declared_vs_read_problems(gs)
                          + knobs.registry_vs_readme_problems()
@@ -421,13 +422,6 @@ def problems(gs, missing, mods=None, mods_missing=None,
     out += criteria.fatal_exit_problems()
     out += criteria.path_rule_problems()
     out += criteria.dependency_coverage_problems()
-    if not criteria.reason_bases_agree():
-        out.append(M("registry.reason_bases_disagree"))
-    # ⚠️ In injection mode (`mods=` given), **dead interfaces are not scanned**:
-    # that judgment looks at the real directory while injection mode verifies
-    # "the roster judgment itself"; mixing both into one list makes assertions
-    # guilty by association with real-repo state (observed: the `unknown_phase`
-    # assertion picked up an extra `dead_interface`).
     if mods is None:
         out += criteria.dead_interface_problems()
         import seal  # noqa: PLC0415
@@ -639,32 +633,13 @@ def _main_selftest_modules():
     return 0
 
 
-# Which codes are **fixable configuration hints** (they don't brick the roster) and
-# which mean **the roster itself is broken**.
-#
-# ⚠️ This distinction came from practice: after the user creates `Einfacht.env`
-# per the docs, the `off_reason` ("this repo has no Einfacht.env") goes stale --
-# the judgment **is correct**, but treating it as fatal makes `registry --gates`
-# / `--run commit` / pre-commit **permanently red**, and the only way out is to
-# delete the file the docs told them to create. That is a **self-set trap**, not
-# a user error.
-#
-# The right reaction: clearly say "go fix the gate's off_reason", then
-# **continue** (the roster is usable).
-_ADVISORY_CODES = frozenset({"registry.off_reason_stale"})
-
-
 def _main_gates():
     gs, missing = gates()
     probs = problems(gs, missing)
-    fatal_probs = [p for p in probs if getattr(p, "code", "") not in _ADVISORY_CODES]
     for x in probs:
-        if getattr(x, "code", "") in _ADVISORY_CODES:
-            print("  ! %s" % x, file=sys.stderr)      # hint, not a refusal
-        else:
-            print("  · %s" % x, file=sys.stderr)
-    if fatal_probs:
-        return fatal(M("registry.roster_problems", count=len(fatal_probs)))
+        print("  · %s" % x, file=sys.stderr)
+    if probs:
+        return fatal(M("registry.roster_problems", count=len(probs)))
     for g in gs:
         print("%s\t%s\t%s" % (g["file"], g["name"], g["desc"]))
     return 0
@@ -718,7 +693,7 @@ def _usage():
 
 
 def _main_seal(argv):
-    """Handle `--verify-seal`, `--reseal=...`, and `--reseal-yardstick=...`; else None."""
+    """Handle `--verify-seal` and `--reseal=...`; else None."""
     import seal  # noqa: PLC0415
     if "--verify-seal" in argv:
         if not seal.seal_exists():
@@ -730,13 +705,10 @@ def _main_seal(argv):
             return 1
         print(seal.current_tree_sha(verified=True) or "")
         return 0
-    for flag, is_yard in (("--reseal-yardstick=", True), ("--reseal=", False)):
-        hit = [a for a in argv if a.startswith(flag)]
-        if not hit:
-            continue
-        targets = [t.strip() for t in hit[0][len(flag):].split(",") if t.strip()]
-        tree, err = seal.reseal(targets, yardstick=is_yard,
-                                allow_case_drop="--allow-case-drop" in argv)
+    hit = [a for a in argv if a.startswith("--reseal=")]
+    if hit:
+        targets = [t.strip() for t in hit[0][len("--reseal="):].split(",") if t.strip()]
+        tree, err = seal.reseal(targets)
         if err:
             return fatal(err)
         print(M("seal.resealed", tree=tree, count=len(targets)))
@@ -859,58 +831,31 @@ def _streams_documented():
 
 
 def _plugin_discovery_ok():
-    """Plugin discovery: directory present => the env plugin must be found; directory
-    absent => an empty list is also correct."""
+    """Plugin discovery: directory present => hook plugins must be found; absent => `[]`."""
     import os  # noqa: PLC0415
     d = repo("reflect-hooks")
     found = plugins()
     if not os.path.isdir(d):
         return found == []          # no plugin directory installed => empty list is correct
-    return ("reflect-hooks/einfacht-env.sh" in found
+    return ("reflect-hooks/install.py" in found
             and "zreflect/doctor.py" not in found)
 
 
-def _nf_const_helper():
-    """Same-file helper returning a constant (pinned by `never_falsifiable`)."""
-    return True
-
-
 def _nf_multi_line():
-    """Two lambdas on one line: no bailout, and delegated never masks a hard fail."""
+    """Two lambdas on one line: no bailout when one lambda is unfalsifiable."""
     import importlib.util  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
 
-    from gate import _is_delegated, never_falsifiable  # noqa: PLC0415
+    from gate import never_falsifiable  # noqa: PLC0415
     with tempfile.TemporaryDirectory() as d:
         p = os.path.join(d, "pair.py")
         with open(p, "w", encoding="utf-8") as fh:
-            fh.write("import os\ndef _t(): return True\n"
-                     "y = 2\npair = (lambda: y > 1, lambda: y > 0 or True)\n"
-                     "masked = (lambda: os.getpid(), lambda: _t())\n")
+            fh.write("y = 2\npair = (lambda: y > 1, lambda: y > 0 or True)\n")
         spec = importlib.util.spec_from_file_location("_nf_pair_probe", p)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        r_masked = never_falsifiable(mod.masked[0])
         return (never_falsifiable(mod.pair[0]) is not None
-                and never_falsifiable(mod.pair[1]) is not None
-                and r_masked is not None and not _is_delegated(r_masked))
-
-
-def _nf_unresolved_helper():
-    """Unresolvable same-module helper fails hard rather than passing as delegated."""
-    import importlib.util  # noqa: PLC0415
-    import tempfile  # noqa: PLC0415
-
-    from gate import _is_delegated, never_falsifiable  # noqa: PLC0415
-    with tempfile.TemporaryDirectory() as d:
-        p = os.path.join(d, "unres.py")
-        with open(p, "w", encoding="utf-8") as fh:
-            fh.write("h = lambda: True\nfn = lambda: h()\n")
-        spec = importlib.util.spec_from_file_location("_nf_unres_probe", p)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        r = never_falsifiable(mod.fn)
-        return r is not None and not _is_delegated(r)
+                and never_falsifiable(mod.pair[1]) is not None)
 
 
 def _activate_or_fatal_ok():
@@ -927,23 +872,14 @@ def _activate_or_fatal_ok():
 
 
 def _nf_catches(which):
-    """Test `never_falsifiable` with **lambdas in a real file** (it locates the AST by
-    line number; a lambda in `-c` has no source file => it goes blind).
-
-    Five shapes, one each:
-      · `or_true`      -- `or True` (the boolean is short-circuited by a constant)
-      · `and_false`    -- `and False`
-      · `self_compare` -- `x == x`
-      · `const_helper` -- delegates to same-file helper returning constant True
-      · `real`         -- a real assertion (must return None)
-    """
+    """Test `never_falsifiable` with lambdas in a real file across five shapes."""
     from gate import never_falsifiable  # noqa: PLC0415
     y = 1                                                # used by self_compare
     shapes = {
         "or_true": lambda: (1 == 1) or True,
         "and_false": lambda: (1 == 1) and False,
         "self_compare": lambda: y == y,
-        "const_helper": lambda: _nf_const_helper(),
+        "const_body": lambda: True,
         "real": lambda: y > 0,
     }
     return never_falsifiable(shapes[which])
@@ -1167,85 +1103,6 @@ def _cases_phase(fx):
      lambda: _with_phases("")[0] == ("commit", "start-of-work")),
     ]
 
-def _env_hint_case(which):
-    """`gate.env_hint()`'s **five tiers** of behavior:
-
-    1. `no_carrier`   -- no carrier => None (a bare run stays quiet)
-    2. `carrier_bare` -- carrier present, knob unset => **hint** (nobody sourced it)
-    3. `carrier_live` -- knob set, value **matches** the carrier => None (the
-       carrier has taken effect)
-    4. `carrier_drift` -- knob set, value **differs** from the carrier => **hint**
-       (a manual export drifted)
-    5. `carrier_off`  -- `REFLECT_ENV_HINT=off` => the print layer emits nothing
-
-    The case requires a controlled process environment: in hook contexts the
-    carrier gets sourced into the environment, and once the knob is set,
-    `carrier_bare` would be permanently red. All relevant knobs are temporarily
-    popped and restored in finally.
-    """
-    import shutil
-    import tempfile  # noqa: PLC0415
-    d = tempfile.mkdtemp()
-    saved = gate.GATE_REPO
-    saved_off = os.environ.pop("REFLECT_ENV_HINT", None)
-    saved_fact = os.environ.pop("REFLECT_FACTS", None)
-    try:
-        gate.GATE_REPO = d
-        if which != "no_carrier":
-            open(os.path.join(d, "Einfacht.env"), "w",
-                 encoding="utf-8").write("export REFLECT_FACTS=FACTS.json\n")
-        if which == "carrier_off":
-            # The silence of `off` happens at the **print layer** (`_maybe_hint`),
-            # not in `env_hint` -- `env_hint()` still computes the sentence; nobody
-            # prints it. Test the print layer.
-            os.environ["REFLECT_ENV_HINT"] = "off"
-            import contextlib  # noqa: PLC0415
-            import io  # noqa: PLC0415
-            buf = io.StringIO()
-            with contextlib.redirect_stderr(buf):
-                gate._maybe_hint()
-            return buf.getvalue() == ""       # must **not print a single character**
-        if which == "carrier_live":
-            os.environ["REFLECT_FACTS"] = "FACTS.json"    # matches the carrier
-        elif which == "carrier_drift":
-            os.environ["REFLECT_FACTS"] = "OTHER.json"    # differs from the carrier
-        hint = gate.env_hint(consumed=("REFLECT_FACTS",))
-        if which in ("carrier_bare", "carrier_drift"):
-            return hint is not None          # must **hint**
-        return hint is None                  # no carrier / already live => must stay silent
-    finally:
-        gate.GATE_REPO = saved
-        if saved_off is not None:
-            os.environ["REFLECT_ENV_HINT"] = saved_off
-        else:
-            os.environ.pop("REFLECT_ENV_HINT", None)
-        if saved_fact is not None:
-            os.environ["REFLECT_FACTS"] = saved_fact
-        else:
-            os.environ.pop("REFLECT_FACTS", None)
-        shutil.rmtree(d, True)
-
-
-def _cases_hint(fx):
-    """Environment-hint tier cases (5 cases)."""
-    return [
-        ("★ registry.env_hint_silent_without_carrier",
-         lambda: _env_hint_case("no_carrier")),
-        ("★ registry.env_hint_fires_with_carrier",
-         lambda: _env_hint_case("carrier_bare")),
-        ("registry.env_hint_silent_when_carrier_live",
-         lambda: _env_hint_case("carrier_live")),
-        ("★ registry.env_hint_fires_on_drift",
-         lambda: _env_hint_case("carrier_drift")),
-        ("★ registry.env_hint_off_silent",
-         lambda: _env_hint_case("carrier_off")),
-    ]
-
-
-
-
-
-
 
 def _cases_gate_hosted(fx):
     """Hosted selftests for `gate.py` (`selftest=False`)."""
@@ -1267,12 +1124,10 @@ def _cases_gate_hosted(fx):
          and gate.guard_nonempty("x", [1]) is None),
         ("★ registry.load_spec_returns_error_not_raise",
          lambda: _load_spec_ok()),
-        ("★ registry.never_falsifiable_catches_const_helper",
-         lambda: _nf_catches("const_helper") is not None),
+        ("★ registry.never_falsifiable_catches_const_body",
+         lambda: _nf_catches("const_body") is not None),
         ("★ registry.never_falsifiable_catches_multi_lambda_line",
          lambda: _nf_multi_line()),
-        ("★ registry.never_falsifiable_rejects_unresolved_helper",
-         lambda: _nf_unresolved_helper()),
         ("★ registry.gate_activate_or_fatal",
          lambda: _activate_or_fatal_ok()),
         ("registry.gate_module_meta",
@@ -1280,12 +1135,8 @@ def _cases_gate_hosted(fx):
     ]
 
 
-
-
-
 def _cases():
-    """Assemble the six fixture groups. **Assembly only** -- the judgments live in the
-    group functions."""
+    """Assemble the fixture groups."""
     import atexit  # noqa: PLC0415
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
@@ -1293,10 +1144,10 @@ def _cases():
     atexit.register(shutil.rmtree, d, True)
     fx = _cases_fixture(d)
     fx["d"] = d
-    return (        _cases_discovery(fx)
+    return (
+        _cases_discovery(fx)
         + _cases_render(fx)
         + _cases_phase(fx)
-        + _cases_hint(fx)
         + _cases_gate_hosted(fx)
     )
 

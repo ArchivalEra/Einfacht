@@ -13,7 +13,7 @@
  "harness.no_gates_in_fixture": "  ✗ 夹具里一个闸门都没跑到",
  "harness.no_machine_summary": "  ✗ %(file)s 自证缺机器摘要行（=== N PASS / M FAIL ===）",
  "harness.no_modules_found": "  ✗ 一个平台模块自证都没发现 —— 零值守卫",
- "harness.no_plugins": "  ✗ 插件名单为空 —— 零值守卫：einfacht-env.sh / doctor 至少要在册",
+ "harness.no_plugins": "  ✗ 插件名单为空 —— 零值守卫：install.py / doctor 至少要在册",
  "harness.no_probes": "  ✗ 零语言探针清单为空 —— 零值守卫",
  "harness.no_selftest_entry": "  ✗ %(file)s 没有 --selftest（未登记的闸门 = 没人盯着的闸门）",
  "harness.not_red_under_defaults": "  ✗ 默认名字下 %(gate)s 没有红 ⇒ 换名自证对它的名字什么都没证明",

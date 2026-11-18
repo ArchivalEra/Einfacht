@@ -15,7 +15,6 @@
  "registry.off_without_reason": "`%(file)s` 会调 `off()` 却没在 `meta()` 里声明 `off_reason` —— 没有理由的 off 与「本仓不用这套机制」不可区分",
  "registry.open_without_encoding": "文本 `open()` 缺 `encoding=`（`%(file)s:%(lineno)d`，mode=%(mode)s）—— Windows 默认 cp1252，UTF-8 文件会抛 UnicodeDecodeError",
  "registry.path_rule_split": "`%(file)s` 的 `%(function)s()` 自己算「工具目录」（`dirname(abspath(__file__))`）—— 该值只能有一个产地（`gate.zdir()`），否则改一处就会分裂",
- "registry.reason_bases_disagree": "`criteria._REASON_BASES` 与 `einfacht-env.sh` 的载体查找位置不一致 —— 引用 `reflect-hooks/` 下载体文件的 `off_reason` 会被误判",
  "registry.phase_error": "  ERROR %(file)s（执行器层面坏了：rc<0 被信号杀，或 >2 未约定的码）",
  "registry.phase_fatal": "  FATAL %(file)s（配置/环境坏 —— 不是检查失败，修法不同）",
  "registry.phase_off": "  off    %(file)s（未启用 —— 没查，不是通过）",
@@ -29,17 +28,14 @@
  "registry.undeclared_module": "以下 .py 既非闸门（无 GATE 声明）也非已声明的平台模块（无 MODULE = module_meta(…)）—— 平台模块必须声明自己，哪怕 selftest=False（正面说「我不用自证」）：%(files)s",
  "registry.unexpected_shell": "套件里出现未登记的 shell 文件 `%(file)s` —— 全 Python 化：shell 是例外，每个都必须在 `zreflect/criteria.py` 的 `ALLOWED_SHELL` 里（并写理由）。**使用方自己的 .sh 不受这条约束**",
  "registry.unknown_phase": "`%(file)s` 的 runs_at=%(runs_at)r 不是已知相位（%(phases)s）—— 频率是声明字段，写错值会让执行面漏掉它",
- "registry.usage": "用法：registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--verify-seal|--reseal=路径|--reseal-yardstick=路径 [--allow-case-drop]|--selftest]",
+ "registry.usage": "用法：registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|--red-need|--plugins|--selftest-modules|--verify-seal|--reseal=路径|--selftest]",
  "seal.corrupt": "核心封条 `SEAL.json` 损坏：%(error)s",
  "seal.file_missing": "被封印的核心文件缺失：`%(file)s`",
  "seal.file_tampered": "被封印的核心文件被篡改：`%(file)s`（sha256 不符；仅在授权修改后跑 `registry.py --reseal=%(file)s`）",
- "seal.missing": "缺少核心封条 `%(path)s` —— 跑 `python3 zreflect/registry.py --reseal-yardstick=ALL`",
+ "seal.missing": "缺少核心封条 `%(path)s` —— 跑 `python3 zreflect/registry.py --reseal=ALL`",
  "seal.ok": "核心封条通过（%(tree)s，共 %(files)d 个文件）",
- "seal.reseal_refused_case_drop": "拒绝 `--reseal-yardstick` 更新 `%(file)s`：总用例 %(old_cases)d→%(new_cases)d，红用例 %(old_red)d→%(new_red)d（确需删减请传 `--allow-case-drop`）",
- "seal.reseal_refused_yardstick": "拒绝 `--reseal` 更新 `%(file)s`：标尺已被修改（改标尺必须用 `--reseal-yardstick`）",
  "seal.reseal_unknown_target": "重封目标不在共享核心面：%(file)s",
  "seal.resealed": "已更新核心封条：%(tree)s（%(count)d 个目标）",
  "seal.tree_mismatch": "`SEAL.json` 的 Merkle 根 `tree_sha256` 与文件哈希不一致",
- "seal.unsealed_core_file": "共享核心文件 `%(file)s` 存在于磁盘但未登记进 `SEAL.json`",
- "seal.yardstick_tampered": "`%(file)s` 的标尺区被修改（`_cases*` / `GATE` / `MODULE` / `RULES`）"
+ "seal.unsealed_core_file": "共享核心文件 `%(file)s` 存在于磁盘但未登记进 `SEAL.json`"
 }

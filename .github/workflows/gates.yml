@@ -48,6 +48,7 @@ jobs:
           # ⚠️ 这里**不许** `>/dev/null`：Windows 的 PowerShell 把它当路径
           # （`Could not find a part of the path 'D:\dev\null'`），
           # 实测 CI 的 Windows 腿就是这么红的。输出本来就不长，留着。
+          python zreflect/registry.py --verify-seal
           python zreflect/registry.py --gates
           python zreflect/registry.py --selftest-modules
           # 不给文档名 ⇒ 查全部有机器块的文档（STATE + PRINCIPLES）
@@ -66,17 +67,14 @@ jobs:
           python -m ruff check .
 
       # ── 第三档：mypy（边界见文件头）──
-      - name: 类型检查（mypy，仅 zreflect/）
-        # ⚠️ **只查 zreflect/，不查 reflect-hooks/**：后者有同名 `gate.py`，
-        # mypy 按名字解析会找到自己那份而不是 `zreflect/gate.py` —— 那是
-        # 「同名模块」的结构性冲突，不是配置问题。
+      - name: 类型检查（mypy，zreflect/ + reflect-hooks/）
         # ⚠️ 用**文件清单**而不是目录 + MYPYPATH：目录方式下 mypy 会把同目录
         # 文件按「包 / 平级」双解析 ⇒ `Source file found twice`（实测）。
         # ⚠️ `MYPYPATH=x cmd` 是 sh 语法，PowerShell 不认 —— 所以用 python
         # 设环境变量再调，这是唯一不依赖 shell 方言的写法。
         run: |
           python -m pip install --quiet 'mypy==1.13.0'
-          python -c "import glob,os,subprocess,sys; os.environ['MYPYPATH']='zreflect'; sys.exit(subprocess.run([sys.executable,'-m','mypy']+sorted(glob.glob('zreflect/*.py'))+['--ignore-missing-imports','--no-error-summary']).returncode)"
+          python -c "import glob,os,subprocess,sys; os.environ['MYPYPATH']='zreflect'; files=sorted(glob.glob('zreflect/*.py'))+sorted(glob.glob('reflect-hooks/*.py')); sys.exit(subprocess.run([sys.executable,'-m','mypy']+files+['--check-untyped-defs','--ignore-missing-imports','--no-error-summary']).returncode)"
       # ── 第四档：可运行示范（examples/）──
       # 每个示范在**临时仓**里跑一遍真 CLI：套件复制过去、`facts.py --init`
       # 引导、再跑示范自己的步骤。覆盖率由 `registry.py --gates` 派生 ——
@@ -107,17 +105,13 @@ jobs:
       # ── 第五档：shellcheck（外部验证既有 shell 面，issue #41 落实轮）──
       # 判据边界写在 `.shellcheckrc`：SC1007（CDPATH= 环境赋值）/SC1090（非静态
       # source 是插件契约）/SC2016（夹具字面量故意单引号）/SC2034（自证形状）
-      # 四类豁免逐类留痕。它不是新 lint 规则——是对 7 个 shell 文件的独立复核；
+      # 四类豁免逐类留痕。它不是新 lint 规则——是对 3 个 shell 文件的独立复核；
       # 套件判据面（zreflect/*.py 的 ALLOWED_SHELL 白名单）不受影响。
-      - name: shellcheck（7 个 shell 面，白名单在 .shellcheckrc）
+      - name: shellcheck（3 个 shell 面，白名单在 .shellcheckrc）
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck gates-selftest.sh \
-                     reflect-hooks/einfacht-env.sh \
-                     reflect-hooks/pre-commit \
-                     reflect-hooks/pre-push \
-                     reflect-hooks/quality-record.sh \
+          shellcheck reflect-hooks/quality-record.sh \
                      examples/quality_record/exercise.sh \
                      examples/check_invariants/app/build.sh
         shell: bash

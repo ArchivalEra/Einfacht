@@ -80,7 +80,7 @@ REGISTRY = {
                       _Semantic("knobs.sem.reflect_facts")),
     "REFLECT_DOC": ("file", "STATE.md",
                     _Semantic("knobs.sem.reflect_doc")),
-    "REFLECT_DOCS": ("list", "STATE.md,AGENTS.md,PRINCIPLES.md,README.md,README.zh.md,README.de.md",
+    "REFLECT_DOCS": ("list", "STATE.md,PRINCIPLES.md,AGENTS.md,README.md",
                      _Semantic("knobs.sem.reflect_docs")),
     "REFLECT_HISTORY_SECS": ("value", "",
                              _Semantic("knobs.sem.reflect_history_secs")),
@@ -94,7 +94,7 @@ REGISTRY = {
                        _Semantic("knobs.sem.reflect_replay")),
     "REFLECT_REPLAY_TIMEOUT": ("number", "10",
                                _Semantic("knobs.sem.reflect_replay_timeout")),
-    "REFLECT_READMES": ("list", "README.md,README.zh.md,README.de.md",
+    "REFLECT_READMES": ("list", "README.md",
                         _Semantic("knobs.sem.reflect_readmes")),
     "REFLECT_RETRACTIONS": ("file", "retractions.json",
                             _Semantic("knobs.sem.reflect_retractions")),
@@ -102,10 +102,6 @@ REGISTRY = {
                           _Semantic("knobs.sem.reflect_questions")),
     "REFLECT_HISTORY": ("file", "HISTORY.md",
                         _Semantic("knobs.sem.reflect_history")),
-    "REFLECT_ENV_FILE": ("value", "Einfacht.env",
-                         _Semantic("knobs.sem.reflect_env_file")),
-    "REFLECT_ENV_HINT": ("flag", "",
-                         _Semantic("knobs.sem.reflect_env_hint")),
     "REFLECT_INVARIANTS": ("file", "",
                            _Semantic("knobs.sem.reflect_invariants")),
     "REFLECT_INSTRUMENTS": ("file", "",
@@ -212,15 +208,69 @@ def scan_surface_problems(py_dir=None):
     return out
 
 
-def readme_names():
-    """The list of three-language READMEs (`REFLECT_READMES`; default from `REGISTRY`).
+CONFIG_NAME = "knobs.json"
 
-    ⚠️ **"unset" and "explicitly empty" are different intents**: unset means "use
-    the default"; empty means "this repo deliberately has no README group" and
-    returns `[]`. `check_readme_sync` relies on this distinction;
-    `docs_names()` deliberately collapses empty to the default.
+
+def repo_config(root=None):
+    """Read optional `<repo>/knobs.json` dict (`{ 'REFLECT_...': '...' }`); absent/invalid => `{}`."""
+    import json  # noqa: PLC0415
+    base = root or gate.GATE_REPO
+    path = os.path.join(base, CONFIG_NAME)
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: str(v).strip() for k, v in data.items()
+            if isinstance(k, str) and isinstance(v, (str, int, float, bool))}
+
+
+def _raw_knob(name, root=None):
+    """Resolve raw knob value: `os.environ` > `repo_config()` > `None`."""
+    if name in os.environ:
+        return os.environ[name]
+    return repo_config(root).get(name)
+
+
+def _config_entry_problems(base, k, v):
+    """Validate one `(key, value)` pair inside `knobs.json`."""
+    if k not in REGISTRY:
+        return [M("knobs.phantom_token", token=k)]
+    if not isinstance(v, str) or not v.strip():
+        return [M("knobs.config_invalid_value", knob=k)]
+    if REGISTRY[k][0] in ("file", "dir") and not os.path.exists(os.path.join(base, v.strip())):
+        return [M("knobs.config_missing_target", knob=k, target=v.strip())]
+    return []
+
+
+def config_problems(root=None):
+    """Validate optional `<repo>/knobs.json`: valid JSON object, registered keys, existing targets."""
+    import json  # noqa: PLC0415
+    base = root or gate.GATE_REPO
+    path = os.path.join(base, CONFIG_NAME)
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return [M("knobs.config_corrupt", path=CONFIG_NAME, error=exc)]
+    if not isinstance(data, dict):
+        return [M("knobs.config_corrupt", path=CONFIG_NAME, error="not a JSON object")]
+    return [p for k, v in sorted(data.items())
+            for p in _config_entry_problems(base, k, v)]
+
+
+def readme_names():
+    """The list of READMEs (`REFLECT_READMES`; default from `REGISTRY`).
+
+    Unset uses `REGISTRY["REFLECT_READMES"][1]`; explicitly empty returns `[]`.
     """
-    raw = os.environ.get("REFLECT_READMES")
+    raw = _raw_knob("REFLECT_READMES")
     if raw is None or not raw.strip():
         if raw is not None:
             return []                                 # explicitly empty: a real answer
@@ -228,9 +278,9 @@ def readme_names():
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
-def get(name):
+def get(name, root=None):
     """Read knob `name` (trimmed); empty/unset falls back to `REGISTRY[name][1]`."""
-    raw = os.environ.get(name, "").strip()
+    raw = (_raw_knob(name, root) or "").strip()
     if raw:
         return raw
     return REGISTRY[name][1]
@@ -246,14 +296,8 @@ def docs_names():
 
 
 def served_langs():
-    """The languages this repo **declares it serves** (`REFLECT_LANGS`).
-
-    Unset => empty list = "every installed pack counts". Set => only these
-    languages are judged by `pack_coverage_problems` / `pack_sync_problems`; the
-    other pack directories are suite self-evidence samples. "Served" is a promise
-    about **readers**, not about translation workload.
-    """
-    raw = os.environ.get("REFLECT_LANGS", "").strip()
+    """The languages this repo **declares it serves** (`REFLECT_LANGS`)."""
+    raw = (_raw_knob("REFLECT_LANGS") or "").strip()
     if not raw:
         return []                                  # unset = no narrowing
     return [s.strip() for s in raw.split(",") if s.strip()]
@@ -264,14 +308,8 @@ FLAG_FALSY = ("0", "false", "no", "off")
 
 
 def flag(name):
-    """Read a flag-kind knob; returns `True` (on) / `False` (off) / `None` (unset).
-
-    Matching is case-insensitive and whitespace-trimmed for `FLAG_TRUTHY` /
-    `FLAG_FALSY`. `None` = unset or an unrecognized word (the caller applies its
-    own default), a different decision from "explicitly off"; an unrecognized
-    word is never silently treated as on.
-    """
-    raw = os.environ.get(name, "").strip().lower()
+    """Read a flag-kind knob; returns `True` (on) / `False` (off) / `None` (unset)."""
+    raw = (_raw_knob(name) or "").strip().lower()
     if not raw:
         return None                   # unset (including empty string) => caller default
     if raw in FLAG_TRUTHY:
@@ -283,12 +321,12 @@ def flag(name):
 
 def questions_dir(repo_root=None):
     """The open-questions directory name (`REFLECT_QUESTIONS`; default from `REGISTRY`)."""
-    return get("REFLECT_QUESTIONS")
+    return get("REFLECT_QUESTIONS", repo_root)
 
 
 def repo_path(name, root=None):
     """Resolve knob `name` relative to `root` (default `gate.GATE_REPO`); empty => None."""
-    rel = get(name)
+    rel = get(name, root)
     if not rel:
         return None
     base = root or gate.GATE_REPO
@@ -302,7 +340,7 @@ def questions_path(repo_root=None):
 
 def history_secs():
     """Append-only history section numbers parsed once from `REFLECT_HISTORY_SECS`."""
-    return tuple(s for s in os.environ.get("REFLECT_HISTORY_SECS", "").split(",") if s)
+    return tuple(s for s in (_raw_knob("REFLECT_HISTORY_SECS") or "").split(",") if s)
 
 
 def _text_of(name, files=None):
@@ -1265,12 +1303,36 @@ def _cases_registry(fx):
     ("knobs.get_and_helpers",
      lambda: get("REFLECT_FACTS") == REGISTRY["REFLECT_FACTS"][1]
      and questions_dir() == REGISTRY["REFLECT_QUESTIONS"][1]
-     and repo_path("REFLECT_FACTS", "/r") == "/r/" + REGISTRY["REFLECT_FACTS"][1]
+     and repo_path("REFLECT_FACTS", "/r") == os.path.join("/r", REGISTRY["REFLECT_FACTS"][1])
      and repo_path("REFLECT_INVARIANTS", "/r") is None
+     and isinstance(repo_config(), dict)
+     and config_problems() == []
      and isinstance(history_secs(), tuple)),
+    ("★ knobs.config_problems_detected",
+     lambda: _config_problems_case()),
     ("★ knobs.inline_default_literal_detected",
      lambda: _inline_default_case()),
     ]
+
+
+def _config_problems_case():
+    """Verify `config_problems` reports unknown keys, missing file targets, and corrupt JSON."""
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        p = os.path.join(d, CONFIG_NAME)
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write("{broken")
+        if [x.code for x in config_problems(d)] != ["knobs.config_corrupt"]:
+            return False
+        ghost = "REFLECT_" + "GHOST"
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write('{"%s": "1", "REFLECT_FACTS": "missing.json"}\n' % ghost)
+        codes = [x.code for x in config_problems(d)]
+        return codes == ["knobs.config_missing_target", "knobs.phantom_token"]
+    finally:
+        shutil.rmtree(d, True)
 
 
 def _inline_default_case():
@@ -1320,28 +1382,29 @@ def _flag_case():
 
 
 def _docs_names_follows():
-    """The scanning gates' default surface must equal the registry.
-
-    ⚠️ The judgment is at the **consumer end** -- which files `check_stale` /
-    `check_retractions` scan when the knob is unset -- not `docs_names()` reading
-    the registry (a circular comparison would stay green when both sides drift).
-    With the knob set it must not fall back to the registry; otherwise the knob
-    would be dead. Returns False on either failure.
-    """
+    """Verify `REFLECT_DOCS` resolution across `REGISTRY` default, `knobs.json`, and `os.environ`."""
     import os  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     registered = [s.strip() for s in REGISTRY["REFLECT_DOCS"][1].split(",")
                   if s.strip()]
     prev = os.environ.get("REFLECT_DOCS")
+    saved_repo = gate.GATE_REPO
+    d = tempfile.mkdtemp()
     try:
+        gate.GATE_REPO = d
         os.environ.pop("REFLECT_DOCS", None)
-        scanned = _docs_scanned_by_gates()
-        if scanned != registered:
+        if _docs_scanned_by_gates() != registered:
             return False
-        # With the knob set it must **not** fall back to the registry (otherwise
-        # the user cannot change it; the knob would be dead)
+        with open(os.path.join(d, CONFIG_NAME), "w", encoding="utf-8") as fh:
+            fh.write('{"REFLECT_DOCS": "cfg.md"}\n')
+        if _docs_scanned_by_gates() != ["cfg.md"]:
+            return False
         os.environ["REFLECT_DOCS"] = "only.md"
         return _docs_scanned_by_gates() == ["only.md"]
     finally:
+        gate.GATE_REPO = saved_repo
+        shutil.rmtree(d, True)
         if prev is None:
             os.environ.pop("REFLECT_DOCS", None)
         else:

@@ -264,16 +264,19 @@ def replay_all(ledger, runner=None):
     return stats
 
 
+def _with_principles(ledger):
+    """Merge `doc.facts_of_rules()` into `facts_of(ledger)` when principles are active."""
+    import doc  # noqa: PLC0415
+    f = dict(facts_of(ledger))
+    if doc.accepts_principles():
+        f.update(doc.facts_of_rules())
+    return {"facts": f}
+
+
 def run(argv):
     import knobs  # noqa: PLC0415
-    # Go through `knobs.flag` (the single place of origin) -- the previous
-    # `.lower() == "off"` was a second vocabulary.
     if knobs.flag("REFLECT_REPLAY") is False:
         return off(M("replay.off"))
-    # Parsing lives in exactly one place (runner.timeout_with_status) -- this
-    # used to probe again with its own float(), so the same bad value was
-    # silent in the runner and warned here (observed: an empty string got two
-    # different treatments).
     seconds, bad_timeout = timeout_with_status()
     if bad_timeout is not None:
         print("⚠ %s" % M("replay.bad_timeout", value=bad_timeout,
@@ -282,7 +285,7 @@ def run(argv):
     p = repo(name)
     if not os.path.exists(p):
         return fatal(M("replay.ledger_missing", name=name))
-    r = replay_all(load_or_fatal(p))
+    r = replay_all(_with_principles(load_or_fatal(p)))
     ctail = str(M("replay.ok_calibrated", count=r["calibrated"]) if r["calibrated"] else "")
     return finish(M("replay.title"), r["problems"],
                   M("replay.ok", count=r["ok"],

@@ -13,7 +13,7 @@
  "harness.no_gates_in_fixture": "  ✗ im Fixture lief kein Tor",
  "harness.no_machine_summary": "  ✗ %(file)s Selbsttest ohne Maschinen-Zusammenfassungszeile (=== N PASS / M FAIL ===)",
  "harness.no_modules_found": "  ✗ kein Plattformmodul-Selbsttest entdeckt — Nullwert-Wächter",
- "harness.no_plugins": "  ✗ Plugin-Liste ist leer — Nullwert-Wächter: einfacht-env.sh / doctor müssen eingetragen sein",
+ "harness.no_plugins": "  ✗ Plugin-Liste ist leer — Nullwert-Wächter: install.py / doctor müssen eingetragen sein",
  "harness.no_probes": "  ✗ Liste der Nullsprach-Proben ist leer — Nullwert-Wächter",
  "harness.no_selftest_entry": "  ✗ %(file)s hat kein --selftest (ein nicht registriertes Tor ist ein unbewachtes Tor)",
  "harness.not_red_under_defaults": "  ✗ %(gate)s wurde unter Standardnamen NICHT rot ⇒ der Umbenennungstest beweist nichts über es",

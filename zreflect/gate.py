@@ -111,7 +111,6 @@ def guard_nonempty(name, seq, what=None):
 def off(notice):
     """Emit explicit `OFF:` marker on stdout and return 0."""
     print(machine().emit("off", notice))
-    _maybe_hint()
     return 0
 
 
@@ -250,89 +249,9 @@ def finish(name, problems, ok):
             if forged:
                 print("  " + i18n.M("gate.forged_row_neutralised",
                                     count=len(forged)), file=sys.stderr)
-        _maybe_hint()
         return 1
     print(ok)
-    _maybe_hint()
     return 0
-
-
-def _env_hint_off():
-    """Is `REFLECT_ENV_HINT` explicitly off -- goes through `knobs.flag` (the single
-    source of the flag vocabulary).
-
-    ⚠️ `knobs.flag` accepts the whole flag vocabulary, including `TRUE` and
-    `YES`, instead of a second case-sensitive list.
-    """
-    import knobs  # noqa: PLC0415
-    return knobs.flag("REFLECT_ENV_HINT") is False
-
-
-def _maybe_hint():
-    """Print the env hint to stderr (**never stdout** -- that stream carries the
-    machine contract).
-
-    `REFLECT_ENV_HINT=off` disables it entirely (the exit for repos that "don't like
-    hints"; the hint itself is **human courtesy**, not a criterion).
-    """
-    if _env_hint_off():
-        return
-    h = env_hint()
-    if h:
-        print("ℹ %s" % h, file=sys.stderr)
-
-
-def env_carrier():
-    """The repo's Einfacht.env carrier path (hooks dir first, repo root second); none => None."""
-    import knobs  # noqa: PLC0415
-    name = knobs.get("REFLECT_ENV_FILE")
-    for d in (repo("reflect-hooks"), repo()):
-        p = os.path.join(d, name)
-        if os.path.exists(p):
-            return p
-    return None
-
-
-def gate_knobs(module=None):
-    """The caller module's declared `GATE = meta(..., knobs=...)` (unavailable => empty).
-
-    Lets `env_hint()` avoid hand-writing knob names at every entry -- the declaration
-    already holds one copy (single source).
-    """
-    import sys as _sys  # noqa: PLC0415
-    mod = module if module is not None else _sys.modules.get("__main__")
-    decl = getattr(mod, "GATE", None)
-    if isinstance(decl, dict):
-        return tuple(decl.get("knobs") or ())
-    return ()
-
-
-def env_hint(consumed=(), module=None):
-    """Return courtesy `M(...)` hint when `Einfacht.env` exists and knobs are unset or drifted."""
-    carrier = env_carrier()
-    if not carrier:
-        return None
-    if not consumed:
-        consumed = gate_knobs(module)
-    if not consumed:
-        return None
-    import check_envfile  # noqa: PLC0415
-    try:
-        with open(carrier, encoding="utf-8", errors="replace") as fh:
-            exported = check_envfile.parse_exports(fh.read())
-    except OSError:
-        exported = {}
-    set_kv = {k: os.environ[k].strip() for k in consumed
-              if os.environ.get(k, "").strip()}
-    if not set_kv:
-        rel = os.path.relpath(carrier, GATE_REPO)
-        import i18n  # noqa: PLC0415
-        return i18n.M("gate.env_hint", file=rel)
-    if all(exported.get(k) == v for k, v in set_kv.items()):
-        return None
-    rel = os.path.relpath(carrier, GATE_REPO)
-    import i18n  # noqa: PLC0415
-    return i18n.M("gate.env_hint", file=rel)
 
 
 def _meta_shape(name, desc, knobs):
@@ -466,17 +385,6 @@ def _short_circuit_reason(node):
     return None
 
 
-# Builtin whitelist: they **inline logic inside the lambda** rather than delegate --
-# the generator/arguments are right there in the AST, so always-true detection can
-# still scan them (classifying builtins as delegation would false-positive half the
-# assertions; observed: 6 false positives).
-_BUILTIN_OK = frozenset({
-    "any", "all", "bool", "len", "sorted", "sum", "min", "max",
-    "isinstance", "getattr", "hasattr", "str", "int", "set",
-    "list", "tuple", "dict", "repr",
-})
-
-
 def _assertion_node(fn):
     """Locate the lambda AST node(s) for this assertion. Unlocatable => `[]` (no guessing)."""
     code = getattr(fn, "__code__", None)
@@ -488,117 +396,16 @@ def _assertion_node(fn):
     return _lambda_nodes(tree, code.co_firstlineno)
 
 
-def _find_helper_def(tree, name):
-    """Locate a same-file `FunctionDef` for `name` (top-level or unique nested)."""
-    if not tree:
-        return None
-    for n in tree.body:
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name:
-            return n
-    nested = [n for n in ast.walk(tree)
-              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name]
-    return nested[0] if len(nested) == 1 else None
-
-
-def _direct_returns(fn_def):
-    """Collect `Return` nodes belonging directly to `fn_def` (skipping nested defs)."""
-    out, stack = [], list(fn_def.body)
-    while stack:
-        node = stack.pop()
-        if isinstance(node, ast.Return):
-            out.append(node)
-        elif not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
-                                   ast.ClassDef, ast.Lambda)):
-            stack.extend(ast.iter_child_nodes(node))
-    return out
-
-
-def _helper_constant_truthy(fn_def):
-    """True if every direct return in `fn_def` is a truthy constant (unfalsifiable)."""
-    rets = _direct_returns(fn_def)
-    return bool(rets) and all(r.value is not None and _const_truthy(r.value) for r in rets)
-
-
-def _fn_arg_names(fn_def):
-    """Parameter names bound on `fn_def`'s signature."""
-    a = fn_def.args
-    return {x.arg for x in a.posonlyargs + a.args + a.kwonlyargs} | {
-        x.arg for x in (a.vararg, a.kwarg) if x is not None}
-
-
-def _returned_helper_names(fn_def):
-    """Same-file helper names directly returned as `return helper(...)` (skip callbacks)."""
-    params = _fn_arg_names(fn_def)
-    out = []
-    for ret in _direct_returns(fn_def):
-        val = ret.value
-        if (isinstance(val, ast.Call) and isinstance(val.func, ast.Name)
-                and val.func.id not in _BUILTIN_OK and val.func.id not in params):
-            out.append(val.func.id)
-    return out
-
-
-def _imported_names(tree):
-    """Top-level / nested imported identifiers bound in `tree`."""
-    out = set()
-    if not tree:
-        return out
-    for n in ast.walk(tree):
-        if isinstance(n, ast.Import):
-            for a in n.names:
-                out.add(a.asname or a.name.split(".")[0])
-        elif isinstance(n, ast.ImportFrom):
-            for a in n.names:
-                out.add(a.asname or a.name)
-    return out
-
-
-def _missing_helper_reason(tree, name):
-    """Classify an unresolved `ast.Call` target: imported => delegated, else unresolved."""
+def _const_lambda_reason(nodes):
+    """Check whether any 0-arg candidate lambda directly returns a constant literal."""
     import i18n  # noqa: PLC0415
-    if name in _imported_names(tree):
-        return i18n.M("gate.never_falsifiable_delegated")
-    return i18n.M("gate.never_falsifiable_unresolved_helper")
-
-
-def _helper_reason(tree, name, seen):
-    """Inspect a delegated same-file helper; imported calls report `delegated`, unresolvable fails."""
-    import i18n  # noqa: PLC0415
-    if name in seen:
-        return None
-    fn_def = _find_helper_def(tree, name)
-    if fn_def is None:
-        return _missing_helper_reason(tree, name)
-    sc = _short_circuit_reason_of([fn_def])
-    if sc:
-        return sc
-    if _helper_constant_truthy(fn_def):
-        return i18n.M("gate.never_falsifiable_constant_return")
-    if len(seen) < 2:
-        for sub_name in _returned_helper_names(fn_def):
-            sub = _helper_reason(tree, sub_name, seen | {name})
-            if sub and not _is_delegated(sub):
-                return sub
-    return None
-
-
-def _delegation_reason(nodes, tree=None):
-    """Judge delegated `Call` bodies: penetrate same-file helpers, defer externals."""
-    import i18n  # noqa: PLC0415
-    delegated_why = None
     for node in nodes:
-        if not isinstance(node.body, ast.Call):
-            continue
-        f = node.body.func
-        if isinstance(f, ast.Name) and f.id not in _BUILTIN_OK:
-            why = _helper_reason(tree, f.id, set())
-            if why and not _is_delegated(why):
-                return why
-            if why:
-                delegated_why = delegated_why or why
-        elif isinstance(f, ast.Attribute) and f.attr not in _BUILTIN_OK:
-            delegated_why = delegated_why or i18n.M("gate.never_falsifiable_delegated")
-    return delegated_why
+        if (isinstance(node, ast.Lambda)
+                and not (node.args.posonlyargs or node.args.args
+                         or node.args.kwonlyargs or node.args.vararg or node.args.kwarg)
+                and isinstance(node.body, ast.Constant)):
+            return i18n.M("gate.never_falsifiable_constant_return")
+    return None
 
 
 def _short_circuit_reason_of(nodes):
@@ -617,46 +424,25 @@ def _falsifiability_located(nodes):
     return nodes or None
 
 
-def _falsifiability_reason(nodes, tree=None):
-    """Judge every located lambda: short circuits first, then helper-penetrating delegation."""
+def _falsifiability_reason(nodes):
+    """Judge every located lambda: constant body or short-circuit / self-comparison."""
     if not nodes:
         return None
-    return (_short_circuit_reason_of(nodes)
-            or _delegation_reason(nodes, tree))
+    return _const_lambda_reason(nodes) or _short_circuit_reason_of(nodes)
 
 
 def never_falsifiable(fn):
     """Does this selftest case have falsification power?
 
-    Scans all lambdas on `co_firstlineno` for short circuits/self-comparisons
-    and penetrates same-module delegated helper functions.
+    Scans all lambdas on `co_firstlineno` for constant bodies, short circuits,
+    and self-comparisons (`x == x`).
     """
-    code = getattr(fn, "__code__", None)
-    if code is None:
-        return None
-    tree = _ast_for(code.co_filename)
-    return _falsifiability_reason(_falsifiability_located(_assertion_node(fn)), tree)
-
-
-def _is_delegated(why):
-    """Is this `why` the "delegated assertion" criterion (rather than an always-true
-    short circuit)?
-
-    ⚠️ Must look at `.code`, never `str(why)`: `why` is a `Message` whose str value
-    has already been rendered **in the current language**, so matching against the
-    English code never hits under `zh`.
-    """
-    return getattr(why, "code", None) == "gate.never_falsifiable_delegated"
+    return _falsifiability_reason(_falsifiability_located(_assertion_node(fn)))
 
 
 def _run_safely(label, fn):
     """Run the assertion body. Returns `(passed?, failure line or None)`. **Exceptions
-    must not escape**.
-
-    `SystemExit` is caught separately: selftest assertions like `raises(...)`
-    deliberately raise -- that is the behavior under test, not a selftest failure;
-    but if it truly leaks to this layer, the case was written wrong.
-    """
+    must not escape**."""
     import i18n  # noqa: PLC0415
     try:
         return bool(fn()), None
@@ -668,42 +454,17 @@ def _run_safely(label, fn):
 
 
 def _case_verdict(label, fn):
-    """Run one case. Returns `(passed?, delegated?, failure line or None)`.
-
-    An unfalsifiable assertion fails without executing. A delegated assertion is
-    **still executed**: its verdict returns `delegated=True` so `_report_one`
-    prints `note |` and counts it separately. Any other assertion executes
-    normally. In all three branches `_run_safely` keeps exceptions from escaping.
-    """
+    """Run one case. Returns `(passed?, failure line or None)`."""
     import i18n  # noqa: PLC0415
     why = never_falsifiable(fn)
-    if why and _is_delegated(why):
-        passed, failure = _run_safely(label, fn)
-        return passed, True, failure
     if why:
-        # `fail | ` is the selftest machine-line prefix -- an emission-point literal,
-        # not in the language pack
-        return False, False, i18n.M("gate.case_unfalsifiable",
-                                    label=label, why=why)
-    passed, failure = _run_safely(label, fn)
-    return passed, False, failure
+        return False, i18n.M("gate.case_unfalsifiable", label=label, why=why)
+    return _run_safely(label, fn)
 
 
-def _print_banner(name, total, bad, delegated):
-    """The summary's three lines: delegated count (listed separately) / human summary /
-    machine summary line.
-
-    Delegated is not a failure, but it is also not "scanned and clean" -- it gets
-    its own human line. The machine summary line is independent of the checker
-    name and has a fixed format; runner/CI grep it directly. The `=== ` prefix
-    and trailing ` ===` are emission-point literals (language pack values must
-    not start with `^===`).
-    """
+def _print_banner(name, total, bad):
+    """Emit human summary line and fixed-format machine summary line."""
     import i18n  # noqa: PLC0415
-    if delegated:
-        print(machine().emit("human_summary",
-                           i18n.M("gate.selftest_delegated",
-                                  name=name, count=delegated)))
     print(machine().emit("human_summary",
                        i18n.M("gate.selftest_summary",
                               name=name, passed=total - bad, failed=bad)))
@@ -711,58 +472,30 @@ def _print_banner(name, total, bad, delegated):
 
 
 def _report_one(label, fn):
-    """Run one case and **report its outcome on the spot**. Returns `(passed?,
-    delegated?, failure line or None)`.
-
-    The four outcomes each have an output path, but "how to report" and "whether to
-    report" must stay separate:
-
-      - delegated + passed  -> `note | ... | delegated`
-      - delegated + failed  -> **`fail | ...`**
-      - always-true / exception -> `fail | <reason>`
-      - normal              -> `PASS | ...` or `fail | ...`
-    """
-    passed, was_delegated, failure = _case_verdict(label, fn)
-    if was_delegated:
-        print(machine().emit("note", "%s | delegated" % label))
-        if not passed:
-            print(machine().emit("fail", label))
-        return passed, True, None
+    """Run one case and report its outcome (`PASS | ...` or `fail | ...`)."""
+    passed, failure = _case_verdict(label, fn)
     if failure is not None:
         print(machine().emit("fail", failure))
-        return False, False, failure
-    # The pass line is `PASS | `, the failure line is `fail | ` -- two kinds, one table
+        return False, failure
     print(machine().emit("pass" if passed else "fail", label))
-    return passed, False, None
+    return passed, None
 
 
 def selftest(name, cases):
-    """Run cases, each `(label, callable) -> bool`; empty cases => FATAL rc 2.
-
-    All three case classes must be present: normal runs that don't report
-    (positive control), cases that do report (reverse assertion), and empty
-    input that reports (zero-trust guard). `_report_one` decides per-case output
-    and `_print_banner` emits the summary; this function only accumulates counts.
-    Returns 0 when all cases pass, 1 otherwise.
-    """
+    """Run cases, each `(label, callable) -> bool`; empty cases => FATAL rc 2."""
     import i18n  # noqa: PLC0415
     if not cases:
-        # The 0/0 hole (the third incident recorded at the top of this file): a
-        # selftest with an empty case list checks nothing, prints "0 PASS / 0 FAIL",
-        # and exits green -- the runner's grep still accepts it. An empty list is a
-        # shape error in writing the selftest; sound on the spot, never green.
         fatal_exit(i18n.M("gate.selftest_empty_cases", name=name))
     import seal  # noqa: PLC0415
     if seal.seal_exists():
         probs = seal.verify_problems()
         if probs:
             fatal_exit(probs[0])
-    bad = delegated = 0
+    bad = 0
     for label, fn in cases:
-        ok, was_delegated, _failure = _report_one(label, fn)
-        delegated += 1 if was_delegated else 0
+        ok, _failure = _report_one(label, fn)
         bad += 0 if ok else 1
-    _print_banner(name, len(cases), bad, delegated)
+    _print_banner(name, len(cases), bad)
     return 1 if bad else 0
 
 

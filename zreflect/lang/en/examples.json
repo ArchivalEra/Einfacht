@@ -1,6 +1,5 @@
 {
  "examples.argv_bad": "step %(step)d argv must be a non-empty string array",
- "examples.carrier_unreadable": "the generated Einfacht.env cannot be read (%(path)s): %(error)s — steps would run with no knobs",
  "examples.coverage_failed": "example coverage failed",
  "examples.coverage_missing": "gate %(example)s has no same-named example",
  "examples.coverage_ok": "example coverage ok (%(count)d examples)",

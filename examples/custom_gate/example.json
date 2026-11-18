@@ -4,6 +4,7 @@
   "steps": [
     {"argv": ["{python}", "zreflect/check_answer.py", "--selftest"], "contains": ["3 PASS / 0 FAIL"]},
     {"argv": ["{python}", "zreflect/registry.py", "--run", "lab"], "contains": ["phase='lab'", "ran=1"]},
+    {"argv": ["{python}", "zreflect/facts.py"]},
     {"argv": ["{python}", "zreflect/facts.py", "--render-doc"]},
     {"argv": ["{python}", "zreflect/registry.py", "--run", "commit"], "not_contains": ["check_answer.py"]}
   ]

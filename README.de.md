@@ -52,16 +52,16 @@ python3 zreflect/facts.py --render-doc            # Statusdokument rendern
 python3 reflect-hooks/install.py --chain          # in vorhandene Git-Hooks einketten
 ```
 
-`--init` schreibt eine `Einfacht.env`, zugeschnitten auf die **tatsächlich
-erzeugten** Dokumente: die Register-Standardwerte setzen sechs voraus (Status,
-Regeln, Wegführung, drei READMEs), ein neues Repo hat weniger, und der Träger ist
-das, was verhindert, dass jedes Gate „README.zh.md fehlt" meldet.
+`--init` schreibt die Skelett-Dokumente (`STATE.md`, `PRINCIPLES.md`, `AGENTS.md`,
+`README.md`), `retractions.json` und `questions/`. Die Register-Standardwerte
+passen direkt zu diesem Einzel-README-Skelett; Repos mit eigenen Knöpfen können
+eine optionale `knobs.json` in die Repo-Wurzel legen (von Hooks, CLI und CI
+identisch gelesen):
 
-**Der Träger wird von den Hooks gelesen, nicht von einem blanken
-`python3 zreflect/...`.** Wenn du ein Gate von Hand läufst, source ihn zuerst:
-
-```bash
-set -a; . ./Einfacht.env; set +a
+```json
+{
+  "REFLECT_MEASURE_MODULE": "my_measure"
+}
 ```
 
 Die Suite braucht keinen eigenen Installationsschritt: sie besteht aus Skripten und
