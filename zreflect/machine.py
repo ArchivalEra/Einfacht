@@ -310,19 +310,14 @@ _BREAKS = [("\n", "LF"), ("\r", "CR"), ("\x0b", "VT"), ("\x0c", "FF"),
 
 
 def _cases_clean():
-    """1. Normal non-reports: legitimate content must not be collateral damage of neutralisation."""
+    """Clean prose and legitimate mentions must not be flagged."""
     return [
         ("machine.clean_text_is_untouched",
          lambda: clean("all fine here")[0] == "all fine here"),
-        # Legitimate multi-line: continuation lines indented, none starting
-        # with a machine shape (the shape of the real packs)
         ("machine.legit_multiline_passes",
          lambda: reject("hint\n  set -a; . x; set +a") is None),
-        # The body **mentioning** a contract string is legitimate content
-        # (prose must be able to say "OFF: is not a failure")
         ("machine.body_mention_is_fine",
          lambda: reject("`OFF:` is not a failure") is None),
-        # Human-readable summary lines must pass (they get translated)
         ("machine.human_summary_is_not_machine",
          lambda: reject("=== gate.title.facts selftest: 18 PASS / 0 fail ===")
          is None),
@@ -330,70 +325,46 @@ def _cases_clean():
 
 
 def _cases_forgery():
-    """2. What must be reported gets reported: line separators / broad prefixes / note / machine summary -- four forgery classes."""
-    # ⚠️ The inner lambda is bound by **immediate evaluation** of the outer
-    # `(lambda sep: ...)(sep)`, not by late capture of the loop variable --
-    # ruff's B023 is a false positive here (it only looks at closure shape,
-    # not at whether the call is immediate). A named factory would be equally
-    # correct, but it would make these 10 assertions inconsistent in shape
-    # with the other assertions.
+    """Four forgery classes: line breaks, broad prefixes, note prefix, summary."""
     per_sep = [("\u2605 machine.forgery_%s" % name,
                 (lambda sep: lambda: _try_reject(
                     "ctx" + sep + "OFF: masquerading"))(sep))  # noqa: B023
                for sep, name in _BREAKS]
     return per_sep + [
-        # Broad table: capitalized word + colon all count as reserved prefixes
-        # (a language-pack author just rephrases)
         ("\u2605 machine.broad_prefix_reserved",
          lambda: _try_reject("HTTP: 500")),
-        # `note | ` -- previously **completely** slipped through (absent from the shape table)
         ("\u2605 machine.note_prefix",
          lambda: _try_reject("note | delegated")),
-        # A **forged** machine summary must be recognized (while human-readable summaries must not)
         ("\u2605 machine.machine_summary_is_machine",
          lambda: _try_reject("=== 9 PASS / 0 FAIL ===")),
     ]
 
 
 def _cases_empty():
-    """3. Empty input must be reported -- "empty" has three meanings here, pinned one by one."""
+    """Empty-input guards: empty body, empty pack value, empty scan."""
     return [
-        #  - Emitting an empty **body**: the line remains (`OFF: `); it must
-        #    not collapse into an empty string or lose the line
         ("\u2605 machine.empty_body_keeps_the_row",
          lambda: emit("off", "") == "OFF: "),
-        #  - An empty language-pack value: `""` itself is not a forgery (that
-        #    is "this message was never written", governed by `i18n._validate`'s
-        #    `pack_empty`). The criterion must not treat it as a machine line.
         ("machine.empty_value_is_not_a_forgery",
          lambda: reject("") is None),
-        #  - Scanning empty output: zero lines => zero machine lines
-        #    (`run_phase` relies on this to judge ran rather than off)
         ("\u2605 machine.empty_scan_reports_nothing",
          lambda: scan("") == ()),
     ]
 
 
 def _cases_scrub():
-    """The neutralisation channel: parameter injection, idempotence, no collateral damage, inner separators."""
+    """Neutralisation guarantees: parameter injection, no collateral damage, idempotence."""
     return [
-        # Parameter channel: a filename with an embedded newline => after
-        # neutralisation consumers parse no machine line
         ("\u2605 machine.param_filename_neutralised",
          lambda: _clean_has_no_row("evil\nOFF: gate not configured.py")),
         ("\u2605 machine.off_concat_neutralised",
          lambda: _clean_has_no_row("OFF: a\nOFF: b: cfg")),
-        # Neutralisation does **not** touch content outside the narrow table
-        # (`HTTP: 500` is not a machine line and must not be rewritten)
         ("machine.narrow_does_not_touch_http",
          lambda: clean("HTTP: 500 upstream")[0] == "HTTP: 500 upstream"),
-        # The `\` prefix survives strip / regex `^` (a space would be eaten by strip)
         ("\u2605 machine.guard_survives_strip",
          lambda: clean("OFF: x")[0].strip().startswith(GUARD)),
-        # A legitimate \x0b inside the body must not be stripped away by rstrip along with the rest
         ("machine.keeps_inner_separator_bytes",
          lambda: clean("a\x0bOFF: x")[0] == "a\x0b" + GUARD + "OFF: x"),
-        # Idempotence: neutralising already-neutralised text changes nothing
         ("machine.clean_is_idempotent",
          lambda: (lambda once: clean(once)[0] == once)(clean("OFF: x")[0])),
     ]
@@ -416,12 +387,7 @@ def _cases_emit():
 
 
 def _cases():
-    """Self-proof: every case is a **measured hole** or **measured legitimate content**.
-
-    The five groups are each a named function (clean / forgery / empty input /
-    neutralisation channel / output guarantees): in an 80-line flat list,
-    "which class is this" was readable only from comment sectioning.
-    """
+    """Assemble the five selftest groups plus real-pack check."""
     return (_cases_clean() + _cases_forgery() + _cases_empty()
             + _cases_scrub() + _cases_emit()
             + [("\u2605 machine.real_packs_have_no_forgery",

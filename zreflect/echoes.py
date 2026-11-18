@@ -49,8 +49,7 @@ from gate import main_selftest_or, module_meta  # noqa: E402
 THRESHOLD = 0.6
 # Shorter than this, two unrelated short sentences collide by accident (measured:
 # "off is visible" vs "off is visibl" scores 0.94). Below the floor the pair is
-# **not compared**, and `skipped_short()` reports how many forms that silenced --
-# a silent floor is the same trap as a silent off state.
+# **not compared** so short coincidences never cause noise.
 MIN_CHARS = 40
 
 
@@ -159,9 +158,7 @@ class _Rules:
 
 def _cases():
     long_a = "the same assertion may not live in two carriers of the fact system"
-    # (1) a near-copy with a few words changed => reported
     near = "the same assertion may not live in two carriers of the fact puzzle"
-    # (2) a quotation with an explaining edge => not reported
     return [
         ("echoes.distinct_texts_ok",
          lambda: echo_problems([("principle:a", long_a, ()),
@@ -170,7 +167,6 @@ def _cases():
         ("\u2605 echoes.near_copy_is_reported",
          lambda: echo_problems([("principle:a", long_a, ()),
                                 ("principle:b", near, ())]) != []),
-        # a quotation names the rule it repeats: that edge explains the overlap
         ("echoes.quotation_is_not_a_copy",
          lambda: echo_problems([("principle:a", long_a, ()),
                                 ("state:principle.a", long_a,
@@ -178,18 +174,12 @@ def _cases():
         ("\u2605 echoes.edge_must_be_declared",
          lambda: echo_problems([("principle:a", long_a, ()),
                                 ("state:principle.a", long_a, ())]) != []),
-        # short texts collide by accident; they are below the floor
         ("echoes.short_texts_exempt",
          lambda: echo_problems([("principle:a", "off is visible", ()),
                                 ("principle:b", "off is visibl", ())]) == []),
-        # threshold is honoured in both directions
         ("\u2605 echoes.threshold_is_respected",
          lambda: echo_problems([("principle:a", long_a, ()),
                                 ("principle:b", near, ())], threshold=0.99) == []),
-        # **the edge is earned by content, not by name**: the builder grants it
-        # only when the note is byte-identical to the rule's sentence, so a
-        # paraphrase of a `principle.<id>` note is reported like any other copy
-        # (the first shape granted it on the key prefix and let paraphrases by)
         ("echoes.verbatim_quote_gets_the_edge",
          lambda: forms_from_ledger(
              {"facts": {"principle.a": {"note": long_a}}}, _Rules(long_a))[0][2]
@@ -198,7 +188,23 @@ def _cases():
          lambda: forms_from_ledger(
              {"facts": {"principle.a": {"note": near}}}, _Rules(long_a))[0][2]
          == ()),
+        ("echoes.forms_from_rules_and_questions",
+         lambda: _forms_builders_ok()),
     ]
+
+
+def _forms_builders_ok():
+    """`forms_from_rules` and `forms_from_questions` extract labeled texts."""
+    import tempfile  # noqa: PLC0415
+    rules_forms = forms_from_rules(_Rules("one principle text"))
+    if rules_forms != [("principle:a", "one principle text", ())]:
+        return False
+    with tempfile.TemporaryDirectory() as d:
+        qp = os.path.join(d, "01-q.md")
+        with open(qp, "w", encoding="utf-8") as fh:
+            fh.write("# settled cleanly here\n")
+        q_forms = forms_from_questions([qp])
+        return q_forms == [("question:01-q.md", "settled cleanly here", ())]
 
 
 MODULE = module_meta("Echo detection", "the same assertion may not live in two carriers")

@@ -38,15 +38,20 @@ def _fmt(v):
     return "**%s**" % (v if isinstance(v, str) else str(v))
 
 
+def _display_facts(ledger):
+    """Facts rendered into `AUTO:FACTS`: exclude `kind == 'principle'` (which live in `AUTO:RULES`)."""
+    from ledger import facts_of  # noqa: PLC0415
+    return {k: v for k, v in facts_of(ledger).items()
+            if not (isinstance(v, dict) and v.get("kind") == "principle")}
+
+
 def render_block(ledger):
     """Ledger -> machine block (including begin/end markers). **Pure function**:
     rendering the same ledger twice is byte-identical.
 
     PINNED: AUTO machine block fixed language (see the note above PREAMBLE).
     """
-    from ledger import facts_of  # noqa: PLC0415
-
-    f = facts_of(ledger)
+    f = _display_facts(ledger)
     lines = [BLOCK_BEGIN] + list(PREAMBLE) + [""]
     if not f:
         # Zero-value guard: **an empty ledger must say so explicitly**; rendering
@@ -160,13 +165,13 @@ def _cases():
              render_block({"facts": {}}))),
         ("★ render.empty_differs_from_full",
          lambda: render_block({"facts": {}}) != render_block(full)),
+        ("★ render.excludes_principles",
+         lambda: "principle.x" not in render_block(
+             {"facts": {"a": 1, "principle.x": {"value": "ok", "cmd": "c", "kind": "principle"}}})),
     ]
 
 
 def _selftest():
-    import os  # noqa: PLC0415
-    import sys  # noqa: PLC0415
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from gate import activate_or_fatal, selftest  # noqa: PLC0415
     # Activation happens **before** the selftest: a package set but absent =>
     # FATAL rc 2 (previously this entry never activated, so

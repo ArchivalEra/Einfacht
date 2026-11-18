@@ -45,6 +45,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import knobs  # noqa: E402
 from gate import (  # noqa: E402
     fatal,
     finish,
@@ -171,7 +172,7 @@ def run(argv=None):
         return off(M("instruments.off",
                      days_knob="REFLECT_INSTRUMENT_DAYS",
                      instruments_knob="REFLECT_INSTRUMENTS"))
-    led_path = repo(os.environ.get("REFLECT_FACTS", "FACTS.json"))
+    led_path = repo(knobs.get("REFLECT_FACTS"))
     if not os.path.exists(led_path):
         return fatal(M("instruments.ledger_missing", path=led_path))
     methods, rc = _load_methods(name)

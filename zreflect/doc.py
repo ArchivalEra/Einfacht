@@ -16,18 +16,16 @@ a second place of origin. Deleted.
 
     principle = Rule(id, text, cmd)
       text  the human-facing sentence (written into the ledger as `note`)
-      cmd   the machine-run judging command (rc=0 passes / non-0 reports;
-            **stdout must be empty**)
+      cmd   the machine-run judging command (rc=0 passes / non-0 reports)
 
-Principles are written into `FACTS.json` by `facts.py --accept-principles`,
+Principles are written into `FACTS.json` by `facts.py --accept-changes`,
 then **executed verbatim** by `check_facts_replay` at `commit` time -- they
 share the same re-run path as numeric facts, with no new executor added.
 
-## Why a principle's stdout must be empty
+## Exit code contract for principles
 
-The numeric-fact contract is "stdout is the **bare value**". A principle is
-not a value, it is a **judgment**, so the contract is "**when it passes, say
-nothing**" -- the same shape as `gate`'s rc contract (0 green / non-0 red).
+A principle is not a numeric value, it is a **judgment**, so the contract is
+**rc=0 passes / non-0 fails** -- the same shape as `gate`'s rc contract.
 
 ## Start-of-work and commit
 
@@ -57,7 +55,7 @@ class Rule(NamedTuple):
     """A principle.
 
     `text` = the human-facing sentence; `cmd` = the machine-run judging
-    command (cwd = repo root, rc=0 passes, stdout must be empty).
+    command (cwd = repo root, rc=0 passes / non-0 reports).
     """
     id: str
     text: str
@@ -216,21 +214,13 @@ RULES = (
          "sys.exit(1 if h else 0)\""),
     Rule("exec_position_is_a_command",
          "every execution position (stamp cmd / pin version_read / Settling / evidence) must hold a runnable command, not prose",
-         "python3 -c \"import json,os,sys;sys.path.insert(0,'zreflect');import criteria,knobs;"
-         "specs=[(k,knobs.REGISTRY[k][1]) for k in ('REFLECT_WORLD','REFLECT_PINS')];"
-         "bad=[(n,w,f) for k,n in specs if n and os.path.exists(n) "
-         "for w,f,_ in criteria.exec_position_problems(json.load(open(n,encoding='utf-8')),n)];"
-         "print('prose_positions=%d' % len(bad));sys.exit(1 if bad else 0)\""),
+         "python3 -c \"import sys;sys.path.insert(0,'zreflect');import criteria;"
+         "bad=criteria.all_exec_position_problems();"
+         "[print(p) for p in bad] or print('prose_positions=%d' % len(bad));"
+         "sys.exit(1 if bad else 0)\""),
     Rule("comments_earn_their_place",
-         "a docstring is a claim the code could not make -- under `strict` no function carries one, under `mismatch` none explains more than it implements",
-         "python3 -c \"import os,sys;sys.path.insert(0,'zreflect');import check_explain as c;"
-         "m=os.environ.get('REFLECT_COMMENTS','').strip().lower();"
-         "p=[] if not m or m=='off' else c.problems("
-         "[(f,open(os.path.join('zreflect',f),encoding='utf-8').read()) "
-         "for f in sorted(os.listdir('zreflect')) if f.endswith('.py')], m);"
-         "[print(x) for x in p] or print('comment_mode=%s problems=%d' % (m or 'off', len(p)));"
-         "sys.exit(1 if p else 0)\"",
-         ),
+         "explanation volume (docstring + comments) must fit AST complexity under `mismatch`, or carry no docstrings under `strict`",
+         "python3 zreflect/check_explain.py"),
     Rule("style_is_not_a_rule",
          "style preferences (naming, comment density, file layout) do not enter the rule table; they are held by 'match the code around you'",
          # The id vocabulary is spelled out (not derived from a shared table):
@@ -245,18 +235,13 @@ RULES = (
 
     Rule("one_off_decisions_do_not_land",
          "a one-off decision ('why this round changed this way') is not recorded in a document; it belongs to the commit message",
-         # Round narrative in the main documents is scanned, including the CJK
-         # words for "this round" -- spelled by codepoint (this file is inside
-         # check_i18n's scan surface; a literal would be judged as the core
-         # speaking human).
-         "python3 -c \"import os,re,sys;"
-         "p='|'.join([''.join(chr(c) for c in (0x8FD9,0x8F6E)),"
-         "''.join(chr(c) for c in (0x672C,0x8F6E)),r'round\\s+N']);"
-         "hit=[(f,m.group()) for f in ('PRINCIPLES.md','STATE.md','AGENTS.md') "
-         "if os.path.exists(f) "
-         "for m in [re.search(p,open(f,encoding='utf-8').read())] if m];"
-         "print('round_narrative=%d' % len(hit));"
+         "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;"
+         "hit=doc.round_narrative_problems();"
+         "[print('%s:%s' % x) for x in hit] or print('round_narrative=%d' % len(hit));"
          "sys.exit(1 if hit else 0)\""),
+    Rule("core_sealed",
+         "shared suite core modules and selftest yardsticks must match the hard SHA-256 seal (`zreflect/SEAL.json`)",
+         "python3 zreflect/registry.py --verify-seal"),
 )
 
 _BY_ID = {r.id: r for r in RULES}
@@ -330,8 +315,8 @@ def accepts_principles(repo_root=None):
 
 def state_name():
     """Filename of the "now" document: `REFLECT_DOC` wins (same knob as `facts.py`)."""
-    import os  # noqa: PLC0415
-    return os.environ.get("REFLECT_DOC", "").strip() or STATE
+    import knobs  # noqa: PLC0415
+    return knobs.get("REFLECT_DOC")
 
 
 def rule(rid):
@@ -342,7 +327,7 @@ def rule(rid):
 # -- Into the ledger: reuse ledger.fact, invent no new shape ------------------
 
 def facts_of_rules():
-    """Principles → `{key: ledger.fact(...)}`, for `facts.py --accept-principles` to write.
+    """Principles → `{key: ledger.fact(...)}`, written into `FACTS.json`.
 
     Key prefix `principle.` -- they share the single `facts` table with numeric
     facts, and therefore the same re-run path (`check_facts_replay`).
@@ -428,14 +413,12 @@ def _lookup_works():
 
 def _cases():
     return [
-        # (1) normal: no report
         ("doc.rules_well_formed", lambda: _cmd_shape_problems() == []),
         ("doc.ids_unique", lambda: _ids_unique()),
         ("doc.ids_well_formed", lambda: _ids_well_formed()),
         ("doc.every_rule_has_text", lambda: _every_rule_has_text()),
         ("doc.cmds_reference_real_files", lambda: _every_cmd_references_a_real_file()),
         ("doc.lookup_works", lambda: _lookup_works()),
-        # (2) what must be reported gets reported -- every criterion has teeth
         ("★ doc.empty_cmd_is_rejected",
          lambda: _cmd_shape_problems([Rule("x", "t", "")]) == [("x", "empty_cmd")]),
         ("★ doc.missing_text_is_rejected",
@@ -448,38 +431,68 @@ def _cases():
                          for i in ["Bad-Id"])),
         ("★ doc.dead_cmd_target_is_rejected",
          lambda: _cmd_targets_exist([Rule("x", "t", "python3 zreflect/nope_xyz.py")]) is False),
-
-        # (3) An empty table is not a shape error -- but "empty => all right"
-        # must never be the reading. The old case here was a tautology
-        # (`isinstance((), tuple)`), which this repo's own `falsifiable` rule
-        # exists to catch. The honest criterion: the shipped table is non-empty,
-        # so a green run means something was actually judged.
         ("★ doc.table_is_not_empty",
          lambda: len(RULES) > 0 and _cmd_shape_problems(RULES) == []),
-        # (4) The principles added from the retired META table: their cmds are
-        # real criteria, so each has teeth pinned here (a cmd that can only
-        # pass is not a criterion).
-        # `ran_is_not_passed` green side runs off_reason_problems on a
-        # well-declared gate; here the same call with the declaration dropped
-        # must report -- otherwise the cmd could rot into an always-green.
         ("★ doc.ran_is_not_passed_can_red",
          lambda: [p.code for p in _off_reason_problems_of(_CALLS_OFF_SRC)]
          == ["registry.off_without_reason"]
          and _off_reason_problems_of(_DECLARED_SRC) == []),
-        # `one_off_decisions_do_not_land`: the CJK round words are spelled by
-        # codepoint (this file is inside check_i18n's scan surface), so the
-        # pattern itself is verified against a planted hit, not trusted.
+        ("doc.state_name_uses_knob",
+         lambda: _state_name_matches_knob()),
+        ("★ doc.accepts_principles_opt_out",
+         lambda: _accepts_principles_ok()),
         ("★ doc.round_narrative_pattern_has_teeth",
          lambda: _round_pattern_hits(_ROUND_SAMPLE)
          == ["".join(chr(c) for c in (0x8FD9, 0x8F6E))]
          and _round_pattern_hits("round N happened") == ["round N"]
-         and _round_pattern_hits("clean prose") == []),
-        # (5) A doc must not point readers at a symbol that does not exist.
+         and _round_pattern_hits("clean prose") == []
+         and _round_narrative_caught()),
         ("doc.no_dangling_symbol_references",
          lambda: dangling_references() == []),
         ("★ doc.dangling_reference_is_caught",
          lambda: _dangling_reference_caught()),
     ]
+
+
+def _state_name_matches_knob():
+    """`state_name()` returns the configured state doc (`knobs.get('REFLECT_DOC')`)."""
+    import knobs  # noqa: PLC0415
+    return state_name() == knobs.get("REFLECT_DOC") and bool(state_name())
+
+
+def _accepts_principles_ok():
+    """`accepts_principles` returns False when PRINCIPLES.md is absent or opted out."""
+    import tempfile  # noqa: PLC0415
+    with tempfile.TemporaryDirectory() as root:
+        if accepts_principles(root):
+            return False
+        with open(os.path.join(root, PRINCIPLES), "w", encoding="utf-8") as fh:
+            fh.write("# PRINCIPLES\n")
+        saved = os.environ.pop("REFLECT_NO_PRINCIPLES", None)
+        try:
+            if not accepts_principles(root):
+                return False
+            os.environ["REFLECT_NO_PRINCIPLES"] = "1"
+            return not accepts_principles(root)
+        finally:
+            if saved is not None:
+                os.environ["REFLECT_NO_PRINCIPLES"] = saved
+            else:
+                os.environ.pop("REFLECT_NO_PRINCIPLES", None)
+
+
+def _round_narrative_caught():
+    """`round_narrative_problems(root)` catches round prose and passes on clean prose."""
+    import tempfile  # noqa: PLC0415
+    with tempfile.TemporaryDirectory() as root:
+        p = os.path.join(root, "AGENTS.md")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(_ROUND_SAMPLE + "\n")
+        if round_narrative_problems(root) != [("AGENTS.md", _CN_ROUND[0])]:
+            return False
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write("clean prose\n")
+        return round_narrative_problems(root) == []
 
 
 def _dangling_reference_caught():
@@ -492,15 +505,21 @@ def _dangling_reference_caught():
     import os  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
     with tempfile.TemporaryDirectory() as root:
-        os.makedirs(os.path.join(root, "docs"))
+        os.makedirs(os.path.join(root, "zreflect"))
         with open(os.path.join(root, "PRINCIPLES.md"), "w", encoding="utf-8") as fh:
             fh.write("see `registry.this_symbol_never_existed`\n")
+        py_path = os.path.join(root, "zreflect", "probe.py")
+        with open(py_path, "w", encoding="utf-8") as fh:
+            fh.write('"""Bad ref `gate.no_such_fn`."""\n')
         found = dangling_references(root)
-        if found != [("PRINCIPLES.md", "registry", "this_symbol_never_existed")]:
+        if found != [("PRINCIPLES.md", "registry", "this_symbol_never_existed"),
+                     ("zreflect/probe.py", "gate", "no_such_fn")]:
             return False
-        # and a real symbol must pass, or the criterion forbids citing anything
+        # Real symbols in both markdown and .py docstrings must pass
         with open(os.path.join(root, "PRINCIPLES.md"), "w", encoding="utf-8") as fh:
             fh.write("see `registry.gates`\n")
+        with open(py_path, "w", encoding="utf-8") as fh:
+            fh.write('"""Valid ref `gate.finish`."""\n')
         return dangling_references(root) == []
 
 
@@ -537,6 +556,21 @@ def _round_pattern_hits(text):
     return re.findall(_ROUND_RE, text)
 
 
+def round_narrative_problems(root=None):
+    """Scan main docs for round-narrative words ('this round', 'round N')."""
+    import gate  # noqa: PLC0415
+    base = gate.GATE_REPO if root is None else root
+    out = []
+    for name in ("PRINCIPLES.md", "STATE.md", "AGENTS.md"):
+        p = os.path.join(base, name)
+        if not os.path.exists(p):
+            continue
+        text = open(p, encoding="utf-8", errors="replace").read()
+        for hit in _round_pattern_hits(text):
+            out.append((name, hit))
+    return out
+
+
 # -- Claims about this table, made in prose elsewhere ------------------------
 #
 # `PRINCIPLES.md` used to tell readers that an `ADVISORY` marker and a "why"
@@ -548,28 +582,25 @@ def _round_pattern_hits(text):
 # which gates the same regression: the retracted phrase may not reappear in a
 # living-state document without a correction marker.
 
-# Documents whose `module.symbol` references are checked. Only the docs an agent
-# is told to read: a reference here is an instruction to go look at something.
-REFERENCE_DOCS = ("README.md", "README.zh.md", "README.de.md", "AGENTS.md",
-                  "PRINCIPLES.md", "STATE.md", "docs/LANG-PACK-GLOSSARY.md",
-                  "examples/README.md", "skills/einfacht/SKILL.md")
-REFERENCE_MODULES = ("i18n", "knobs", "machine", "gate", "registry", "doc",
-                     "ledger", "criteria", "render", "runner", "examples",
-                     "check_i18n", "check_facts", "check_secrets")
 # An extension is a **filename**, not an attribute: `check_facts.py` names a file
 # and must not be judged as "module check_facts has attr py".
 FILE_EXT = frozenset({"py", "sh", "json", "md", "toml", "yml", "yaml", "txt"})
 
 
 def _reference_mods():
-    """Import the modules a doc may cite. A module that fails to import is
-    skipped, not fatal: the reference is then simply not judged."""
+    """Import every suite module in `gate.zdir()`. ImportError is skipped."""
     import importlib  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    import gate  # noqa: PLC0415
+    here = gate.zdir()
+    if here not in sys.path:
+        sys.path.insert(0, here)
     mods = {}
-    here = os.path.dirname(os.path.abspath(__file__))
-    if here not in __import__("sys").path:
-        __import__("sys").path.insert(0, here)
-    for name in REFERENCE_MODULES:
+    for fname in sorted(os.listdir(here)):
+        if not fname.endswith(".py") or fname.startswith("__"):
+            continue
+        name = fname[:-3]
         try:
             mods[name] = importlib.import_module(name)
         except ImportError:
@@ -577,12 +608,104 @@ def _reference_mods():
     return mods
 
 
-def _refs_in_text(text, mods):
-    """`(module, symbol)` pairs in one doc that its module does not define."""
-    ref = re.compile(r"`([a-z][a-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)(?:`|[^A-Za-z0-9_])")
+def _dir_mds(base, sub):
+    """Markdown files directly inside `base/sub`."""
+    p = os.path.join(base, sub)
+    if not os.path.isdir(p):
+        return []
+    return [os.path.join(sub, f) for f in sorted(os.listdir(p)) if f.endswith(".md")]
+
+
+def _skill_docs(base):
+    """`skills/*/SKILL.md` files under `base`."""
+    sk = os.path.join(base, "skills")
+    if not os.path.isdir(sk):
+        return []
+    out = []
+    for entry in sorted(os.listdir(sk)):
+        cand = os.path.join("skills", entry, "SKILL.md")
+        if os.path.exists(os.path.join(base, cand)):
+            out.append(cand)
+    return out
+
+
+def _reference_docs(base):
+    """Docs an agent reads (living docs, `docs/*.md`, `examples/README.md`, skills)."""
+    import knobs  # noqa: PLC0415
+    seen = list(knobs.docs_names()) + _dir_mds(base, "docs") + _skill_docs(base)
+    ex = os.path.join("examples", "README.md")
+    if os.path.exists(os.path.join(base, ex)):
+        seen.append(ex)
+    return sorted(set(seen))
+
+
+def _known_codes():
+    """I18n keys and selftest case labels so they are not mistaken for `mod.attr`."""
+    import ast  # noqa: PLC0415
+    import json  # noqa: PLC0415
+
+    import gate  # noqa: PLC0415
+    import knobs  # noqa: PLC0415
+    out = set(knobs.used_codes())
+    en = os.path.join(gate.zdir(), "lang", "en")
+    if os.path.isdir(en):
+        for f in sorted(os.listdir(en)):
+            if f.endswith(".json"):
+                out.update(json.loads(open(os.path.join(en, f), encoding="utf-8").read()))
+    for f in sorted(os.listdir(gate.zdir())):
+        if f.endswith(".py"):
+            _collect_case_labels(ast.parse(open(os.path.join(gate.zdir(), f), encoding="utf-8").read()), out)
+    return out
+
+
+def _case_label(node):
+    """Return `mod.case` or `MissingPack` code if `node` defines one, else None."""
+    import ast  # noqa: PLC0415
+    if (isinstance(node, ast.Tuple) and len(node.elts) == 2
+            and isinstance(node.elts[0], ast.Constant)
+            and isinstance(node.elts[0].value, str)):
+        return node.elts[0].value.lstrip("\u2605 ").strip()
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "MissingPack" and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)):
+        return node.args[0].value.strip()
+    return None
+
+
+def _collect_case_labels(tree, out):
+    """Add `mod.case_name` selftest tuple labels and `MissingPack` codes from `tree`."""
+    import ast  # noqa: PLC0415
+    for node in ast.walk(tree):
+        lbl = _case_label(node)
+        if lbl and "." in lbl and " " not in lbl:
+            out.add(lbl)
+
+
+def _py_docstrings(base):
+    """`(relpath, combined_docstrings)` for `.py` files in `zreflect/` and `reflect-hooks/`."""
+    import ast  # noqa: PLC0415
+    out = []
+    for sub in ("zreflect", "reflect-hooks"):
+        d = os.path.join(base, sub)
+        if not os.path.isdir(d):
+            continue
+        for f in sorted(os.listdir(d)):
+            if f.endswith(".py"):
+                tree = ast.parse(open(os.path.join(d, f), encoding="utf-8").read())
+                parts = [ast.get_docstring(n, clean=False) for n in ast.walk(tree)
+                         if isinstance(n, (ast.Module, ast.ClassDef,
+                                           ast.FunctionDef, ast.AsyncFunctionDef))]
+                out.append((os.path.join(sub, f), "\n".join(p for p in parts if p)))
+    return out
+
+
+def _refs_in_text(text, mods, ignore=()):
+    """`(module, symbol)` pairs in one text that its module does not define."""
+    ref = re.compile(r"`([a-z][a-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)(?:`|[^A-Za-z0-9_*.])")
     out = []
     for mod, sym in sorted(set(ref.findall(text))):
-        if sym in FILE_EXT:
+        if sym in FILE_EXT or (mod + "." + sym) in ignore:
             continue
         if mod in mods and not hasattr(mods[mod], sym):
             out.append((mod, sym))
@@ -590,29 +713,32 @@ def _refs_in_text(text, mods):
 
 
 def dangling_references(root=None):
-    """`module.symbol` written in a doc but absent from that module.
+    """`module.symbol` written in a doc or `.py` docstring but absent from that module.
 
-    Why this exists: `PRINCIPLES.md` pointed readers at
-    `registry.dependency_coverage_problems` and the glossary at
-    `i18n._CONTRACT_SHAPES`. Neither has ever existed. A reader who follows the
-    instruction hits an AttributeError, and **nothing compared the doc to the
-    module**. Two instances of the same shape is enough to make it a criterion.
+    Why this exists: `PRINCIPLES.md` once cited
+    registry.dependency_coverage_problems and the glossary cited
+    i18n._CONTRACT_SHAPES -- neither existed. Two instances make a criterion.
     """
-    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if root is None else root
+    import gate  # noqa: PLC0415
+    base = gate.tool_repo() if root is None else root
     mods = _reference_mods()
+    ignore = _known_codes()
     out = []
-    for rel in REFERENCE_DOCS:
+    for rel in _reference_docs(base):
         path = os.path.join(base, rel)
         if not os.path.exists(path):
             continue
         out += [(rel, mod, sym)
-                for mod, sym in _refs_in_text(open(path, encoding="utf-8").read(), mods)]
+                for mod, sym in _refs_in_text(
+                    open(path, encoding="utf-8").read(), mods, ignore)]
+    for rel, text in _py_docstrings(base):
+        out += [(rel, mod, sym) for mod, sym in _refs_in_text(text, mods, ignore)]
     return out
 
 
 def _cmd_targets_exist(rows):
-    import os  # noqa: PLC0415
-    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    import gate  # noqa: PLC0415
+    base = gate.tool_repo()
     for r in rows:
         for tok in r.cmd.split():
             if (tok.endswith((".py", ".sh"))) and \

@@ -278,7 +278,7 @@ def run(argv):
     if bad_timeout is not None:
         print("⚠ %s" % M("replay.bad_timeout", value=bad_timeout,
                          default=seconds), file=sys.stderr)
-    name = os.environ.get("REFLECT_FACTS", "FACTS.json")
+    name = knobs.get("REFLECT_FACTS")
     p = repo(name)
     if not os.path.exists(p):
         return fatal(M("replay.ledger_missing", name=name))
@@ -298,29 +298,12 @@ CMDBY = lambda c: (0, {"ca": "1", "cb": "2"}.get(c, c))   # a runner that answer
 
 
 def _cases_fixture():
-    """Build the fixture ledgers + rendering closures. Returns a dict, fed to the three group functions."""
+    """Build fixture ledgers and pack-bound rendering helpers."""
     multi = {"facts": {"a": {"value": 1, "cmd": "ca"},
                        "b": {"value": 2, "cmd": "cb"}}}
     cal = {"facts": {"objcheck": {"value": "fma-present", "cmd": "echo fma-present",
                                    "calibrate": "echo known-positive",
                                    "calibrate_expect": "known-positive"}}}
-    # Criteria of the kind "the message must point at the repair" (re-test
-    # guidance / cold-start hint) cannot be verified against the null pack --
-    # the null pack only has code + params, no sentences. So read a **real
-    # shipped zh pack from disk** (`zreflect/lang/zh/facts_replay.json`) and
-    # treat the rendered result as the assertion surface.
-    #
-    # Why read the real pack instead of injecting a fake table: injecting a
-    # fake table only proves "the template I wrote renders the words I
-    # wrote" -- circular reasoning. Reading the real pack turns "the migration
-    # lost no semantics" into a falsifiable claim: if the cold-start hint
-    # fell out of the zh pack, this selftest goes red on the spot. (The zh
-    # pack stores, by contract, the **verbatim removed text**, so it doubles
-    # as evidence of migration fidelity.)
-    # ⚠️ Likewise must not hard-code `zh` (see the same note in check_facts):
-    # installing exactly one pack is the product's main scenario. Use the
-    # **first installed pack**; none at all => the case cannot exist, stated
-    # openly.
     pack_lang = a_pack_lang()
     real_pack = load_pack(pack_lang) if pack_lang else {}
 
@@ -363,24 +346,11 @@ def _cases_replay_ok(fx):
 
 
 def _cases_replay_failures(fx):
-    """(2) what must be reported gets reported: mismatch / dead command / timeout / missing cmd.
-
-    The two "repair anchor" cases (`replay.mismatch_repair_hint` /
-    `timeout_cold_start_hint`) are **conditional criteria**: a language pack
-    installed means the message must carry the ASCII anchors
-    (`--accept-changes` / `REFLECT_REPLAY_TIMEOUT`); zero packs is a legal
-    state with no sentences to verify -- stated openly, not faked as a pass.
-    """
+    """Failure cases: mismatch, dead command, timeout, missing cmd."""
     _hint_has, params = fx["hint_has"], fx["params"]
     codes, pack_lang = fx["codes"], fx["pack_lang"]
     return [
         ("\u2605 replay.mismatch_repair_hint",
-         # The real pack's "mismatch" message must still carry the repair
-         # anchors: `--accept-changes` (ASCII -- the decidable part of the
-         # repair) + `facts.py` (the re-test command). Pure Chinese semantic
-         # anchors would turn themselves into "natural language inside the
-         # core" -- exactly the shape the zero-language gate exists to
-         # eliminate.
          lambda: codes(LED, lambda c: (0, "13")) == ["replay.mismatch"]
          and params(LED, lambda c: (0, "13"), "replay.mismatch")[0]["key"] == "n"
          and (not pack_lang or _hint_has(LED, lambda c: (0, "13"),

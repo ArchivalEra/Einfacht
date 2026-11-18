@@ -258,23 +258,6 @@ class Message(str):
     __slots__ = ("code", "params", "forged")
 
     def __new__(cls, code, params, catalog):
-        # ⚠️ **Sanitize after rendering**: a clean template does not mean a clean
-        # rendered result -- params (filenames, document lines, exception text)
-        # are runtime data; 144 call sites feed them into templates as `%s`, and
-        # 58 templates start with a placeholder (`%(name)s: ...`). Observed: when a
-        # file named `"evil\nOFF: gate not configured"` was scanned, the render
-        # produced a forged `OFF:` line and `run_phase` classified the whole
-        # gate as off.
-        #
-        # Load time **rejects** in the language pack; render time **only
-        # sanitizes** -- crashing a half-finished gate because a filename
-        # contains a newline turns something the author cannot control into an
-        # incident.
-        #
-        # ⚠️ **Render exactly once**: `.forged` is computed in `__new__` and
-        # attached to the instance; `__init__` only reads it. Previously both
-        # methods each called `catalog.render()` + `machine.clean()` -- every
-        # message rendered twice (caught in review).
         raw = catalog.render(code, params)
         text, forged = machine.clean(raw)
         obj = super().__new__(cls, text)
@@ -412,16 +395,7 @@ def _load_single(base, lang):
 
 
 def load_pack(lang):
-    """Read a language pack's **merged table** (the same table `Catalog.load` sees).
-    
-    Both shapes are recognized and always merged: `<lang>/*.json` shards plus a
-    `<lang>.json` single file (the latter overrides the same code). The merge must
-    mirror the real loader.
-    
-    Missing / empty => `{}` (no raise); "present but broken" is a different,
-    reported state. `_load_shards` / `_load_single` carry their own error codes so
-    the report says which shape failed.
-    """
+    """Read merged pack table (`<lang>/*.json` + `<lang>.json`); missing => `{}`."""
     base = pack_dir()
     table = _load_shards(base, lang)
     table.update(_load_single(base, lang))
@@ -495,16 +469,7 @@ def bind(catalog):
 
 
 def activate(lang=None, tables=None):
-    """Process-level default (called once by the CLI entry). Returns the effective language name (None = null pack).
-
-    Difference from `bind()`: `bind` is **scope** (restored on enter/exit);
-    `activate` is the **process default** (set once, no need for `with` at
-    every site).
-
-    `lang=NULL` means the same as in `bind`: the explicit null pack (ignores
-    `REFLECT_LANG`). Pack absent / broken => `MissingPack` (converted to
-    FATAL rc 2 by `gate.activate_or_fatal`).
-    """
+    """Set process-wide Catalog (returns effective lang or None for null pack)."""
     cat = _acquire(lang, tables)
     _DEFAULT[0] = cat
     return cat.lang
@@ -604,42 +569,32 @@ def _cases_null(fx):
 
 
 def _cases_pack(fx):
-    """See `_cases()`: 7 cases in this group."""
+    """Pack loading and validation cases (7 cases)."""
     bad_shape, empty, with_en = fx["bad_shape"], fx["empty"], fx["with_en"]
     return [
     ("i18n.pack_applied",
      lambda: with_en(lambda: str(M("replay.no_cmd", key="f.py"))
                      == "`f.py` has no replay command")),
-    # (2) The cases that must report, report
     ("★ i18n.pack_empty",
      lambda: _raises(lambda: _validate(empty, "xx"))),
     ("★ i18n.pack_masquerades_contract",
      lambda: _raises(lambda: _validate(bad_shape, "xx"))),
-    # A missing pack must **report**, not silently fall back to Chinese.
     ("★ i18n.missing_pack_raises",
      lambda: _raises(lambda: Catalog.load("xx", {"zh": {}}))),
-    # An empty pack is not "translated" (tier one of the zero-standby guard).
     ("★ i18n.empty_pack_rejected",
      lambda: _raises(lambda: Catalog.load("xx", {"xx": {}}))),
-    # **A broken shard must raise on the spot**: silently skipping means those
-    # messages degrade to bare codes while rc stays 0.
     ("★ i18n.broken_shard_raises",
      lambda: _broken_pack_raises()),
-    # Machine criterion for `pack_dir`'s three conventions (the most visible
-    # contract; it used to have zero self-proof).
     ("★ i18n.pack_dir_three_rules", lambda: _pack_dir_rules_ok()),
     ]
 
 
 def _cases_catalog(fx):
-    """See `_cases()`: 6 cases in this group."""
+    """Message and Catalog contract cases (6 cases)."""
     fake = fx["fake"]
     return [
     ("i18n.message_is_str",
      lambda: (lambda m: (bool([m]), "  · " + m, len([m]))[0] is True)(M("a"))),
-    # `.code` / `.params` are identity, independent of language. Must be built
-    # under null (`Message` renders at construction: a fabricated code hitting
-    # the real pack would KeyError).
     ("i18n.code_readable",
      lambda: _as_null(lambda: M("replay.no_cmd", key=1).code
                      == "replay.no_cmd")),
@@ -648,13 +603,7 @@ def _cases_catalog(fx):
                      == {"key": "py_lines"})),
     ("i18n.activate_sets_default",
      lambda: _activate_ok("en", {"en": fake})),
-    # **`Catalog`'s data must be truly immutable**: `__slots__` + `__setattr__`
-    # only block attribute assignment, not in-place dict mutation (observed:
-    # `cat.table[...]=...` succeeded and every render was wrong).
     ("★ i18n.catalog_data_immutable", lambda: _catalog_immutable()),
-    # **Construction gate**: `Catalog(...)` cannot be built externally -- that
-    # would bypass `_validate` inside `load()` (the contract-string defense)
-    # and let a translation masquerading as `OFF:` actually render (observed).
     ("★ i18n.catalog_construct_sealed", lambda: _construct_sealed()),
     ]
 

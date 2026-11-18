@@ -239,15 +239,7 @@ def spec_problems(checks):
 # ---- Orchestration (probe injectable: selftest uses fake probes, no network / docker) ----
 
 def _timeout():
-    """The validated probe timeout (positive number of seconds).
-
-    ⚠️ The knob's validation lives in `_timeout_problem()` and runs **before
-    any probe** (`run()` fails fast on a bad value). Re-parsing leniently here
-    -- "bad value => fall back to the default" -- was a dead branch in the
-    production path (unreachable: run() has already returned), and a second,
-    drifting judgment of "what is a good value". This function therefore only
-    converts the value that has already been verified.
-    """
+    """Positive timeout seconds; `_timeout_problem()` validates before probing."""
     raw = os.environ.get("REFLECT_DOCTOR_TIMEOUT", "").strip()
     if not raw:
         return DEFAULT_TIMEOUT

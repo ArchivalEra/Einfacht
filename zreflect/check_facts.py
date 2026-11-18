@@ -40,14 +40,9 @@ INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 
 
 def _bare_min():
-    """Bare-number threshold (issue #3 (4)): configurable via `REFLECT_NAKED_MIN`; bad value => default + warning.
-
-    The default comes from the knob roster (`knobs.REGISTRY`), not a local
-    literal: a second producer of the same number is how the two copies drift
-    apart (the `_docs_to_scan` shape below is the same cure).
-    """
+    """Bare-number threshold (issue #3 (4)): configurable via `REFLECT_NAKED_MIN`."""
     raw = os.environ.get("REFLECT_NAKED_MIN", "").strip()
-    default = int(knobs.REGISTRY["REFLECT_NAKED_MIN"][1])
+    default = int(knobs.get("REFLECT_NAKED_MIN"))
     if not raw:
         return default
     try:
@@ -223,14 +218,7 @@ def _copied_fact_problems(facts, nlines, bare_min):
 # exactly the ones that render everything. A literal set here would be a second
 # source for a value `knobs`/`doc` already own.
 def rendered_docs():
-    """The two documents that render everything: the state document and the
-    principles document.
-
-    ⚠️ The state document's name is resolved through **`doc.state_name()`**, not
-    read from the registry default: with `REFLECT_DOC=NOTES.md` the literal
-    default kept returning `STATE.md`, so the real state document went unscanned
-    (measured -- and under the rename fixture it was a silent green).
-    """
+    """The two measured documents (`doc.state_name()` and `doc.PRINCIPLES`)."""
     import doc  # noqa: PLC0415
     return frozenset({doc.state_name(), doc.PRINCIPLES})
 
@@ -300,31 +288,14 @@ def problems(ledger, doc_text, bare_min=None, name="STATE.md"):
 
 
 def _docs_to_scan(argv):
-    """The list of documents to scan.
-
-    `argv[0]` given => scan only that one (explicit wins).
-    Otherwise => **all of `REFLECT_DOCS`**, not just `REFLECT_DOC`.
-    """
+    """The list of documents to scan (`argv[0]` or `knobs.docs_names()`)."""
     if argv:
         return [argv[0]]
-    raw = os.environ.get("REFLECT_DOCS", "").strip()
-    if raw:
-        return [x.strip() for x in raw.split(",") if x.strip()]
-    return [x.strip() for x in knobs.REGISTRY["REFLECT_DOCS"][1].split(",")
-            if x.strip()]
+    return knobs.docs_names()
 
 
 def _echo_problems(led):
-    """**One assertion, one carrier.** A near-copy in two carriers is a hand-copy.
-
-    Deliberately outside the per-document loop: the overlap is *between* carriers
-    (a rule and a ledger note, a question title and a rule), so scanning one
-    document at a time cannot see it.
-
-    Quotations are excluded by the edge the producer declares -- the ledger's
-    `principle.<id>` note names `principle:<id>`, and that edge is the only
-    designed echo (the rendered table has to print the rule's sentence).
-    """
+    """Cross-carrier near-copy detection across rules, ledger notes, and questions."""
     import doc  # noqa: PLC0415
     import echoes  # noqa: PLC0415
     forms = (echoes.forms_from_rules(doc.RULES)
@@ -332,6 +303,69 @@ def _echo_problems(led):
              + echoes.forms_from_questions(_question_paths()))
     return [M("facts.echo_of_another_carrier", ratio=ratio, a=a, b=b)
             for ratio, a, b in echoes.echo_problems(forms)]
+
+
+def _block_body(text, begin, end):
+    """Trimmed body between `begin` and `end` markers."""
+    return text.partition(begin)[2].partition(end)[0].strip()
+
+
+def _lookup_doc(docs_by_name, target):
+    """Find `(doc_key, text)` in `docs_by_name` matching `target` by path or basename."""
+    if target in docs_by_name:
+        return target, docs_by_name[target]
+    for k, v in docs_by_name.items():
+        if os.path.basename(k) == target:
+            return k, v
+    return None, None
+
+
+def extra_block_problems(docs_by_name, homes):
+    """Check non-`AUTO:FACTS` machine blocks (`AUTO:GATES`, `AUTO:RULES`) against `homes`."""
+    out = []
+    for name, blocks in homes:
+        doc_key, text = _lookup_doc(docs_by_name, name)
+        if text is None:
+            continue
+        for begin, end, expected in blocks:
+            if begin == BLOCK_BEGIN:
+                continue
+            if begin not in text or end not in text:
+                out.append(M("facts.markers_missing_check", path=doc_key, begin=begin, end=end))
+            elif _block_body(text, begin, end) != _block_body(expected, begin, end):
+                out.append(M("facts.block_stale", path=doc_key, begin=begin))
+    return out
+
+
+def principle_sync_problems(led, expected=None):
+    """Check `FACTS.json` `principle.*` `cmd`/`note` agree byte-for-byte with `doc.RULES`."""
+    if expected is None:
+        import doc  # noqa: PLC0415
+        expected = doc.facts_of_rules()
+    f = facts_of(led)
+    keys = sorted(set(expected) | {k for k in f if k.startswith("principle.")})
+    out = []
+    for k in keys:
+        exp, got = expected.get(k), f.get(k)
+        ok = (isinstance(exp, dict) and isinstance(got, dict)
+              and got.get("cmd") == exp.get("cmd")
+              and got.get("note") == exp.get("note"))
+        if not ok:
+            out.append(M("facts.principle_ledger_drift", key=k))
+    return out
+
+
+def _repo_sync_problems(led, loaded):
+    """Repo-level `block_homes` agreement + `principle.*` ledger sync."""
+    import doc  # noqa: PLC0415
+    import facts  # noqa: PLC0415
+    homes, err = facts.block_homes(led)
+    if err:
+        return None, err
+    probs = extra_block_problems(loaded, homes)
+    if doc.accepts_principles():
+        probs += principle_sync_problems(led)
+    return probs, None
 
 
 def _question_paths():
@@ -347,12 +381,13 @@ def _question_paths():
 
 def run(argv):
     docs = _docs_to_scan(list(argv))
-    facts_name = os.environ.get("REFLECT_FACTS", "FACTS.json")
+    facts_name = knobs.get("REFLECT_FACTS")
     led_path = repo(facts_name)
     if not os.path.exists(led_path):
         return fatal(M("facts.ledger_missing", name=facts_name))
     led = load_or_fatal(led_path)
     probs = []
+    loaded = {}
     scanned = 0
     for doc in docs:
         p = gate.repo_path(doc)
@@ -367,43 +402,20 @@ def run(argv):
             continue
         scanned += 1
         text = open(p, encoding="utf-8").read()
+        loaded[doc] = text
         if BLOCK_BEGIN in text and BLOCK_END in text:
             # Documents with a machine block: full criteria (block agreement
             # + citations + bare numbers).
             probs += problems(led, text, name=doc)
         else:
-            # Documents without a machine block (README / AGENTS / PRINCIPLES
-            # etc.): **only bare numbers and copied values are checked** -- no
-            # block is required, because the block belongs only to the
-            # document `REFLECT_DOC` names (the `--render-doc` target).
-            # ⚠️ Previously these documents were **not scanned at all**, so
-            # bare numbers written into a README were never caught
-            # (subagent acceptance observed: write 4242 into a README and
-            # `facts.ok` still goes green).
-            # ⚠️ Only the **blacklist** is checked (a ledger value hand-copied
-            # without a citation), not "any bare number >= threshold" --
-            # README / AGENTS naturally teem with technical numbers (HTTP
-            # 404 / port 3000 / version numbers), and applying the living
-            # state document's whitelist threshold would report 25 noise
-            # items (observed). "Numbers that never entered the ledger need
-            # provenance too" holds **only for the living state document
-            # named by `REFLECT_DOC`**: the numbers there say "this is how it
-            # is now", while a README says "how to use it".
-            # ⚠️ **No `[[key]]` bad-citation check**: documents like the
-            # README **teach users how to write** citations (`` [[key]] ``
-            # itself appears in the explanation text), which is not a bad
-            # citation. The bad-citation criterion applies only to the
-            # living state document named by `REFLECT_DOC` -- a
-            # `[[nonexistent key]]` there really is a mis-point.
             probs += _copied_fact_problems(facts_of(led), _number_lines(text),
                                            _bare_min())
-        # **Independent of whether a block exists**, but only for the two
-        # measured documents: they render everything they say, so a hand-written
-        # line there is narration that will drift. PRINCIPLES.md carries
-        # `AUTO:RULES`, not `AUTO:FACTS`, so this cannot live inside the block
-        # branch above. README / AGENTS are prose by design and stay out.
         if os.path.basename(doc) in rendered_docs():
             probs += hand_written_problems(prose_of(text), doc)
+    extra, err = _repo_sync_problems(led, loaded)
+    if err:
+        return fatal(err)
+    probs += extra
     probs += _echo_problems(led)
     return finish(M("facts.title"), probs,
                   M("facts.ok", count=len(facts_of(led)), docs=scanned))
@@ -415,12 +427,7 @@ LED = {"facts": {"count": {"value": 4752, "cmd": "c"}}}
 
 
 def _cases_fixture():
-    """Fixture: fake document prose + fake ledger + language-pack probe (the setup section of the old `_cases`, moved in verbatim)."""
-    # The fixtures' document prose is **English** (it is scanned input, not
-    # output of the core -- a Chinese sample like "speed is 4752 times" would
-    # make the zero-language gate treat the fixture as a message). The
-    # criteria themselves are language-agnostic: bare numbers / citations /
-    # the shape whitelist all look only at token shape.
+    """Fixture ledgers, prose sample, and pack-placeholder probe."""
     good = "no bare numbers here.\n" + render_block(LED)
     numberless = {"facts": {"n": {"value": 3, "cmd": "c"}}}
     fifty = {"facts": {"n": {"value": 50, "cmd": "c"}}}
@@ -428,24 +435,6 @@ def _cases_fixture():
     def codes(ledger, doc, **kw):
         return [p.code for p in problems(ledger, doc, **kw)]
 
-    # Criteria of the kind "the diagnostic must say how to fix it" cannot be
-    # verified against the null pack (the null pack only has code + params).
-    # So read a **real shipped zh pack from disk** -- injecting a fake table
-    # only proves "the template I wrote renders the words I wrote" (circular
-    # reasoning); reading the real pack turns "the migration lost no
-    # semantics" into a falsifiable claim (the zh pack stores, by contract,
-    # the verbatim removed text).
-    # ⚠️ **Must not hard-code `zh`**: a downstream repo may install only one
-    # pack (which is precisely the product's main scenario, "pick one from a
-    # set of packs"). It used to hard-code zh, and under
-    # `REFLECT_I18N=<a directory with only en>` this selftest went straight
-    # red (observed: 17 PASS / 1 FAIL) -- the criterion is "rendering
-    # fidelity"; which language is irrelevant.
-    # With no pack installed at all => these cases cannot exist (zero packs is
-    # a **legal state**: the user picked no language), `a_pack_lang()` returns
-    # None => the real-pack criteria below take the **conditional short
-    # circuit** (vacuously true when absent; a pack being installed means it
-    # must be complete -- a broken pack still goes red, verified).
     pack_lang = a_pack_lang()
     real_pack = load_pack(pack_lang) if pack_lang else {}
 
@@ -458,15 +447,13 @@ def _cases_fixture():
 
 
 def _cases_core(fx):
-    """See `_cases()`: this group has 10 entries."""
+    """Core block-agreement, bare-number, and citation cases."""
     good, codes = fx["good"], fx["codes"]
     return [
-    # (1) normal: no report
     ("facts.block_ok",
      lambda: problems(LED, good) == []),
     ("facts.live_cite_ok",
      lambda: problems(LED, "see [[count]]\n" + render_block(LED)) == []),
-    # (2) what must be reported gets reported
     ("★ facts.block_mismatch",
      lambda: codes(LED, "x\n" + render_block({"facts": {}}))
      == ["facts.block_mismatch"]),
@@ -476,7 +463,6 @@ def _cases_core(fx):
     ("★ facts.missing_key_cite",
      lambda: codes(LED, "see [[nope]]\n" + render_block(LED))
      == ["facts.missing_key_cite"]),
-    # (2) reverse criterion (issue #24): numbers that never entered the ledger need provenance too
     ("★ facts.bare_number_unaccounted",
      lambda: codes(LED, "measured 99887766 but not in ledger.\n"
                     + render_block(LED))
@@ -487,31 +473,20 @@ def _cases_core(fx):
     ("facts.cite_counts_as_provenance",
      lambda: problems(LED, "see [[count]] = 99887766\n"
                       + render_block(LED)) == []),
-    # reverse: a number ending a sentence is still a number (`\b` before the
-    # period) -- without this the regex silently waved through "9999."
     ("★ facts.bare_number_sentence_period",
      lambda: codes(LED, "measured 99887766.\n" + render_block(LED))
      == ["facts.bare_number_unaccounted"]),
-    # (3) empty input must be reported
     ("★ facts.empty_ledger",
      lambda: codes({"facts": {}}, good) == ["facts.empty_ledger"]),
-    # The state document renders everything; one hand-written line outside the
-    # machine blocks is drift waiting to happen (measured: 55 such lines,
-    # including four `issue #N` references).
     ("★ facts.hand_written_in_state",
      lambda: [p.code for p in hand_written_problems("- rubbish\n")]
      == ["facts.hand_written_in_state"]),
-    # ... the allowed shapes stay green: otherwise the criterion forbids what it
-    # exists to enforce (a title + a block-quote intro are prose you can read).
     ("facts.title_and_intro_are_allowed",
      lambda: hand_written_problems("# T\n\n> intro\n> more\n") == []),
-    # the earlier line-count window let 7 lines of rubbish through; shape does not
     ("\u2605 facts.no_line_count_loophole",
      lambda: [p.code for p in hand_written_problems(
          "# T\n\n> i\n" + "- junk\n" * 7)]
      == ["facts.hand_written_in_state"] * 7),
-    # PRINCIPLES.md is on the same surface: hand-written rules next to the
-    # rendered table would be a second place of origin for the rules.
     ("\u2605 facts.hand_written_in_principles",
      lambda: [p.code for p in hand_written_problems("## extra rules\n",
                                                     name="PRINCIPLES.md")]
@@ -552,23 +527,10 @@ def _cases_naked(fx):
 
 
 def _cases_pack(fx):
-    """See `_cases()`: this group has 1 entry."""
+    """Language-pack wiring case."""
     pack_lang, pack_placeholders = fx["pack_lang"], fx["pack_placeholders"]
     return [
     ("facts.pack_entry_wired",
-     # The real pack's "no provenance" entry must exist and must **accept the
-     # exact two params this code actually sends** (delete the code / break a
-     # placeholder name => this case goes red). The assertion uses only ASCII
-     # anchors (code name + placeholder names) -- Chinese anchors would turn
-     # themselves into "natural language inside the core", exactly the shape
-     # the zero-language gate exists to eliminate; whether the semantics
-     # still say "how to fix" is covered by pack diff review.
-     # **Conditional criterion**: a pack installed means it must be complete
-     # (delete the entry / break a placeholder => this case goes red);
-     # zero packs (legal state: the user installed no language) => nothing to
-     # verify, vacuously true.
-     # A real repo always has packs, so in a real environment this case is
-     # always genuinely exercised.
      lambda: not pack_lang or
      pack_placeholders("facts.bare_number_unaccounted")
      == {"line", "number"}),
@@ -576,35 +538,43 @@ def _cases_pack(fx):
 
 
 def _cases_misc(fx):
-    """See `_cases()`: this group has 1 entry."""
+    """Fence, separator, extra-block, and principle-sync cases."""
     codes = fx["codes"]
     return [
     ("★ facts.bare_number_outside_fence",
      lambda: codes(LED, "```\n4752\n```\nspeed is 4752 times\n"
                     + render_block(LED)) == ["facts.copied_value"]),
-    # Thousands separators (#27 (1)): `6,757,104` is **one number** -- it must
-    # not be split into the three fake tokens 6/757/104 (the 757 produced by
-    # splitting does not exist in the original text, so triage cannot match
-    # it against the document).
-    # Normal: no report (a [[py_lines]] citation is present) + a false
-    # positive must go red (after removing the citation the thousands number
-    # itself still is not reported, but other bare numbers in the same
-    # passage are -- so this case only asserts "the thousands number never
-    # appears").
     ("★ facts.thousands_separator_is_one_number",
-     # Thousands separators (#27 (1)): `6,757,104` is **one number** and the
-     # whole thing is stripped by the shape whitelist -- it must not be split
-     # into 6/757/104 (the 757 produced by splitting does not exist in the
-     # original text). Forward: the thousands line yields no fake tokens;
-     # reverse: the line's genuine bare number (99887766) must be reported,
-     # and only it -- proving what got stripped is "the entire thousands
-     # number", not "the number chopped up and waved through".
      lambda: problems(LED, "release 6,757,104 B\n" + render_block(LED)) == []
      and codes(LED, "release 6,757,104 B and 99887766 measured\n"
                + render_block(LED)) == ["facts.bare_number_unaccounted"]
      and all("757" not in str(p) and "104" not in str(p)
              for p in problems(LED, "release 6,757,104 B and 99887766 measured\n"
                                + render_block(LED)))),
+    ("★ facts.stale_gates_block",
+     lambda: [p.code for p in extra_block_problems(
+         {"STATE.md": "<!-- AUTO:GATES -->\nstale\n<!-- /AUTO:GATES -->"},
+         [("STATE.md", [("<!-- AUTO:GATES -->", "<!-- /AUTO:GATES -->",
+                        "<!-- AUTO:GATES -->\nfresh\n<!-- /AUTO:GATES -->")])])]
+     == ["facts.block_stale"]
+     and extra_block_problems(
+         {"STATE.md": "<!-- AUTO:GATES -->\nfresh\n<!-- /AUTO:GATES -->"},
+         [("STATE.md", [("<!-- AUTO:GATES -->", "<!-- /AUTO:GATES -->",
+                        "<!-- AUTO:GATES -->\nfresh\n<!-- /AUTO:GATES -->")])]) == []),
+    ("★ facts.stale_rules_block",
+     lambda: [p.code for p in extra_block_problems(
+         {"PRINCIPLES.md": "<!-- AUTO:RULES -->\nstale\n<!-- /AUTO:RULES -->"},
+         [("PRINCIPLES.md", [("<!-- AUTO:RULES -->", "<!-- /AUTO:RULES -->",
+                             "<!-- AUTO:RULES -->\nfresh\n<!-- /AUTO:RULES -->")])])]
+     == ["facts.block_stale"]),
+    ("★ facts.principle_cmd_drift",
+     lambda: [p.code for p in principle_sync_problems(
+         {"facts": {"principle.x": {"value": "ok", "cmd": "wrong", "note": "n", "kind": "principle"}}},
+         {"principle.x": {"value": "ok", "cmd": "right", "note": "n", "kind": "principle"}})]
+     == ["facts.principle_ledger_drift"]
+     and principle_sync_problems(
+         {"facts": {"principle.x": {"value": "ok", "cmd": "right", "note": "n", "kind": "principle"}}},
+         {"principle.x": {"value": "ok", "cmd": "right", "note": "n", "kind": "principle"}}) == []),
     ]
 
 
@@ -620,7 +590,9 @@ def _cases():
 
 
 GATE = meta("Facts gate", "block agreement / bare numbers / bad citations",
-            knobs=("REFLECT_FACTS", "REFLECT_NAKED_MIN"), name_dependent=True)
+            knobs=("REFLECT_DOC", "REFLECT_DOCS", "REFLECT_FACTS",
+                   "REFLECT_NAKED_MIN", "REFLECT_QUESTIONS"),
+            name_dependent=True)
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], M("gate.title.facts"),

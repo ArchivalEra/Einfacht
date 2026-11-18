@@ -225,7 +225,7 @@ def _cases_structure():
 
 
 def _cases_push():
-    """(2) Push-set criterion: trio conditional / single-entry unconditional."""
+    """Push-set cases: multi-entry conditional, single-entry unconditional."""
     return [
         ("readme.push_all_present",
          lambda: problems_push(set(LANGS) | {"code.py"}, LANGS) == []),
@@ -236,25 +236,16 @@ def _cases_push():
          lambda: [p.code for p in problems_push(
              {"README.md", "README.zh.md", "zreflect/facts.py"}, LANGS)]
          == ["readme.not_in_push"]),
-        # Single entry: the same-batch criterion does not degrade (issue #8)
         ("\u2605 readme.single_not_in_push",
          lambda: [p.code for p in problems_push({"other.md"}, ("maintaince.md",))]
          == ["readme.not_in_push"]),
-        # **Multi-entry conditional**: no README touched at all => not
-        # applicable (pure code commits should not be blocked).
-        # This is the class that went red on CI at `0cef263` (only i18n.py +
-        # the ledger changed) -- the doc specifies a conditional criterion
-        # ("touch any one => all copies included"), not an unconditional one.
         ("readme.multi_untouched_is_not_in_scope",
          lambda: problems_push({"zreflect/x.py"},
                                ("README.md", "README.zh.md")) == []),
-        # But **touch one and all copies must be included** (otherwise
-        # making it conditional would just be letting water through)
         ("\u2605 readme.multi_partial_still_fires",
          lambda: [p.code for p in problems_push(
              {"README.md", "zreflect/x.py"}, ("README.md", "README.zh.md"))
          ] == ["readme.not_in_push"]),
-        # (3) Empty input must be reported
         ("\u2605 readme.names_empty_push",
          lambda: [p.code for p in problems_push({"README.md"}, ())]
          == ["readme.names_empty_push"]),

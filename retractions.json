@@ -4,132 +4,132 @@
   "`why` 说它为什么错，`evidence` 给复跑方式或出处，`fixed_in` 说现在哪里说对了。",
   "`check_retractions.py` 的判据：活状态文档里只要出现 `text`，**该行必须带更正标记**"
  ],
- "retractions": [
-  {
-   "id": "R-001",
-   "text": "ZCODE_REFLECT_TYPO",
-   "evidence": "python3 zreflect/check_retractions.py（它必须扫到 STATE.md / AGENTS.md / README.md / README.zh.md / README.de.md）",
-   "fixed_in": "本文件（示例条目）"
-  },
-  {
-   "id": "R-002",
-   "text": "`Stop` 钩子每轮重渲染 `STATE.md` 的 `AUTO:NEXT` 块",
-   "evidence": "python3 zreflect/next.py --selftest",
-   "fixed_in": "zreflect/next.py（section() 现算，不落盘）+ AGENTS.md「记忆是自动的」"
-  },
-  {
-   "id": "R-003",
-   "text": "zreflect/check_wire.py",
-   "evidence": "python3 zreflect/registry.py --gates（名录里不应再有 check_wire）",
-   "fixed_in": "zreflect/next.py 暴露宿主无关的 section()/stdout；宿主接线归使用方"
-  },
-  {
-   "id": "R-004",
-   "text": "All checks passed（`gitroll-dispositions.json` 的 `_summary` 对那三条 ruff 选择器的结论）",
-   "evidence": "python3 -m ruff check --select=C901,F,E9,B --config lint.mccabe.max-complexity=15 .",
-   "fixed_in": "全部清零（F841 134→0、F401 13→0、C901 4→0）；B023 一处经实测确认为误报并写明理由；`facts.main` 拆分派表 + 8 个 handler"
-  },
-  {
-   "id": "R-005",
-   "text": "`_doc()` 是模块级函数，`main` 里可以安全调用它",
-   "evidence": "python3 zreflect/facts.py --render-doc（改名后正常；原状 rc=0 但 traceback）",
-   "fixed_in": "别名改 `doc_mod`；`facts.main` 拆成每个命令一个 handler，命令间不再共享作用域 ⇒ 这类名字污染在结构上消失"
-  },
-  {
-   "id": "R-006",
-   "text": "照 README 的 Usage 走就能在全新仓 bootstrap",
-   "evidence": "python3 zreflect/facts.py --help；三语 README 的 Usage 段",
-   "fixed_in": "161c940（无语言包可用性验收）"
-  },
-  {
-   "id": "R-007",
-   "text": "`facts.py --help` 只打印帮助、不碰台账",
-   "evidence": "python3 zreflect/facts.py --help && md5sum FACTS.json",
-   "fixed_in": "161c940（无语言包可用性验收）"
-  },
-  {
-   "id": "R-008",
-   "text": "bootstrap 完的仓里 `registry --run commit` 与 `harness.py` 可以同时绿",
-   "evidence": "python3 zreflect/facts.py --selftest 的 ★ facts.fresh_repo_bootstraps_green",
-   "fixed_in": "161c940（无语言包可用性验收）"
-  },
-  {
-   "id": "R-009",
-   "text": "`md_lines` 已经排除机器块，渲染不会让它变",
-   "evidence": "python3 zreflect/facts.py --get md_lines 与复跑命令对比",
-   "fixed_in": "161c940（无语言包可用性验收）"
-  },
-  {
-   "id": "R-010",
-   "text": "本地全绿 ⇒ CI 会绿",
-   "evidence": "python3 zreflect/check_i18n.py（本地 Linux 零信息量：Windows 的 cp1252 编码 / cmd.exe / 反斜杠路径本地都不会出现）",
-   "fixed_in": "CI 落地（60014a6..80014a6 系列）"
-  },
-  {
-   "id": "R-011",
-   "text": "`selftest` 会执行委托给 helper 的断言",
-   "evidence": "python3 zreflect/criteria.py --selftest（掏空一条修复 ⇒ 18 PASS / 1 FAIL）",
-   "fixed_in": "CI 落地（60014a6..80014a6 系列）"
-  },
-  {
-   "id": "R-012",
-   "text": "`md_lines` 的旧 awk 实现数得对",
-   "evidence": "python3 zreflect/facts.py --count -md",
-   "fixed_in": "CI 落地（60014a6..80014a6 系列）"
-  },
-  {
-   "id": "R-013",
-   "text": "这个套件可以直接接进任何真实项目",
-   "evidence": "python3 zreflect/facts.py --selftest 的 ★ facts.real_repo_shaped_bootstraps（真实仓形状：build.sh / src / 已有 README 也要能 bootstrap）",
-   "fixed_in": "接入体验修复 e9caaec"
-  },
-  {
-   "id": "R-014",
-   "text": "`facts.py --selftest` 不碰真实仓",
-   "evidence": "python3 zreflect/facts.py --selftest 的 ★ facts.selftest_does_not_write_real_ledger（自证跑完 FACTS.json 的 md5 不变）",
-   "fixed_in": "接入体验修复 e9caaec"
-  },
-  {
-   "id": "R-015",
-   "text": "`REFLECT_SNAPSHOT_ROOT` 为空时那道闸门明说未启用",
-   "evidence": "python3 zreflect/check_snapshots.py（env 未设时看输出）",
-   "fixed_in": "接入体验修复 e9caaec"
-  },
-  {
-   "id": "R-016",
-   "text": "静态闸门扫整个仓（`ruff check .` / 全部 `.py`）",
-   "evidence": "python3 zreflect/criteria.py --selftest（★ registry.scope_two_ways：两种口径各一次）；另见 facts._real_repo_shaped 的 `examples/bad.py` —— 每一轮 bootstrap 都验一次",
-   "fixed_in": "gate.declares_itself / gate.scanned_sources（作用域收窄 + opt-in 保留）"
-  },
-  {
-   "id": "R-017",
-   "text": "`next.py` 能把结案的悬案从「下一步」里去掉",
-   "evidence": "python3 zreflect/next.py --selftest（★ next.resolved_question_is_dropped：一个结案 + 一个没结案的夹具，只有后者该出现）",
-   "fixed_in": "next._question_status 转调 check_questions.field（唯一产地）"
-  },
-  {
-   "id": "R-018",
-   "text": "`raise SystemExit(<消息>)` 是退 2 的 FATAL",
-   "evidence": "python3 zreflect/criteria.py --selftest（★ registry.system_exit_is_int + 全仓 AST 扫描）",
-   "fixed_in": "gate.fatal_exit(msg)（唯一产地，SystemExit(2)）"
-  },
-  {
-   "id": "R-019",
-   "text": "`REFLECT_DOCS` 未设时 stale / retraction 扫全部六份活文档",
-   "evidence": "python3 zreflect/knobs.py --selftest（★ knobs.docs_names_follow_registry：从两道闸门的消费端读）",
-   "fixed_in": "knobs.docs_names()（登记表唯一产地）+ check_stale.scanned_docs() / check_retractions.scanned_docs()"
-  },
-  {
-   "id": "R-020",
-   "text": "`REFLECT_QUESTIONS=`（空串）等于没配",
-   "evidence": "python3 zreflect/check_questions.py（REFLECT_QUESTIONS= 空串不得等于未配；过去把仓根当悬案目录收进来）",
-   "fixed_in": "knobs.questions_path()（唯一产地，strip + 回落登记表）"
-  },
-  {
-   "id": "R-021",
-   "text": "must say ADVISORY",
-   "evidence": "python3 zreflect/registry.py --selftest（doc 组不再有 doc.no_claim_outlives_its_feature；旧断言由本闸门接管）；python3 zreflect/doc.py --selftest",
-   "fixed_in": "retractions.json（R-021）+ PRINCIPLES.md「怎么用这张表」（无中间态，没有可挂「建议」的标记位）"
-  }
- ]
+  "retractions": [
+   {
+    "id": "R-001",
+    "text": "ZCODE_REFLECT_TYPO",
+    "evidence": "python3 zreflect/check_retractions.py",
+    "fixed_in": "本文件（示例条目）"
+   },
+   {
+    "id": "R-002",
+    "text": "`Stop` 钩子每轮重渲染 `STATE.md` 的 `AUTO:NEXT` 块",
+    "evidence": "python3 zreflect/next.py --selftest",
+    "fixed_in": "zreflect/next.py（section() 现算，不落盘）+ AGENTS.md「记忆是自动的」"
+   },
+   {
+    "id": "R-003",
+    "text": "zreflect/check_wire.py",
+    "evidence": "python3 zreflect/registry.py --gates",
+    "fixed_in": "zreflect/next.py 暴露宿主无关的 section()/stdout；宿主接线归使用方"
+   },
+   {
+    "id": "R-004",
+    "text": "All checks passed（`gitroll-dispositions.json` 的 `_summary` 对那三条 ruff 选择器的结论）",
+    "evidence": "python3 -m ruff check --select=C901,F,E9,B --config lint.mccabe.max-complexity=15 .",
+    "fixed_in": "全部清零（F841 134→0、F401 13→0、C901 4→0）；B023 一处经实测确认为误报并写明理由；`facts.main` 拆分派表 + 8 个 handler"
+   },
+   {
+    "id": "R-005",
+    "text": "`_doc()` 是模块级函数，`main` 里可以安全调用它",
+    "evidence": "python3 zreflect/facts.py --render-doc",
+    "fixed_in": "别名改 `doc_mod`；`facts.main` 拆成每个命令一个 handler，命令间不再共享作用域 ⇒ 这类名字污染在结构上消失"
+   },
+   {
+    "id": "R-006",
+    "text": "照 README 的 Usage 走就能在全新仓 bootstrap",
+    "evidence": "python3 zreflect/facts.py --help",
+    "fixed_in": "161c940（无语言包可用性验收）"
+   },
+   {
+    "id": "R-007",
+    "text": "`facts.py --help` 只打印帮助、不碰台账",
+    "evidence": "python3 zreflect/facts.py --help && md5sum FACTS.json",
+    "fixed_in": "161c940（无语言包可用性验收）"
+   },
+   {
+    "id": "R-008",
+    "text": "bootstrap 完的仓里 `registry --run commit` 与 `harness.py` 可以同时绿",
+    "evidence": "python3 zreflect/facts.py --selftest",
+    "fixed_in": "161c940（无语言包可用性验收）"
+   },
+   {
+    "id": "R-009",
+    "text": "`md_lines` 已经排除机器块，渲染不会让它变",
+    "evidence": "python3 zreflect/facts.py --get md_lines",
+    "fixed_in": "161c940（无语言包可用性验收）"
+   },
+   {
+    "id": "R-010",
+    "text": "本地全绿 ⇒ CI 会绿",
+    "evidence": "python3 zreflect/check_i18n.py",
+    "fixed_in": "CI 落地（60014a6..80014a6 系列）"
+   },
+   {
+    "id": "R-011",
+    "text": "`selftest` 会执行委托给 helper 的断言",
+    "evidence": "python3 zreflect/criteria.py --selftest",
+    "fixed_in": "CI 落地（60014a6..80014a6 系列）"
+   },
+   {
+    "id": "R-012",
+    "text": "`md_lines` 的旧 awk 实现数得对",
+    "evidence": "python3 zreflect/facts.py --count -md",
+    "fixed_in": "CI 落地（60014a6..80014a6 系列）"
+   },
+   {
+    "id": "R-013",
+    "text": "这个套件可以直接接进任何真实项目",
+    "evidence": "python3 zreflect/facts.py --selftest",
+    "fixed_in": "接入体验修复 e9caaec"
+   },
+   {
+    "id": "R-014",
+    "text": "`facts.py --selftest` 不碰真实仓",
+    "evidence": "python3 zreflect/facts.py --selftest",
+    "fixed_in": "接入体验修复 e9caaec"
+   },
+   {
+    "id": "R-015",
+    "text": "`REFLECT_SNAPSHOT_ROOT` 为空时那道闸门明说未启用",
+    "evidence": "python3 zreflect/check_snapshots.py",
+    "fixed_in": "接入体验修复 e9caaec"
+   },
+   {
+    "id": "R-016",
+    "text": "静态闸门扫整个仓（`ruff check .` / 全部 `.py`）",
+    "evidence": "python3 zreflect/criteria.py --selftest",
+    "fixed_in": "gate.declares_itself / gate.scanned_sources（作用域收窄 + opt-in 保留）"
+   },
+   {
+    "id": "R-017",
+    "text": "`next.py` 能把结案的悬案从「下一步」里去掉",
+    "evidence": "python3 zreflect/next.py --selftest",
+    "fixed_in": "next._question_status 转调 check_questions.field（唯一产地）"
+   },
+   {
+    "id": "R-018",
+    "text": "`raise SystemExit(<消息>)` 是退 2 的 FATAL",
+    "evidence": "python3 zreflect/criteria.py --selftest",
+    "fixed_in": "gate.fatal_exit(msg)（唯一产地，SystemExit(2)）"
+   },
+   {
+    "id": "R-019",
+    "text": "`REFLECT_DOCS` 未设时 stale / retraction 扫全部六份活文档",
+    "evidence": "python3 zreflect/knobs.py --selftest",
+    "fixed_in": "knobs.docs_names()（登记表唯一产地）+ check_stale.scanned_docs() / check_retractions.scanned_docs()"
+   },
+   {
+    "id": "R-020",
+    "text": "`REFLECT_QUESTIONS=`（空串）等于没配",
+    "evidence": "python3 zreflect/check_questions.py",
+    "fixed_in": "knobs.questions_path()（唯一产地，strip + 回落登记表）"
+   },
+   {
+    "id": "R-021",
+    "text": "must say ADVISORY",
+    "evidence": "python3 zreflect/registry.py --selftest && python3 zreflect/doc.py --selftest",
+    "fixed_in": "retractions.json（R-021）+ PRINCIPLES.md「怎么用这张表」（无中间态，没有可挂「建议」的标记位）"
+   }
+  ]
 }

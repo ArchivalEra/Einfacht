@@ -453,8 +453,7 @@ def run(argv=None):
         if configured:
             d = repo(root)
         else:
-            d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", root)
-            d = os.path.abspath(d)
+            d = os.path.abspath(os.path.join(gate.tool_repo(), root))
         found = sources_for(d, configured=bool(configured))
         if not found and configured:
             return fatal(M("i18n_cover.scan_empty_dir", root=root))
@@ -538,14 +537,7 @@ def _packs_match_their_language():
 
 
 def _cj(n):
-    """Build n CJK characters by codepoint (no Chinese literal in the source; real CJK after AST evaluation).
-
-    ⚠️ Fixtures **must contain real Chinese** (otherwise the "what must be
-    reported gets reported" case has no target), yet a literal would be swept
-    up by this very gate (the gate sees values after AST evaluation).
-    Codepoint construction is the only clean spelling -- same origin as the
-    codepoint range used inside `cjk()`.
-    """
+    """Build n CJK chars by codepoint so source stays ASCII while AST evaluates to CJK."""
     return "".join(chr(CJK_LO + i) for i in range(n))
 
 
@@ -623,30 +615,21 @@ def _cases_bare_text(fx):
 
 
 def _cases_plain_english():
-    """5. Source must read as English: typographic characters in prose are reported,
-    while the protocol marks machine rows depend on are not (ASCII-fying those
-    would break a contract)."""
-    arrow = chr(0x21D2)      # rightwards double arrow
-    dash = chr(0x2014)       # em dash
-    star = chr(0x2605)       # a machine-row prefix, not prose
+    """Typographic chars in comments report; protocol marks and docstrings pass."""
+    arrow = chr(0x21D2)
+    dash = chr(0x2014)
+    star = chr(0x2605)
     return [
-        # red path: a typographic arrow inside a comment
         ("\u2605 i18n_cover.non_ascii_prose",
          lambda: [p.code for p in problems(
              [("a.py", "# x " + arrow + " y\n")])] == ["i18n_cover.non_ascii_prose"]),
-        # red path: an em dash in a comment (comments are source prose too)
         ("\u2605 i18n_cover.prose_in_comment",
          lambda: [p.code for p in problems(
              [("a.py", "# a " + dash + " b\n")])] == ["i18n_cover.non_ascii_prose"]),
-        # green path: docstrings are exempt -- quoting the thing being documented
-        # in its original script is legitimate
         ("i18n_cover.docstring_may_quote",
          lambda: problems([("a.py", "def f():\n    \"\"\"a " + dash + " b\"\"\"\n")]) == []),
-        # green path: the protocol mark is exempt -- reporting it would push the
-        # next maintainer to ASCII-fy a machine row
         ("i18n_cover.protocol_mark_exempt",
          lambda: problems([("a.py", "CASES = [\"" + star + " case\"]\n")]) == []),
-        # green path: plain ASCII
         ("i18n_cover.plain_ascii_ok",
          lambda: problems([("a.py", "# a plain english comment\n")]) == []),
     ]

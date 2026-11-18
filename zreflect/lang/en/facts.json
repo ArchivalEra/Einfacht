@@ -41,10 +41,12 @@
  "facts.no_ledger_yet": "no ledger yet at %(name)s (path = REFLECT_FACTS, currently resolved to %(path)s)\n       first confirm this repo's ledger path: check what REFLECT_FACTS is set to in Einfacht.env / the facts wrapper script,\n       then run the measurement with the same environment: python3 zreflect/facts.py (a bare run uses code defaults — the target may differ from the hook context)\n       then run --render-doc to write the machine block into the document.",
  "facts.none": "none",
  "facts.note.bare_number_demo": "deliberately ≥100, to demonstrate the bare-number rule",
+ "facts.note.core_seal": "two-tier SHA-256 Merkle root of the shared core (replayed by registry.py --verify-seal)",
  "facts.note.example_fact": "example fact: replace measure_example()",
  "facts.note.excludes_machine_block": "excludes machine blocks: they are rendered into the documents, counting them would make the value go stale on every render",
  "facts.note.measure_or_omit": "if it cannot be measured it is not written — absent beats fake",
  "facts.ok": "Facts gate: OK (%(count)d facts; block consistent, no bare numbers, no bad citations)",
+ "facts.principle_ledger_drift": "principle `%(key)s` in ledger disagrees with doc.RULES ⇒ run `python3 zreflect/facts.py --accept-changes`",
  "facts.registry_mismatch": "registry reconciliation failed, refusing to render:\n  · %(entries)s",
  "facts.render_unchanged": "the machine block of %(path)s is unchanged",
  "facts.render_written": "refreshed the machine block of %(path)s",
@@ -55,5 +57,5 @@
  "facts.title": "Facts gate",
  "facts.unknown_command": "unknown command `%(command)s` — run `--help` for the available ones (it measures nothing and writes nothing)",
  "facts.unknown_key": "no key `%(key)s` in the ledger (existing: %(existing)s)",
- "facts.usage": "usage: facts.py [--render|--render-doc [file]|--check [file]|--get KEY|--init|--accept-principles|--accept KEY VALUE CMD SOURCE|show [KEY]] (no argument = measure and write the ledger)"
+ "facts.usage": "usage: facts.py [--render|--render-doc [file]|--check [file]|--get KEY|--init|--accept KEY VALUE CMD SOURCE|show [KEY]] (no argument = measure and write the ledger)"
 }

@@ -7,7 +7,7 @@ Usage
     python3 zreflect/facts.py                      # measure once (numeric facts + principle verdict commands)
     python3 zreflect/facts.py --accept-changes     # allow rewrites this run (old value -> new value is printed)
     python3 zreflect/facts.py --accept-changes=k1,k2  # accept only the listed keys; other rewrites still refused (issue #3 (1))
-    python3 zreflect/facts.py --render-doc [file]  # write the machine block into a doc (default STATE.md)
+    python3 zreflect/facts.py --render-doc [file]  # write machine blocks (no file = all docs)
     python3 zreflect/facts.py --check [file]       # does the block in the doc match the ledger
     python3 zreflect/facts.py --get key            # print only that key's value (consumer exit, issue #4 (4))
     python3 zreflect/facts.py show [key]           # print one fact
@@ -39,12 +39,12 @@ from ledger import age_days, fact, facts_of, load_or_fatal, value_of  # noqa: E4
 from render import BLOCK_BEGIN, BLOCK_END, render_block  # noqa: E402
 
 REPO_REAL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
+
 
 def _out():
     """Ledger write path. **A function, not a module constant**: `repo()` reads
     `gate.GATE_REPO` when called, so fixtures can change the path."""
-    return repo(LEDGER_NAME)
+    return repo(knobs.get("REFLECT_FACTS"))
 # ⚠️ **Not a module-level constant**: `REFLECT_DOC` is a name-type knob, hooks may
 # change it mid-run (fixtures do). `doc.state_name()` reads it fresh every time --
 # the single source.
@@ -137,14 +137,7 @@ def count_md_lines(root):
 
 
 def measure_example():
-    """**Placeholder implementation -- replace it.** The system provides only the
-    mechanism; only you know how to measure your inputs.
-
-    What is measured here has nothing to do with "facts"; it exists so the repo runs
-    out of the box. To go live, replace each `fact(value, replay_cmd, source)` with
-    numbers you actually measured; especially the replay command -- it must
-    **actually run**, otherwise the fact degenerates back into prose.
-    """
+    """Placeholder measurement (`py_files`, `md_files`, `py_lines`, `md_lines`); override via `REFLECT_MEASURE_MODULE`."""
     facts = {}
     n_py = 0
     n_md = 0
@@ -159,52 +152,20 @@ def measure_example():
                     lines_py += sum(1 for _ in open(os.path.join(root, f), encoding="utf-8",
                                                     errors="replace"))
                 except OSError:
-                    pass                      # uncountable files are not counted -- better absent than fake
+                    pass
             elif f.endswith(".md"):
                 n_md += 1
-    # `cmd` always goes through `facts.py --count ...` (pure Python), never `find | wc`:
-    # Windows has no `find` / `wc`, and shell quoting dialects differ per platform.
-    # The example replay commands must be cross-platform too -- they are the
-    # **template consumers copy**.
     py_files_cmd = "%s -files .py" % _COUNT_CMD
     md_files_cmd = "%s -files .md" % _COUNT_CMD
     facts["py_files"] = fact(n_py, py_files_cmd, "repo",
                              M("facts.note.example_fact"))
     facts["md_files"] = fact(n_md, md_files_cmd, "repo")
-    # This one is deliberately above BARE_MIN (check_facts' bare-number threshold = 100)
-    # so STATE.md can demonstrate "hand-copying this number gets caught by the gate".
-    # Smaller numbers are everywhere; auditing them is all noise => not audited.
     facts["py_lines"] = fact(lines_py, "%s -lines .py" % _COUNT_CMD, "repo",
                              M("facts.note.bare_number_demo"))
-    # (6) Block exclusion mode (issue #4 (6)): md_lines counts lines **outside blocks** --
-    # machine blocks are rendered into these docs; counting them => the value goes
-    # stale on every render => the replay perpetually fails
-    # (while check_facts compares "block <-> ledger", both go stale together => all green).
-    # awk's FNR==1{b=0} is required: `find -exec {} +` feeds multiple files into the
-    # same awk process; without the per-file reset, everything after the first
-    # block-bearing file is skipped, while the output still "looks like a line count".
-    # The begin marker matches render.py's output verbatim.
-    # ⚠️ Exclude **all** machine blocks, not just FACTS: `AUTO:GATES` and `AUTO:RULES`
-    # are also render output; missing them => every render adds +47 lines (observed:
-    # 38 -> 59 after bootstrap), `check_facts_replay` goes permanently red, and the
-    # fix *looks like* "measure again" -- re-measuring only writes 59 into the
-    # ledger, and the next render shifts it again.
-    # State-machine version: any `<!-- AUTO:* -->` enters a block, the matching end
-    # marker leaves it.
-    # `cmd` is down to "call this one line": the counting logic lives in
-    # `count_md_lines()` (pure Python). Previously a `find | awk | wc` pipeline --
-    # Windows has none of those three commands.
     md_lines_cmd = '%s -md' % _COUNT_CMD
     md_lines = count_md_lines(gate.GATE_REPO)
-    # cwd=GATE_REPO: both the counting (os.walk(GATE_REPO)) and the replay (gates run
-    # cmd verbatim at the repo root) anchor on GATE_REPO -- without cwd, a fixture
-    # measures the *caller's* repo's lines, and the renamed-repo selftest goes red
-    # (a regression caught by the cross-repo configurability selftest).
     facts["md_lines"] = fact(md_lines, md_lines_cmd, "repo",
                               M("facts.note.excludes_machine_block"))
-
-    # Example: **if it cannot be measured, do not write it**. This fact exists only
-    # when UPSTREAM_VERSION is set.
     v = os.environ.get("UPSTREAM_VERSION", "").strip()
     if v:
         facts["upstream_version"] = fact(v, "echo \"$UPSTREAM_VERSION\"", "env",
@@ -221,7 +182,7 @@ def _has_principles_doc():
 
 
 def _doc_names():
-    """Names of docs carrying machine blocks, derived from `_block_homes`'s
+    """Names of docs carrying machine blocks, derived from `block_homes`'s
     ownership mapping (never a hand-written list).
 
     Must respect `REFLECT_NO_PRINCIPLES`: `PRINCIPLES.md` is included only when
@@ -235,18 +196,8 @@ def _doc_names():
     return tuple(names)
 
 
-def _block_homes(ledger):
-    """**Block <- doc** ownership (data, not ifs scattered through code).
-
-        AUTO:FACTS -> STATE.md        ledger render (numbers)
-        AUTO:GATES -> STATE.md        roster render (gate narration)
-        AUTO:RULES -> PRINCIPLES.md   rules render (rules narration)
-
-    `AUTO:RULES` has its own doc so `check_stale` never reads history as live
-    state. Returns `(homes, error)`: `homes` is
-    `[(doc_name, [(begin, end, rendered), ...]), ...]`; a non-empty `error`
-    refuses to render.
-    """
+def block_homes(ledger):
+    """Map docs to owned machine blocks (`AUTO:FACTS`, `AUTO:GATES`, `AUTO:RULES`). Returns `(homes, err)`."""
     gs, missing = registry.gates()
     probs = registry.problems(gs, missing)
     if probs:
@@ -255,9 +206,6 @@ def _block_homes(ledger):
     homes = [(_doc(), [(BLOCK_BEGIN, BLOCK_END, render_block(ledger)),
                        (registry.GATES_BEGIN, registry.GATES_END,
                         registry.render_gates(gs))])]
-    # The principles block follows the same opt-out as `_doc_names()` (#27(2)): a repo
-    # that does not adopt principles never touches PRINCIPLES.md, render or check --
-    # if one place honors the opt-out and the other doesn't, it only half-works.
     if _has_principles_doc():
         homes.append((doc.PRINCIPLES,
                       [(doc.RULES_BEGIN, doc.RULES_END, doc.render_rules())]))
@@ -289,7 +237,7 @@ def _own_blocks(path_rel, ledger):
     sentence that checked nothing. Only markers belonging to this doc are
     returned; other docs' markers are expected to be absent here.
     """
-    homes, err = _block_homes(ledger)
+    homes, err = block_homes(ledger)
     if err:
         print(machine().emit("fatal", err), file=sys.stderr)
         return None, 2
@@ -456,29 +404,13 @@ def _age_human(entry):
 
 
 def _measure():
-    """Collection entry (issue #15 A1/C3): dispatch on the `REFLECT_MEASURE_MODULE` knob.
-
-    - Knob unset / module import fails / fixture scenario (gate.GATE_REPO is not this
-      repo) => fall back to `measure_example()` (placeholder) and **print a warning**.
-      The fallback must be audible, never silent.
-    - Knob set, import succeeds, and gate.GATE_REPO is the real repo => use the
-      knob-designated measure().
-    """
+    """Dispatch via `REFLECT_MEASURE_MODULE` (FATAL rc=2 if configured and unusable, else placeholder)."""
     mod_name = os.environ.get("REFLECT_MEASURE_MODULE", "").strip()
     if mod_name:
         try:
             _m = __import__(mod_name)
-            fn = getattr(_m, "measure")   # noqa: B009 -- the module is a variable; the fixed attribute name is the contract
+            fn = getattr(_m, "measure")   # noqa: B009 -- contract entry name
         except Exception as e:                            # noqa: BLE001
-            # ⚠️ **Configured but unusable => FATAL**, no falling back to the placeholder.
-            #
-            # This used to print one `⚠ ...unusable` line and run `measure_example()`
-            # anyway -- so the user **would believe their own repo was measured**,
-            # while the ledger held the suite's own size (observed: module placed at
-            # the repo root instead of `zreflect/` => ModuleNotFoundError => silent
-            # fallback; STATE.md's `py_lines` said 15765 while the user's project had
-            # 67 lines). "Configured but not effective" and "not configured" are two
-            # different things: the former is a configuration accident and must be loud.
             print(machine().emit("fatal", M(
                 "facts.measure_module_unusable", module=mod_name,
                 error=repr(e), hint=M("facts.measure_module_where"))),
@@ -487,14 +419,7 @@ def _measure():
         if os.path.abspath(gate.GATE_REPO) == os.path.abspath(REPO_REAL):
             return fn()
     else:
-        # ⚠️ The warning is **repo-independent**: it used to print only when
-        # "GATE_REPO is the suite's own repo", so **every downstream repo** (exactly
-        # where this hint matters most) silently received "numbers about Einfacht"
-        # (subagent acceptance observed: a fresh repo got `py_lines 13269` while its
-        # own code was 67 lines -- STATE.md described nothing but the suite's size).
         print("⚠ %s" % M("facts.measure_placeholder_used"), file=sys.stderr)
-        # Then one **specific** hint: does this repo have code of its own? If so, say
-        # how to measure it.
         own = _own_code_hint()
         if own:
             print("  %s" % own, file=sys.stderr)
@@ -546,48 +471,34 @@ def _write_ledger_doc(out, facts):
     return 0, None
 
 
+def _attach_core_seal(facts):
+    """Verify sealed core (if sealed) and attach `core_seal`; return 2 on tamper."""
+    import seal  # noqa: PLC0415
+    if not seal.seal_exists():
+        return 0
+    probs = seal.verify_problems()
+    if probs:
+        print(machine().emit("fatal", probs[0]), file=sys.stderr)
+        return 2
+    sha = seal.current_tree_sha(verified=True)
+    if sha:
+        facts["core_seal"] = fact(
+            sha, "python3 zreflect/registry.py --verify-seal",
+            "seal", M("facts.note.core_seal"))
+    return 0
+
+
 def measure(argv):
-    """Measure once and write the ledger. **Must take `argv`** -- both guards read it.
-
-    ⚠️ Burned here before: `measure()` had no `argv` parameter while the guard tested
-    `not in argv`. Because `and` short-circuits, that line was reached **only when a
-    drop actually happened** => instead of "which facts dropped" the user got a
-    NameError traceback; `--allow-drop` had never worked. The write being blocked was
-    **incidental** (the exception fired before the write) -- that is not a guard,
-    that is a fault. So this file passes argv explicitly; the guard's **decision**
-    lives in `zreflect/guard.py` (decide(), with self-proof of the wiring), and this
-    function only executes it.
-
-    The three stages are each a named helper (measure / guard / write): merged, the
-    "refuse" and "success" endings interleave, complexity 11.
-    """
+    """Measure facts + rules, run drop/change guards via `guard.decide`, and write ledger."""
     facts = _measure()
-    # Principles are facts in the same table as the numeric ones -- measured,
-    # guarded, and replayed together.
-    # "The only two things that must be measured" = STATE (these numbers) and
-    # PRINCIPLE (these verdicts).
-    #
-    # ⚠️ Register principles only in repos **that have PRINCIPLES.md**: the
-    # cross-repo fixture's temp dir lacks that doc; copying this repo's principles
-    # into its ledger => every command runs in a foreign-repo context, all red
-    # (observed). "Does this repo adopt these principles" is decided by **that
-    # doc's existence** -- the same declaration `_block_homes` uses (block <- doc),
-    # not a second decision mechanism.
     import doc  # noqa: PLC0415
     if _has_principles_doc():
         facts.update(doc.facts_of_rules())
+    rc = _attach_core_seal(facts)
+    if rc:
+        return rc
 
     out = _out()
-    # ⚠️ **The shape guard must run before writing**: `measure()` is user-written
-    # code, and returning bare values (`{"deploys": 12}`) is the most natural style.
-    # That kind of input used to **write the broken ledger first, then crash with a
-    # traceback at print time**:
-    #
-    #     wrote FACTS.json (15 facts)          <- already on disk
-    #     TypeError: 'int' object is not subscriptable
-    #
-    # leaving an entry without a `value` field in the ledger, while the user saw one
-    # traceback line.
     rc = _shape_guard(facts)
     if rc:
         return rc
@@ -685,18 +596,9 @@ def _load_or_empty():
 
 
 def _load_or_die():
-    """Read the ledger; **absent => an actionable hint**, not a raw traceback.
-    Why a separate function: on a new repo's first run the ledger does not exist yet,
-    and this script would raise a bare FileNotFoundError -- the smell of "hardcoded
-    for this repo" (we always have FACTS.json here). The semantics stay fail-loud
-    (an empty ledger still refuses to render); the error message just **names the
-    next step**."""
+    """Read ledger; missing => actionable FATAL hint pointing at `REFLECT_FACTS`."""
     out = _out()
     if not os.path.exists(out):
-        # issue #20 (2) addendum 2: the old hint "run a measurement at the repo root
-        # first" is exactly the action that wrote a stray file -- hint text is part
-        # of the "default-value source" too, and must not teach people to step on the
-        # rake. Now says "first check where REFLECT_FACTS points".
         print(machine().emit("fatal",
                               M("facts.no_ledger_yet",
                                 name=os.path.basename(out),
@@ -730,15 +632,7 @@ def main(argv):
 
 
 def _classify(argv):
-    """First arg -> `"measure"` / `"help"` / `"command"` / `"unknown"`. Pure.
-
-    Table membership decides `command`; `--allow-drop` / `--accept-changes*`
-    are **modifiers of measure**, not commands; anything else unregistered is
-    `unknown`. An unknown command must never fall back to `measure()` (that
-    would write the ledger on `--help` / a typo); empty argv means `measure`.
-    Selftests assert this decision without executing a command, so they never
-    touch the caller's `FACTS.json`.
-    """
+    """Classify `argv` into `'measure' | 'help' | 'command' | 'unknown'`."""
     if not argv:
         return "measure"
     first = argv[0]
@@ -746,17 +640,8 @@ def _classify(argv):
         return "help"
     if first in _command_table():
         return "command"
-    # ⚠️ `--allow-drop` / `--accept-changes[=keys]` are **modifiers of measure()**,
-    # not commands -- they mean "a measure with no subcommand, but allowing a certain
-    # class of write". Misclassifying them as unknown commands broke **the only exit
-    # that advances the ledger** (observed: `--accept-changes` printed usage and
-    # exited 2, and the usage it printed still listed it).
     if first.startswith(("--allow-drop", "--accept-changes")):
         return "measure"
-    # ⚠️ **Unknown commands must not fall back to `measure()`**: that would "measure
-    # once and write the ledger" -- `--help` / `--bogus` becomes a real write
-    # (observed: `facts.py --help` in a half-set-up repo returned rc=0 and rewrote
-    # FACTS.json). Nobody expects "asking for help writes a file".
     return "unknown"
 
 
@@ -773,13 +658,7 @@ _COMMANDS: dict = {}
 
 
 def _usage():
-    """Usage text for `--help` and unknown commands, obtained from the language pack.
-
-    The core speaks no language: hardcoding English here would bypass that
-    invariant, and `check_i18n` cannot see English prose. A repo without a pack
-    installed sees the code `facts.usage` instead. The README trio is the human
-    front door for discovering commands, not `--help`.
-    """
+    """Language-pack usage line (`facts.usage`)."""
     return M("facts.usage")
 
 
@@ -799,13 +678,19 @@ def cmd_render(argv):
 
 
 def cmd_render_doc(argv):
-    """The `--render-doc` command."""
-    return write_doc(argv[1] if len(argv) > 1 else _doc(), _load_or_die())
+    """The `--render-doc` command (no doc given => render every doc in `block_homes`)."""
+    led = _load_or_die()
+    if len(argv) > 1:
+        return write_doc(argv[1], led)
+    rc = 0
+    for name in _doc_names():
+        rc = write_doc(name, led) or rc
+    return rc
 
 
 def cmd_check(argv):
     """The `--check` command."""
-    # No doc name given => check **every** doc carrying machine blocks (`_block_homes`
+    # No doc name given => check **every** doc carrying machine blocks (`block_homes`
     # is the single source). "The only two things that must be measured" = STATE
     # (numbers) + PRINCIPLE (verdicts) -- both docs are on this surface; skipping one
     # makes that doc's "do not hand-edit" an empty threat.
@@ -840,10 +725,8 @@ def _init_skeleton(root, state):
     """
     import doc  # noqa: PLC0415
     import registry as _reg  # noqa: PLC0415
-    retract_name = (os.environ.get("REFLECT_RETRACTIONS", "").strip()
-                    or knobs.REGISTRY["REFLECT_RETRACTIONS"][1])
-    history_name = (os.environ.get("REFLECT_HISTORY", "").strip()
-                    or knobs.REGISTRY["REFLECT_HISTORY"][1])
+    retract_name = knobs.get("REFLECT_RETRACTIONS")
+    history_name = knobs.get("REFLECT_HISTORY")
     readme_name = (knobs.readme_names() or ["README.md"])[0]
     return {
         state: (
@@ -1022,30 +905,6 @@ def cmd_init(argv):
     return 0
 
 
-def cmd_accept_principles(argv):
-    """The `--accept-principles` command."""
-    # The explicit exit for "principles enter the ledger". **Previously documented
-    # only in a docstring, never implemented** (a phantom caught in review) -- yet it
-    # is part of the user requirement: "other things can of course also be manually
-    # registered as auditable".
-    #
-    # It writes the **principles' verdict commands** (`principle.*`), never touches
-    # numeric facts; the write still passes the same guard (drops / rewrites must be
-    # explicitly accepted).
-    #
-    # ⚠️ The alias must be `doc_mod`, **not `_doc`**: the `else _doc()` line at the
-    # top of `main` calls the **module-level function** `_doc()`, and any
-    # `import X as _doc` anywhere makes `_doc` a **local variable** for the whole
-    # function body => `python3 zreflect/facts.py --render-doc` (no filename; one of
-    # AGENTS.md's primary commands) throws `UnboundLocalError` before reaching here.
-    # Observed: `ruff --select=F823` had been flagging it all along; no gate ran it.
-    import doc as doc_mod  # noqa: PLC0415
-    led = _load_or_empty()
-    new = facts_of(led)
-    new.update(doc_mod.facts_of_rules())
-    return _write_ledger(led, new, argv, accept_all=True)
-
-
 def cmd_accept(argv):
     """The `--accept` command."""
     # Manually register one fact: `--accept <key> <value> <cmd> <source>`
@@ -1214,6 +1073,38 @@ CASES = [
 ]
 
 
+def _cases_block_homes():
+    """`block_homes` ownership map covers the configured doc names."""
+    homes, err = block_homes({"facts": {"a": {"value": 1, "cmd": "c"}}})
+    return err is None and isinstance(homes, list) and len(homes) >= 1
+
+
+def _tampered_seal_measure_rc():
+    """Tampered core under SEAL.json makes `facts.py` fail FATAL rc=2."""
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        subprocess.run(["git", "init", "-q", d], check=True, capture_output=True)
+        _copy_suite_into(d)
+        p = os.path.join(d, "zreflect", "knobs.py")
+        with open(p, "a", encoding="utf-8") as fh:
+            fh.write("\n")
+        return subprocess.run(
+            [sys.executable, "zreflect/facts.py", "--accept-changes"],
+            cwd=d, env=fixture_env(), capture_output=True, text=True,
+            timeout=180, encoding="utf-8", errors="replace").returncode
+    except Exception:                                    # noqa: BLE001
+        return None
+    finally:
+        shutil.rmtree(d, True)
+
+
+CASES.append(("facts.block_homes_present", lambda: _cases_block_homes()))
+CASES.append(("★ facts.tampered_seal_is_fatal", lambda: _tampered_seal_measure_rc() == 2))
+
+
 # The command table is built at the **end of the file**: handlers are defined above,
 # and the literals must wait until they exist (evaluating at the top = NameError --
 # observed).
@@ -1223,7 +1114,6 @@ _COMMANDS.update({
     "--check": cmd_check,
     "--get": cmd_get,
     "--init": cmd_init,
-    "--accept-principles": cmd_accept_principles,
     "--accept": cmd_accept,
     "show": cmd_show,
     "--count": cmd_count,
@@ -1259,35 +1149,11 @@ def _is_unknown_cmd(first):
 
 
 def _copy_suite_into(d):
-    """Copy the suite files **within the platform roster** into fixture repo `d`
-    (implementation of #30 direction B).
-
-    The roster is **discovered**: platform modules = `registry.modules()`, gates =
-    `registry.gates()` (derived from declaration lines), but the **anchor is the
-    suite's own physical location** (`__file__`), not the current process's `zdir()`
-    -- in vendored form `zdir()` resolves to the host's wiring directory, whose
-    roster mixes in host-owned gates. `facts.py` is a suite platform file; the
-    directory it sits in is always the suite -- regardless of how the host wires
-    itself.
-    Language packs are copied per pack per `installed_langs()` (criterion = a .json
-    pack file present).
-    Host wiring files never belong in a fresh repo's bootstrap.
-    """
+    """Copy built-in gates, declared modules, `SEAL.json`, language packs, and hook roster into `d`."""
     import shutil  # noqa: PLC0415
-    src_z = os.path.dirname(os.path.abspath(__file__))     # the suite itself, not anchored on zdir()
+    src_z = gate.zdir()
     dst_z = os.path.join(d, "zreflect")
     os.makedirs(dst_z)
-    # The roster anchors on the suite dir too (explicit zdir passed -- discovery
-    # unchanged, only the anchor moves to the suite's physical location).
-    # ⚠️ Only **built-in-phase gates** are copied (issue #37): discovery collects
-    # every file with a `GATE = meta(...)` line, including the host's own
-    # private-phase gates (runs_at="lab" etc.). Copying one drags a gate into the
-    # fixture whose enabling knob (REFLECT_PHASES) lives in the env file that
-    # #34 just excluded -- gate present, its living condition absent =>
-    # `registry.unknown_phase` FATAL => all bootstrap selftests structurally red.
-    # A private phase is the host's own execution surface; a fresh repo's
-    # bootstrap must not inherit it (same principle as the host wiring note
-    # below).
     _gs, _missing = registry.gates(src_z)
     mods, _missing2 = registry.modules(src_z)
     builtin = set(registry.BUILTIN_PHASES)
@@ -1299,7 +1165,9 @@ def _copy_suite_into(d):
         src = os.path.join(src_z, rel)
         if os.path.isfile(src):
             shutil.copy(src, os.path.join(dst_z, rel))
-    # Language packs: copied per pack (installed_langs' criterion is "a .json pack file exists")
+    sp = os.path.join(src_z, "SEAL.json")
+    if os.path.isfile(sp):
+        shutil.copy(sp, os.path.join(dst_z, "SEAL.json"))
     lang_src = os.path.join(src_z, "lang")
     if os.path.isdir(lang_src):
         for n in sorted(os.listdir(lang_src)):
@@ -1307,14 +1175,6 @@ def _copy_suite_into(d):
             if os.path.isdir(pkg) and any(x.endswith(".json")
                                           for x in os.listdir(pkg)):
                 shutil.copytree(pkg, os.path.join(dst_z, "lang", n))
-    # Hook entry files: **roster copy, not copytree**. The host repo's local
-    # `Einfacht.env` (knob carrier, never tracked) is not a platform file --
-    # copytree used to drag it into the fixture, where `--init` writes its OWN
-    # env file for the fresh repo; two carriers with different doc names made
-    # `--render-doc` report `doc_has_no_home` and both bootstrap selftests
-    # structurally always-red (measured: work repo 14 PASS / 2 FAIL, clean
-    # clone 16 PASS / 0 FAIL -- the only difference was the local carrier).
-    # A fresh repo must start from `--init`'s generated carrier alone.
     _copy_hooks_roster(src_z, d)
     ruff_conf = os.path.join(gate.tool_repo(), "ruff.toml")
     if os.path.isfile(ruff_conf):
@@ -1428,24 +1288,13 @@ def _corrupt_load_raises():
 
 
 def _env_from_envfile(d, base_env):
-    """Parse `Einfacht.env` into environment variables (**cross-platform, no shell**).
-
-    ⚠️ A shell-based loader uses **POSIX sh syntax**; Windows' cmd.exe cannot
-    understand it. Parsing without a shell keeps the doc roster from falling
-    back to its default on Windows.
-    """
+    """Parse `Einfacht.env` into env vars via `check_envfile.parse_exports`."""
     out = dict(base_env)
     path = os.path.join(d, "Einfacht.env")
     if not os.path.isfile(path):
         return out
     with open(path, encoding="utf-8", errors="replace") as fh:
         text = fh.read()
-    # **One single parser**: `check_envfile.parse_exports` (with quote stripping and
-    # an optional export prefix). This spot used to hand-roll `startswith("export ")`
-    # + `partition("=")`, **without stripping quotes** -- same env file, this side
-    # parsed `'"STATE.md"'` (quoted) while the other side parsed `'STATE.md'`.
-    # Observed: a fixture's knob value silently carried quotes => the criterion tested
-    # a different environment, and reported nothing.
     import check_envfile  # noqa: PLC0415
     out.update(check_envfile.parse_exports(text))
     return out
@@ -1456,8 +1305,6 @@ def _bootstrap_steps():
     return [
         ([sys.executable, "zreflect/facts.py", "--accept-changes"], True),
         ([sys.executable, "zreflect/facts.py", "--render-doc"], True),
-        ([sys.executable, "zreflect/facts.py", "--render-doc",
-          "PRINCIPLES.md"], True),
         ([sys.executable, "zreflect/registry.py", "--run", "commit"], True),
     ]
 
@@ -1521,7 +1368,7 @@ def _private_phase_gate_not_copied():
         has_platform = (os.path.isfile(os.path.join(fixture_z, "gate.py"))
                         and os.path.isfile(os.path.join(fixture_z,
                                                         "check_facts.py")))
-        repo_z = os.path.dirname(os.path.abspath(__file__))
+        repo_z = gate.zdir()
         return (has_platform                          # (b) copy did happen
                 and os.path.isfile(os.path.join(repo_z, "gate.py")))  # (c) kept
     finally:
@@ -1529,22 +1376,7 @@ def _private_phase_gate_not_copied():
 
 
 def _real_repo_shaped():
-    """A repo of the **real-project shape** completes bootstrap: `.sh` files + `src/` +
-    an existing README.
-
-    The fixture plants these three things (all the most common shapes of
-    real projects):
-
-      - `build.sh` / `deploy.sh` -- build scripts
-      - `src/app.py` -- its own code
-      - `examples/bad.py` -- **its own code that would be red by suite standards**
-        (bare CJK + unused import). "The suite audits only the suite" is not a
-        promise written in a comment but something this fixture verifies every
-        round -- if any of the three gates widens its scope to the whole repo,
-        this goes red on the spot.
-      - An existing `README.md` **without a machine block** -- `--init` prints
-        `already exists, left alone`, so `check_readme_sync`'s single-entry path must work.
-    """
+    """Bootstrap succeeds on a real-project repo containing `.sh`, `src/`, bad code, and `README.md`."""
     import shutil  # noqa: PLC0415
     import subprocess  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
@@ -1560,17 +1392,7 @@ def _real_repo_shaped():
         with open(os.path.join(d, "src", "app.py"), "w",
                   encoding="utf-8") as fh:
             fh.write("def f():\n    return 1\n")
-        # **The consumer's own code, red by suite standards**: bare CJK (check_i18n's
-        # first criterion) + unused import (ruff's F401) + module-level derivation
-        # (snapshot). If any of the three gates widens its scope back to the whole
-        # repo, `registry --run commit` goes red. "The suite audits only the suite"
-        # thereby becomes a criterion truly exercised every round, not a comment.
         os.makedirs(os.path.join(d, "examples"))
-        # ⚠️ The fixture source's Chinese text must be **codepoint-constructed** --
-        # this very file is inside check_i18n's scan surface, so writing a Chinese
-        # literal directly would be judged by it as "the core speaks human" (observed:
-        # right after the first version was written, `i18n_cover.bare_text` went red
-        # at facts.py:1363).
         bad_body = ("import os\n\n\ndef f():\n    print(%r)\n"
                     % "".join(chr(c) for c in (0x8FD9, 0x6761, 0x4E2D, 0x6587)))
         with open(os.path.join(d, "examples", "bad.py"), "w",
@@ -1584,9 +1406,7 @@ def _real_repo_shaped():
                        timeout=180,
                            encoding="utf-8", errors="replace")
         for argv in ([sys.executable, "zreflect/facts.py", "--accept-changes"],
-                     [sys.executable, "zreflect/facts.py", "--render-doc"],
-                     [sys.executable, "zreflect/facts.py", "--render-doc",
-                      "PRINCIPLES.md"]):
+                     [sys.executable, "zreflect/facts.py", "--render-doc"]):
             p = subprocess.run(argv, cwd=d, env=_env_from_envfile(d, base),
                                capture_output=True, text=True, timeout=180,
                            encoding="utf-8", errors="replace")
@@ -1605,17 +1425,7 @@ def _real_repo_shaped():
 
 
 def _opt_out_check_case():
-    """With `REFLECT_NO_PRINCIPLES=1`, `--check` must not ask `PRINCIPLES.md` for a block.
-
-    ⚠️ Must use a fixture repo **without `PRINCIPLES.md`**: this repo always has that
-    file, so an unconditional check of both docs stays green here and the criterion
-    is blind. The fixture = the same copytree + `--init` as `_fresh_bootstraps`,
-    with the init-created `PRINCIPLES.md` deleted, then two assertions:
-
-      - flag set => `--check` rc=0 and PRINCIPLES untouched;
-      - flag unset => PRINCIPLES is checked => "file missing" is reported (default
-        surface unchanged; the file simply is not there).
-    """
+    """With `REFLECT_NO_PRINCIPLES=1`, `--check` ignores missing `PRINCIPLES.md`."""
     import shutil  # noqa: PLC0415
     import subprocess  # noqa: PLC0415
     import tempfile  # noqa: PLC0415

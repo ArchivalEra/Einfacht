@@ -168,14 +168,7 @@ def _question_lines(repo, pending):
 
 
 def collect(repo):
-    """Collect the pick-up-from-last-turn inputs. Returns `(last_turn, pending)`,
-    two `Message` lists.
-
-    Both may be empty; that is not a pass. All text goes through `M()` so the
-    self-proof can assert on codes regardless of installed language packs.
-    Three named helpers read the three sources (commits / worktree / questions)
-    and split the `MAX_LISTED` budget.
-    """
+    """Return `(last_turn, pending)` Message lists from commits, worktree, and questions."""
     last, pending = [], []
     _commit_lines(repo, last)
     _tree_lines(repo, last, pending)
@@ -216,15 +209,7 @@ def _read_question(d, name):
 
 
 def section(repo):
-    """The whole pick-up section, including its header line. At most `SECTION_MAX`
-    lines; returns lines only (envelope / JSON / hook semantics belong to the
-    caller).
-
-    Unreadable git or questions directory becomes explicit `next.*_unreadable`
-    lines, never a fabricated 0 or a silent empty block. Real bugs (missing
-    templates, encoding errors) still raise, so a host can tell "broken" from
-    "nothing to report" by exit code. All text goes through `M()`.
-    """
+    """Render header + sections bounded to `SECTION_MAX` lines (`M()` codes throughout)."""
     last, pending = collect(repo)
     return _format(last, pending)
 
@@ -269,47 +254,22 @@ def main(argv=None):
 # the spot.
 
 def _cases():
-    """Every case crafts an input **that can make it red** (fixture repos, zero reliance on the real repo)."""
+    """Fixture-repo cases pinning error explicitness and budget."""
     return [
-        # 1. Normal non-report: a real git repo, clean worktree => the collector can say so
         ("next.collects_from_real_git", lambda: _real_git_case()),
-        # 2. What must be reported gets reported -- **unreadable must not fabricate a 0**
         ("★ next.missing_repo_is_loud_not_zero",
          lambda: _missing_repo_loud()),
-        # Layout is a pure function: same input, two runs, byte-identical
         ("★ next.section_is_deterministic", lambda: _section_deterministic()),
-        # Empty pending must be **stated explicitly** ("if you expected items -- that is a gap in the record")
         ("★ next.empty_pending_is_explicit", lambda: _empty_pending_explicit()),
-        # The `git log` start point must not be omitted: without `HEAD` it
-        # silently returns 0 lines (measured: 26 vs 0 on the same repo). This
-        # case pins the **command shape**, not the result -- the result depends
-        # on real repo state, the shape does not.
         ("★ next.log_command_has_start_point",
          lambda: _log_command_shape_ok()),
-        # **The budget is part of the interface**: many commits + many open
-        # questions + dirty worktree => not one pending item may be squeezed
-        # out, and the section stays <= SECTION_MAX. A caller's `[:8]` used to
-        # truncate the pending items (measured: with 27 unpushed commits the
-        # section most needed after compaction vanished entirely).
         ("★ next.section_budget_holds", lambda: _section_budget_holds()),
-        # The `**Status:**` asterisk spelling -- resolved questions must stop
-        # appearing under "what is next". the pending filter used to split with
-        # `split(":", 1)` yielding `"** resolved"`, so **every resolved
-        # question was forever reported as pending** (measured on this repo's
-        # 01-example.md).
         ("★ next.resolved_question_is_dropped",
          lambda: _resolved_question_dropped()),
-        # wontfix is a terminal state too (issue #38): a decision not to do a
-        # thing must not be re-raised every turn.
         ("★ next.wontfix_question_is_dropped",
          lambda: _wontfix_question_dropped()),
-        # **The manual entry must activate the language pack**: without the
-        # `activate_or_fatal` pass-through, `REFLECT_LANG=zh python3
-        # zreflect/next.py` exited 0 with bare codes -- documented usage that
-        # did not work (measured: issue #31).
         ("★ next.manual_entry_activates_pack",
          lambda: _manual_entry_activates_pack()),
-        # 3. Empty input must be reported: a nonexistent repo root
         ("★ next.nonexistent_root_is_loud",
          lambda: _nonexistent_root_loud()),
     ]
@@ -418,14 +378,7 @@ def _empty_pending_explicit():
 
 
 def _nonexistent_root_loud():
-    """No record of a last turn => it must be **stated explicitly** (`next.commits_unreadable`), never silently empty.
-
-    ⚠️ The assertion goes through the **real collector** (`collect`), not
-    "construct a good message myself, then assert it is present" -- the
-    latter is a tautology (it only proves `_format` copies its input). What
-    must be proven here: when reading fails, `collect` **does** produce the
-    unreadable entries, not an empty list.
-    """
+    """Missing repo root reports explicit unreadable errors."""
     last, pending = collect("/nonexistent-xyz")
     codes = {getattr(ln, "code", "") for ln in last}
     return "next.commits_unreadable" in codes and "next.tree_unreadable" in codes

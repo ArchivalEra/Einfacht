@@ -130,9 +130,9 @@ REGISTRY = {
                                _Semantic("knobs.sem.reflect_measure_module")),
     "REFLECT_PHASES": ("value", "",
                        _Semantic("knobs.sem.reflect_phases")),
-    # Comment discipline mode: `strict` (no docstrings at all) / `mismatch`
-    # (no docstring wider than its interface) / empty = off.
-    "REFLECT_COMMENTS": ("value", "",
+    # Comment discipline mode: `mismatch` (default: explanation budget <=
+    # 300 + 120*branches + 60*args) / `strict` (no docstrings) / `off`.
+    "REFLECT_COMMENTS": ("value", "mismatch",
                          _Semantic("knobs.sem.reflect_comments")),
     # Explicitly opt out of this suite's principles (for repos that don't want
     # to run those judgment commands on every commit).
@@ -228,16 +228,21 @@ def readme_names():
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
+def get(name):
+    """Read knob `name` (trimmed); empty/unset falls back to `REGISTRY[name][1]`."""
+    raw = os.environ.get(name, "").strip()
+    if raw:
+        return raw
+    return REGISTRY[name][1]
+
+
 def docs_names():
     """The list of live state documents (`REFLECT_DOCS`; default from `REGISTRY`).
 
     Unlike `readme_names()`, an empty value means "use the default": a repo must
     have a state document. The registry is the single producer of that default.
     """
-    raw = os.environ.get("REFLECT_DOCS", "").strip()
-    if not raw:
-        raw = REGISTRY["REFLECT_DOCS"][1]         # default from the registry
-    return [s.strip() for s in raw.split(",") if s.strip()]
+    return [s.strip() for s in get("REFLECT_DOCS").split(",") if s.strip()]
 
 
 def served_langs():
@@ -277,33 +282,26 @@ def flag(name):
 
 
 def questions_dir(repo_root=None):
-    """The open-questions directory name (`REFLECT_QUESTIONS`; default from
-    `REGISTRY`). The value is stripped; empty => registry default.
+    """The open-questions directory name (`REFLECT_QUESTIONS`; default from `REGISTRY`)."""
+    return get("REFLECT_QUESTIONS")
 
-    ⚠️ **Must `.strip()`**: `export X=$MAYBE_UNSET` in git hooks commonly yields
-    an empty string. Joining an empty name onto the repo root would scan the repo
-    root itself and report its documents as open questions. `questions_path()`
-    and the other consumers share this one normalized value.
-    """
-    raw = os.environ.get("REFLECT_QUESTIONS", "").strip()
-    return raw or REGISTRY["REFLECT_QUESTIONS"][1]
+
+def repo_path(name, root=None):
+    """Resolve knob `name` relative to `root` (default `gate.GATE_REPO`); empty => None."""
+    rel = get(name)
+    if not rel:
+        return None
+    base = root or gate.GATE_REPO
+    return rel if os.path.isabs(rel) else os.path.join(base, rel)
 
 
 def questions_path(repo_root=None):
     """The **absolute path** of the open-questions directory (relative to the audited repo)."""
-    root = repo_root or gate.GATE_REPO
-    return os.path.join(root, questions_dir())
+    return repo_path("REFLECT_QUESTIONS", repo_root)
 
 
 def history_secs():
-    """The append-only history section numbers (`REFLECT_HISTORY_SECS`).
-
-    Two reconcilers (`check_stale`, `check_retractions`) previously each wrote
-    the same "split the env var, drop empties" parse as a module-level constant
-    -- a second producer of the same parsed value with no reconciler between
-    them. The parse now lives here once; the gates read it through this
-    function so the semantics cannot drift apart again.
-    """
+    """Append-only history section numbers parsed once from `REFLECT_HISTORY_SECS`."""
     return tuple(s for s in os.environ.get("REFLECT_HISTORY_SECS", "").split(",") if s)
 
 
@@ -345,28 +343,82 @@ def readme_problems(files=None):
 
 
 
-def declared_vs_read_problems(gates, sources=None):
-    """C4 reconciliation (1): declared knobs subset of knobs the source reads.
+_KNOB_HELPERS = {
+    "docs_names": "REFLECT_DOCS",
+    "readme_names": "REFLECT_READMES",
+    "questions_dir": "REFLECT_QUESTIONS",
+    "questions_path": "REFLECT_QUESTIONS",
+    "history_secs": "REFLECT_HISTORY_SECS",
+    "served_langs": "REFLECT_LANGS",
+    "state_name": "REFLECT_DOC",
+    "default_timeout": "REFLECT_REPLAY_TIMEOUT",
+    "timeout_with_status": "REFLECT_REPLAY_TIMEOUT",
+}
 
-    `gates` = `registry.gates()` rows (with `file` / `knobs`); `sources` is an
-    injectable `{file: source text}` seam for self-evidence. A declared name must
-    appear as a `REFLECT_*` literal in that source; a missing literal yields one
-    `knobs.declared_not_read` problem naming the absent knobs. A gate declaring
-    no knobs or with unreadable source is skipped.
-    """
+
+def _docstring_const_ids(tree):
+    import ast  # noqa: PLC0415
+    ids = set()
+    for n in ast.walk(tree):
+        if not isinstance(n, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if (n.body and isinstance(n.body[0], ast.Expr)
+                and isinstance(getattr(n.body[0], "value", None), ast.Constant)):
+            ids.add(id(n.body[0].value))
+    return ids
+
+
+def _is_decl_stmt(stmt):
+    import ast  # noqa: PLC0415
+    return isinstance(stmt, ast.Assign) and any(
+        isinstance(t, ast.Name) and t.id in ("GATE", "MODULE") for t in stmt.targets)
+
+
+def _is_test_stmt(stmt):
+    import ast  # noqa: PLC0415
+    return isinstance(stmt, ast.FunctionDef) and stmt.name.startswith(("_cases", "_fixture"))
+
+
+def _read_knobs_ast(text):
+    """Knobs read in production code (via literal `REFLECT_*` or `knobs.*` helper calls)."""
+    import ast  # noqa: PLC0415
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return set(_TOKEN_RE.findall(text))
+    doc_ids = _docstring_const_ids(tree)
+    out = set()
+    for stmt in tree.body:
+        if _is_test_stmt(stmt) or _is_decl_stmt(stmt):
+            continue
+        for node in ast.walk(stmt):
+            if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                    and id(node) not in doc_ids and _TOKEN_RE.fullmatch(node.value)):
+                out.add(node.value)
+            elif isinstance(node, ast.Call):
+                fn = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+                if fn in _KNOB_HELPERS:
+                    out.add(_KNOB_HELPERS[fn])
+    return out
+
+
+def declared_vs_read_problems(gates, sources=None):
+    """C4 reconciliation (1): declared knobs == knobs read in production AST."""
     out = []
     for g in gates:
         declared = set(g.get("knobs") or ())
-        if not declared:
-            continue
         text = _text_of(g["file"], sources)
         if text is None:
             continue
-        read = set(_TOKEN_RE.findall(text))
-        ghost = sorted(k for k in declared if k not in read)
+        read = _read_knobs_ast(text)
+        if not declared and not read:
+            continue
+        ghost = sorted(declared - read)
         if ghost:
-            out.append(M("knobs.declared_not_read",
-                         file=g["file"], knobs=", ".join(ghost)))
+            out.append(M("knobs.declared_not_read", file=g["file"], knobs=", ".join(ghost)))
+        undecl = sorted(read - declared)
+        if undecl:
+            out.append(M("knobs.read_not_declared", file=g["file"], knobs=", ".join(undecl)))
     return out
 
 
@@ -496,27 +548,12 @@ def _semantic_packs_intact(langs=None):
 
 
 def _discovery_sees_planted_lang():
-    """Plant a half-broken language into the real pack directory; default discovery
-    must see it.
-
-    Uses a temporary `REFLECT_I18N` (base pack + planted half-broken pack) --
-    never touches the real repo's lang/.
-
-    ⚠️ The planted language name **must differ from the base pack's**: a name
-    equal to the base pack's makes the planted half-broken pack overwrite it.
-    """
+    """Plant a half-broken language pack in temp `REFLECT_I18N`; discovery must flag it."""
     import json  # noqa: PLC0415
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
-    # The base pack is the **first installed one**, not a hard-coded zh: with a
-    # single pack installed (the product's main scenario), hard-coding zh makes
-    # this self-test false-red (observed en-only => 16 PASS / 1 FAIL).
     base = a_pack_lang()
     if not base:
-        # Zero packs is a **legal state** (the user-requested zero-language
-        # default) => there is no base pack to plant against and this test's
-        # condition holds vacuously. The real repo always has packs, so in the
-        # real environment this test always genuinely exercises something.
         return True
     zh = load_pack(base)
     if not zh:
@@ -527,10 +564,6 @@ def _discovery_sees_planted_lang():
         with open(os.path.join(d, base, "all.json"), "w",
                   encoding="utf-8") as fh:
             json.dump(zh, fh, ensure_ascii=False)
-        # Plant a **half-broken** fake language: only half the keys -- if
-        # discovery misses it, the reconciliation under-reports.
-        # Named `probe-lang`, which can **never** collide with a real language
-        # (`de`/`en`/`zh`...).
         planted = "probe-lang"
         os.makedirs(os.path.join(d, planted), exist_ok=True)
         half = dict(list(zh.items())[: len(zh) // 2])
@@ -541,7 +574,7 @@ def _discovery_sees_planted_lang():
         os.environ["REFLECT_I18N"] = d
         try:
             got = installed_langs()
-            probs = pack_sync_problems()       # default discovery
+            probs = pack_sync_problems()
             return planted in got and probs != []
         finally:
             if prev is None:
@@ -573,15 +606,7 @@ def _looks_like_pack(path):
 
 
 def installed_langs():
-    """Which languages are actually installed in the pack directory (**discovered**,
-    never a written list).
-
-    **The judgment is not "the directory exists" but "there really are .json
-    pack files in there"**: a `straynotes/` directory or a stray `extra.json` in
-    the pack root is not a language. A language pack's judgment is "has a pack
-    file". An unreadable pack root raises `PacksUnreadable`; an empty root
-    returns `[]` (a legal "no packs installed" state).
-    """
+    """Discover installed language packs containing `.json` pack files."""
     base = pack_dir()
     out = set()
     try:
@@ -590,11 +615,6 @@ def installed_langs():
             if os.path.isdir(p) and any(x.endswith(".json")
                                         for x in os.listdir(p)):
                 out.add(n)
-            # ⚠️ The single-file shape (`<lang>.json`) looks identical to "any
-            # json in the pack root" -- collecting by filename alone would take
-            # `config.json` for a `config` language and invent missing keys
-            # (observed). A language pack's judgment is **content**: code-shaped
-            # keys (`x.y`) or placeholder values.
             elif n.endswith(".json") and _looks_like_pack(p):
                 out.add(n[:-len(".json")])
     except OSError as e:
@@ -614,21 +634,39 @@ class PacksUnreadable(RuntimeError):
 
 
 
+def _environ_get_knob(node):
+    """If `node` is `os.environ.get('REFLECT_...', ...)` return `(knob, default_node|None)`."""
+    import ast  # noqa: PLC0415
+    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get" and node.args):
+        return None, None
+    arg0 = node.args[0]
+    if not (isinstance(arg0, ast.Constant) and isinstance(arg0.value, str)
+            and arg0.value.startswith("REFLECT_")):
+        return None, None
+    return arg0.value, (node.args[1] if len(node.args) > 1 else None)
+
+
+def _inline_default_problems(name, tree):
+    """Report hardcoded non-empty default literals for `REFLECT_*` outside `knobs.py`."""
+    import ast  # noqa: PLC0415
+    if os.path.basename(name) == "knobs.py":
+        return []
+    out = []
+    for stmt in tree.body:
+        if _is_test_stmt(stmt):
+            continue
+        for node in ast.walk(stmt):
+            knob, dflt = _environ_get_knob(node)
+            if (knob and isinstance(dflt, ast.Constant) and isinstance(dflt.value, str)
+                    and dflt.value.strip() != ""):
+                out.append(M("knobs.inline_default_literal", file=name,
+                             lineno=node.lineno, knob=knob, literal=dflt.value))
+    return out
+
+
 def dead_default_problems(py_dir=None):
-    """C4 reconciliation (5): `DEFAULT_*` constants that are **defined but never used**
-    in gates / modules.
-
-    Why this deserves a judgment: `check_i18n` once had `DEFAULT_ROOT =
-    "zreflect"` while `run()` only read the env var and **never used it** -- so
-    this repo's most central coverage gate was **permanently off** on live paths
-    ("exists, self-tests green, never runs"). `check_snapshots` made the same
-    mistake. A constant that "declares a default that has no effect" is worse
-    than no default: it makes people **believe** the configuration is in place.
-
-    Judgment (AST): a module-level `DEFAULT_X = ...` with **no Load reference**
-    anywhere in that file => report. Only `check_*.py` + platform modules (i.e.
-    `zreflect/*.py`) are scanned.
-    """
+    """AST checks: unused `DEFAULT_*` constants and inline `REFLECT_*` fallback literals."""
     import ast  # noqa: PLC0415
     d = py_dir if py_dir is not None else gate.zdir()
     out = []
@@ -650,6 +688,7 @@ def dead_default_problems(py_dir=None):
                   if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)}
         for dead in sorted(defined - loaded):
             out.append(M("knobs.dead_default", file=n, name=dead))
+        out += _inline_default_problems(n, tree)
     return out
 
 
@@ -958,14 +997,8 @@ def _placeholder_problems(lang, ref_lang, ref, other):
     return out
 
 
-def null_pack():
-    """A context manager over an **explicit null pack** (self-evidence only).
-
-    Shape judgments in self-evidence ("with no pack installed it should be a
-    code") must carry their own null scope: the entry `activate()` sets
-    `REFLECT_LANG` to zh/en, and without its own scope an assertion becomes
-    "whatever environment it runs in is what gets tested".
-    """
+def _null_pack():
+    """A context manager over an **explicit null pack** (self-evidence only)."""
     return bind(NULL)
 
 
@@ -1008,15 +1041,9 @@ def _semantics_are_codes_under(cm):
 
 
 def _cases_fixture(d):
-    """Build the fixture (fake source directory + phantom token). `d` comes from `_cases()`."""
+    """Build fixture dir with a clean knob read and a constructed phantom token."""
     open(os.path.join(d, "good.py"), "w", encoding="utf-8").write(
         'X = os.environ.get("REFLECT_FACTS")\n')
-    # The phantom token is built by concatenation: this file is inside the scan
-    # surface (zreflect/*.py), so writing the literal out would get it collected
-    # by this very file's scan_surface_problems() (an old pit of this repo).
-    # Fixture bodies (fake sources / fake READMEs) are in **English** -- they are
-    # scanned inputs, not core output (same convention as facts.py: Chinese
-    # fixtures would be treated as messages by the zero-language gates).
     phantom = "REFLECT_" + "GHOSTX"
     open(os.path.join(d, "phantom.py"), "w", encoding="utf-8").write(
         '# a comment mentions the nonexistent knob ' + phantom + '\n')
@@ -1065,16 +1092,9 @@ def _cases_readme_nominations():
 
 
 def _cases_readme_declared_read():
-    """The declared↔read reconciliation (AGENTS rule 4).
-
-    ⚠️ The assertion must **not** be extracted into a helper: `never_falsifiable`
-    only scans the lambda's AST, and delegating to a function blinds it.
-    Rather write a long line than switch the detector off.
-    """
+    """Bidirectional `declared == read` reconciliation cases."""
     return [
         ("\u2605 knobs.declared_not_read",
-         # A knob is declared but never appears in the source => must report, and
-         # must **name that knob**
          lambda: [p.code for p in declared_vs_read_problems(
              [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
              sources={"check_x.py": "X = 1\n"})
@@ -1083,42 +1103,33 @@ def _cases_readme_declared_read():
              [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
              sources={"check_x.py": "X = 1\n"})
          ] == [{"file": "check_x.py", "knobs": "REFLECT_FACTS"}]),
-        # Declared and actually read => must not report (positive control; otherwise
-        # "always report" would also fool the self-test)
         ("knobs.declared_and_read_is_clean",
          lambda: declared_vs_read_problems(
              [{"file": "check_x.py", "knobs": ("REFLECT_FACTS",)}],
              sources={"check_x.py":
                       'X = os.environ.get("REFLECT_FACTS")\n'}) == []),
+        ("★ knobs.read_not_declared",
+         lambda: [p.code for p in declared_vs_read_problems(
+             [{"file": "check_x.py", "knobs": ()}],
+             sources={"check_x.py":
+                      'X = os.environ.get("REFLECT_FACTS")\n'})]
+         == ["knobs.read_not_declared"]),
     ]
 
 
 def _cases_readme_rows():
-    """Missing rows in the README config table -- the direction opposite of the
-    phantom check."""
+    """Missing rows in the README config tables."""
     return [
         ("\u2605 knobs.readme_missing_rows",
-         # ⚠️ The assertion **pins the code**, not just `!= []`: before, any wrong
-         # code could satisfy this case (observed: substituting a fake
-         # `readme_phantom` still passed).
          lambda: [p.code for p in registry_vs_readme_problems(
              tables=dict.fromkeys(_README_TRIO, "| `REFLECT_FACTS` | x |\n"),
-             # The list is **pinned**: a judgment must not read `REFLECT_READMES`
-             # to decide how many rounds it runs.
              names=tuple(_README_TRIO))
          ] == ["knobs.readme_missing_rows"] * 3),
     ]
 
 
 def _cases_readme_empty():
-    """(c) Empty-input tier (the third class of AGENTS rule 4).
-
-    Both reconcilers previously had only "no report" and "must report" tiers;
-    empty input returned `[]` -- indistinguishable from "clean". Here empty input
-    is **explicitly stated as not applicable** (not faked as a pass): returning
-    empty when there are no comparable sides is correct, but a case must pin it,
-    otherwise a broken implementation would also return empty.
-    """
+    """Empty-input guards for declared/read and README table reconcilers."""
     return [
         ("knobs.declared_vs_read_empty_in_scope",
          lambda: declared_vs_read_problems([{"file": "x.py", "knobs": ()}],
@@ -1129,66 +1140,30 @@ def _cases_readme_empty():
 
 
 def _cases_readme(fx):
-    """See `_cases()`: 8 cases in this group.
-
-    Four groups (phantom / declared↔read / missing rows / empty input): the four
-    reconcilers each check a different direction, and when mixed into one list,
-    "which direction this case tests" can only be told from comments.
-    """
+    """Assemble README and declaration reconciliation cases."""
     return (_cases_readme_nominations() + _cases_readme_declared_read()
             + _cases_readme_rows() + _cases_readme_empty())
 
 
 def _cases_semantics(fx):
-    """See `_cases()`: 3 cases in this group."""
+    """Knob semantic rendering cases."""
     return [
 ("knobs.semantic_renders_as_code_by_default",
- # Carries its own **null scope**: this tests "with no pack installed it is a
- # code", independent of which pack the entry point activated. It used to read
- # `str(w)` directly, and under `REFLECT_LANG=zh` it rendered sentences and all
- # went red (observed) -- an assertion without a declared scope = whatever
- # environment it runs in is what gets tested.
- # Delegated to a helper (a null scope requires paired enter/exit; inlining
- # would become one unreadable line).
- # The always-true detector cannot see the delegate body => gate marks it
- # "unaudited"; a same-source counter-proof below shows the helper really has
- # teeth.
- lambda: _semantics_are_codes_under(null_pack())),
+ lambda: _semantics_are_codes_under(_null_pack())),
 ("★ knobs.semantics_are_codes_can_red", lambda: _semantics_can_red()),
-# The **positive evidence** for lazily rendered semantics: in the real zh pack
-# every semantic has an entry, and under the zh pack it renders as that
-# sentence (not a code). Reading the real pack from disk = proof the migration
-# lost no semantics (injecting a fake table only proves "my template renders my
-# words" -- circular reasoning).
-# Repro: REFLECT_LANG=zh python3 zreflect/knobs.py --selftest
 ("knobs.semantics_present_in_real_packs",
- # Conditional judgment: **if packs are installed they must be complete**.
- # Zero packs (legal state) => nothing to verify, condition holds vacuously;
- # a broken pack installed => this still goes red (verified with a planted pack).
  lambda: not installed_langs() or _semantic_packs_intact()),
     ]
 
 
 def _cases_sync_rules():
-    """Set difference / placeholders / extra keys / empty pack -- these test the
-    **rules themselves**.
-
-    Injecting `discovery` in these four cases is **intentional**: they must not
-    depend on the discovery channel (that is tested separately by
-    `pack_sync_sees_every_installed_lang`). Passing `discovery=` explicitly
-    states "I am testing the rules" -- previously `langs=` passed the same thing,
-    looking like a discovery test while actually bypassing it.
-    """
+    """Language-pack diff rules (missing keys, placeholders, extra keys, empty pack)."""
     return [
         ("\u2605 knobs.pack_missing_keys",
          lambda: [p.code for p in pack_sync_problems(
              discovery=lambda: ("zh", "en"), loader=lambda l: {
                  "zh": {"a": "x"}, "en": {"a": "x", "b": "y"}}[l])
          ] == ["knobs.pack_missing_keys"]),
-        # Percent is the only style `_render` interpolates. A braced template
-        # renders with the braces visible to the user, and the placeholder
-        # comparison below cannot see it (it looks for `%(name)s` on both sides,
-        # and two packs written the same wrong way agree perfectly).
         ("\u2605 knobs.pack_brace_template",
          lambda: [p.code for p in pack_sync_problems(
              discovery=lambda: ("zh", "en"), loader=lambda l: {
@@ -1203,18 +1178,11 @@ def _cases_sync_rules():
              discovery=lambda: ("zh", "en"), loader=lambda l: {
                  "zh": {"a": "x %(k)s"}, "en": {"a": "x %(j)s"}}[l])
          ] == ["knobs.pack_placeholder_mismatch"]),
-        # The extra-keys direction must also be reportable (only missing keys were
-        # tested before -- "one extra key" equally makes the other side's user see
-        # a bare code; the other face of the same hole).
-        # The reference side is `sorted(...)[0]` (here = "en"), so "zh has an
-        # extra key" goes through extra_keys; reversed, it would be reported as
-        # en missing keys (same hole, two wordings).
         ("\u2605 knobs.pack_extra_keys",
          lambda: [p.code for p in pack_sync_problems(
              discovery=lambda: ("zh", "en"), loader=lambda l: {
                  "zh": {"a": "x", "b": "y"}, "en": {"a": "x"}}[l])
          ] == ["knobs.pack_extra_keys"]),
-        # (c) empty input must report
         ("\u2605 knobs.pack_sync_empty",
          lambda: [p.code for p in pack_sync_problems(
              discovery=lambda: ("zh", "en"), loader=lambda l: {})]
@@ -1223,27 +1191,12 @@ def _cases_sync_rules():
 
 
 def _cases_sync_coverage():
-    """Discovery + pack completeness: these two must **not** hand the answer to the
-    code under test."""
+    """Pack discovery, coverage completeness, `REFLECT_LANGS` scoping, and unreadable error cases."""
     return [
-        # Discovery (no written roster): a half-broken pack added on disk must be
-        # seen by the reconciler too.
-        # ⚠️ Goes through **default discovery** (no `discovery=` passed) -- passing
-        # it amounts to handing the answer to the code under test (observed:
-        # that way, even after swapping `installed_langs` back to a hand-written
-        # list, this case still PASSED).
         ("\u2605 knobs.pack_sync_sees_every_installed_lang",
          lambda: _discovery_sees_planted_lang()),
-        # (d) **Pack completeness** (C4 reconciliation 4): every code the source
-        # uses must be in every installed pack.
-        # This catches "both sides missing the same thing" -- with set-difference
-        # comparison alone, a shared omission goes all green and the user sees a
-        # bare code (observed: delete `locks.ok` from both packs => all green).
         ("knobs.coverage_real_repo_clean",
          lambda: pack_coverage_problems() == []),
-        # **`discovery=` must actually be called** (previously accepted in the
-        # signature, never called in the implementation: passing a fake discovery
-        # changed nothing). This pins the "injectable" promise.
         ("\u2605 knobs.coverage_honours_discovery",
          lambda: (lambda seen: ([p.code for p in pack_coverage_problems(
              codes={"a.b"}, discovery=lambda: seen.append(1) or ["zz"],
@@ -1255,29 +1208,14 @@ def _cases_sync_coverage():
              loader=lambda l: ({"a.b": "x", "c.d": "y"} if l == "en"
                                else {"a.b": "x"}))
          ] == ["knobs.pack_missing_code"]),
-        # Issue #35 three tiers, via REFLECT_LANGS. Each case sets/clears the
-        # knob inline and restores the environment in finally -- no `or True`
-        # tricks (the falsifiability scanner rejects them, and rightly so).
         ("★ knobs.coverage_served_unset_judges_all", lambda: _served_case(
             None, ["knobs.pack_missing_code"])),
-        # (2) set => only the declared service languages are judged: en keeps
-        # its promise (both keys present), zh (non-service) missing c.d is NOT
-        # reported -- no fabricated victim.
         ("★ knobs.coverage_served_narrows_judgement", lambda: _served_case(
             "en", [])),
-        # (2b) control for (2): the same call with the knob unset reports zh --
-        # proving (2)'s silence came from the narrowing, not from the fixture.
         ("★ knobs.coverage_served_narrowing_is_from_knob", lambda: _served_case(
             None, ["knobs.pack_missing_code"])),
-        # (3) declared service language with no pack installed => a REAL red
-        # (the declared reader would see bare codes).
         ("★ knobs.coverage_served_absent_is_red", lambda: _served_case(
             "de,en", ["knobs.pack_missing_code"])),
-        # **Unreadable directory != no packs installed** (AGENTS discipline 7: if it
-        # can't be read, say so; never fabricate a 0).
-        # `installed_langs()` used to `return []` on OSError, collapsing broken
-        # permissions and "zero packs" into the same false value => reconciliation
-        # all green (observed chmod 000 => []).
         ("\u2605 knobs.pack_unreadable_on_oserror",
          lambda: _unreadable_dir_is_loud()),
     ]
@@ -1303,40 +1241,14 @@ def _cases_pack(fx):
 
 
 def _cases_registry(fx):
-    """See `_cases()`: 5 cases in this group."""
+    """Registry, default-producer, flag-folding, and inline-default cases."""
     return [
-    # zh / en key sets and placeholder names agree (C4 reconciliation 3). Real
-    # packs green = the migration dropped nothing on either side; the reverse
-    # assertion is in tier (b) (fake packs must report).
     ("knobs.real_packs_in_sync",
-     # Same as above: zero packs is legal => there is no "mutual" to reconcile;
-     # with packs installed, they must agree.
      lambda: not installed_langs() or pack_sync_problems() == []),
-    # ⚠️ The case above is a **delegation** (it builds a temporary fixture and
-    # cannot be inlined) => the always-true detector cannot see inside it. Under
-    # gate's new judgment it would be marked "unaudited"; so here is a
-    # **same-source counter-proof**: turn the discovery channel off and the
-    # planted check must go red. Only both together count as proof.
     ("★ knobs.discovery_planted_can_red", lambda: _planted_red_when_blind()),
-    # **Dead defaults**: a `DEFAULT_*` defined but never used -- "declared but
-    # without effect"
     ("★ knobs.dead_default", lambda: _dead_default_ok()),
-    # **The list knob's default has exactly one producer**: `docs_names()` must
-    # agree with `REGISTRY`.
-    # ⚠️ `check_stale` and `check_retractions` previously each hand-copied a
-    # five-doc default while the registry had six -- `PRINCIPLES.md` was never in
-    # their scan surface (observed).
     ("★ knobs.docs_names_follow_registry", lambda: _docs_names_follows()),
-    # **The flag vocabulary**: three states + case folding. Two vocabularies used
-    # to coexist (`== "off"` and `in ("1","true","yes")`); the latter was
-    # case-sensitive -- `TRUE` silently did nothing.
     ("★ knobs.flag_three_states", lambda: _flag_case()),
-    # C4 reconciliation (5): REGISTRY's kind half vs check_envfile's existence
-    # half -- previously nothing compared them, and a new kind registered
-    # without a matching `_existence_targets` arm would silently skip the
-    # existence check for every knob of that kind.
-    # ⚠️ The assertion is inlined (not a helper call): `never_falsifiable`
-    # only scans the lambda's AST -- a helper `return True` would be invisible.
     ("knobs.kind_vocabulary_clean",
      lambda: kind_vocabulary_problems() == []),
     ("★ knobs.kind_unhandled",
@@ -1350,7 +1262,28 @@ def _cases_registry(fx):
      ] == [{"kind": "ghostkind"}]),
     ("knobs.kind_vocabulary_empty_registry",
      lambda: kind_vocabulary_problems(registry={}) == []),
+    ("knobs.get_and_helpers",
+     lambda: get("REFLECT_FACTS") == REGISTRY["REFLECT_FACTS"][1]
+     and questions_dir() == REGISTRY["REFLECT_QUESTIONS"][1]
+     and repo_path("REFLECT_FACTS", "/r") == "/r/" + REGISTRY["REFLECT_FACTS"][1]
+     and repo_path("REFLECT_INVARIANTS", "/r") is None
+     and isinstance(history_secs(), tuple)),
+    ("★ knobs.inline_default_literal_detected",
+     lambda: _inline_default_case()),
     ]
+
+
+def _inline_default_case():
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        with open(os.path.join(d, "check_bad.py"), "w", encoding="utf-8") as fh:
+            fh.write('import os\nX = os.environ.get("REFLECT_FACTS", "FACTS.json")\n')
+        return [p.code for p in dead_default_problems(py_dir=d)] == [
+            "knobs.inline_default_literal"]
+    finally:
+        shutil.rmtree(d, True)
 
 
 def _flag_case():
@@ -1416,20 +1349,12 @@ def _docs_names_follows():
 
 
 def _docs_scanned_by_gates():
-    """The list of documents the two gates will scan under the **current
-    environment** (consumer end, the single truth).
-
-    It calls the **gates' own entries**, not a re-read of the registry -- only
-    that reveals the difference of "a gate hand-copied a different literal".
-    """
+    """Actual doc lists scanned by `check_stale` and `check_retractions`."""
     import check_retractions  # noqa: PLC0415
     import check_stale  # noqa: PLC0415
-    # `check_stale.scanned_docs()` returns the documents it **actually read**
-    # (a name->text dict; unreadable ones are skipped), so take the keys;
-    # `check_retractions`'s version returns the name list.
     stale = list(check_stale.scanned_docs())
     retr = list(check_retractions.scanned_docs())
-    return stale if stale == retr else []          # sides disagree => empty (guaranteed red)
+    return stale if stale == retr else []
 
 
 def _served_case(knob_value, expect_codes):

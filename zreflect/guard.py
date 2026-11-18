@@ -31,18 +31,20 @@ self-verifiable, execution belongs to measure()):
     goes to stderr, accepted changes from --accept-changes go to stdout,
     keeping the existing output streams).
 
-The change guard compares only `value`, not cmd / source / note (those
-describe "how to re-run"; editing them is normal doc maintenance --
-otherwise the guard turns into noise, gets waved through wholesale, and is
-dead). Per-key acceptance (issue #3 item 1): a bare `--accept-changes` flag
-accepts all, `=k1,k2` accepts only the listed keys, an empty set accepts
-none -- accepting all would wash genuinely broken measurements clean too.
+The change guard compares `(value, cmd, calibrate, calibrate_expect)`, not
+`source` / `note` / `measured_at` / `first_seen` (metadata describing when/how
+a fact was observed; altering `cmd` or `calibrate` must trigger refusal so a
+fact cannot silently change its verifier). Per-key acceptance (issue #3 item 1):
+a bare `--accept-changes` flag accepts all, `=k1,k2` accepts only the listed keys,
+an empty set accepts none -- accepting all would wash genuinely broken
+measurements clean too.
 """
 from __future__ import annotations
 
 import os
 
 import gate
+from gate import module_meta
 from i18n import M
 from ledger import changed_keys, dropped_keys, short_value
 
@@ -93,7 +95,6 @@ def write_target_problems(path, knob_set, ignored=None, carrier_exists=None):
                 if warn is None else
                 M("guard.write_target_env_carrier_after", prefix=warn))
     return fatal, warn
-from gate import module_meta
 
 
 def accepted_keys(argv):
@@ -202,9 +203,12 @@ def _cases_decide(fx):
      lambda: decide(old, same) == ("write", [], {"err": [], "out": []})),
     ("guard.decide_added_key_not_a_change",
      lambda: decide(old, dict(same, c={"value": 3}))[0] == "write"),
-    ("guard.decide_cmd_only_not_a_change",
+    ("guard.decide_note_only_not_a_change",
+     lambda: decide({"a": {"value": 1, "note": "old"}},
+                    {"a": {"value": 1, "note": "new"}})[0] == "write"),
+    ("★ guard.refuse_cmd_changed",
      lambda: decide({"a": {"value": 1, "cmd": "old"}},
-                    {"a": {"value": 1, "cmd": "new"}})[0] == "write"),
+                    {"a": {"value": 1, "cmd": "new"}})[0] == "refuse"),
     # (2) What must be reported gets reported
     ("★ guard.refuse_dropped",
      lambda: (lambda v, p, n: v == "refuse"

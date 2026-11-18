@@ -270,7 +270,7 @@ def run(argv):
     rc = guard_nonempty("check_stale", docs, M("stale.scanned_docs"))
     if rc:
         return rc
-    facts_name = os.environ.get("REFLECT_FACTS", "FACTS.json")
+    facts_name = knobs.get("REFLECT_FACTS")
     if not os.path.exists(repo(facts_name)):
         return fatal(M("stale.ledger_missing", name=facts_name))
     probs = problems(load_or_fatal(repo(facts_name)), docs)

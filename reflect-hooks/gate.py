@@ -41,6 +41,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOOL_REPO = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(TOOL_REPO, "zreflect"))
 
+import knobs  # noqa: E402
 from gate import activate_or_fatal, meta  # noqa: E402
 from i18n import M  # noqa: E402
 
@@ -97,23 +98,10 @@ def _plugin_exports(plugin, env):
 
 
 def _load_env_plugin(tool_dir):
-    """Pluggable add-on (issue #8): knobs `export`ed inside
-    `einfacht-env.sh`.
-
-    Warning: this is the **only** place that must keep a shell -- a shell's
-    `export` can only be done by a shell. We carry it into the Python process
-    by "running one shell and printing its environment": the plugin itself is
-    still a shell file, but **it only exports and produces no copy at all**
-    (no Chinese left to leak).
-    """
+    """Load `REFLECT_*` exports from `einfacht-env.sh` inside `tool_dir`."""
     plugin = os.path.join(tool_dir, "einfacht-env.sh")
     if not os.path.isfile(plugin):
         return
-    # Warning: the plugin must be told explicitly **where it itself lives**:
-    # in `sh -c '...' sh <plugin>`, `$0` is `sh`, so a plugin deriving its
-    # directory with `dirname $0` would derive `/` -- and then the
-    # Einfacht.env in the hooks directory is **silently ignored** (measured:
-    # `env -0` showed not a single REFLECT_*).
     env = dict(os.environ)
     env["EINFACHT_PLUGIN_DIR"] = tool_dir
     exports = _plugin_exports(plugin, env)
@@ -205,8 +193,14 @@ def _prepare(phase, repo, doc):
     facts = os.path.join(repo, "zreflect", "facts.py")
     if phase == "commit":
         if os.path.isfile(os.path.join(repo, doc)):
-            _sh([sys.executable, facts, "--render-doc", doc])
-            _sh(["git", "-C", repo, "add", doc])
+            rc, out = _sh([sys.executable, facts, "--render-doc"])
+            if rc != 0:
+                if out:
+                    print(out, file=sys.stderr)
+                return True
+            for name in (doc, "PRINCIPLES.md"):
+                if os.path.isfile(os.path.join(repo, name)):
+                    _sh(["git", "-C", repo, "add", name])
         return False
     rc, out = _sh([sys.executable, facts, "--check"])
     if rc == 0:
@@ -227,7 +221,7 @@ def run(phase, repo, stdin_rows=None):
         return 2
 
     _load_env_plugin(HERE)
-    doc = os.environ.get("REFLECT_DOC", "").strip() or "STATE.md"
+    doc = knobs.get("REFLECT_DOC")
 
     if _prepare(phase, repo, doc):
         return 1
@@ -294,27 +288,16 @@ def _cases():
         return _run_cli(list(args), quiet=True)
 
     return [
-        # (1) Normal case: no report -- no args => print usage, exit 0
-        # (asking for help is not an error)
         ("hookgate.no_args_prints_usage", lambda: case([]) == 0),
-        # (2) What must be reported gets reported
-        # The carrier reaches the hooks through the plugin's exports. Two
-        # parsers, not one: `env -0` (exact) and a line fallback (BSD `env`
-        # rejects `-0`, and dropping the whole carrier silently was the bug).
         ("\u2605 hookgate.plugin_exports_nul_and_lines",
          lambda: _plugin_export_case()),
         ("★ hookgate.unknown_phase_is_2", lambda: case(["bogus", "/tmp"]) == 2),
         ("★ hookgate.missing_repo_is_2",
          lambda: case(["commit", "/nonexistent-xyz"]) == 2),
-        # (3) Empty input must be reported: phase given, repo root missing
         ("★ hookgate.missing_root_is_2", lambda: case(["commit"]) == 2),
-        # (4) No zreflect in the repo => say outright "not a repo where the
-        # suite is installed" (rc=2, not a silent 0)
         ("★ hookgate.no_zreflect_is_2", lambda: _no_zreflect_case(mk_repo,
                                                                   shutil)),
-        # The summary-line criterion itself has teeth
         ("★ hookgate.summary_shape_can_red", lambda: _summary_shape_ok()),
-        # Ref-protocol parsing: all-zero-sha deletion lines must be skipped
         ("★ hookgate.refs_skip_deletions", lambda: _refs_case()),
     ]
 

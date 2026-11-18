@@ -4,7 +4,7 @@
     {
       "id": "R-DEMO",
       "text": "the old collector is active",
-      "evidence": "run registry --gates",
+      "evidence": "python3 zreflect/registry.py --gates",
       "fixed_in": "the discovered collector"
     }
   ]

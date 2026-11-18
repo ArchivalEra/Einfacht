@@ -446,26 +446,10 @@ def problems(paths=None, sources=None):
 
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    # ⚠️ **`REFLECT_SNAPSHOT_ROOT` empty => scan the suite's own `zreflect/`**,
-    # not "not enabled". (The README once stated this backwards: "empty => that
-    # gate says out loud it is off" -- measured: with the knob empty it still
-    # runs and reports `snapshot.ok` for the suite.)
-    # Why designed this way: this gate guards "mutable globals imported across
-    # modules", and the suite itself is the biggest victim (`gate.GATE_REPO`
-    # is rewritten by several self-proofs), so the default surface is the
-    # suite. To scan **your code**, set `REFLECT_SNAPSHOT_ROOT=<dir>`
-    # explicitly.
     configured = os.environ.get(KNOB, "").strip()
-    # ⚠️ **Unset => anchor at the tool repo** (`gate.zdir()`), not a bare
-    # relative name -- the latter depends on cwd: correct when run from the
-    # repo root, but elsewhere (harness / hook cwd is not guaranteed) it dies
-    # with `scan_empty_dir` FATAL (measured: rc=2 after cd /tmp).
-    # Explicitly set => relative to the **audited repo** (the user writes a
-    # repo-root-relative name in the env file).
     root = gate.zdir() if not configured \
         else os.path.join(gate.GATE_REPO, configured)
     if not os.path.isdir(root):
-        # knob points at a nonexistent directory => broken config (not "not enabled")
         return fatal(M("snapshot.scan_empty_dir", root=root))
     paths = gate.scanned_sources(root, configured=bool(configured))
     if not paths:
@@ -510,7 +494,7 @@ def _fixtures():
 
 
 def _cases_value_copy(fx):
-    """1. Value copies: constants safe / attribute style safe / a copied mutable global must be reported."""
+    """Value copies: constants/attribute reads pass; mutable global imports fail."""
     return [
         ("snapshot.constant_copy_is_fine",
          lambda: problems(sources={"gate": fx["good"],
@@ -522,21 +506,14 @@ def _cases_value_copy(fx):
          lambda: [p.code for p in problems(
              sources={"gate": fx["bad_gate"], "check_x": fx["bad_user"]})
          ] == ["snapshot.mutable_copy"]),
-        # dead imports are not reported (importing something unused is not a risk)
         ("snapshot.dead_import_not_reported",
          lambda: problems(sources={
              "gate": fx["bad_gate"],
              "check_x": "from gate import GATE_REPO\n"}) == []),
-        # aliased module assignment (`import gate as g; g.GATE_REPO = ...`) --
-        # another spelling of the same act as `gate.GATE_REPO = ...`;
-        # previously missed (measured: [])
         ("\u2605 snapshot.mutable_copy_via_alias",
          lambda: [p.code for p in problems(sources={
              "gate": ALIAS_GATE, "usr": ALIAS_USER, "victim": ALIAS_VICTIM})
          ] == ["snapshot.mutable_copy"]),
-        # discovery-based source modules: **any .py in the scan surface** can
-        # be a source module, not just the 12 names on the old hand-written
-        # roster (previously all 16 check_*.py were invisible)
         ("\u2605 snapshot.source_from_any_module",
          lambda: [p.code for p in problems(sources={
              "check_zzz": CHECK_AS_SOURCE, "victim": CHECK_AS_VICTIM})
@@ -545,16 +522,13 @@ def _cases_value_copy(fx):
 
 
 def _cases_derived():
-    """2. Derived snapshots: the top level stores an expression that reaches a mutable global through a thin wrapper as a constant."""
+    """Derived snapshots: top-level calls reading mutable globals."""
     return [
-        # `OUT = repo(NAME)`, whose repo() body reads GATE_REPO => frozen at import time
         ("\u2605 snapshot.derived_copy",
          lambda: [p.code for p in problems(sources={
              "gate": GATE_WITH_REPO,
              "facts": "OUT = repo('L.json')\nprint(OUT)\n"})
          ] == ["snapshot.derived_copy"]),
-        # annotated derivation (`OUT: str = repo(...)`) -- previously only
-        # `ast.Assign` was accepted, missing AnnAssign (review measured `[]`)
         ("\u2605 snapshot.derived_copy_annotated",
          lambda: [p.code for p in problems(sources={
              "gate": GATE_WITH_REPO,
@@ -564,28 +538,15 @@ def _cases_derived():
 
 
 def _default_root_case():
-    """The default scan surface anchors at the tool repo, independent of cwd.
-
-    ⚠️ Previously, with the knob unset, a bare relative name `zreflect` was
-    used -- correct when run from the repo root, but from elsewhere (harness /
-    hook cwd is not guaranteed) it died with `scan_empty_dir` FATAL (measured:
-    rc=2 after cd /tmp). This case **switches to a temp directory** before
-    running the real gate, pinning "cwd is not a prerequisite".
-    """
+    """Default scan anchors at tool repo regardless of cwd."""
     import subprocess  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
-    here = os.path.dirname(os.path.abspath(__file__))
     d = tempfile.mkdtemp()
     env = {k: v for k, v in os.environ.items() if k != KNOB}
     try:
-        p = subprocess.run([sys.executable, os.path.join(here, __file__)],
+        p = subprocess.run([sys.executable, os.path.abspath(__file__)],
                            cwd=d, env=env, capture_output=True, text=True,
                            timeout=120, encoding="utf-8", errors="replace")
-        # ⚠️ Assert only the **rc**, never match output wording:
-        # `snapshot.ok(...)` is a code; with a language pack installed it
-        # renders as natural language (measured: this case went red under
-        # REFLECT_LANG=en -- it was using the current language pack's wording
-        # as the criterion, making the first version its own counterexample).
         return p.returncode == 0
     finally:
         import shutil  # noqa: PLC0415

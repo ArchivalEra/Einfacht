@@ -8,9 +8,7 @@
 
 **Status:** resolved
 
-**Settling:** python3 zreflect/check_explain.py --classify ——
-rc=0 ⇒ `undecided` 为空、每条 docstring 都有结论，本单可结案；
-rc=1 ⇒ 有未裁决项，逐条裁完；rc=2 ⇒ 分类器自身坏了（配置事故，不是判据红）。
+**Settling:** python3 zreflect/check_explain.py —— rc=0 ⇒ 原分类裁决已由 04 改用复杂度额度模型接管；rc≠0 ⇒ 注释纪律失败
 
 ## 为什么不是「列个清单」
 

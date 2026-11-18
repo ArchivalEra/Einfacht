@@ -41,10 +41,12 @@
  "facts.no_ledger_yet": "noch kein Register unter %(name)s (Pfad = REFLECT_FACTS, aktuell aufgelöst zu %(path)s)\n       bestätige zuerst den Registerpfad dieses Repos: prüfe, worauf REFLECT_FACTS in Einfacht.env / dem Fakten-Wrapper-Skript gesetzt ist,\n       dann führe die Messung mit derselben Umgebung aus: python3 zreflect/facts.py (ein blanker Lauf nutzt Code-Standards — das Ziel kann vom Hook-Kontext abweichen)\n       dann führe --render-doc aus, um den Maschinenblock ins Dokument zu schreiben.",
  "facts.none": "keine",
  "facts.note.bare_number_demo": "absichtlich ≥100, um die Regel für nackte Zahlen zu demonstrieren",
+ "facts.note.core_seal": "zweistufige SHA-256-Merkle-Wurzel des geteilten Kerns (verifiziert durch registry.py --verify-seal)",
  "facts.note.example_fact": "Beispiel-Fakt: ersetze measure_example()",
  "facts.note.excludes_machine_block": "schließt Maschinenblöcke aus: sie werden in die Dokumente gerendert, sie mitzuzählen würde den Wert bei jedem Rendern veralten lassen",
  "facts.note.measure_or_omit": "was nicht gemessen werden kann, wird nicht geschrieben — fehlend schlägt gefälscht",
  "facts.ok": "Fakten-Tor: OK (%(count)d Fakten; Block konsistent, keine nackten Zahlen, keine schlechten Zitate)",
+ "facts.principle_ledger_drift": "Prinzip `%(key)s` im Register weicht von doc.RULES ab ⇒ führe `python3 zreflect/facts.py --accept-changes` aus",
  "facts.registry_mismatch": "Verzeichnis-Abgleich fehlgeschlagen, Rendern wird verweigert:\n  · %(entries)s",
  "facts.render_unchanged": "der Maschinenblock von %(path)s ist unverändert",
  "facts.render_written": "Maschinenblock von %(path)s aktualisiert",
@@ -55,5 +57,5 @@
  "facts.title": "Fakten-Tor",
  "facts.unknown_command": "unbekannter Befehl `%(command)s` — `--help` zeigt die verfügbaren (es misst nichts und schreibt nichts)",
  "facts.unknown_key": "kein Schlüssel `%(key)s` im Register (vorhanden: %(existing)s)",
- "facts.usage": "Aufruf: facts.py [--render|--render-doc [Datei]|--check [Datei]|--get SCHLÜSSEL|--init|--accept-principles|--accept SCHLÜSSEL WERT BEFEHL QUELLE|show [SCHLÜSSEL]] (ohne Argument = messen und Register schreiben)"
+ "facts.usage": "Aufruf: facts.py [--render|--render-doc [Datei]|--check [Datei]|--get SCHLÜSSEL|--init|--accept SCHLÜSSEL WERT BEFEHL QUELLE|show [SCHLÜSSEL]] (ohne Argument = messen und Register schreiben)"
 }

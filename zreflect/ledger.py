@@ -103,44 +103,47 @@ def short_value(v, n=24):
     return s if len(s) <= n else s[:n] + "..."
 
 
-def changed_keys(old_facts, new_facts):
-    """Which keys' values this re-measurement would change. Returns
-    `[(key, old value, new value)]`, sorted by key.
+_PROTECTED = ("value", "cmd", "calibrate", "calibrate_expect")
 
-    Compares `value` only: editing `cmd` / `source` / `note` is normal
-    maintenance, and a newly added key is an addition, not a change.
+
+def _entry_val(entry, fld):
+    """Field value for `fld`, treating bare values as `value`."""
+    if not isinstance(entry, dict):
+        return entry if fld == "value" else None
+    return entry.get(fld)
+
+
+def _first_diff(old_e, new_e):
+    """Return `(old, new)` for the first differing protected field, else `None`."""
+    for fld in _PROTECTED:
+        o, n = _entry_val(old_e, fld), _entry_val(new_e, fld)
+        if o != n:
+            return (o, n) if fld == "value" else (f"{fld}:{o}", f"{fld}:{n}")
+    return None
+
+
+def changed_keys(old_facts, new_facts):
+    """Which keys' protected fields (`value`, `cmd`, `calibrate`,
+    `calibrate_expect`) this re-measurement would change. Returns
+    `[(key, old, new)]`, sorted by key.
+
+    Editing `note` / `source` / `measured_at` is metadata; newly added keys are
+    additions, not changes.
     """
     olds = old_facts or {}
     out = []
     for k, nv in sorted((new_facts or {}).items()):
         if k not in olds:
             continue
-        ov = value_of(olds[k])
-        if ov != value_of(nv):
-            out.append((k, ov, value_of(nv)))
+        diff = _first_diff(olds[k], nv)
+        if diff is not None:
+            out.append((k, diff[0], diff[1]))
     return out
 
 
 def fact(value, cmd, source, note="",
          calibrate=None, calibrate_expect=None, kind="value"):
-    """Make one fact: value + re-run command + source (+ optional note).
-
-    **`cmd` must print the value and nothing else.** The replay gate runs it
-    verbatim (cwd = repo root, bash with `pipefail`) and compares stdout, stripped
-    of surrounding whitespace, against `value`. Printing the whole line that
-    contains the value is readable by a human and unjudgeable by a machine; this
-    contract is what makes "re-runnable" judgeable at all.
-
-    **No opt-out.** A value that cannot be re-run in this environment does not
-    enter the ledger -- it belongs in HISTORY.
-
-    **`calibrate` + `calibrate_expect`**: a known-positive sample run against the
-    same instrument. Catches silent drift -- a command that succeeds, returns a
-    stable value, and measures the wrong thing.
-
-    The `calibrate` pair must be given **together**; one alone is an incomplete
-    shape and is rejected on the spot.
-    """
+    """Build one ledger fact (`value` + replay `cmd` + `source`, paired `calibrate`/`calibrate_expect`)."""
     _require_pairs((calibrate, calibrate_expect, "calibrate"))
     d = {"value": value, "cmd": cmd, "source": source,
          "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -177,8 +180,7 @@ def _fill_optional(d, note, calibrate, calibrate_expect, kind):
         d["calibrate_expect"] = calibrate_expect
     # `kind` picks the **replay contract**:
     #   "value"     stdout must equal value (a numeric fact)
-    #   "principle" rc==0 suffices, and stdout **must be empty** (a verdict,
-    #               not a value)
+    #   "principle" rc==0 suffices (a verdict, not a numeric value)
     # Both contracts live in the same executor (`check_facts_replay`); no new
     # replay path is added.
     if kind != "value":
@@ -213,9 +215,19 @@ def _cases_guards():
          lambda: dropped_keys({"a": 1}, {"a": 1, "c": 3}) == []),
         ("ledger.changed_clean",
          lambda: changed_keys({"a": {"value": 1}}, {"a": {"value": 1}}) == []),
-        ("ledger.changed_cmd_only",
+        ("ledger.changed_note_only",
+         lambda: changed_keys({"a": {"value": 1, "note": "old"}},
+                              {"a": {"value": 1, "note": "new"}}) == []),
+        ("★ ledger.changed_cmd_protected",
          lambda: changed_keys({"a": {"value": 1, "cmd": "old"}},
-                              {"a": {"value": 1, "cmd": "new"}}) == []),
+                              {"a": {"value": 1, "cmd": "new"}})
+         == [("a", "cmd:old", "cmd:new")]
+         and changed_keys({"a": {"value": 1, "calibrate": "old"}},
+                          {"a": {"value": 1, "calibrate": "new"}})
+         == [("a", "calibrate:old", "calibrate:new")]
+         and changed_keys({"a": {"value": 1, "calibrate_expect": "old"}},
+                          {"a": {"value": 1, "calibrate_expect": "new"}})
+         == [("a", "calibrate_expect:old", "calibrate_expect:new")]),
         ("\u2605 ledger.dropped_keys",
          lambda: dropped_keys({"a": 1, "b": 2}, {"a": 1}) == ["b"]),
         ("\u2605 ledger.changed_keys",

@@ -215,25 +215,15 @@ def _cases():
         return d
 
     return [
-        # (1) Normal case: no report -- no args => print only, exit 0,
-        # **writes no file**
         ("install.no_args_prints_only", lambda: _no_args_case(mk, shutil)),
-        # (2) What must be reported gets reported
         ("★ install.unknown_mode_is_2",
          lambda: _run_cli(["--bogus"], quiet=True) == 2),
         ("★ install.not_a_repo_is_2",
          lambda: _run_cli(["--chain", "/nonexistent-xyz"], quiet=True) == 2),
-        # chain really installs the wrapper and **keeps** the existing hook
         ("★ install.chain_keeps_existing", lambda: _chain_case(mk, shutil)),
-        # uninstall really restores the original hook
         ("★ install.uninstall_restores", lambda: _uninstall_case(mk, shutil)),
-        # **A core.hooksPath already set => refuse to install a chain**
-        # (it would never run anyway).
-        # This is the "deployed does not mean running" family -- the class
-        # this repo exists to eliminate.
         ("★ install.chain_refused_when_hookspath_set",
          lambda: _chain_blocked_case(mk, shutil)),
-        # (3) Empty input must be reported: no .git/hooks in the repo
         ("★ install.missing_hooks_dir_is_2",
          lambda: _missing_hooks_case(mk, shutil)),
     ]

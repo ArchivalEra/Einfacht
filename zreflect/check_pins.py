@@ -205,11 +205,7 @@ def main(argv):
 
 
 def _fixture():
-    """A real git fixture repo plus specs of each shape. Returns a dict.
-
-    The eight spec literals and repo building live here, separate from the
-    assertions in `_cases()`.
-    """
+    """Git worktree fixture and specs for `_cases()`."""
     import atexit  # noqa: PLC0415
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
@@ -225,8 +221,6 @@ def _fixture():
         ["git", "-C", os.path.join(d, "wt"), "rev-parse", "HEAD"],
         capture_output=True, text=True,
                            encoding="utf-8", errors="replace").stdout.strip()
-    # The worktree uses an **absolute path** (the engine resolves against the
-    # repo root / abs; the fixture tree lives in a temp dir)
     wt = os.path.join(d, "wt")
     stamp = "echo octave wasm/11.3.0 %s 0"
     return {

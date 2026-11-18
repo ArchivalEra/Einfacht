@@ -21,6 +21,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import criteria  # noqa: E402
 import knobs  # noqa: E402
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
@@ -44,15 +45,17 @@ def _entry_field_problems(retractions):
 
 def _evidence_problems(retractions):
     """`evidence` must be **replayable**: it promises "how to replay the
-    refutation", so prose there is a hole -- measured: 4 of 21 entries said
-    "github Actions run 421..." / "a subagent report", none of which anything
-    can re-run. A field that promises re-runnability and accepts narration is
-    the same shape as an off state with no reason.
+    refutation", delegating command checking to `criteria.prose_in_exec_problems`.
     """
-    return [M("retractions.evidence_not_runnable",
-              entry=r.get("id"), evidence=str(r.get("evidence"))[:60])
-            for r in retractions
-            if "python3" not in str(r.get("evidence") or "")]
+    out = []
+    for r in retractions:
+        ev = r.get("evidence")
+        if (not str(ev or "").strip()
+                or criteria.prose_in_exec_problems(
+                    "retractions/%s" % r.get("id", "?"), "evidence", ev)):
+            out.append(M("retractions.evidence_not_runnable",
+                         entry=r.get("id"), evidence=str(ev)[:60]))
+    return out
 
 
 def _resurfaced_problems(retractions, docs, hist):
@@ -120,7 +123,7 @@ def scanned_docs():
 def run(argv):
     # The name is configurable (issue #1, item 2): never hardcoded -- switching
     # repos means changing only the environment variable.
-    rp = repo(os.environ.get("REFLECT_RETRACTIONS", "retractions.json"))
+    rp = repo(knobs.get("REFLECT_RETRACTIONS"))
     if not os.path.exists(rp):
         return fatal(M("retractions.file_missing", name=rp))
     docs = {}
@@ -144,7 +147,6 @@ def _cases():
                              "fixed_in": "doc y"}]}
     doc_ok = "(record) this thing is green -- retracted, see R-1\n"
     return [
-        # (1) compliant input: nothing reported
         ("retractions.marked",
          lambda: problems(ok_r, {"A.md": doc_ok}) == []),
         ("retractions.assertion_absent",
@@ -154,7 +156,6 @@ def _cases():
         ("retractions.declared_history_section",
          lambda: problems(ok_r, {"A.md": "## 5 history\nthis thing is green.\n"},
                           hist_secs=("5",)) == []),
-        # (2) what must be reported is reported
         ("★ retractions.resurfaced",
          lambda: [p.code for p in problems(
              ok_r, {"A.md": "this thing is green.\n"})] == ["retractions.resurfaced"]),
@@ -162,21 +163,17 @@ def _cases():
          lambda: [p.code for p in problems(
              ok_r, {"A.md": "## 5 history\nthis thing is green.\n"}, hist_secs=())]
          == ["retractions.resurfaced"]),
-        # A missing `evidence` trips **both** rules: the field-completeness one
-        # (it is absent) and the re-runnability one (empty is not a command).
         ("\u2605 retractions.entry_missing_field",
          lambda: [p.code for p in problems(
              {"retractions": [{"id": "R-2", "text": "t", "fixed_in": "f"}]},
              {"A.md": "x\n"})]
          == ["retractions.entry_missing_field", "retractions.evidence_not_runnable"]),
-        # evidence must be replayable: prose there is a hole nothing can verify
         ("\u2605 retractions.evidence_not_runnable",
          lambda: [p.code for p in problems(
              {"retractions": [{"id": "R-3", "text": "t",
                                "evidence": "a subagent report",
                                "fixed_in": "f"}]}, {"A.md": "x\n"})]
          == ["retractions.evidence_not_runnable"]),
-        # (3) empty input must be reported
         ("★ retractions.no_docs",
          lambda: [p.code for p in problems(ok_r, {})] == ["retractions.no_docs"]),
         ("★ retractions.missing_key",

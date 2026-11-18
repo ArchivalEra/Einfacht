@@ -1,376 +1,234 @@
 #!/usr/bin/env python3
-"""Comment discipline: **a comment is a claim the code could not make.**
+"""Comment discipline: **explanation volume stays proportional to code complexity**.
 
-Two modes, because the two answers are different questions and a repo may want
-either:
-
-    strict     any docstring at all is a report -- the function is supposed to be
-               legible from its signature and body
-    mismatch   a docstring **wider than its interface** is a report -- many
-               paragraphs explaining few parameters means the explanation is
-               about why the design is what it is, which is history, not contract
-
-Under `mismatch`, `fact()` is the specimen that motivated this: nine parameters,
-six paragraphs, 2908 characters. Nothing there explained how to call it; it
-explained why a previous opt-out was removed. That belongs in `HISTORY.md`.
-
-## Why a flag instead of one verdict
-
-The strict reading ("code complex enough to need a comment is at odds with this
-suite") is a real position and a harsh one: measured on this repo, 699 of 861
-functions carry a docstring. `mismatch` is the same idea with a threshold, and it
-catches 46. Whichever a repo adopts, adopting it must be a **declaration**, not
-a default that surprises someone -- hence `REFLECT_COMMENTS`: `strict`, `off`
-(the default), or unset for `off`.
-
-## Why it is not simply "no comments"
-
-Some docstrings are the interface: ordering constraints, error modes, the
-contract a caller must know and cannot infer. Deleting those does not make the
-code cleaner, it makes it guesswork. So the strict mode is offered, not imposed.
+Two modes via `REFLECT_COMMENTS` (defaults to `mismatch`; only `off` disables):
+  mismatch  `len(docstring) + in_function_comment_chars <= 300 + 120*branches + 60*args`
+  strict    any docstring on a function is rejected
 """
 from __future__ import annotations
 
 import ast
+import io
 import os
-import re
 import sys
+import tokenize
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate  # noqa: E402
+import knobs  # noqa: E402
 from gate import fatal, main_selftest_or, meta, module_meta, off  # noqa: E402
 from i18n import M  # noqa: E402
 
 MODES = ("strict", "mismatch")
-DEFAULT_MODE = "off"
-# `mismatch` = a docstring carrying more explanation than the code it explains.
-# Measured on this repo: `doc >= 500 chars` on a body of `<= 20 lines` catches 33
-# functions, and the ones it catches are the specimens -- `fact()` explains 2908
-# characters over 59 lines, `module_meta` 592 over 12. A **ratio** was the first
-# shape and it was wrong: a three-line function with a 150-character docstring
-# scores 50 and is perfectly reasonable (the docstring is longer than the body
-# because the body is trivial).
-DOC_MAX_CHARS = 500
-BODY_MAX_LINES = 20
+BASE_BUDGET = 300
+PER_BRANCH = 120
+PER_ARG = 60
 
-# `--classify`: a docstring that recounts what a previous version did is
-# **history**, not a contract. Measured on this repo: 61 of 111 over-long
-# docstrings carry a temporal marker, 30 are public and carry none (a possible
-# calling contract), and 20 are private and carry none -- those cannot be decided
-# mechanically because nothing in the text says whether it explains "how to call
-# me" or "why I exist".
-#
-# The point of three classes rather than a list: a hand-written list of "these
-# need fixing" drifts, cannot be re-run, and hands the judgement to whoever reads
-# it next. A classifier shrinks "111 to look at" into "N to decide", and N is
-# recomputed on every run.
-TEMPORAL = re.compile(
-    r"(used to|first version|was wrong|no longer|had been|"
-    r"\u4e0a\u4e00\u7248|\u539f\u6765|\u66fe\u662f|\u539f\u672c|"
-    r"\u6b64\u524d|\u66fe\u7ecf|\u5f53\u65f6|observed)", re.I)
-CLASSES = ("history", "contract", "undecided")
-
-
-def classify(path, src, chosen="mismatch"):
-    """Group over-long docstrings into `{class: [(file, line, name)]}`.
-
-    `history` = carries a temporal marker (it recounts), `contract` = public and
-    carries none (it may state a calling convention), `undecided` = private and
-    carries none (nothing in the text says which it is).
-    """
-    out = {k: [] for k in CLASSES}
-    try:
-        tree = ast.parse(src)
-    except SyntaxError:
-        return out
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        doc = ast.get_docstring(node) or ""
-        if len(doc) < DOC_MAX_CHARS:
-            continue
-        after_doc = max((node.body[1].lineno if len(node.body) > 1
-                         else (node.end_lineno or node.lineno)), node.lineno)
-        body = (node.end_lineno or node.lineno) - after_doc + 1
-        if body > BODY_MAX_LINES:
-            continue
-        if TEMPORAL.search(doc):
-            out["history"].append((path, node.lineno, node.name))
-        elif node.name.startswith("_"):
-            out["undecided"].append((path, node.lineno, node.name))
-        else:
-            out["contract"].append((path, node.lineno, node.name))
-    return out
-
-
-def classify_tree(zdir=None):
-    """Classify every file under `zdir`. Returns `(merged, functions_seen)`.
-
-    `functions_seen` is the zero-value guard: if the classifier is broken and
-    returns nothing at all, "0 undecided" is indistinguishable from "it never
-    looked". Measured: replacing `classify()` with a constant empty result made
-    `--classify` print all zeros and exit 0 -- the settlement criterion was
-    blind to the classifier failing. A repo with zero functions is not a
-    passing classification, it is an environment accident.
-    """
-    import os.path  # noqa: PLC0415
-    base = zdir or gate.zdir()
-    merged = {k: [] for k in CLASSES}
-    seen = 0
-    for name in sorted(os.listdir(base)):
-        if not name.endswith(".py"):
-            continue
-        src = open(os.path.join(base, name), encoding="utf-8").read()
-        seen += sum(1 for node in ast.walk(ast.parse(src))
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)))
-        for key, rows in classify(name, src).items():
-            merged[key].extend(rows)
-    return merged, seen
+_BRANCH_NODES = (
+    ast.If, ast.For, ast.AsyncFor, ast.While, ast.ExceptHandler,
+    ast.With, ast.AsyncWith, ast.BoolOp, ast.IfExp, ast.Raise,
+)
+_PRAGMAS = ("noqa", "type:", "pragma:", "pylint:", "pyright:", "fmt:", "isort:", "!")
 
 
 def mode():
-    """The declared mode (`REFLECT_COMMENTS`, a value knob); empty/unset => `off`."""
-    raw = os.environ.get("REFLECT_COMMENTS", "").strip().lower()
-    return raw or DEFAULT_MODE
+    """Declared `REFLECT_COMMENTS` mode (`mismatch` when unset; `off` disables)."""
+    return knobs.get("REFLECT_COMMENTS").strip().lower()
+
+
+def _branch_count(fn):
+    """Count branching/control-flow constructs in `fn` without entering nested defs."""
+    queue = list(fn.body)
+    count = 0
+    while queue:
+        cur = queue.pop()
+        if isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if isinstance(cur, _BRANCH_NODES):
+            count += 1
+        elif isinstance(cur, ast.comprehension):
+            count += len(cur.ifs)
+        queue.extend(ast.iter_child_nodes(cur))
+    return count
+
+
+def _arg_count(fn):
+    """Total declared parameters of `fn` (excluding self/cls distinction)."""
+    a = fn.args
+    return (len(a.posonlyargs) + len(a.args) + len(a.kwonlyargs)
+            + (1 if a.vararg else 0) + (1 if a.kwarg else 0))
+
+
+def _comment_chars_by_fn(src, fns):
+    """Attribute stripped non-pragma `#` comments to the innermost enclosing function."""
+    counts = {}
+    if not fns:
+        return counts
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(src).readline))
+    except (tokenize.TokenError, IndentationError):
+        return counts
+    for tok in tokens:
+        if tok.type != tokenize.COMMENT:
+            continue
+        text = tok.string.lstrip("#").strip()
+        if not text or text.lower().startswith(_PRAGMAS):
+            continue
+        owners = [fn for fn in fns
+                  if fn.lineno <= tok.start[0] <= (fn.end_lineno or fn.lineno)]
+        if owners:
+            own = min(owners, key=lambda fn: (fn.end_lineno or fn.lineno) - fn.lineno)
+            counts[own] = counts.get(own, 0) + len(text)
+    return counts
+
+
+def _budget(branches, args):
+    """Allowed explanation character budget for `(branches, args)`."""
+    return BASE_BUDGET + PER_BRANCH * branches + PER_ARG * args
 
 
 def function_reports(path, src, chosen):
-    """Per-function reports for one source. `chosen` = "strict" | "mismatch"."""
-    out = []
+    """Per-function violations for one source under `chosen` (`strict` | `mismatch`)."""
     try:
         tree = ast.parse(src)
     except SyntaxError:
-        return out
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        doc = ast.get_docstring(node) or ""
-        if not doc.strip():
-            continue
+        return []
+    fns = [n for n in ast.walk(tree)
+           if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    cchars = _comment_chars_by_fn(src, fns)
+    out = []
+    for node in fns:
+        doc = ast.get_docstring(node, clean=False) or ""
         if chosen == "strict":
-            out.append(M("comments.docstring_in_strict_mode",
-                         file=path, line=node.lineno, name=node.name))
+            if doc.strip():
+                out.append(M("comments.docstring_in_strict_mode",
+                             file=path, line=node.lineno, name=node.name))
             continue
-        # **Code** lines, not the whole block: `end_lineno - lineno` includes the
-        # docstring itself, so a long docstring inflates the very number that is
-        # supposed to measure how little code it explains (observed: a 12-line
-        # rationale over `return a + b` measured 29 "body" lines and passed).
-        after_doc = max((node.body[1].lineno if len(node.body) > 1
-                         else (node.end_lineno or node.lineno)), node.lineno)
-        body = (node.end_lineno or node.lineno) - after_doc + 1
-        if len(doc) >= DOC_MAX_CHARS and body <= BODY_MAX_LINES:
-            out.append(M("comments.docstring_wider_than_interface",
+        total = len(doc) + cchars.get(node, 0)
+        br, n_args = _branch_count(node), _arg_count(node)
+        bud = _budget(br, n_args)
+        if total > bud:
+            out.append(M("comments.explain_exceeds_complexity",
                          file=path, line=node.lineno, name=node.name,
-                         chars=len(doc), body=body))
+                         chars=total, budget=bud, branches=br, args=n_args))
     return out
 
 
 def problems(paths, chosen):
-    """Every report across `[(name, source)]`. Pure function."""
+    """Evaluate `[(relpath, source)]` under `chosen`. Returns list of `Message`."""
     if chosen not in MODES:
         return [M("comments.bad_mode", mode=chosen, supported=", ".join(MODES))]
-    return [p for name, src in paths
-            for p in function_reports(name, src, chosen)]
+    return [p for name, src in paths for p in function_reports(name, src, chosen)]
 
 
-def _classifier_has_teeth():
-    """The classifier must still recognise a known history sample.
-
-    Without this, deleting the body of `classify()` produces three empty groups
-    and `--classify` exits 0 -- the settlement criterion would certify a broken
-    classifier (measured). This is the same "a criterion must be able to go red"
-    rule applied to the classifier itself.
-    """
-    sample = ('def f():\n    """Does the thing.\n\n'
-              + "A sentence of rationale that runs on. " * 20 + "\n\n"
-              + 'The first version returned None.\n    """\n    return 1\n')
-    merged = classify("teeth.py", sample)
-    return (len(merged["history"]) == 1
-            and not merged["contract"] and not merged["undecided"])
-
-
-def temporal_reports(zdir=None):
-    """Every docstring containing a temporal marker, **regardless of length**.
-
-`--classify` only examines over-long docstrings (`DOC_MAX_CHARS`). This scan
-has no length floor: history does not become a contract by being brief.
-"""
-    import os.path  # noqa: PLC0415
-    # **Both halves of the suite**: `reflect-hooks/` ships with the suite and has
-    # docstrings of its own. Scanning only `zreflect/` left them unguarded --
-    # a temporal marker there would never be reported, so the cleanup could not
-    # stay clean.
-    bases = ([zdir] if zdir else
-             [gate.zdir(), os.path.join(gate.tool_repo(), "reflect-hooks")])
+def _suite_sources():
+    """Collect `[(relpath, src)]` across `zreflect/` and `reflect-hooks/`."""
     out = []
-    for base in bases:
+    root = gate.tool_repo()
+    for sub in ("zreflect", "reflect-hooks"):
+        base = os.path.join(root, sub)
         if not os.path.isdir(base):
             continue
         for name in sorted(os.listdir(base)):
-            if not name.endswith(".py"):
-                continue
-            src = open(os.path.join(base, name), encoding="utf-8").read()
-            for node in ast.walk(ast.parse(src)):
-                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    continue
-                doc = ast.get_docstring(node) or ""
-                if doc.strip() and TEMPORAL.search(doc):
-                    out.append((name, node.lineno, node.name, len(doc)))
+            if name.endswith(".py"):
+                rel = sub + "/" + name
+                out.append((rel, open(os.path.join(base, name), encoding="utf-8").read()))
     return out
 
 
-def _print_temporal(rows):
-    for path, line, name, chars in rows:
-        print("%s:%d  %s  (%d chars)" % (path, line, name, chars))
-    print("temporal=%d" % len(rows))
-    return 1 if rows else 0
-
-
-def _print_classification(merged):
-    """The `--classify` report: three groups, then the exit code the ticket names."""
-    for key in CLASSES:
-        rows = sorted(merged[key])
-        print("%-10s %d" % (key, len(rows)))
-        for path, line, name in rows:
-            print("    %s:%d  %s" % (path, line, name))
-    # rc: 0 = nothing left to decide, 1 = someone must rule on `undecided`.
-    return 1 if merged["undecided"] else 0
-
-
 def run(argv=None):
-    argv = list(sys.argv[1:] if argv is None else argv)
-    if "--temporal" in argv:
-        return _print_temporal(temporal_reports())
-    if "--classify" in argv:
-        merged, seen = classify_tree()
-        if seen == 0:
-            return fatal(M("comments.classify_scanned_nothing"))
-        if not _classifier_has_teeth():
-            return fatal(M("comments.classifier_cannot_go_red"))
-        if not any(merged.values()):
-            # Nothing at all in scope is legitimate only when the suite really
-            # has no over-long docstrings -- which is a *measured* state, not an
-            # empty result from a broken classifier. Pin that with a selftest
-            # case below rather than accepting it silently.
-            print(M("comments.classify_empty_scope"))
-        return _print_classification(merged)
+    _ = argv
     chosen = mode()
     if chosen == "off":
         return off(M("comments.off"))
     if chosen not in MODES:
-        return fatal(M("comments.bad_mode", mode=chosen,
-                       supported=", ".join(MODES)))
-    paths = [(rel, open(os.path.join(gate.zdir(), rel), encoding="utf-8").read())
-             for rel in sorted(os.listdir(gate.zdir()))
-             if rel.endswith(".py")]
+        return fatal(M("comments.bad_mode", mode=chosen, supported=", ".join(MODES)))
+    paths = _suite_sources()
     probs = problems(paths, chosen)
     return gate.finish(M("comments.title"), probs,
-                       M("comments.ok", mode=chosen, files=len(paths),
-                         count=len(probs)))
+                       M("comments.ok", mode=chosen, files=len(paths), count=len(probs)))
 
 
-def _temporal_scope_case():
-    """A marker inside each half must be found; neither half may be skipped."""
+def _mode_resolution_case():
+    """Unset => `mismatch`, `off` => `off`, `strict` => `strict`."""
+    saved = os.environ.pop("REFLECT_COMMENTS", None)
+    try:
+        if mode() != "mismatch":
+            return False
+        os.environ["REFLECT_COMMENTS"] = "off"
+        if mode() != "off":
+            return False
+        os.environ["REFLECT_COMMENTS"] = "strict"
+        return mode() == "strict"
+    finally:
+        if saved is not None:
+            os.environ["REFLECT_COMMENTS"] = saved
+        else:
+            os.environ.pop("REFLECT_COMMENTS", None)
+
+
+def _suite_scope_case():
+    """`_suite_sources` covers both `zreflect/` and `reflect-hooks/`."""
     import tempfile  # noqa: PLC0415
-    q = chr(34) * 3
-    body = ("def f():\n    " + q + "Does the thing.\n\n"
-            + "A sentence that runs on. " * 6
-            + "\n\nThe first version returned None.\n    " + q + "\n    return 1\n")
     with tempfile.TemporaryDirectory() as root:
         for half in ("zreflect", "reflect-hooks"):
             os.makedirs(os.path.join(root, half))
             with open(os.path.join(root, half, "x.py"), "w", encoding="utf-8") as fh:
-                fh.write(body)
-        saved_zdir, saved_tool = gate.zdir, gate.tool_repo
+                fh.write("def f():\n    return 1\n")
+        saved_tool = gate.tool_repo
         try:
-            gate.zdir = lambda: os.path.join(root, "zreflect")
             gate.tool_repo = lambda: root
-            rows = temporal_reports()
+            rels = [r for r, _s in _suite_sources()]
         finally:
-            gate.zdir, gate.tool_repo = saved_zdir, saved_tool
-    return len(rows) == 2
-
-
-def _hollow_classifier_case():
-    """A classifier returning three empty groups must fail the red sample."""
-    saved = globals()["classify"]
-    try:
-        globals()["classify"] = lambda *a, **k: {x: [] for x in CLASSES}
-        return not _classifier_has_teeth()
-    finally:
-        globals()["classify"] = saved
-
-
-def _classify_case():
-    """One source with all three shapes must yield one row in each class."""
-    filler = "".join("A sentence of rationale that runs on. " * 2 + "\n\n"
-                     for _ in range(12))          # comfortably over DOC_MAX_CHARS
-    hist = ('def pub():\n    """Does the thing.\n\n' + filler
-            + 'The first version returned None.\n    """\n    return 1\n')
-    contract = ('def pub2():\n    """Does the thing.\n\n' + filler
-                + '"""\n    return 1\n')
-    undecided = ('def _priv():\n    """Does the thing.\n\n' + filler
-                 + '"""\n    return 1\n')
-    merged = classify("x.py", hist + contract + undecided)
-    return (len(merged["history"]) == 1 and len(merged["contract"]) == 1
-            and len(merged["undecided"]) == 1)
+            gate.tool_repo = saved_tool
+        return sorted(rels) == ["reflect-hooks/x.py", "zreflect/x.py"]
 
 
 def _cases():
-    narrow = 'def f(a, b):\n    """Does the thing.\n\n    a: what a is.\n    b: what b is.\n    """\n'
-    # >= 500 chars of docstring on a body of <= 20 lines: the shape this mode
-    # rejects (design rationale where the code is trivially small)
-    wide = ('def f(a, b):\n    """Does the thing.\n\n'
-            + "".join("Rationale line %d of the design that used to be here.\n\n"
-                      % i for i in range(12))
-            + '    """\n    return a + b\n')
+    narrow = 'def f(a, b):\n    """Does thing.\n\n    a: input A.\n    b: input B.\n    """\n'
     plain = "def f(a, b):\n    return a + b\n"
+    long_txt = "Sentence of rationale that runs long. " * 10
+    over_doc = 'def f():\n    """%s"""\n    return 1\n' % long_txt
+    over_cmt = "def f():\n    # %s\n    return 1\n" % long_txt
+    branched = ("def f(a, b):\n    # %s\n" % long_txt
+                + "    if a:\n        return 1\n    if b:\n        return 2\n    return 0\n")
+    pragma_fn = ("def f():\n"
+                 + "    # noqa: E501 unused pragma text padding to exceed budget easily\n" * 10
+                 + "    return 1\n")
     return [
-        ("comments.off_by_default", lambda: mode() == "off"),
-        # strict: any docstring is a report, including the narrow one
+        ("comments.mode_defaults", lambda: _mode_resolution_case()),
         ("★ comments.strict_reports_narrow",
          lambda: [p.code for p in problems([("x.py", narrow)], "strict")]
          == ["comments.docstring_in_strict_mode"]),
         ("comments.strict_ignores_bare_code",
          lambda: problems([("x.py", plain)], "strict") == []),
-        # mismatch: the narrow one is a contract and passes
-        ("comments.narrow_docstring_is_a_contract",
+        ("comments.narrow_within_budget",
          lambda: problems([("x.py", narrow)], "mismatch") == []),
-        ("★ comments.wide_docstring_is_history",
-         lambda: [p.code for p in problems([("x.py", wide)], "mismatch")]
-         == ["comments.docstring_wider_than_interface"]),
-        # an unknown mode is a configuration error, not a silent pass
+        ("★ comments.over_budget_docstring_fails",
+         lambda: [p.code for p in problems([("x.py", over_doc)], "mismatch")]
+         == ["comments.explain_exceeds_complexity"]),
+        ("★ comments.over_budget_comments_fail",
+         lambda: [p.code for p in problems([("x.py", over_cmt)], "mismatch")]
+         == ["comments.explain_exceeds_complexity"]),
+        ("★ comments.branches_and_args_raise_budget",
+         lambda: problems([("x.py", branched)], "mismatch") == []),
+        ("★ comments.pragmas_not_counted",
+         lambda: problems([("x.py", pragma_fn)], "mismatch") == []),
         ("★ comments.bad_mode_is_reported",
          lambda: [p.code for p in problems([("x.py", narrow)], "loud")]
          == ["comments.bad_mode"]),
-        # --classify must separate the three kinds, not just count them: a
-        # recounting docstring is history, a public one may be a contract, and a
-        # private one carrying neither signal is what a human has to rule on.
-        ("comments.classify_splits_three_ways",
-         lambda: _classify_case()),
-        # The classifier must fail its own red sample: a hollow classifier
-        # returning three empty groups made `--classify` certify success.
-        ("comments.classifier_red_sample",
-         lambda: _classifier_has_teeth()),
-        ("★ comments.hollow_classifier_is_rejected",
-         lambda: _hollow_classifier_case()),
-        # `--temporal` must cover **both** suite halves. Scanning only
-        # `zreflect/` left `reflect-hooks/` unguarded, so a marker there would
-        # never be reported and the cleanup could silently regrow.
-        ("comments.temporal_covers_both_halves",
-         lambda: _temporal_scope_case()),
+        ("comments.covers_both_halves",
+         lambda: _suite_scope_case()),
     ]
 
 
 GATE = meta("Comment discipline",
-            "strict: no docstrings; mismatch: no docstring wider than its interface",
+            "strict: no docstrings; mismatch: explanation chars within AST complexity budget",
             knobs=("REFLECT_COMMENTS",),
             runs_at="start-of-work",
-            off_reason="a repo that has not decided whether comments are a claim "
-                       "or a crutch keeps this off; declare strict or mismatch to "
-                       "turn it on")
+            off_reason="only disabled when REFLECT_COMMENTS=off is explicitly set")
 
-MODULE = module_meta("Comment discipline", "two readings of 'this comment earns its place'")
+MODULE = module_meta("Comment discipline", "explanation volume proportional to AST complexity")
 
 
 if __name__ == "__main__":

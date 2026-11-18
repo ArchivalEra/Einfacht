@@ -1,11 +1,23 @@
 {
-  "description": "Two readings of 'this comment earns its place'",
+  "description": "Comment explanation volume proportional to AST complexity",
   "steps": [
     {
       "argv": [
         "{python}",
         "zreflect/check_explain.py"
       ],
+      "contains": [
+        "comments.ok"
+      ]
+    },
+    {
+      "argv": [
+        "{python}",
+        "zreflect/check_explain.py"
+      ],
+      "env": {
+        "REFLECT_COMMENTS": "off"
+      },
       "contains": [
         "OFF: comments.off"
       ]

@@ -77,16 +77,7 @@ def suite_files():
 
 
 def ruff_argv():
-    """The argv for running ruff (`sys.executable -m ruff`: cross-platform and
-    identical to the pip-installed one), targeting **the suite's own files**
-    (never the whole repo).
-
-    ⚠️ Empty target list => the caller must go `off`, not fall back to
-    `ruff check .` -- the fallback re-opens the whole-repo wound recorded in
-    `suite_files` (149 host findings). A suite with zero declared files has
-    nothing to audit; pretending the whole repo is the target is exactly the
-    mis-audit, one decision later.
-    """
+    """Ruff argv targeting `suite_files()` only (empty => caller goes `off`)."""
     targets = suite_files()
     return [sys.executable, "-m", "ruff", "check", "--output-format=concise",
             *targets]
@@ -181,25 +172,16 @@ def subprocess_ruff_probe():
 
 def _cases():
     return [
-        # (1) compliant input: nothing reported
         ("lint.clean_is_clean", lambda: problems("", 0) == []),
-        # (2) what must be reported is reported
         ("★ lint.finding_is_reported",
          lambda: [p.code for p in problems(
              "zreflect/x.py:3:1: F841 Local variable `y` is unused", 1)]
          == ["lint.finding"]),
-        # (3) empty input must be reported -- rc != 0 with **no located line at
-        # all** (tool broken / bad flag)
         ("★ lint.silent_failure_is_loud",
          lambda: [p.code for p in problems("error: unrecognized argument", 2)]
          == ["lint.no_output"]),
-        # Benign output is not falsely reported: rc=0 means clean, warnings
-        # included (e.g. deprecation notices)
         ("lint.warning_with_rc0_is_clean",
          lambda: problems("warning: config deprecated", 0) == []),
-        # **A config incident and a red criterion must be distinguishable**
-        # (rc=2 vs rc=1): a located line => a problem was found; none => ruff
-        # itself failed to start (broken `ruff.toml` syntax).
         ("\u2605 lint.located_finding_detected",
          lambda: _has_located_finding(
              "zreflect/x.py:3:1: F841 Local variable `y` is unused")),

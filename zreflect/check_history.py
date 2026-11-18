@@ -45,25 +45,17 @@ from i18n import M  # noqa: E402
 
 
 def location():
-    """Absolute path of the history document (`REFLECT_HISTORY`, default `HISTORY.md`)."""
-    name = os.environ.get("REFLECT_HISTORY", "").strip()
-    if not name:
-        name = knobs.REGISTRY["REFLECT_HISTORY"][1]
-    return gate.repo_path(name)
+    """Absolute path of the history document (`REFLECT_HISTORY`)."""
+    return gate.repo_path(knobs.get("REFLECT_HISTORY"))
 
 
 def surfaces():
-    """The scan surfaces the exemption must stay out of: `{knob: [paths]}`.
-
-    Built from the knobs so a repo that renames its documents is judged against
-    its own names, not this repo's.
-    """
+    """The scan surfaces the exemption must stay out of: `{knob: [paths]}`."""
     return {
         "REFLECT_DOCS": list(knobs.docs_names()),
         "REFLECT_READMES": list(knobs.readme_names()),
         "REFLECT_QUESTIONS": [knobs.questions_path()],
-        "REFLECT_FACTS": [os.environ.get("REFLECT_FACTS", "").strip()
-                          or knobs.REGISTRY["REFLECT_FACTS"][1]],
+        "REFLECT_FACTS": [knobs.get("REFLECT_FACTS")],
     }
 
 
@@ -141,25 +133,19 @@ def _cases():
     surfaces_a = {"REFLECT_DOCS": ["STATE.md", "PRINCIPLES.md"],
                   "REFLECT_QUESTIONS": ["questions"]}
     return [
-        # (1) HISTORY.md at the repo root is outside every surface
         ("history.exempt_by_default",
          lambda: is_exempt("/repo/HISTORY.md", surfaces_a, root="/repo")),
-        # (2) declared in REFLECT_DOCS => it would be judged as living state
         ("\u2605 history.declared_as_doc_is_not_exempt",
          lambda: not is_exempt("/repo/STATE.md", surfaces_a, root="/repo")),
-        # (3) inside a declared directory => same story
         ("\u2605 history.inside_a_scanned_dir_is_not_exempt",
          lambda: not is_exempt("/repo/questions/HISTORY.md", surfaces_a,
                                root="/repo")),
-        # (4) a sibling with a common prefix is NOT inside the directory
         ("history.prefix_is_not_containment",
          lambda: is_exempt("/repo/questions-archive/HISTORY.md", surfaces_a,
                            root="/repo")),
-        # (5) zero-value guard: a missing document is reported
         ("\u2605 history.missing_is_reported",
          lambda: [p.code for p in problems({}, path="/nonexistent/HISTORY.md")]
          == ["history.missing"]),
-        # (6) the real checkout's own HISTORY.md is on no surface
         ("history.this_repo_is_exempt",
          lambda: problems() == []),
     ]
@@ -167,7 +153,8 @@ def _cases():
 
 GATE = meta("History document",
             "the one carrier where prose is allowed: it must exist and must stay off every scan surface",
-            knobs=("REFLECT_HISTORY", "REFLECT_DOCS", "REFLECT_READMES", "REFLECT_QUESTIONS"),
+            knobs=("REFLECT_HISTORY", "REFLECT_DOCS", "REFLECT_READMES",
+                   "REFLECT_QUESTIONS", "REFLECT_FACTS"),
             runs_at="start-of-work",
             off_reason="a repo that keeps no history document states so by "
                        "pointing REFLECT_HISTORY at nothing; the exemption then "

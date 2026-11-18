@@ -184,22 +184,15 @@ def problems(files, exists=None):
     return out
 
 
-def collect(d=None):
-    # The directory name is configurable (issue #1, item 2): default questions/,
-    # overridable via REFLECT_QUESTIONS.
-    # Warning: the value goes through `knobs.questions_dir()` (single origin, and
-    # it strips) -- previously this spot did not strip, so `REFLECT_QUESTIONS=`
-    # (empty string = unset) made the **repo root** the question directory,
-    # sweeping STATE.md / README.md in and reporting fake problems (observed).
-    # An explicit `d` (selftest injects a fake directory name) => assemble it
-    # here; otherwise go through the single origin.
+def collect(d=None, root=None):
+    # The directory name is configurable via `knobs.questions_dir()`.
     d = d or knobs.questions_dir()
-    root = os.path.join(gate.GATE_REPO, d)
+    base = os.path.join(root or gate.GATE_REPO, d)
     files = {}
-    if os.path.isdir(root):
-        for f in sorted(os.listdir(root)):
+    if os.path.isdir(base):
+        for f in sorted(os.listdir(base)):
             if f.endswith(".md"):
-                files["%s/%s" % (d, f)] = open(os.path.join(root, f), encoding="utf-8",
+                files["%s/%s" % (d, f)] = open(os.path.join(base, f), encoding="utf-8",
                                                errors="replace").read()
     return files
 
@@ -225,7 +218,6 @@ def _q(status="ready-for-agent",
 def _cases():
     ok = {"questions/01.md": _q()}
     return [
-        # (1) compliant input: nothing reported
         ("questions.ok",
          lambda: problems(ok, exists=lambda p: True) == []),
         ("questions.none_first_deliverable",
@@ -234,40 +226,27 @@ def _cases():
              exists=lambda p: False) == []),
         ("questions.resolved_also_compliant", lambda: problems(
             {"questions/03.md": _q(status="resolved")}, exists=lambda p: True) == []),
-        # wontfix is a legal terminal state too (issue #38): the gate accepts it
-        # (no "unknown status") -- a decision not to do a thing is a conclusion.
         ("questions.wontfix_also_compliant", lambda: problems(
             {"questions/09.md": _q(status="wontfix")}, exists=lambda p: True) == []),
-        # The closed-set has exactly two members and lives in one place: both
-        # terminal states are closed, every non-terminal state is open. This is
-        # the four-state table from issue #38 (resolved/wontfix/needs-info/
-        # ready-for-agent), pinned on the single origin.
         ("★ questions.closed_status_table", lambda:
             is_resolved(_q(status="resolved")) is True
             and is_resolved(_q(status="wontfix")) is True
             and is_resolved(_q(status="needs-info")) is False
             and is_resolved(_q(status="ready-for-agent")) is False
             and is_resolved(_q(status="wontfix")) is True),
-        # (2) what must be reported is reported
         ("★ questions.missing_settling",
          lambda: [p.code for p in problems(
              {"questions/04.md": _q(settling="")}, exists=lambda p: True)]
          == ["questions.missing_settling"]),
-        # A named path that does not exist: the setter names a file, so the
-        # existence check fires (a command token would not be existence-checked).
         ("\u2605 questions.settler_missing",
          lambda: [p.code for p in problems(
              {"questions/08.md": _q(settling="zreflect/nope.py -- rc=0 => a; rc=2 => b")},
              exists=lambda p: False)]
          == ["questions.settler_missing", "criteria.exec_position_is_prose"]),
-        # A settler that is a **file name** is not a command: "zreflect/facts.py"
-        # names a script and says nothing about how to run it, so it can never
-        # be replayed (measured: the example question shipped in this shape).
         ("\u2605 questions.settler_is_not_a_command",
          lambda: [p.code for p in problems(
              {"questions/09.md": _q(settling="zreflect/facts.py -- rc=0 => a; rc=2 => b")})]
          == ["criteria.exec_position_is_prose"]),
-        # "run it" is both prose (not a command) and has no two outcomes
         ("\u2605 questions.no_distinct_outcomes",
          lambda: [p.code for p in problems(
              {"questions/05.md": _q(settling="run it")}, exists=lambda p: True)]
@@ -284,11 +263,9 @@ def _cases():
          lambda: [p.code for p in problems(
              {"questions/07.md": "**Settling:** python3 x.py ---- rc=0 => a; rc=1 => b"},
              exists=lambda p: True)] == ["questions.missing_status"]),
-        # (2) UX (issue #15 B1): a wrapped Settling must still yield the full criterion
         ("questions.settling_wrapped",
          lambda: "rc=7" in (field("**Status:** x\n**Settling:** run:\nrc=0 => A；"
                                  "rc=7 => B\n", "Settling") or "")),
-        # (3) empty input must be reported
         ("★ questions.empty",
          lambda: [p.code for p in problems({}, exists=lambda p: True)]
          == ["questions.empty"]),

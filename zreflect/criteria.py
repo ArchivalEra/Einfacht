@@ -37,12 +37,13 @@ Each is a **pure function** (injectable `sources=` / `zdir=`); selftests live in
 from __future__ import annotations
 
 import ast
-import glob
 import json
 import os
 import re
+import shlex
 
 import gate  # noqa: E402
+import knobs  # noqa: E402
 
 # A token that "looks like a filename" (`off_reason` mentioning `foo.json` and such).
 # Brought over from `registry.py` when it moved -- it is criterion data for
@@ -103,35 +104,138 @@ def _reason_files(reason, repo_root=None):
     return out
 
 
-def dead_interface_problems(zdir=None):
-    """**Public functions with zero consumers** are reported.
+_ENTRY_INTERFACES = frozenset({"main", "run", "problems"})
+# Public helpers whose explicit purpose is cross-module selftest support.
+_TEST_HELPERS = frozenset({"a_pack_lang", "bind", "raises"})
 
-    Candidates come from `_public_functions`, the reference corpus from
-    `_repo_corpus`, and the verdict from `_consumed`; the criterion is
-    discovery-based (no hand-written rosters) and this function only
-    orchestrates. Returns one `registry.dead_interface` per unreferenced name,
-    sorted by function name.
-    """
+
+def _callees(node, fns):
+    """Function names inside `fns` directly referenced as `Name` calls/loads in `node`."""
+    return [sub.id for sub in ast.walk(node)
+            if isinstance(sub, ast.Name) and sub.id in fns]
+
+
+def _bfs_fns(fns, roots, skip=()):
+    """BFS over `fns` starting at `roots`, never entering names in `skip`."""
+    seen = {n.name for n in roots if n.name not in skip}
+    queue = [n for n in roots if n.name not in skip]
+    while queue:
+        cur = queue.pop()
+        for t in _callees(cur, fns):
+            if t not in seen and t not in skip:
+                seen.add(t)
+                queue.append(fns[t])
+    return seen
+
+
+def _is_main_if(stmt):
+    """Is `stmt` an `if __name__ == '__main__':` guard?"""
+    return isinstance(stmt, ast.If) and "__main__" in ast.unparse(stmt.test)
+
+
+def _test_only_fn_names(tree):
+    """`_cases*` / `_fixture*` / `_selftest` and their private test-only helpers."""
+    fns = {n.name: n for n in tree.body
+           if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    test_prefix = ("_cases", "_fixture")
+    is_test = {n for n in fns if n.startswith(test_prefix) or n == "_selftest"}
+    prod_roots = [n for name, n in fns.items() if not name.startswith("_")]
+    for stmt in tree.body:
+        if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)) and not _is_main_if(stmt):
+            prod_roots.extend(fns[t] for t in _callees(stmt, fns) if t not in is_test)
+    prod = _bfs_fns(fns, prod_roots, skip=is_test)
+    return _bfs_fns(fns, [fns[n] for n in is_test], skip=prod)
+
+
+def _test_fn_names(tree):
+    """Transitive closure of `_cases*` / `_fixture*` functions in `tree`."""
+    fns = {n.name: n for n in tree.body
+           if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    roots = [n for name, n in fns.items() if name.startswith(("_cases", "_fixture"))]
+    return _bfs_fns(fns, roots)
+
+
+def _rule_cmd_loads(node):
+    """Identifiers loaded inside `Rule(..., 'python3 -c ...')` command strings."""
+    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "Rule" and len(node.args) >= 3
+            and isinstance(node.args[2], ast.Constant)
+            and isinstance(node.args[2].value, str)):
+        return set()
+    try:
+        toks = shlex.split(node.args[2].value)
+    except ValueError:
+        return set()
+    if "-c" not in toks:
+        return set()
+    idx = toks.index("-c")
+    if idx + 1 >= len(toks):
+        return set()
+    return _ast_loads_of(toks[idx + 1])
+
+
+def _walk_loads(subtree, loads=None):
+    """Collect `ast.Load` Name/Attribute identifiers inside `subtree`."""
+    out = loads if loads is not None else set()
+    for node in ast.walk(subtree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            out.add(node.id)
+        elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+            out.add(node.attr)
+    return out
+
+
+def _ast_loads_of(src):
+    """Load identifiers in `src`, returning empty set on syntax error."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return set()
+    return _walk_loads(tree)
+
+
+def _stmt_loads(stmt, loads):
+    """Collect AST `Load` identifiers from one non-test top-level statement."""
+    _walk_loads(stmt, loads)
+    for node in ast.walk(stmt):
+        if isinstance(node, ast.Call):
+            loads.update(_rule_cmd_loads(node))
+
+
+def _prod_load_names(text):
+    """AST `Load` identifiers in non-test production code of one module."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return set()
+    test_fns = _test_only_fn_names(tree)
+    loads = set()
+    for stmt in tree.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)) and stmt.name in test_fns:
+            continue
+        _stmt_loads(stmt, loads)
+    return loads
+
+
+def dead_interface_problems(zdir=None):
+    """**Public functions with zero production consumers** are reported."""
     cand, own_text = _public_functions(zdir)
     corpus = _repo_corpus(zdir)
+    loads = {rel: _prod_load_names(text) for rel, text in corpus}
+    own_loads = {
+        "zreflect/" + mod: (loads["zreflect/" + mod]
+                            if ("zreflect/" + mod) in loads
+                            else _prod_load_names(text))
+        for mod, text in own_text.items()}
     out = []
     for fn, mod in sorted(cand.items()):
-        if not _consumed(fn, mod, own_text, corpus):
+        if not _consumed(fn, "zreflect/" + mod, own_loads, loads):
             out.append(M("registry.dead_interface", function=fn, module=mod))
     return out
 
 
 def _public_functions(zdir):
-    """(1) Candidate discovery: top-level functions **not starting with `_`** in
-    platform modules (`zreflect/*.py`, non-`check_*`).
-
-    Returns `(cand, own_text)`: `cand` maps function name -> defining module,
-    `own_text` maps module -> full text (needed for same-file reference
-    counting). Unreadable or unparseable files are skipped; only `.py` is
-    scanned, so shell callers do not count.
-    """
-    import ast  # noqa: PLC0415
-    import os  # noqa: PLC0415
+    """Candidate discovery: top-level public functions in platform modules."""
     d = zdir if zdir is not None else gate.zdir()
     cand, own_text = {}, {}
     for n in sorted(os.listdir(d)):
@@ -151,14 +255,7 @@ def _public_functions(zdir):
 
 
 def _repo_corpus(zdir):
-    """(2) Reference text for the whole repo (`zreflect` + `reflect-hooks`), as
-    `[(filename, text)]`.
-
-    Skipping self is done by **filename**, never by string identity (`is` is not
-    guaranteed for equal strings). Every other `.py` counts as a consumer only
-    when its text references the name; unreadable files are skipped.
-    """
-    import os  # noqa: PLC0415
+    """Reference text for `zreflect` + `reflect-hooks`, keyed as `sub/filename`."""
     d = zdir if zdir is not None else gate.zdir()
     root = os.path.dirname(d)
     corpus = []
@@ -169,27 +266,20 @@ def _repo_corpus(zdir):
         for n in sorted(os.listdir(base)):
             if n.endswith(".py"):
                 try:
-                    corpus.append((n, open(os.path.join(base, n),
-                                           encoding="utf-8").read()))
+                    corpus.append((sub + "/" + n, open(os.path.join(base, n),
+                                                       encoding="utf-8").read()))
                 except OSError:
                     continue
     return corpus
 
 
-def _consumed(fn, mod, own_text, corpus):
-    """(3) Consumption test: a public name is consumed when it is referenced from
-    another file, **or** appears more than once in its own file (the definition
-    counts once, so use by its own `_cases()` counts too).
-
-    Zero consumption is reported regardless of whether the name should be
-    private; `run` / `main` / `problems` are never reported because every gate
-    uses them in the same file.
-    """
-    own = len(re.findall(r"\b%s\b" % re.escape(fn), own_text.get(mod, "")))
-    if own > 1:
+def _consumed(fn, mod_rel, own_loads, loads):
+    """A public function is consumed if it is an entry point or AST-loaded in production."""
+    if fn in _ENTRY_INTERFACES or fn in _TEST_HELPERS:
         return True
-    return any(name != mod and re.search(r"\b%s\b" % re.escape(fn), text)
-               for name, text in corpus)
+    if fn in own_loads.get(mod_rel, ()):
+        return True
+    return any(rel != mod_rel and fn in names for rel, names in loads.items())
 
 
 def encoding_surface_problems(repo_root=None):
@@ -583,49 +673,66 @@ EXEC_PREFIXES = (
 )
 
 
-def starts_with_interpreter(value):
-    """Does this execution-position value begin with something runnable?"""
-    first = str(value or "").strip().split(" ")[0].strip("`\"'")
-    if not first:
+_OUTCOME_SEP = re.compile(r"\s+(?:——|—|----|--)\s+")
+_PROSE_CHARS = re.compile(r"[\u4e00-\u9fff（）【】；：，。]")
+
+
+def _command_part(value, field_name):
+    """Extract the command segment (stripping outcome tail on `Settling` and backticks)."""
+    s = str(value or "").strip()
+    if field_name == "Settling":
+        s = _OUTCOME_SEP.split(s, 1)[0].strip()
+    if s.startswith("`") and s.endswith("`") and len(s) >= 2:
+        s = s[1:-1].strip()
+    return s
+
+
+def _strip_quoted(text):
+    """Remove single/double-quoted spans so prose inside quotes is not flagged."""
+    out = re.sub(r'"[^"]*"', "", text)
+    return re.sub(r"'[^']*'", "", out)
+
+
+def starts_with_interpreter(value, field_name="cmd"):
+    """Does this execution-position value hold a runnable command without prose tails?"""
+    cmd = _command_part(value, field_name)
+    if not cmd:
         return False
-    return first in EXEC_PREFIXES or first.startswith("/")
+    first = cmd.split(" ", 1)[0].strip("`\"'")
+    if not (first in EXEC_PREFIXES or first.startswith("/")):
+        return False
+    if _PROSE_CHARS.search(_strip_quoted(cmd)):
+        return False
+    try:
+        return bool(shlex.split(cmd))
+    except ValueError:
+        return False
 
 
 def prose_in_exec_problems(where, field_name, value):
-    """Report when an execution position holds prose instead of a command.
-
-    An empty value is **not** reported here: missing is a different criterion's
-    job, and conflating the two would let one report hide the other.
-    """
+    """Report when an execution position holds prose instead of a command."""
     if not str(value or "").strip():
         return []
-    if starts_with_interpreter(value):
+    if starts_with_interpreter(value, field_name):
         return []
     return [M("criteria.exec_position_is_prose",
               where=where, field=field_name, value=str(value)[:60])]
 
 
-# Spec files and the keys whose values are execution positions. One table, so a
-# new spec with a command field is added in one place.
+# Spec files and the keys whose values are execution positions.
 EXEC_POSITIONS = {
     "world.json": ("stamps", "cmd"),
     "pins.json": ("pins", ("version_read", "stamp_read")),
 }
 
-# Every execution position in the suite, spec files **and** the two carriers
-# whose fields promise re-runnability. One collector, so the rule's text and its
-# command cannot drift apart: the text names Settling and evidence, and this is
-# what makes that true.
-def _spec_path(knobs_key, default, base):
-    rel = os.environ.get(knobs_key, "").strip() or default
-    if not rel:
-        return None
-    path = rel if os.path.isabs(rel) else os.path.join(base, rel)
-    return path if os.path.exists(path) else None
+
+def _spec_path(knobs_key, base):
+    path = knobs.repo_path(knobs_key, base)
+    return path if path and os.path.exists(path) else None
 
 
 def _spec_exec_problems(knobs_key, spec_name, base):
-    path = _spec_path(knobs_key, "", base)
+    path = _spec_path(knobs_key, base)
     if path is None:
         return []
     try:
@@ -636,24 +743,20 @@ def _spec_exec_problems(knobs_key, spec_name, base):
 
 
 def _settling_problems(base):
-    """The `Settling:` line of every question."""
+    """The `Settling:` line of every question (delegated to `check_questions`)."""
+    import check_questions  # noqa: PLC0415
     out = []
-    for rel in sorted(glob.glob(os.path.join(base, "questions", "*.md"))):
-        try:
-            body = open(rel, encoding="utf-8", errors="replace").read()
-        except OSError:
+    for rel, body in sorted(check_questions.collect(root=base).items()):
+        sv = check_questions.field(body, "Settling")
+        if not sv or sv.startswith(check_questions.NONE_LIKE):
             continue
-        for line in body.splitlines():
-            if "**Settling:**" in line:
-                out += prose_in_exec_problems(
-                    os.path.basename(rel), "Settling",
-                    line.split("**Settling:**", 1)[1].strip())
+        out += prose_in_exec_problems(os.path.basename(rel), "Settling", sv)
     return out
 
 
 def _evidence_problems(base):
     """The `evidence` field of every retraction entry."""
-    path = _spec_path("REFLECT_RETRACTIONS", "retractions.json", base)
+    path = _spec_path("REFLECT_RETRACTIONS", base)
     if path is None:
         return []
     try:
@@ -786,47 +889,26 @@ def _scan_sources(sources, base):
 
 
 def _returns_self_computed_dir(text):
-    """Does a function body contain `return dirname(abspath(__file__))`?
-
-    ⚠️ **Only catches "self-computation used as a return value"**, not
-    `sys.path.insert(0, ...)` -- the latter is **import bootstrapping** (present at
-    the top of every gate, 22 sites); it does not express "what the tool directory
-    is", it just lets the script find its sibling modules. Catching it would turn the
-    criterion into 22 lines of noise.
-    """
+    """Does a function body self-compute `dirname(...abspath(__file__))` (return or assign)?"""
     try:
         tree = ast.parse(text)
     except SyntaxError:
         return []
     out = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for sub in ast.walk(node):
-            if isinstance(sub, ast.Return) and sub.value is not None \
-                    and "dirname(os.path.abspath(__file__)" in ast.unparse(sub.value):
+            if (isinstance(sub, ast.Call)
+                    and "dirname" in ast.unparse(sub)
+                    and "abspath(__file__)" in ast.unparse(sub)):
                 out.append(node.name)
                 break
     return out
 
 
 def path_rule_problems(sources=None):
-    """**"the tool's zreflect/" may have exactly one source** (`gate.zdir`).
-
-    Criterion (AST): a function whose return self-computes
-    `dirname(os.path.abspath(__file__))` is reported, except in `gate.py`. A
-    proxy `return gate.zdir()` is not self-computation.
-
-    Injection mode judges **only** the injected surface: `sources=[]` means an
-    empty surface to judge, never "scan the real directory". Returns
-    `registry.path_rule_split` entries with file and function names.
-    """
-    # Injection mode judges **the injected surface only** -- an empty injection
-    # means "nothing to judge", never "scan the real directory". Judging the host
-    # by association would mix two verdicts into one list (the `dead_interface`
-    # lesson). But it must still *judge*: returning `[]` unconditionally made the
-    # criterion's own selftest unable to go red, which is the decoration this
-    # repo exists to refute (observed: a planted `splitter.py` reported nothing).
+    """Enforce single source (`gate.zdir`) for tool directory calculation across suite."""
     surface = _scan_sources(None, gate.zdir()) if sources is None else sources.items()
     out = []
     for name, text in surface:
@@ -859,24 +941,20 @@ def _platform_functions(names, read):
     return platform
 
 
-def _asserted_names(case_bodies):
-    """The set of names **read** (Load context) inside each `_cases()` body.
-
-    ⚠️ AST nodes, not text matching: a `helper` appearing inside a fixture string is
-    not an assertion (the same disease recurring through rounds 19-24: text matching
-    standing in for structural matching).
-    """
+def _asserted_names(files):
+    """Identifiers loaded inside `_cases*` / `_fixture*` function subtrees only."""
     asserted = set()
-    for text in case_bodies:
+    for text in files.values():
         try:
             tree = ast.parse(text)
         except SyntaxError:
             continue
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                asserted.add(node.id)
-            elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
-                asserted.add(node.attr)
+        test_fns = _test_fn_names(tree)
+        for stmt in tree.body:
+            if not (isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and stmt.name in test_fns):
+                continue
+            _walk_loads(stmt, asserted)
     return asserted
 
 
@@ -1025,7 +1103,7 @@ def dependency_coverage_problems(zdir=None, sources=None):
     if not files:
         return []
     platform = _platform_functions(names, read)
-    asserted = _asserted_names([t for t in files.values() if "def _cases(" in t])
+    asserted = _asserted_names(files)
     consumed, consumers = _consumers(files, platform)
     return [M("registry.dependency_untested", module=m, function=f)
             for m, f in _untested_consumed(consumed, consumers, asserted)]
@@ -1034,8 +1112,8 @@ def dependency_coverage_problems(zdir=None, sources=None):
 # -- Selftest: criteria belong to their own subject under test -----------------
 
 def _dead_interface_case():
-    """Plant a zero-consumer public function => must report; add an external reference
-    => must not report."""
+    """Plant a zero-consumer public function => must report even when mentioned in
+    comments/docstrings/`_cases*`; add a real consumer => must not report."""
     import os
     import shutil
     import tempfile  # noqa: PLC0415
@@ -1043,13 +1121,16 @@ def _dead_interface_case():
     try:
         d = os.path.join(root, "zreflect")
         os.makedirs(d, exist_ok=True)
-        open(os.path.join(d, "probe.py"), "w", encoding="utf-8").write(
-            "def zzz_orphan():\n    return 1\n")
+        with open(os.path.join(d, "probe.py"), "w", encoding="utf-8") as fh:
+            fh.write(
+                'def zzz_orphan():\n    """Mention zzz_orphan() only in docstring."""\n'
+                '    # and in comment: zzz_orphan()\n    return 1\n'
+                'def _cases_probe():\n    return [("x", lambda: zzz_orphan() == 1)]\n')
         if not dead_interface_problems(zdir=d):
             return False
-        # An external consumer was added => should no longer report
-        open(os.path.join(d, "check_probe.py"), "w", encoding="utf-8").write(
-            "import probe\ndef run():\n    return probe.zzz_orphan()\n")
+        # A real external consumer was added => should no longer report
+        with open(os.path.join(d, "check_probe.py"), "w", encoding="utf-8") as fh:
+            fh.write("import probe\ndef run():\n    return probe.zzz_orphan()\n")
         return dead_interface_problems(zdir=d) == []
     finally:
         shutil.rmtree(root, True)
@@ -1089,15 +1170,7 @@ def _unexpected_shell_case():
 
 
 def _system_exit_int_case():
-    """Judge each of the three `SystemExit` shapes once: only integer constants may
-    pass.
-
-    ⚠️ **All three must be tested**, because they fail differently and with
-    different consequences:
-      - `SystemExit("msg")` => exits **1** (a FATAL treated as criterion red)
-      - `SystemExit()`      => exits **0** (a FATAL treated as green -- the worst one)
-      - `SystemExit(2)`     => exits 2 (the only correct "broken config")
-    """
+    """Verify non-int `SystemExit(...)` payloads report while int exit codes pass."""
     import os  # noqa: PLC0415
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
@@ -1366,6 +1439,10 @@ def _exec_position_every_carrier():
             fh.write('{"lines":{"m":{"site":"s","artifacts":"a","container":"c",'
                      '"fork_pin_ref":"u"}},"active":"m","stamps":{"s":'
                      '{"value":"v","cmd":"the deploy was green last tuesday"}}}')
+        with open(os.path.join(root, "pins.json"), "w", encoding="utf-8") as fh:
+            fh.write('{"pins":[{"name":"p","kind":"version","worktree":"w",'
+                     '"version_read":"read version from Slack",'
+                     '"stamp_read":"also not a command"}]}')
         with open(os.path.join(root, "retractions.json"), "w", encoding="utf-8") as fh:
             fh.write('{"schema":1,"retractions":[{"id":"R-9","text":"t",'
                      '"evidence":"a slack thread said so","fixed_in":"f"}]}')
@@ -1375,9 +1452,8 @@ def _exec_position_every_carrier():
         saved = {k: os.environ.get(k) for k in
                  ("REFLECT_WORLD", "REFLECT_PINS", "REFLECT_RETRACTIONS")}
         try:
-            os.environ["REFLECT_WORLD"] = os.path.join(root, "world.json")
-            os.environ["REFLECT_PINS"] = ""
-            os.environ["REFLECT_RETRACTIONS"] = os.path.join(root, "retractions.json")
+            for k in saved:
+                os.environ.pop(k, None)
             fields = {p.params.get("field")
                       for p in all_exec_position_problems(root)}
         finally:
@@ -1386,30 +1462,25 @@ def _exec_position_every_carrier():
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
-    return fields == {"cmd", "Settling", "evidence"}
+    return fields == {"cmd", "version_read", "stamp_read", "Settling", "evidence"}
 
 
 def _path_rule_single_source():
-    """Real repo: only gate.py self-computes the tool dir; plant one more fake =>
-    must report."""
+    """Real repo: only gate.py self-computes the tool dir; return and local assign
+    in a function both report."""
     ok_real = path_rule_problems() == []
-    # The criterion only catches a **return inside a function body** (not
-    # module-level assignments -- those are import bootstrapping / constants)
-    fake = {"splitter.py":
-            "def f():\n"
-            "    return os.path.dirname(os.path.abspath(__file__))\n"}
+    fake = {
+        "splitter.py": "def f():\n    return os.path.dirname(os.path.abspath(__file__))\n",
+        "local.py": "def g():\n    d = os.path.dirname(os.path.abspath(__file__))\n    return d\n",
+    }
     got = [p.code for p in path_rule_problems(sources=fake)]
-    return ok_real and got == ["registry.path_rule_split"]
+    return ok_real and got == ["registry.path_rule_split", "registry.path_rule_split"]
 
 
 
 def _cases_off_reason():
-    """See `_cases()`: 7 cases in this group. **Touches no fixtures** -- the reason
-    criteria only read the declaration surface."""
+    """Off-reason shape and truthfulness cases."""
     return [
-    # **off must have a reason** (round 12): calls `off()` without a declared
-    # `off_reason`, a too-short reason, or a declared reason without ever calling
-    # off -- all three directions must report.
     ("★ registry.off_without_reason", lambda: _off_reason_ok(
         "no-reason", {"check_x.py": "_off()"}, ok=False)),
     ("★ registry.off_reason_too_short", lambda: _off_reason_ok(
@@ -1420,23 +1491,9 @@ def _cases_off_reason():
     ("registry.off_reason_ok", lambda: _off_reason_ok(
         "complete", {"check_x.py": "_off()"}, ok=True,
         reason="a real justification long enough")),
-    # **Reason truthfulness** (round 17): the `off_reason` claims "this repo has no
-    # X.json" while X.json actually exists => the reason has gone stale (the gate
-    # should have been enabled long ago). Round 12 only demanded "a reason must
-    # exist"; this is its symmetric gap: without demanding "the reason be true", a
-    # reason becomes a permanent get-out-of-jail card.
     ("★ registry.off_reason_stale", lambda: _off_reason_stale_ok()),
-    # **Filenames inside reasons must be checked at both legal locations**:
-    # `Einfacht.env` may live at the repo root **or** in `reflect-hooks/`
-    # (`einfacht-env.sh` checks the hooks dir first, then the repo root). Checking
-    # only the root misses the "carrier genuinely placed in reflect-hooks/" case
-    # (observed: []).
     ("★ registry.off_reason_stale_in_hooks_dir",
      lambda: _stale_in_hooks_dir()),
-    # **Convention reconciliation** (C4): `_REASON_BASES` must match
-    # `einfacht-env.sh`'s carrier lookup (hooks dir + repo root). The criterion is
-    # behavioral: place a carrier at both locations, both must be seen. Checking
-    # only the root => RED.
     ("★ registry.reason_bases_match_env_plugin",
      lambda: reason_bases_agree()),
     ]
@@ -1444,39 +1501,19 @@ def _cases_off_reason():
 
 
 def _cases_path_rule():
-    """See `_cases()`: 4 cases in this group. **Touches no fixtures** -- the path
-    criteria only read gate's sources."""
+    """Path-rule, execution-position, and `zdir()`/`tool_repo()` cases."""
     return [
-    # **Convention split** (C4 reconciliation 8): the tool's zreflect/ may have only
-    # one source. Another `dirname(abspath(__file__))` elsewhere => report (changing
-    # one would split them).
     ("★ registry.path_rule_single_source",
      lambda: _path_rule_single_source()),
-    # **The execution-position rule covers every carrier its text names.**
-    # The command used to unpack a `str` (ValueError on the first violation)
-    # and to scan only world/pins while the text promised Settling and
-    # evidence -- a criterion narrower than its sentence. This pins all three.
     ("\u2605 registry.exec_position_covers_every_carrier",
      lambda: _exec_position_every_carrier()),
-    # **Selftest of `gate.zdir()` / `tool_repo()`** (round 21): they are the repo-wide
-    # foundation; previously only "other modules delegate to it" criteria existed,
-    # never "it computes the right thing itself".
     ("★ registry.zdir_matches_file",
-     # The value must be **the directory this file lives in** (`registry.py` is also
-     # in zreflect/).
-     # ⚠️ Do **not** write `dirname(abspath(__file__))` here -- that is exactly the
-     # shape this gate forbids, and writing it would be caught by
-     # `path_rule_single_source` (observed: this assertion triggered that criterion
-     # on itself). Uses an explicit literal comparison instead: `gate.zdir()` must
-     # end in `zreflect` and this file must be importable from it.
      lambda: os.path.basename(gate.zdir()) == "zreflect"
      and os.path.exists(os.path.join(gate.zdir(), "registry.py"))),
     ("★ registry.tool_repo_is_zdir_parent",
-     # `tool_repo()` must be `zdir()`'s **parent** (not something else)
      lambda: os.path.abspath(gate.tool_repo())
      == os.path.dirname(os.path.abspath(gate.zdir()))),
     ("★ registry.zdir_is_a_dir",
-     # A directory that actually exists (not a computed empty string / wrong path)
      lambda: os.path.isdir(gate.zdir())
      and os.path.basename(gate.zdir()) == "zreflect"),
     ]
@@ -1509,18 +1546,7 @@ def _cases(fx=None):
 
 
 def _utf8_forced_case():
-    """Windows' cp1252 stdout must be recoverable (otherwise one line of Chinese
-    can turn CI red).
-
-    **A deterministic check**, not relying on "it will definitely throw if you
-    don't flush" -- that is undefined behavior:
-      1. Static assertion: `_force_utf8_streams`'s source must contain
-         `reconfigure` and `utf-8` -- that is what it does, nothing else.
-      2. Behavioral assertion: build two cp1252 streams; writing directly to
-         one must throw; writing to the other after `_force_utf8_streams()`
-         must not throw. Both halves are needed -- testing only "can write"
-         would let a function that does nothing pass.
-    """
+    """Verify `_force_utf8_streams()` makes cp1252 streams accept UTF-8 text."""
     import inspect  # noqa: PLC0415
     import io  # noqa: PLC0415
     import sys  # noqa: PLC0415
@@ -1554,70 +1580,24 @@ def _utf8_forced_case():
 
 
 def _cases_self_checks():
-    """The 7 checks that do not need the roster fixture (dead interfaces / shell
-    surface / CJK predicate / trailing newline / dependency coverage / selftest
-    hardening)."""
+    """Core structural self-checks (dead interface, shell, CJK, encoding, scope)."""
     return [
-        # **`living.py` self-verification**: a `selftest=False` module
-        # previously had **zero assertions**, while
-        # `living_lines` is consumed by `check_stale` / `check_retractions` --
-        # had it judged wrongly, every criterion of those two gates would have
-        # been void.
-        # **A `selftest=False` module description must state where its selftest
-        # lives**: `living.py` / `gate.py` / `registry.py` all declare
-        # `selftest=False`, but their logic
-        # **has substantive assertions** in `registry._cases()`. A description
-        # that just says "no selftest" = a disclaimer.
-        # Machine criterion for "strictly check surplus interfaces": a public
-        # function with zero consumers => must report.
         ("★ registry.dead_interface_detected",
          lambda: _dead_interface_case()),
-        # All-Python guard: an unregistered .sh => must report (build a fake one
-        # to prove the guard has teeth)
         ("★ registry.unexpected_shell_detected",
          lambda: _unexpected_shell_case()),
-        # **A .sh at the consumer repo root does not report** (the dead end of
-        # adopting this in real projects; fixed)
         ("★ registry.owner_shell_is_allowed",
          lambda: _owner_shell_is_allowed()),
-        # `i18n.han()`: the criterion of the zero-language regime (`check_i18n`
-        # and `harness` both consume it). It is the **single producer** of
-        # "is there Chinese" -- judged wrongly, two criteria fail together.
         ("★ registry.han_predicate",
          lambda: _han_predicate_case()),
-        # Trailing newline (stepped on four times): a .py without a trailing
-        # newline makes the two ways of counting `py_lines` differ by 1, and the
-        # replay gate goes red forever -- report it so a human fixes the file,
-        # instead of rediscovering it by hand every time.
         ("★ registry.trailing_newline_detected",
          lambda: _trailing_newline_case()),
         ("★ registry.selftest_false_modules_state_where_selftest_lives",
          lambda: _selftest_false_states_it()),
-        # **Dependency chain coverage** (C4 reconciliation (9)): platform
-        # functions consumed by gates must have an assertion somewhere. Round
-        # 24's `living.living_lines` leaked exactly this way (two gate
-        # consumers, zero assertions of its own).
         ("★ registry.dependency_coverage",
          lambda: _dependency_coverage_ok()),
-        # `gate.selftest` is called directly by two gates -- it **executes** all
-        # assertions, but its own zero-value guard (empty cases must be
-        # refused) previously had zero assertions. Testing it is not
-        # bootstrapping: what is tested is "will the 0/0 hole be blocked", not
-        # "do the assertions run correctly".
-        # Windows' cp1252 stdout -- this repo prints gate names and descriptions
-        # **in Chinese**; text `open()` must pass encoding explicitly (Windows
-        # defaults to cp1252).
-        # This criterion was proven on CI's Windows leg four times -- each time
-        # in a different form.
-        # **`subprocess.run(text=True)` must pass encoding explicitly** -- a pit
-        # stepped on five times.
-        # **Suite files must declare themselves** (undeclared ones get treated
-        # as consumer code and the gates stop auditing them)
         ("★ registry.suite_file_without_declaration",
          lambda: _undeclared_suite_file_case()),
-        # **FATAL must exit 2** (`SystemExit(str)` exits 1, `SystemExit()` exits
-        # 0 -- all four FATAL paths once reported rc=1, filing configuration
-        # accidents as code problems).
         ("★ registry.system_exit_is_int", lambda: _system_exit_int_case()),
         ("★ registry.subprocess_without_encoding_detected",
          lambda: [p.code for p in _subprocess_encoding_problems(

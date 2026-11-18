@@ -103,36 +103,21 @@ def known_knobs(py_dir=None):
 
 
 def _scan_dir():
-    """The **checked repo's** `zreflect` (`repo("zreflect")`), not the tool's own.
-
-    This gate guards the checked repo's carrier, not the tool. `knobs._py_sources()`
-    is the shared read loop, but the base is passed explicitly: the two default
-    directories coincide in production and differ under fixtures -- that
-    difference must be kept, not left to coincidence.
-    """
+    """Checked repo's `zreflect` (`repo('zreflect')`), distinct from `gate.zdir()` in fixtures."""
     return repo("zreflect")
 
 
 def _known_knobs_scans_repo():
-    """`known_knobs()`'s default scan surface must be the **checked repo's** zreflect, not the tool's.
-
-    The criterion tests **behavior**: place a phantom knob in a fixture repo,
-    and `known_knobs()` must see it. The tool's own zreflect lacks that token
-    => if the default directory drifts to the tool side, this goes red.
-    """
+    """`known_knobs()` default scan surface is the checked repo's zreflect."""
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     try:
         os.makedirs(os.path.join(d, "zreflect"))
-        marker = "REFLECT_" + "PROBEONLY"        # built by concatenation: keeps the scan surface clean
+        marker = "REFLECT_" + "PROBEONLY"
         with open(os.path.join(d, "zreflect", "probe.py"), "w",
                   encoding="utf-8") as fh:
             fh.write("X = os.environ.get('%s')\n" % marker)
-        # ⚠️ `gate.repo()` reads the **module-level `GATE_REPO`** (snapshotted at
-        # import time); mutating `os.environ` has no effect on it (observed:
-        # after changing the env var, known_knobs still scanned the real repo).
-        # The module attribute must be patched directly.
         import gate  # noqa: PLC0415
         prev = gate.GATE_REPO
         gate.GATE_REPO = d
@@ -259,9 +244,7 @@ def run(argv=None):
         # with whether the carrier exists; it moved to knobs.py and is funneled
         # through registry.problems() (while it was welded here, this repo had
         # no Einfacht.env => it never executed; hit in practice).
-        return off(M("envfile.off",
-                     name=(os.environ.get("REFLECT_ENV_FILE", "Einfacht.env")
-                           .strip() or "Einfacht.env")))
+        return off(M("envfile.off", name=knobs.get("REFLECT_ENV_FILE")))
     try:
         with open(p, encoding="utf-8", errors="replace") as fh:
             text = fh.read()
@@ -317,10 +300,9 @@ def _cases_fixture():
 
 
 def _cases_knobs(fx):
-    """See `_cases()`: this group has 7 cases."""
+    """Knobs-scanning cases (7 cases)."""
     fe, de, registry, good_env, typo = fx["fe"], fx["de"], fx["registry"], fx["good_env"], fx["typo"]
     return [
-    # (1) healthy input reports nothing
     ("envfile.ok",
      lambda: problems(good_env, registry, fe, de, syntax_ok=True,
                       scanned=registry.keys()) == []),
@@ -331,7 +313,6 @@ def _cases_knobs(fx):
      lambda: knobs.readme_problems(files={
          "README.md": "REFLECT_DOC REFLECT_READMES",
          "README.zh.md": "x", "README.de.md": "x"}) == []),
-    # (2) what should be reported must be reported
     ("★ envfile.unknown_knob",
      lambda: any(getattr(p,"code","") == "envfile.unknown_knob" for p in problems(
          good_env, registry, fe, de, syntax_ok=True,
@@ -344,21 +325,13 @@ def _cases_knobs(fx):
      lambda: any(getattr(p,"code","") == "envfile.file_missing" and p.params.get("target") == "README.missing.md" for p in problems(
          {"REFLECT_READMES": "README.md,README.missing.md"},
          registry, fe, de, syntax_ok=True, scanned=registry.keys()))),
-    # ⚠️ There used to be an "audit" case asserting `repo("zreflect") == knobs._zdir()` --
-    # **that was wrong**: it only asserted a configuration fact (GATE_REPO wasn't
-    # overridden) and had **nothing to do** with where `known_knobs` actually scans.
-    # Observed: after changing known_knobs' default directory to `knobs._zdir()`
-    # (a real drift), that assertion stayed green. A criterion must test the
-    # **code path**, not a coincidence.
-    # Replaced by the case below: the default directory must point at the
-    # checked repo (under the fixture it really goes red).
     ("★ envfile.known_knobs_scans_checked_repo",
      lambda: _known_knobs_scans_repo()),
     ]
 
 
 def _cases_carrier(fx):
-    """See `_cases()`: this group has 8 cases."""
+    """Carrier validation cases (8 cases)."""
     fe, de, registry, typo = fx["fe"], fx["de"], fx["registry"], fx["typo"]
     return [
     ("envfile.non_reflect_export",
@@ -376,23 +349,13 @@ def _cases_carrier(fx):
      lambda: any(getattr(p,"code","") == "envfile.empty_value" for p in problems(
          {"REFLECT_DOC": ""}, registry, fe, de, syntax_ok=True,
          scanned=registry.keys()))),
-    # (3) empty input must be reported
     ("★ envfile.no_effective_export",
      lambda: problems({}, registry, fe, de, syntax_ok=True,
                       scanned=registry.keys()) != []),
-    # Edge case (the criterion itself lives in knobs.py; one case is kept here as
-    # a chained proof that the move lost no semantics):
-    # a fake token must not be sliced out of a foreign prefix (the retraction
-    # example text once got sliced into a fake knob name).
-    # ⚠️ The sample is built by concatenation: this file is inside the scan
-    # surface; a literal written out would get absorbed by the audit.
     ("★ envfile.prefix_word_not_sliced",
      lambda: knobs.readme_problems(files={
          "README.md": "> ZCODE_" + typo,
          "README.zh.md": "x", "README.de.md": "x"}) == []),
-    # Quote stripping (the explicit precedence of _QUOTES_RE only spells things
-    # out; behavior is character-for-character unchanged):
-    # replay: python3 zreflect/check_envfile.py --selftest
     ("envfile.strip_quotes",
      lambda: parse_exports("D=\"hello\"")["D"] == "hello"
      and parse_exports("D='hello'")["D"] == "hello"),

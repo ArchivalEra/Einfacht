@@ -386,56 +386,23 @@ def _undeclared_module_problems(undeclared):
 
 
 def _knob_problems(knob_problems, gs):
-    """Roster self-consistency (C3): phantom knobs / README phantoms -- independent of
-    whether any carrier exists.
-    """
+    """Run C3/C4 knob reconciliations unless injected for testing."""
     if knob_problems is None:
         import knobs  # noqa: PLC0415
         knob_problems = (knobs.scan_surface_problems()
                          + knobs.readme_problems()
-                         # C4 reconciliations: declared↔read, REGISTRY↔README
-                         # tables, zh↔en packs
                          + knobs.declared_vs_read_problems(gs)
                          + knobs.registry_vs_readme_problems()
                          + knobs.pack_sync_problems()
-                         # C4 reconciliation (5): REGISTRY kinds vs the kinds
-                         # check_envfile's existence criterion recognizes --
-                         # a new kind nobody handles would silently skip the
-                         # existence check
                          + knobs.kind_vocabulary_problems()
-                         # C4 reconciliation (4): **every code the source uses
-                         # must be in every installed pack** (the zh↔en set
-                         # difference cannot see "both sides missing the same
-                         # thing" -- that is the silent degradation)
                          + knobs.pack_coverage_problems()
-                         # DEFAULT_* defined but never used (gates pretending a
-                         # default is configured)
                          + knobs.dead_default_problems())
     return list(knob_problems)
 
 
 def problems(gs, missing, mods=None, mods_missing=None,
              knob_problems=None, undeclared=None):
-    """The roster's reconciliation (pure function): empty = green. No print during
-    self-evidence.
-
-    `mods` / `mods_missing` / `knob_problems` are injectable (fixtures for
-    self-evidence); None => read the real repo now.
-
-    · named check_ without a GATE declaration line => report (forgot the
-      declaration = the narrative drifts);
-    · runs_at is not a known phase => report (frequency is a declared field; a
-      wrong value makes the execution plane miss the gate);
-    · flagged name_dependent yet consumes no renamed default => report (the flag
-      is wrong);
-    · self-evidence written but no --selftest entry => report (written but never
-      run = decoration);
-    · roster self-consistency (phantom knobs / README phantoms) => report (C3,
-      carrier-independent);
-    · the roster as a whole is empty => report (zero-value guard);
-    · the tool directory self-computed in more than one module (path rule, C4 (8))
-      and platform functions consumed but unasserted (C4 (9)) => report.
-    """
+    """Reconcile roster declarations, phases, criteria, and core seal (`[]` = green)."""
     out = []
     out += phases_problems()
     out += _missing_declaration_problems(missing)
@@ -454,6 +421,8 @@ def problems(gs, missing, mods=None, mods_missing=None,
     out += criteria.fatal_exit_problems()
     out += criteria.path_rule_problems()
     out += criteria.dependency_coverage_problems()
+    if not criteria.reason_bases_agree():
+        out.append(M("registry.reason_bases_disagree"))
     # ⚠️ In injection mode (`mods=` given), **dead interfaces are not scanned**:
     # that judgment looks at the real directory while injection mode verifies
     # "the roster judgment itself"; mixing both into one list makes assertions
@@ -461,6 +430,9 @@ def problems(gs, missing, mods=None, mods_missing=None,
     # assertion picked up an extra `dead_interface`).
     if mods is None:
         out += criteria.dead_interface_problems()
+        import seal  # noqa: PLC0415
+        if seal.seal_exists():
+            out += seal.verify_problems()
     return out
 
 
@@ -544,18 +516,7 @@ def plugins(hooks_dir=None):
 
 
 def render_gates(gs):
-    """Gate roster -> the AUTO:GATES machine block (including begin/end markers).
-    **Pure function**: rendering the same roster twice is byte-identical.
-
-    PINNED: this block's text **always uses a fixed language** (issue #26, D''s
-    insight), never following `REFLECT_LANG`. Reason: it is written into
-    `STATE.md` and reconciled byte-for-byte by `facts.py --check` -- if it
-    followed the language, `REFLECT_LANG=de --render-doc` followed by
-    `REFLECT_LANG=zh --check` would necessarily go red, and **the same commit
-    would give different results in different language environments** (the same
-    family of disease: never introduce an input that changes by itself).
-    Verified in practice: without PINNED it would not converge.
-    """
+    """PINNED: fixed-language AUTO:GATES machine block (pure function)."""
     lines = [GATES_BEGIN,
              ("> This block is rendered by `zreflect/facts.py --render-doc` from the "
              "discovered roster (declaration lines in zreflect/registry.py); "
@@ -563,11 +524,6 @@ def render_gates(gs):
              ("> The execution plane (hooks / CI) reads `registry --run <phase>` -- "
              "the phase is a declared field (`runs_at`), not a file name."),
              "",
-             # ⚠️ "Reason it may be disabled" is a **declaration** (static), not
-             # **runtime state**. Runtime off is seen via `registry --run
-             # <phase>` -- rendering it into this block would make the AUTO block
-             # change on every run => no convergence (this repo's cardinal sin;
-             # see the PINNED note).
              "| Gate | Phase | What it guards | Knobs consumed | Why it may be off |",
              "|---|---|---|---|---|"]
     for g in sorted(gs, key=lambda x: (x.get("runs_at", "commit"), x["file"])):
@@ -761,8 +717,38 @@ def _usage():
     return M("registry.usage")
 
 
+def _main_seal(argv):
+    """Handle `--verify-seal`, `--reseal=...`, and `--reseal-yardstick=...`; else None."""
+    import seal  # noqa: PLC0415
+    if "--verify-seal" in argv:
+        if not seal.seal_exists():
+            return fatal(M("seal.missing", path=seal.seal_path()))
+        probs = seal.verify_problems()
+        if probs:
+            for p in probs:
+                print("  · %s" % p, file=sys.stderr)
+            return 1
+        print(seal.current_tree_sha(verified=True) or "")
+        return 0
+    for flag, is_yard in (("--reseal-yardstick=", True), ("--reseal=", False)):
+        hit = [a for a in argv if a.startswith(flag)]
+        if not hit:
+            continue
+        targets = [t.strip() for t in hit[0][len(flag):].split(",") if t.strip()]
+        tree, err = seal.reseal(targets, yardstick=is_yard,
+                                allow_case_drop="--allow-case-drop" in argv)
+        if err:
+            return fatal(err)
+        print(M("seal.resealed", tree=tree, count=len(targets)))
+        return 0
+    return None
+
+
 def main(argv):
     rc = _main_lists(argv)
+    if rc is not None:
+        return rc
+    rc = _main_seal(argv)
     if rc is not None:
         return rc
     if "--run" in argv:
@@ -799,15 +785,7 @@ def _phase_tiers_ok():
 
 
 def _captures_stderr():
-    """`default_runner` must bring the subprocess's **stderr back too**.
-
-    ⚠️ This must **test the default executor itself** (`gate.default_runner`),
-    not an injected runner: an injected runner is written by the self-test, and
-    testing it equals testing yourself. The previous version did exactly that
-    and returned BLIND against the old implementation (the old implementation
-    also filed rc=2 under fatal; the difference was whether out contained
-    stderr's content).
-    """
+    """`default_runner` must capture subprocess stderr alongside stdout."""
     import os  # noqa: PLC0415
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
@@ -821,8 +799,6 @@ def _captures_stderr():
                      "sys.stderr.write('FATAL: probe\\n')\n"
                      "sys.exit(2)\n")
         rc, out = default_runner(p, d)
-        # Writes to stderr only => stdout empty; if the executor returns only
-        # stdout, out is the empty string
         return rc == 2 and "FATAL: probe" in out
     finally:
         shutil.rmtree(d, True)
@@ -894,14 +870,71 @@ def _plugin_discovery_ok():
             and "zreflect/doctor.py" not in found)
 
 
+def _nf_const_helper():
+    """Same-file helper returning a constant (pinned by `never_falsifiable`)."""
+    return True
+
+
+def _nf_multi_line():
+    """Two lambdas on one line: no bailout, and delegated never masks a hard fail."""
+    import importlib.util  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+
+    from gate import _is_delegated, never_falsifiable  # noqa: PLC0415
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "pair.py")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write("import os\ndef _t(): return True\n"
+                     "y = 2\npair = (lambda: y > 1, lambda: y > 0 or True)\n"
+                     "masked = (lambda: os.getpid(), lambda: _t())\n")
+        spec = importlib.util.spec_from_file_location("_nf_pair_probe", p)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        r_masked = never_falsifiable(mod.masked[0])
+        return (never_falsifiable(mod.pair[0]) is not None
+                and never_falsifiable(mod.pair[1]) is not None
+                and r_masked is not None and not _is_delegated(r_masked))
+
+
+def _nf_unresolved_helper():
+    """Unresolvable same-module helper fails hard rather than passing as delegated."""
+    import importlib.util  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+
+    from gate import _is_delegated, never_falsifiable  # noqa: PLC0415
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "unres.py")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write("h = lambda: True\nfn = lambda: h()\n")
+        spec = importlib.util.spec_from_file_location("_nf_unres_probe", p)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        r = never_falsifiable(mod.fn)
+        return r is not None and not _is_delegated(r)
+
+
+def _activate_or_fatal_ok():
+    """`gate.activate_or_fatal` returns 2 on missing pack and 0 on active pack."""
+    import contextlib  # noqa: PLC0415
+    import io  # noqa: PLC0415
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            rc_bad = gate.activate_or_fatal("no_such_pack_xyz")
+            rc_ok = gate.activate_or_fatal(None)
+        return rc_bad == 2 and rc_ok == 0
+    finally:
+        gate.activate_or_fatal()
+
+
 def _nf_catches(which):
     """Test `never_falsifiable` with **lambdas in a real file** (it locates the AST by
     line number; a lambda in `-c` has no source file => it goes blind).
 
-    Four shapes, one each:
+    Five shapes, one each:
       · `or_true`      -- `or True` (the boolean is short-circuited by a constant)
       · `and_false`    -- `and False`
       · `self_compare` -- `x == x`
+      · `const_helper` -- delegates to same-file helper returning constant True
       · `real`         -- a real assertion (must return None)
     """
     from gate import never_falsifiable  # noqa: PLC0415
@@ -910,25 +943,15 @@ def _nf_catches(which):
         "or_true": lambda: (1 == 1) or True,
         "and_false": lambda: (1 == 1) and False,
         "self_compare": lambda: y == y,
+        "const_helper": lambda: _nf_const_helper(),
         "real": lambda: y > 0,
     }
     return never_falsifiable(shapes[which])
 
 
 def _nf_no_source():
-    """No `co_filename` (a lambda in `-c`, builtins) => must return None (no guessing).
-
-    This pins boundary (c): `never_falsifiable` relies on `ast` to locate the
-    **real file**; if it can't be read it says so rather than guessing -- not
-    "always true" and not "clean".
-    """
+    """Missing `co_filename` returns `None` (no source guessing)."""
     from gate import never_falsifiable  # noqa: PLC0415
-    # Build a function **without co_filename** via `compile` + `exec` instead of
-    # `eval`: identical semantics (the tool wants exactly the "can't read the
-    # source" boundary), but the static security scanner need not open an
-    # exemption (`S307`) for a test fixture's `eval`. An eval in a fixture looks
-    # like an eval in product code, and later nobody can tell which was
-    # intentional.
     ns = {}
     exec(compile("f = lambda: True", "<no-source>", "exec"), ns)  # noqa: S102
     return never_falsifiable(ns["f"])
@@ -1050,7 +1073,7 @@ def _cases_discovery_real(fx):
 
 
 def _cases_discovery_reports(fx):
-    """(b) What must report must report: the roster reconciliation's six diseases. (6 cases)"""
+    """Roster mismatch and stream-documentation cases (6 cases)."""
     plain, missing = fx["plain"], fx["missing"]
     return [
         ("\u2605 registry.missing_declaration",
@@ -1060,17 +1083,11 @@ def _cases_discovery_reports(fx):
              [dict(plain, name_dependent=True)], [],
              mods=["zreflect/x.py"], mods_missing=[], knob_problems=[],
              undeclared=[])] == ["registry.name_dependent_wrong"]),
-        # In the next two cases an empty roster and "an empty list is not a pass"
-        # are present simultaneously (gs=[] necessarily triggers the zero-value
-        # guard), so use `any(code == ...)` instead of whole-list equality -- the
-        # assertion still pins exactly that one.
         ("\u2605 registry.selftest_no_entry",
          lambda: any(p.code == "registry.selftest_no_entry" for p in problems(
              [], [], mods=["zreflect/x.py"],
              mods_missing=["zreflect/y.py"],
              knob_problems=[]))),
-        # The CLI's per-line name-calling must be producible too (otherwise it is
-        # "written but never run" decoration -- this repo's discipline).
         ("\u2605 registry.selftest_no_entry_cli",
          lambda: [m.code for m in cli_selftest_missing_lines(
              ["zreflect/y.py"])] == ["registry.selftest_no_entry_cli"]
@@ -1080,10 +1097,6 @@ def _cases_discovery_reports(fx):
              [], [], mods=["zreflect/x.py"], mods_missing=[],
              knob_problems=[],
              undeclared=["zreflect/orphan_mod.py"]))),
-        # **The aggregator's output goes to stdout as a whole**, which does not
-        # conflict with "a single gate's problem lines go to stderr".
-        # This pins "the two ends' semantics are written apart" -- the judgment is
-        # that both wordings exist.
         ("registry.aggregator_streams_documented",
          lambda: _streams_documented()),
     ]
@@ -1127,7 +1140,7 @@ def _cases_render(fx):
 
 
 def _cases_phase(fx):
-    """See `_cases()`: 9 cases in this group."""
+    """Phase filtering, tier separation, stderr capture, and `REFLECT_PHASES` cases."""
     plain = fx["plain"]
     d = fx["d"]
     return [
@@ -1141,23 +1154,10 @@ def _cases_phase(fx):
          [dict(plain, runs_at="whenever")], [],
          mods=["zreflect/x.py"], mods_missing=[], knob_problems=[],
          undeclared=[])] == ["registry.unknown_phase"]),
-    # **`run_phase` is the only execution entry for hooks/CI** and previously had
-    # zero self-evidence. The tier aggregation must really be separate: rc=2
-    # (broken config) != rc=1 (red judgment) != off. If merged into one tier,
-    # "three gates reported real problems" and "one gate's config broke" would be
-    # indistinguishable, while the fixes are entirely different (fix problems vs
-    # fix config).
     ("★ registry.phase_tiers_separate",
      lambda: _phase_tiers_ok()),
-    # **stderr must be captured**: this repo's convention is "problem lines go to
-    # stderr", so an rc=2 gate's stdout may be empty (the reason lives entirely
-    # in stderr). `_default` used to return only `p.stdout` => aggregators got
-    # (2, "") and the FATAL was treated as "ran". This pins the **default
-    # executor**'s behavior (an injected runner cannot test it).
     ("★ registry.run_phase_captures_stderr",
      lambda: _captures_stderr()),
-    # issue #21: the phase knob -- downstream custom phases (like S26's lab) no
-    # longer fork PHASES
     ("registry.phases_extra_appended",
      lambda: _with_phases("lab")[0] == ("commit", "start-of-work", "lab")),
     ("★ registry.builtin_phase_repeated",
@@ -1165,7 +1165,6 @@ def _cases_phase(fx):
               ] == ["registry.builtin_phase_repeated"]),
     ("registry.phases_default_builtin_only",
      lambda: _with_phases("")[0] == ("commit", "start-of-work")),
-    # The humane hint (env_hint): four judgments
     ]
 
 def _env_hint_case(which):
@@ -1228,23 +1227,14 @@ def _env_hint_case(which):
 
 
 def _cases_hint(fx):
-    """See `_cases()`: the environment hint's (env_hint) silence conditions."""
+    """Environment-hint tier cases (5 cases)."""
     return [
-        # ⚠️ These two used to be **vacuously true**: `env_hint(...) is None or
-        # env_carrier() is not None` -- as long as the repo had `Einfacht.env`,
-        # the second clause always held (make `env_hint` always return a line and
-        # the assertion still passed; observed). Now all three tiers by
-        # **carrier presence** are tested.
         ("★ registry.env_hint_silent_without_carrier",
          lambda: _env_hint_case("no_carrier")),
         ("★ registry.env_hint_fires_with_carrier",
          lambda: _env_hint_case("carrier_bare")),
-        # #28: the carrier has taken effect (values match) => silent -- only a
-        # correctly wired repo stays quiet
         ("registry.env_hint_silent_when_carrier_live",
          lambda: _env_hint_case("carrier_live")),
-        # #28: a manual export drifted from the carrier => must hint (exactly the
-        # scenario that should be loud)
         ("★ registry.env_hint_fires_on_drift",
          lambda: _env_hint_case("carrier_drift")),
         ("★ registry.env_hint_off_silent",
@@ -1258,46 +1248,35 @@ def _cases_hint(fx):
 
 
 def _cases_gate_hosted(fx):
-    """`gate.py`'s judgments **are hosted here** -- it declares `selftest=False`
-    (it provides `selftest` itself; bootstrapping would fight itself), so its
-    logic selftest can only live elsewhere. The only legal hosting in this repo."""
+    """Hosted selftests for `gate.py` (`selftest=False`)."""
     return [
-        # **`never_falsifiable`'s selftest** (round 22): it is the core guard of
-        # `gate.selftest()` (from `gate.py:36`), catching "vacuously true
-        # assertions" -- previously the **whole repo had zero self-evidence** for
-        # it. "The detector's detector" was never tested: when it fails, every
-        # assertion silently loses its teeth.
         ("★ registry.never_falsifiable_catches_or_true",
          lambda: _nf_catches("or_true") is not None),
         ("★ registry.never_falsifiable_catches_and_false",
          lambda: _nf_catches("and_false") is not None),
         ("★ registry.never_falsifiable_catches_self_compare",
          lambda: _nf_catches("self_compare") is not None),
-        # **Positive control**: a real assertion must **not** report (otherwise
-        # "always report" would also fool the self-test)
         ("registry.never_falsifiable_allows_real",
          lambda: _nf_catches("real") is None),
-        # Boundary (c): "can't read the source" => no guessing (returns None, neither
-        # "always true" nor "clean")
         ("★ registry.never_falsifiable_no_source_no_guess",
          lambda: _nf_no_source() is None),
-        # **`gate.py`'s `selftest=False` must state its real meaning** (round 23):
-        # it does not mean "no self-evidence obligation", only "no `--selftest`
-        # entry (bootstrapping would fight itself)". The description used to say
-        # only "provides selftest, doesn't consume it itself" -- reads like a
-        # disclaimer.
         ("★ registry.gate_module_meta_states_where_selftest_lives",
          lambda: _gate_desc_states_selftest()),
-        # The two `gate` functions just named by the dependency-chain judgment
-        # (many consumers, zero assertions of their own)
         ("★ registry.guard_nonempty_returns_2",
-         # empty => rc 2 (FATAL); non-empty => None
          lambda: gate.guard_nonempty("x", []) == 2
          and gate.guard_nonempty("x", [1]) is None),
         ("★ registry.load_spec_returns_error_not_raise",
-         # broken path => (None, error sentence); no exception (the caller wants to
-         # compose its own wording)
          lambda: _load_spec_ok()),
+        ("★ registry.never_falsifiable_catches_const_helper",
+         lambda: _nf_catches("const_helper") is not None),
+        ("★ registry.never_falsifiable_catches_multi_lambda_line",
+         lambda: _nf_multi_line()),
+        ("★ registry.never_falsifiable_rejects_unresolved_helper",
+         lambda: _nf_unresolved_helper()),
+        ("★ registry.gate_activate_or_fatal",
+         lambda: _activate_or_fatal_ok()),
+        ("registry.gate_module_meta",
+         lambda: gate.module_meta("t", "d")["name"] == "t"),
     ]
 
 

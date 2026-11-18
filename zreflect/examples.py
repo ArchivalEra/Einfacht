@@ -25,6 +25,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_envfile  # noqa: E402
 import gate  # noqa: E402
+import knobs  # noqa: E402
 import registry  # noqa: E402
 from gate import main_selftest_or, module_meta  # noqa: E402
 from i18n import M  # noqa: E402
@@ -159,7 +160,7 @@ def _carrier_exports(target, requested):
     A carrier that exists but cannot be parsed is a **problem**, not an empty
     mapping: silently running knob-less lets a broken carrier pass every step.
     """
-    name = requested.get("REFLECT_ENV_FILE", "Einfacht.env")
+    name = requested.get("REFLECT_ENV_FILE") or knobs.get("REFLECT_ENV_FILE")
     relative = name if os.path.isabs(name) else os.path.join(target, name)
     hooked = os.path.join(target, "reflect-hooks", name)
     path = hooked if not os.path.isabs(name) and os.path.exists(hooked) else relative

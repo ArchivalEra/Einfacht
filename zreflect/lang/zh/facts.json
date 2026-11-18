@@ -41,10 +41,12 @@
  "facts.no_ledger_yet": "还没有台账 %(name)s（路径 = REFLECT_FACTS，当前解析为 %(path)s）\n       先确认本仓的台账路径：检查 Einfacht.env / facts 壳脚本里 REFLECT_FACTS 设了什么，\n       再带着同样的环境跑一遍量测：python3 zreflect/facts.py（裸跑会用代码默认值 —— 目标可能与钩子语境不同）\n       然后再 --render-doc 把机器块写进文档。",
  "facts.none": "空",
  "facts.note.bare_number_demo": "刻意 ≥100，用来示范裸数字判据",
+ "facts.note.core_seal": "共享核心双层 SHA-256 Merkle 根（由 registry.py --verify-seal 复跑验证）",
  "facts.note.example_fact": "示例事实：换掉 measure_example()",
  "facts.note.excludes_machine_block": "不含机器块：块就渲染在文档里，数进去会让渲染一遍值就过期",
  "facts.note.measure_or_omit": "量不到就不写 —— 宁缺勿假",
  "facts.ok": "事实闸门：OK（%(count)d 条事实，块一致、无裸数字、无坏引用）",
+ "facts.principle_ledger_drift": "台账里的原则 `%(key)s` 与 doc.RULES 不一致 ⇒ 跑 `python3 zreflect/facts.py --accept-changes`",
  "facts.registry_mismatch": "名录对账不过，拒绝渲染：\n  · %(entries)s",
  "facts.render_unchanged": "%(path)s 的机器块无变化",
  "facts.render_written": "已刷新 %(path)s 的机器块",
@@ -55,5 +57,5 @@
  "facts.title": "事实闸门",
  "facts.unknown_command": "不认识命令 `%(command)s` —— 用 `--help` 看可用命令（它不会量、也不会写台账）",
  "facts.unknown_key": "台账里没有键 `%(key)s`（现有：%(existing)s）",
- "facts.usage": "用法：facts.py [--render|--render-doc [文件]|--check [文件]|--get 键|--init|--accept-principles|--accept 键 值 命令 出处|show [键]]（无参数 = 量一遍并写台账）"
+ "facts.usage": "用法：facts.py [--render|--render-doc [文件]|--check [文件]|--get 键|--init|--accept 键 值 命令 出处|show [键]]（无参数 = 量一遍并写台账）"
 }

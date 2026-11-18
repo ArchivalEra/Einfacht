@@ -65,13 +65,7 @@ def repo_path(path, root=None):
 
 
 def zdir():
-    """The **tool's own** `zreflect/` directory -- the repo-wide single source.
-
-    Purpose: "scan my own source" (discovery-based roster / phantom knobs / code
-    coverage). This is a different thing from `GATE_REPO` (the **audited** repo
-    root): in a cross-repo fixture `GATE_REPO` points at a temp directory while the
-    tool's source still lives in the suite.
-    """
+    """Tool's own `zreflect/` dir (distinct from audited `GATE_REPO`)."""
     return os.path.dirname(os.path.abspath(__file__))
 
 
@@ -84,38 +78,18 @@ def tool_repo():
 
 
 def machine():
-    """Lazily fetch `machine` (the machine-line protocol).
-
-    ⚠️ **Must not be a module-level `import machine`**: `machine` needs
-    `from gate import module_meta` to declare itself (a registry adoption
-    requirement), so a module-level import would be circular. The lazy import
-    orders the two sides of the cycle.
-    """
+    """Lazily import `machine` to avoid circular import before `module_meta` is defined."""
     import machine  # noqa: PLC0415
     return machine
 
 
 def require_nonempty(name, seq, what=None):
-    """Zero-trust guard: if collection received nothing => error, **never treat it as
-    "clean"**.
-
-    The most important line in this package. The root cause of nearly all "a gate
-    pretended to pass" incidents is this guard missing: walking a nonexistent
-    directory yields an empty set, then "no violations found" -- both statements are
-    true, the conclusion is wrong.
-
-    `what` = a name for the collected thing (defaults to the language pack's
-    `gate.input_label`).
-    """
+    """Fail with `fatal_exit` if `seq` is empty; return `list(seq)`."""
     import i18n  # noqa: PLC0415
     if what is None:
         what = i18n.M("gate.input_label")
     items = list(seq)
     if not items:
-        # `FATAL:` is a machine-contract prefix -- a literal at the **emission
-        # point** (not in the language pack). `what` may be a caller-supplied
-        # Message (e.g. `M("stale.scanned_docs")`): str() it flat first, otherwise
-        # the null pack renders a nested `repr(Message)`.
         fatal_exit(i18n.M("gate.require_nonempty", name=name, what=str(what)))
     return items
 
@@ -135,14 +109,7 @@ def guard_nonempty(name, seq, what=None):
 
 
 def off(notice):
-    """Not enabled: say so explicitly + exit 0.
-
-    ⚠️ **off and "actually ran and passed" must be distinguishable** (C2): both have
-    rc 0 (off is not a failure; hooks' `|| exit` should not treat it as red), but off
-    prints a machine-readable `OFF: ...` marker line on stdout -- the executor
-    (`gate.run_phase`) uses it to split gates into ran / off / failed instead of
-    counting "didn't run" as green.
-    """
+    """Emit explicit `OFF:` marker on stdout and return 0."""
     print(machine().emit("off", notice))
     _maybe_hint()
     return 0
@@ -159,7 +126,7 @@ def fatal_exit(msg):
 
     ⚠️ **Must be `SystemExit(2)`, not `SystemExit(msg)`**: the latter is Python's
     "print and exit 1" convention -- it prints the letters `FATAL:` while the exit
-    code is **1**. Callers (`registry._record`) classify by rc: 1 = criterion red /
+    code is **1**. Callers (`gate._record`) classify by rc: 1 = criterion red /
     failed, 2 = broken config / fatal.
     """
     print(machine().emit("fatal", msg), file=sys.stderr)
@@ -214,30 +181,10 @@ def scanned_sources(base, configured=False):
 
 
 def py_sources(base):
-    """`(filename, text)` of all `.py` under the `base` directory; unreadable => skip.
-
-    **Single source**: `knobs._py_sources`, `check_snapshots.collect`, and
-    `check_i18n`'s collection loop all delegate here.
-
-    Unreadable => that file is skipped (not a whole-directory failure): each caller
-    judges emptiness itself -- "empty" means something different to each of them
-    (phantom scan: "nothing suspicious"; `used_codes`: "no codes"; `envfile`: "the
-    gate is broken").
-
-    ⚠️ `base` must be passed explicitly: upstream defaults differ (the tool repo's
-    `zreflect` vs the audited repo's `zreflect`); providing a default would hide
-    that difference.
-    """
-    import os  # noqa: PLC0415
+    """Collect `[(relpath, source)]` for `.py` files under `base` using forward slashes."""
     out = []
     if not os.path.isdir(base):
         return out
-    # ⚠️ **Recursive**: previously only one `listdir` level, so a common layout like
-    # `REFLECT_I18N_ROOT=src` reported "the scan surface is empty" -- while the
-    # directory was not empty at all (observed: in a subagent's acceptance repo,
-    # `src/mycli/cli.py` plainly held a line of Chinese and the criterion saw
-    # nothing). Names are **paths relative to base**: otherwise `a/util.py` and
-    # `b/util.py` overwrite each other and errors cannot say which one.
     for dirpath, dirnames, filenames in os.walk(base):
         dirnames[:] = sorted(d for d in dirnames
                              if d not in ("__pycache__", ".git"))
@@ -245,12 +192,6 @@ def py_sources(base):
             if not n.endswith(".py"):
                 continue
             p = os.path.join(dirpath, n)
-            # ⚠️ **Normalize to forward slashes**: three places compare this `rel`
-            # as a **filename** (`check_i18n`'s `name == "i18n.py"`, `criteria`'s
-            # `name == "gate.py"`, `knobs`' phantom scan). On Windows `relpath`
-            # yields `zreflect\i18n.py` => those equality checks never fire, so
-            # "file-level exemptions" fail wholesale on Windows (observed: CI's
-            # Windows leg classified it the same way as unregistered shell text).
             rel = os.path.relpath(p, base).replace(os.sep, "/")
             try:
                 with open(p, encoding="utf-8", errors="replace") as fh:
@@ -343,8 +284,8 @@ def _maybe_hint():
 
 def env_carrier():
     """The repo's Einfacht.env carrier path (hooks dir first, repo root second); none => None."""
-    name = (os.environ.get("REFLECT_ENV_FILE", "Einfacht.env").strip()
-            or "Einfacht.env")
+    import knobs  # noqa: PLC0415
+    name = knobs.get("REFLECT_ENV_FILE")
     for d in (repo("reflect-hooks"), repo()):
         p = os.path.join(d, name)
         if os.path.exists(p):
@@ -367,67 +308,28 @@ def gate_knobs(module=None):
 
 
 def env_hint(consumed=(), module=None):
-    """**Human courtesy hint**: for env-fed entries, how to run when "env was provided
-    but didn't take effect".
-
-    `consumed` = the knob names this entry actually reads (e.g. `("REFLECT_FACTS",)`).
-    Returns a one-line hint string, or None (no hint needed).
-
-    When to hint (three classes, each only when **helpful** to the user):
-
-      1. The repo **has** an Einfacht.env but this process **set none of the knobs**
-         (none of `consumed` is in the environment) -- the classic bare manual run:
-         `python3 zreflect/check_x.py` => criteria all fall back to default names,
-         results may differ from the hook context, and **nothing tells the user**
-         (issue #20(2) / #15 both tripped here).
-      2. The repo **has** an Einfacht.env and current settings **disagree** with it?
-         -- Not checked (judging requires comparing values, and values depend on
-         shell semantics); only "is it set" is checked, keeping the criterion cheap
-         and reliable.
-      3. The repo **has no** Einfacht.env => **no hint** (bare runs are normal usage
-         for such repos; a hint would just be noise -- this repo's lesson that "a
-         gate with false positives eventually gets switched off entirely").
-
-    The hint wording lives here (one place), and every entry calls it -- no more
-    per-entry copies.
-    """
+    """Return courtesy `M(...)` hint when `Einfacht.env` exists and knobs are unset or drifted."""
     carrier = env_carrier()
     if not carrier:
-        return None                      # repo without a carrier: bare runs are normal usage, don't nag
+        return None
     if not consumed:
-        consumed = gate_knobs(module)     # the declared knob list (zero hand-writing)
+        consumed = gate_knobs(module)
     if not consumed:
         return None
-    # ⚠️ **"Knob is set" must not be silently accepted across the board** (#28): the
-    # hook system relies on sourcing the carrier to put knobs into the environment
-    # -- in a correctly wired repo "knobs are in the environment" is always true, so
-    # the original fourth tier (carrier present but knobs unset => hint) was
-    # unreachable in any normally wired repo.
-    # Four-tier semantics (one carrier comparison; costs one file read):
-    #   1. No carrier => silent (bare runs are normal usage)
-    #   2. None of the consumed knobs set => **hint** (carrier present, but nobody
-    #      sourced / exported)
-    #   3. Knobs set and values **match** the carrier => carrier is in effect, silent
-    #   4. Knobs set but values **differ** from the carrier (or the carrier doesn't
-    #      mention them) => **hint** (manual exports can drift -- exactly the scene
-    #      worth nagging about)
     import check_envfile  # noqa: PLC0415
     try:
         with open(carrier, encoding="utf-8", errors="replace") as fh:
             exported = check_envfile.parse_exports(fh.read())
     except OSError:
-        exported = {}                    # carrier unreadable: treat as "not written" (record in guard)
+        exported = {}
     set_kv = {k: os.environ[k].strip() for k in consumed
               if os.environ.get(k, "").strip()}
     if not set_kv:
-        # Tier 2: carrier present, but not a single knob set => the original hint scene
         rel = os.path.relpath(carrier, GATE_REPO)
         import i18n  # noqa: PLC0415
         return i18n.M("gate.env_hint", file=rel)
     if all(exported.get(k) == v for k, v in set_kv.items()):
-        return None                      # Tier 3: carrier is in effect, silent
-    # Tier 4: at least one knob manually exported and differing from the carrier
-    # (or absent from it)
+        return None
     rel = os.path.relpath(carrier, GATE_REPO)
     import i18n  # noqa: PLC0415
     return i18n.M("gate.env_hint", file=rel)
@@ -478,15 +380,7 @@ def _module_meta_obligation(selftest):
 
 
 def module_meta(name, desc, selftest=True):
-    """Platform module declaration line (C5): registry's ast extraction target.
-
-    Gates declare with `GATE = meta(...)`; **platform modules** (gate / runner /
-    knobs / registry / guard / ledger / render / facts ...) declare their existence
-    and "whether they owe a selftest" with `MODULE = module_meta(...)`.
-    `selftest=True` makes registry demand an entry that actually supports
-    `--selftest`; `False` means the module provides `selftest()` itself, where
-    bootstrapping a second entry would collide.
-    """
+    """Module-level `MODULE = ...` declaration for AST registry discovery."""
     value = _module_meta_shape(name, desc)
     value.update(_module_meta_obligation(selftest))
     return value
@@ -594,21 +488,117 @@ def _assertion_node(fn):
     return _lambda_nodes(tree, code.co_firstlineno)
 
 
-def _delegation_reason(nodes):
-    """**Pure delegation** (the lambda body is a single non-builtin Call) => the
-    assertion logic lives inside the called function, invisible to this criterion.
+def _find_helper_def(tree, name):
+    """Locate a same-file `FunctionDef` for `name` (top-level or unique nested)."""
+    if not tree:
+        return None
+    for n in tree.body:
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name:
+            return n
+    nested = [n for n in ast.walk(tree)
+              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name]
+    return nested[0] if len(nested) == 1 else None
 
-    Returns the `delegated` code rather than None, so callers can print the case as
-    `note |` and count it separately -- never silently treated as clean.
-    """
+
+def _direct_returns(fn_def):
+    """Collect `Return` nodes belonging directly to `fn_def` (skipping nested defs)."""
+    out, stack = [], list(fn_def.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.Return):
+            out.append(node)
+        elif not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                   ast.ClassDef, ast.Lambda)):
+            stack.extend(ast.iter_child_nodes(node))
+    return out
+
+
+def _helper_constant_truthy(fn_def):
+    """True if every direct return in `fn_def` is a truthy constant (unfalsifiable)."""
+    rets = _direct_returns(fn_def)
+    return bool(rets) and all(r.value is not None and _const_truthy(r.value) for r in rets)
+
+
+def _fn_arg_names(fn_def):
+    """Parameter names bound on `fn_def`'s signature."""
+    a = fn_def.args
+    return {x.arg for x in a.posonlyargs + a.args + a.kwonlyargs} | {
+        x.arg for x in (a.vararg, a.kwarg) if x is not None}
+
+
+def _returned_helper_names(fn_def):
+    """Same-file helper names directly returned as `return helper(...)` (skip callbacks)."""
+    params = _fn_arg_names(fn_def)
+    out = []
+    for ret in _direct_returns(fn_def):
+        val = ret.value
+        if (isinstance(val, ast.Call) and isinstance(val.func, ast.Name)
+                and val.func.id not in _BUILTIN_OK and val.func.id not in params):
+            out.append(val.func.id)
+    return out
+
+
+def _imported_names(tree):
+    """Top-level / nested imported identifiers bound in `tree`."""
+    out = set()
+    if not tree:
+        return out
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            for a in n.names:
+                out.add(a.asname or a.name.split(".")[0])
+        elif isinstance(n, ast.ImportFrom):
+            for a in n.names:
+                out.add(a.asname or a.name)
+    return out
+
+
+def _missing_helper_reason(tree, name):
+    """Classify an unresolved `ast.Call` target: imported => delegated, else unresolved."""
     import i18n  # noqa: PLC0415
-    for node in nodes:
-        if isinstance(node.body, ast.Call):
-            f = node.body.func
-            fname = getattr(f, "id", None) or getattr(f, "attr", None)
-            if fname not in _BUILTIN_OK:
-                return i18n.M("gate.never_falsifiable_delegated")
+    if name in _imported_names(tree):
+        return i18n.M("gate.never_falsifiable_delegated")
+    return i18n.M("gate.never_falsifiable_unresolved_helper")
+
+
+def _helper_reason(tree, name, seen):
+    """Inspect a delegated same-file helper; imported calls report `delegated`, unresolvable fails."""
+    import i18n  # noqa: PLC0415
+    if name in seen:
+        return None
+    fn_def = _find_helper_def(tree, name)
+    if fn_def is None:
+        return _missing_helper_reason(tree, name)
+    sc = _short_circuit_reason_of([fn_def])
+    if sc:
+        return sc
+    if _helper_constant_truthy(fn_def):
+        return i18n.M("gate.never_falsifiable_constant_return")
+    if len(seen) < 2:
+        for sub_name in _returned_helper_names(fn_def):
+            sub = _helper_reason(tree, sub_name, seen | {name})
+            if sub and not _is_delegated(sub):
+                return sub
     return None
+
+
+def _delegation_reason(nodes, tree=None):
+    """Judge delegated `Call` bodies: penetrate same-file helpers, defer externals."""
+    import i18n  # noqa: PLC0415
+    delegated_why = None
+    for node in nodes:
+        if not isinstance(node.body, ast.Call):
+            continue
+        f = node.body.func
+        if isinstance(f, ast.Name) and f.id not in _BUILTIN_OK:
+            why = _helper_reason(tree, f.id, set())
+            if why and not _is_delegated(why):
+                return why
+            if why:
+                delegated_why = delegated_why or why
+        elif isinstance(f, ast.Attribute) and f.attr not in _BUILTIN_OK:
+            delegated_why = delegated_why or i18n.M("gate.never_falsifiable_delegated")
+    return delegated_why
 
 
 def _short_circuit_reason_of(nodes):
@@ -623,41 +613,29 @@ def _short_circuit_reason_of(nodes):
 
 
 def _falsifiability_located(nodes):
-    """Select the lambda only when its source position is unambiguous.
+    """All candidate lambdas on the line (no multi-lambda bailout)."""
+    return nodes or None
 
-    An unlocatable assertion, or several lambdas sharing one starting line, yields
-    no candidates: no guessing. A single candidate can be judged for delegation
-    and short circuits.
-    """
-    if not nodes or len(nodes) > 1:
+
+def _falsifiability_reason(nodes, tree=None):
+    """Judge every located lambda: short circuits first, then helper-penetrating delegation."""
+    if not nodes:
         return None
-    return nodes[0]
-
-
-def _falsifiability_reason(node):
-    """Judge one located lambda: delegation before short circuits.
-
-    Delegation must be reported explicitly: the called helper's body is outside
-    the static scan. `_short_circuit_reason_of` then recognizes `or <truthy>` /
-    `and <falsy>` / `x == x`, excluding the purity check of calling a bare
-    function twice.
-    """
-    if node is None:
-        return None
-    return (_delegation_reason([node])
-            or _short_circuit_reason_of([node]))
+    return (_short_circuit_reason_of(nodes)
+            or _delegation_reason(nodes, tree))
 
 
 def never_falsifiable(fn):
     """Does this selftest case have falsification power?
 
-    Returns a reason string (unfalsifiable or explicitly delegated) or None
-    (looks like it has teeth). Static AST inspection: zero execution, zero side
-    effects, no guessing when the source cannot be read. Only explicit short
-    circuits, self-comparisons and a lambda body that is a single `Call` are
-    judged; subtler forms and helper internals are outside this criterion.
+    Scans all lambdas on `co_firstlineno` for short circuits/self-comparisons
+    and penetrates same-module delegated helper functions.
     """
-    return _falsifiability_reason(_falsifiability_located(_assertion_node(fn)))
+    code = getattr(fn, "__code__", None)
+    if code is None:
+        return None
+    tree = _ast_for(code.co_filename)
+    return _falsifiability_reason(_falsifiability_located(_assertion_node(fn)), tree)
 
 
 def _is_delegated(why):
@@ -774,6 +752,11 @@ def selftest(name, cases):
         # and exits green -- the runner's grep still accepts it. An empty list is a
         # shape error in writing the selftest; sound on the spot, never green.
         fatal_exit(i18n.M("gate.selftest_empty_cases", name=name))
+    import seal  # noqa: PLC0415
+    if seal.seal_exists():
+        probs = seal.verify_problems()
+        if probs:
+            fatal_exit(probs[0])
     bad = delegated = 0
     for label, fn in cases:
         ok, was_delegated, _failure = _report_one(label, fn)
@@ -819,15 +802,7 @@ def _activate_pack(lang):
 
 
 def activate_or_fatal(lang=None):
-    """The process-level language-pack activation point. Returns 0 on success; on
-    assembly failure prints FATAL and returns 2.
-
-    `lang` lets **one process** assemble a specific pack (unset = read
-    `REFLECT_LANG`); it affects only that process and adds no knob. Activation
-    must happen **before** `--selftest` dispatch: unset => null pack; set but
-    missing pack => FATAL rc 2, never a silent fallback. Entries outside
-    `main_selftest_or` share the same activate+FATAL wiring.
-    """
+    """Activate language pack for process (returns 0 on success, 2 on FATAL)."""
     _force_utf8_streams()
     ok, failure = _activate_pack(lang)
     if not ok:
