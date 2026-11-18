@@ -51,7 +51,7 @@ from gate import (  # noqa: E402
     off,
     repo,
 )
-from i18n import M  # noqa: E402
+from i18n import M, Message  # noqa: E402
 
 
 def lang_names():
@@ -123,7 +123,7 @@ def _push_missing_copies(changed, langs):
     single-entry list has no "same batch", so its criterion is simply "must be
     present" in `changed`.
     """
-    out = []
+    out: list[Message] = []
     # Multi-entry conditional form: none touched => not applicable
     if len(langs) > 1 and not any(name in changed for name in langs):
         return out

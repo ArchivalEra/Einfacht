@@ -6,6 +6,7 @@ import ast
 import os
 import re
 import sys
+from typing import TypeGuard
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate  # noqa: E402
@@ -54,7 +55,7 @@ def _pinned_by_comment(src, node):
     return False
 
 
-def _is_msg_call(node):
+def _is_msg_call(node: ast.AST) -> TypeGuard[ast.Call]:
     if not isinstance(node, ast.Call):
         return False
     f = node.func
@@ -63,7 +64,8 @@ def _is_msg_call(node):
 
 
 def _docstring_both(tree):
-    nodes, lines = set(), set()
+    nodes: set[int] = set()
+    lines: set[int] = set()
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
@@ -74,8 +76,10 @@ def _docstring_both(tree):
             if isinstance(n, ast.Constant) and n.value == d:
                 nodes.add(id(n))
                 break
-        first = node.body[0].value
-        lines.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
+        stmt = node.body[0]
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
+            first = stmt.value
+            lines.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
     return nodes, lines
 
 
@@ -162,7 +166,7 @@ def _cases_scope(tree):
 
 
 def _fixture_scope_lines(tree):
-    spans = set()
+    spans: set[int] = set()
     for body in _cases_scope(tree):
         for node in ast.walk(body):
             lo = getattr(node, "lineno", None)
@@ -177,7 +181,7 @@ def _fixture_scope_lines(tree):
 
 
 def _pinned_lines(tree):
-    spans = set()
+    spans: set[int] = set()
     for node in ast.walk(tree):
         if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
                 and PINNED_MARK in (ast.get_docstring(node) or "")):

@@ -59,7 +59,7 @@ import os
 import subprocess
 
 import knobs  # noqa: E402
-from i18n import M  # noqa: E402
+from i18n import M, Message  # noqa: E402
 
 # How many entries each category may list at most. **The budget is the
 # interface**: enlarging it makes `SECTION_MAX` and `next.section_budget_holds`
@@ -160,9 +160,9 @@ def _question_lines(repo, pending):
 
 
 def collect(repo):
-    """Return `(last_turn, pending)` Message lists from commits, worktree, and questions."""
+    """Return `(last_turn, pending)` line lists (`str` / `Message`) from commits, worktree, and questions."""
     last: list[str] = []
-    pending: list[str] = []
+    pending: list[Message] = []
     _commit_lines(repo, last)
     _tree_lines(repo, last, pending)
     _question_lines(repo, pending)

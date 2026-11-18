@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import doc  # noqa: E402
@@ -101,11 +102,16 @@ def replay_all(ledger, runner=None):
                 "ok": 0, "attempts": 0, "ran": 0, "calibrate_attempts": 0, "calibrated": 0}
     run = runner or run_cmd
     f = facts_of(ledger)
-    stats = {"ok": 0, "attempts": 0, "ran": 0, "calibrate_attempts": 0, "calibrated": 0}
+    stats: dict[str, Any] = {
+        "ok": 0, "attempts": 0, "ran": 0, "calibrate_attempts": 0, "calibrated": 0,
+        "problems": [],
+    }
     if not f:
         stats["problems"] = [M("replay.empty_ledger")]
         return stats
-    out, cache, seconds = [], {}, default_timeout()
+    out: list[i18n.Message] = []
+    cache: dict[str, tuple[int | None, str]] = {}
+    seconds = default_timeout()
     for k in sorted(f):
         _replay_one(k, f[k], run, seconds, out, stats, cache)
     if stats["attempts"] and stats["ran"] == 0:

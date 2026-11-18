@@ -11,6 +11,7 @@ from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate  # noqa: E402
+import i18n  # noqa: E402
 import knobs  # noqa: E402
 from gate import main_selftest_or, module_meta  # noqa: E402
 
@@ -43,7 +44,7 @@ def _read_json_safe(path):
 
 def _question_exec_problems(qdir):
     import glob  # noqa: PLC0415
-    out: list[str] = []
+    out: list[i18n.Message] = []
     if not qdir or not os.path.isdir(qdir):
         return out
     for qp in sorted(glob.glob(os.path.join(qdir, "*.md"))):

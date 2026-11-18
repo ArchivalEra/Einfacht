@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate  # noqa: E402
 import knobs  # noqa: E402
 from gate import finish, main_selftest_or, meta, repo  # noqa: E402
-from i18n import M  # noqa: E402
+from i18n import M, Message  # noqa: E402
 
 DEFAULT_SPEC = knobs.REGISTRY["REFLECT_SECRETS"][1]
 SKIP_DIRS = {".git", ".mypy_cache", ".ruff_cache", "__pycache__"}
@@ -71,7 +71,7 @@ def spec_problems(spec):
     allow = spec.get("allow", [])
     if not isinstance(allow, list):
         return out + [M("secrets.allow_not_list")]
-    seen = set()
+    seen: set[tuple[str, str]] = set()
     for entry in allow:
         out += _allow_problems(entry, seen)
     return out
@@ -131,7 +131,8 @@ def _walk_path(root, relative, files, problems, stats):
 
 def collect_files(root, paths):
     """Return ``(files, problems, stats)`` with deterministic, non-escaping traversal."""
-    files, problems = set(), []
+    files: set[str] = set()
+    problems: list[Message] = []
     stats = {"symlinks": 0, "binary": 0, "scanned": 0}
     for relative in paths:
         _walk_path(root, relative.strip(), files, problems, stats)
@@ -157,7 +158,7 @@ def _relative(root, path):
 
 def _scan_file(root, path, stats):
     relative = _relative(root, path)
-    findings = []
+    findings: list[dict[str, object]] = []
     try:
         with open(path, "rb") as fh:
             if b"\0" in fh.read(8192):

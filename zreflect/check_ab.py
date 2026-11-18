@@ -42,12 +42,13 @@ from __future__ import annotations
 import json
 import os
 import sys
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate  # noqa: E402
 from gate import main_selftest_or, meta, repo  # noqa: E402
-from i18n import M  # noqa: E402
+from i18n import M, Message  # noqa: E402
 
 
 def _load(path):
@@ -93,7 +94,8 @@ def _confound_problems(pr, key, da, db):
 def _pair_problems(pr, root, loader):
     """One A/B pair comparison: fields / readability / declared-surface type /
     confounding variables. Returns (problems, skips)."""
-    problems, skips = _pair_field_problems(pr), []
+    problems = _pair_field_problems(pr)
+    skips: list[Message] = []
     if problems:
         # A missing required field ends it here (the a/b/key reads below would
         # raise KeyError -- the missing field is itself what this round
@@ -160,7 +162,7 @@ def _cases():
     wf("mut-a.json", {"declared": {"simd": True, "malloc": "mimalloc", "v128": 4752}})
     wf("mut-b.json", {"declared": {"simd": False, "malloc": "mimalloc", "v128": 4752}})
     wf("nokey.json", {"declared": "not-a-dict"})
-    empty = {"pairs": []}
+    empty: dict[str, list[Any]] = {"pairs": []}
     confound_spec = {"pairs": [{"name": "m", "a": "mut-a.json", "b": "mut-b.json",
                                 "key": "declared", "allow": ["malloc"]}]}
     return [

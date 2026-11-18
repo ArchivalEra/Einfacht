@@ -59,7 +59,7 @@ from facts import (  # noqa: E402
     value_of,
 )
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
-from i18n import M  # noqa: E402
+from i18n import M, Message  # noqa: E402
 
 # **Resolved via the knob helper**: the parse lives in `knobs.history_secs()`
 # (single origin shared with `check_retractions`).
@@ -171,7 +171,7 @@ def _stale_age_problems(f, sd):
     Unconfigured (sd is None) => no check (declared off); unreadable timestamp
     => also reported (say so when unreadable, never guess 0).
     """
-    out = []
+    out: list[Message] = []
     if sd is None:
         return out
     for k in sorted(f):

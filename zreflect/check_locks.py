@@ -44,6 +44,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sys
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -141,7 +142,7 @@ def _cases():
     missing = {"locked": [{"name": "glpk", "url": "u", "file": "nope.tar.gz",
                            "sha256": good}]}
     no_sha = {"locked": [{"name": "glpk", "url": "u", "file": g}]}
-    empty = {"locked": []}
+    empty: dict[str, list[Any]] = {"locked": []}
     return [
         ("locks.resolve_spec",
          lambda: gate.resolve_spec(["--spec", "x.json"], "K.json", "upstream-lock.json")

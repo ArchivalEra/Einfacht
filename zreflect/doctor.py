@@ -168,7 +168,6 @@ def label(check):
 
 def _http_shape_problems(c):
     """Field criteria for an http check (missing url / non-int expect_status / expect_headers shape)."""
-    out: list[i18n.Message] = []
     if not str(c.get("url") or "").strip():
         return [M("doctor.http_missing_url", check=label(c))]
     es = c.get("expect_status")
@@ -179,7 +178,7 @@ def _http_shape_problems(c):
             not isinstance(k, str) or not isinstance(v, str)
             for k, v in eh.items())):
         return [M("doctor.http_headers_not_object", check=label(c))]
-    return out
+    return []
 
 
 def _docker_shape_problems(c):

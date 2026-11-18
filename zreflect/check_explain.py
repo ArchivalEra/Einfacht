@@ -61,7 +61,7 @@ def _arg_count(fn):
 
 def _comment_chars_by_fn(src, fns):
     """Attribute stripped non-pragma `#` comments to the innermost enclosing function."""
-    counts = {}
+    counts: dict[ast.FunctionDef | ast.AsyncFunctionDef, int] = {}
     if not fns:
         return counts
     try:

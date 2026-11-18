@@ -160,7 +160,7 @@ def run(argv=None):
     led_path = repo(knobs.get("REFLECT_FACTS"))
     if not os.path.exists(led_path):
         return fatal(M("instruments.ledger_missing", path=led_path))
-    methods = []
+    methods: list[dict[str, object]] = []
     if name:
         reg, _n, rc = gate.load_gate_spec(
             [], "REFLECT_INSTRUMENTS",

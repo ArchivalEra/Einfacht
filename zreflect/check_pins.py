@@ -55,7 +55,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate  # noqa: E402
 from gate import main_selftest_or, meta, repo  # noqa: E402
-from i18n import M  # noqa: E402
+from i18n import M, Message  # noqa: E402
 
 
 def _run(cmd):
@@ -92,7 +92,8 @@ def _tree_pin_problems(p, head, run):
 
     Returns (problems, skips).
     """
-    problems, skips = [], []
+    problems: list[Message] = []
+    skips: list[Message] = []
     rc, out = run(p["stamp_read"])
     if rc != 0 or not out:
         skips.append(M("pins.stamp_unreadable", name=p["name"]))
@@ -112,7 +113,8 @@ def _tree_pin_problems(p, head, run):
 def _version_pin_problems(p, run):
     """kind=version: the first line of the command output must contain
     expect_version. Returns (problems, skips)."""
-    problems, skips = [], []
+    problems: list[Message] = []
+    skips: list[Message] = []
     rc, out = run(p.get("version_read", ""))
     first = out.splitlines()[0] if out else ""
     if rc != 0 or not first:
@@ -127,7 +129,8 @@ def _version_pin_problems(p, run):
 def _pin_problems(p, root, run):
     """The three assertions for one pin (fields / HEAD / kind dispatch).
     Returns (problems, skips)."""
-    problems, skips = _required_field_problems(p), []
+    problems = _required_field_problems(p)
+    skips: list[Message] = []
     if problems:
         # A missing required field ends it here (the HEAD / kind reads below all
         # need name/worktree; the missing field is itself the reportable fact --

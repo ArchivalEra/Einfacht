@@ -15,7 +15,7 @@ import gate  # noqa: E402
 import knobs  # noqa: E402
 import registry  # noqa: E402
 from gate import fatal, fatal_exit, main_selftest_or, module_meta, repo  # noqa: E402
-from i18n import M  # noqa: E402
+from i18n import M, Message  # noqa: E402
 
 BLOCK_BEGIN = "<!-- AUTO:FACTS -->"
 BLOCK_END = "<!-- /AUTO:FACTS -->"
@@ -184,7 +184,7 @@ def accepted_keys(argv):
 
 def decide(old_facts, new_facts, accepted=False, allow_drop=False):
     """Evaluate drop and change guards; return `('write'|'refuse', problems, notes)`."""
-    notes: dict[str, list[str]] = {"err": [], "out": []}
+    notes: dict[str, list[Message]] = {"err": [], "out": []}
     dropped = dropped_keys(old_facts, new_facts)
     if dropped and not allow_drop:
         return "refuse", [M("guard.refuse_dropped", count=len(dropped), keys=", ".join(dropped)),
@@ -766,6 +766,28 @@ def _with_temp_repo(fn):
             gate.GATE_REPO = saved
 
 
+def _unwritable_doc_ok(state_path):
+    """Verify `write_doc` returns 2 on write OSError (via chmod, or guarded open as root)."""
+    if getattr(os, "geteuid", lambda: 1)() != 0:
+        os.chmod(state_path, 0o444)
+        try:
+            return write_doc("STATE.md", {"facts": {"a": 1}}) == 2
+        finally:
+            os.chmod(state_path, 0o644)
+    import builtins  # noqa: PLC0415
+    from unittest.mock import patch  # noqa: PLC0415
+    real_open = builtins.open
+    target = os.path.abspath(state_path)
+
+    def _ro_open(file, mode="r", *args, **kwargs):
+        if "w" in mode and os.path.abspath(str(file)) == target:
+            raise PermissionError(13, target)
+        return real_open(file, mode, *args, **kwargs)
+
+    with patch("builtins.open", _ro_open):
+        return write_doc("STATE.md", {"facts": {"a": 1}}) == 2
+
+
 def _inproc_bootstrap_ok(d):
     import contextlib  # noqa: PLC0415
     import io  # noqa: PLC0415
@@ -782,11 +804,7 @@ def _inproc_bootstrap_ok(d):
             return False
         if cmd_render_doc([]) != 0:
             return False
-        os.chmod(os.path.join(d, "STATE.md"), 0o444)
-        try:
-            unwritable = (write_doc("STATE.md", {"facts": {"a": 1}}) == 2)
-        finally:
-            os.chmod(os.path.join(d, "STATE.md"), 0o644)
+        unwritable = _unwritable_doc_ok(os.path.join(d, "STATE.md"))
         os.remove(os.path.join(d, "PRINCIPLES.md"))
         os.environ["REFLECT_NO_PRINCIPLES"] = "1"
         try:

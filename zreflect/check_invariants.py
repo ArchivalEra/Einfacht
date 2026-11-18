@@ -135,12 +135,13 @@ def problems(checks, read=None):
 def _check_one_problems(c, read):
     """Shape first, then content: with a bad shape there is no comparable
     snippet, so an early exit is mandatory. Returns shape problems plus content
-    problems from `_content_problems(*spec, read=read)` when a spec exists.
+    problems from `_content_problems(path, mc, mnc, read=read)` when a spec exists.
     """
     shape_probs, spec = _shape_problems(c)
     if spec is None:
         return shape_probs
-    return shape_probs + _content_problems(*spec, read=read)
+    path, mc, mnc = spec
+    return shape_probs + _content_problems(path, mc, mnc, read=read)
 
 
 def run(argv=None):

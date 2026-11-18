@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate  # noqa: E402
 import registry  # noqa: E402
 from gate import main_selftest_or, module_meta  # noqa: E402
-from i18n import M  # noqa: E402
+from i18n import M, Message  # noqa: E402
 
 DEFAULT_ROOT = os.path.join(gate.tool_repo(), "examples")
 DEFAULT_TIMEOUT = 120
@@ -95,7 +95,7 @@ def _step_shape_problems(step, index):
 def discover(root):
     """Return ``({name: manifest}, problems)``; no directory means no examples."""
     manifests: dict[str, dict[str, Any]] = {}
-    problems: list[Any] = []
+    problems: list[Message] = []
     if not os.path.isdir(root):
         return manifests, [M("examples.root_missing", path=root)]
     for name in sorted(os.listdir(root)):
@@ -393,7 +393,8 @@ def _cases():
          and applies_to({"platforms": ["posix", "windows"]}, "nt") is True),
         ("★ examples.timeout_stream_mix",
          lambda: _decode_output(b"out") + _decode_output(None) == "out"
-         and _decode_output(b"a") + _decode_output("b") == "ab"),
+         and _decode_output(b"a") + _decode_output("b") == "ab"
+         and _decode_output("a") + _decode_output(b"b") == "ab"),
     ]
 
 
