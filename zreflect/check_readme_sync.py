@@ -44,8 +44,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import (  # noqa: E402
+    fatal,
     finish,
-    machine,  # noqa: E402
     main_selftest_or,
     meta,
     off,
@@ -139,9 +139,7 @@ def _push_mode(argv, langs):
     if src == "-":
         lines = sys.stdin.read().splitlines()
     elif not os.path.exists(src):
-        print(machine().emit("fatal", M("readme.changed_file_missing", name=src)),
-              file=sys.stderr)
-        return 2
+        return fatal(M("readme.changed_file_missing", name=src))
     else:
         lines = open(src, encoding="utf-8", errors="replace").read().splitlines()
     changed = {l.strip().strip('"') for l in lines if l.strip()}

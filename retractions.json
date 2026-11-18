@@ -68,7 +68,7 @@
    {
     "id": "R-011",
     "text": "`selftest` 会执行委托给 helper 的断言",
-    "evidence": "python3 zreflect/criteria.py --selftest",
+    "evidence": "python3 zreflect/registry.py --gates",
     "fixed_in": "CI 落地（60014a6..80014a6 系列）"
    },
    {
@@ -98,7 +98,7 @@
    {
     "id": "R-016",
     "text": "静态闸门扫整个仓（`ruff check .` / 全部 `.py`）",
-    "evidence": "python3 zreflect/criteria.py --selftest",
+    "evidence": "python3 zreflect/gate.py --selftest",
     "fixed_in": "gate.declares_itself / gate.scanned_sources（作用域收窄 + opt-in 保留）"
    },
    {
@@ -110,7 +110,7 @@
    {
     "id": "R-018",
     "text": "`raise SystemExit(<消息>)` 是退 2 的 FATAL",
-    "evidence": "python3 zreflect/criteria.py --selftest",
+    "evidence": "python3 zreflect/gate.py --selftest",
     "fixed_in": "gate.fatal_exit(msg)（唯一产地，SystemExit(2)）"
    },
    {

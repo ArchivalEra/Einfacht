@@ -46,28 +46,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate  # noqa: E402
-import knobs  # noqa: E402
-import machine  # noqa: E402
-from gate import (  # noqa: E402
-    fatal,
-    finish,
-    load_spec,
-    main_selftest_or,
-    meta,
-    off,
-    repo,  # noqa: E402
-)
+from gate import main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
-
-# Derived from the knob registry (single origin) -- a handwritten literal would
-# drift from it (the most expensive class of debt in this repo).
-DEFAULT_SPEC = knobs.REGISTRY["REFLECT_AB"][1]
-
-
-def resolve_spec(argv, knob=""):
-    """See `gate.resolve_spec`: the implementation lives in one place; this only
-    binds this gate's default name."""
-    return gate.resolve_spec(argv, knob, DEFAULT_SPEC)
 
 
 def _load(path):
@@ -148,20 +128,15 @@ def check(spec, root, loader=_load):
 
 
 def main(argv):
-    spec_path, explicit = resolve_spec(argv, os.environ.get("REFLECT_AB", ""))
-    path = gate.repo_path(spec_path)
-    if not os.path.isfile(path):
-        if explicit:
-            return fatal(M("ab.explicit_spec_missing", name=spec_path))
-        return off(M("ab.off", name=spec_path))
-    spec, err = load_spec(path)
-    if err:
-        return fatal(M("ab.spec_broken", name=spec_path, error=err))
-    problems, skips = check(spec, repo())
-    for x in skips:
-        print(machine().emit("skip", str(x)), file=sys.stderr)
-    return finish(M("ab.title"), problems,
-                  M("ab.ok", count=len(spec.get("pairs") or [])))
+    return gate.run_spec_gate(
+        argv, "REFLECT_AB",
+        off_msg=lambda n: M("ab.off", name=n),
+        missing_msg=lambda n: M("ab.explicit_spec_missing", name=n),
+        broken_msg=lambda n, err: M("ab.spec_broken", name=n, error=err),
+        title=M("ab.title"),
+        judge=lambda spec: check(spec, repo()),
+        ok_msg=lambda spec: M("ab.ok", count=len(spec.get("pairs") or [])),
+    )
 
 
 def _cases():
@@ -190,10 +165,10 @@ def _cases():
                                 "key": "declared", "allow": ["malloc"]}]}
     return [
         ("ab.resolve_spec",
-         lambda: resolve_spec(["--spec", "x.json"], "K.json") == ("x.json", True)
-         and resolve_spec([], "K.json") == ("K.json", True)
-         and resolve_spec([], "") == ("ab.json", False)
-         and resolve_spec([], "  ") == ("ab.json", False)),
+         lambda: gate.resolve_spec(["--spec", "x.json"], "K.json", "ab.json") == ("x.json", True)
+         and gate.resolve_spec([], "K.json", "ab.json") == ("K.json", True)
+         and gate.resolve_spec([], "", "ab.json") == ("ab.json", False)
+         and gate.resolve_spec([], "  ", "ab.json") == ("ab.json", False)),
         # (1) compliant input: nothing reported
         ("ab.ok", lambda: check(spec, d)[0] == []),
         # (2) what must be reported is reported

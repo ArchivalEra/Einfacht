@@ -74,25 +74,20 @@ def _builtin_phases():
     return set(registry.BUILTIN_PHASES)
 
 
-def _allowed_shell():
-    """Shell whitelist owned by criteria (lazy import avoids module cycle)."""
-    import criteria  # noqa: PLC0415
-    return set(criteria.ALLOWED_SHELL)
-
-
 def _collect_lang_packs(root, zdir, out):
-    """Append sorted repo-relative paths for all `zreflect/lang/*/*.json` pack shards."""
+    """Append sorted repo-relative paths for all `zreflect/lang/*.json` and `lang/*/*.json` packs."""
     lang_dir = os.path.join(zdir, "lang")
     if not os.path.isdir(lang_dir):
         return
-    for lang in sorted(os.listdir(lang_dir)):
-        pkg = os.path.join(lang_dir, lang)
-        if not os.path.isdir(pkg):
-            continue
-        for fname in sorted(os.listdir(pkg)):
-            if fname.endswith(".json"):
-                full = os.path.join(pkg, fname)
-                out.append(os.path.relpath(full, root).replace(os.sep, "/"))
+    for entry in sorted(os.listdir(lang_dir)):
+        full = os.path.join(lang_dir, entry)
+        if os.path.isfile(full) and entry.endswith(".json"):
+            out.append(os.path.relpath(full, root).replace(os.sep, "/"))
+        elif os.path.isdir(full):
+            for fname in sorted(os.listdir(full)):
+                if fname.endswith(".json"):
+                    p = os.path.join(full, fname)
+                    out.append(os.path.relpath(p, root).replace(os.sep, "/"))
 
 
 def _sealed_zreflect(root, zdir, builtin, include_gates=True):
@@ -108,25 +103,19 @@ def _sealed_zreflect(root, zdir, builtin, include_gates=True):
     return out
 
 
-def _sealed_hooks(root, allowed_sh):
-    """Collect sorted repo-relative paths of sealed files under `reflect-hooks/`."""
+def _sealed_hooks(root):
+    """Collect sorted repo-relative paths of sealed `.py` files under `reflect-hooks/`."""
     hooks = os.path.join(root, "reflect-hooks")
     if not os.path.isdir(hooks):
         return []
-    out = []
-    for name in sorted(os.listdir(hooks)):
-        rel = "reflect-hooks/" + name
-        full = os.path.join(hooks, name)
-        if os.path.isfile(full) and (name.endswith(".py") or rel in allowed_sh):
-            out.append(rel)
-    return out
+    return ["reflect-hooks/" + name for name in sorted(os.listdir(hooks))
+            if os.path.isfile(os.path.join(hooks, name)) and name.endswith(".py")]
 
 
 def _sealed_targets(root, zdir, include_gates=True):
     """Core files in `(root, zdir)` that belong under the SHA-256 seal."""
     builtin = _builtin_phases()
-    allowed_sh = _allowed_shell()
-    targets = _sealed_zreflect(root, zdir, builtin, include_gates) + _sealed_hooks(root, allowed_sh)
+    targets = _sealed_zreflect(root, zdir, builtin, include_gates) + _sealed_hooks(root)
     if os.path.isfile(os.path.join(root, "ruff.toml")):
         targets.append("ruff.toml")
     return sorted(set(targets))
@@ -279,7 +268,7 @@ def _base_fixture_files():
         "MODULE = {'name': 'm', 'desc': 'd', 'selftest': True}\n"
     )
     return {"zreflect/mod_a.py": sample_py,
-            "zreflect/lang/en/a.json": '{\n "a.ok": "ok"\n}\n'}
+            "zreflect/lang/en.json": '{\n "a.ok": "ok"\n}\n'}
 
 
 def _case_tamper_and_exempt():

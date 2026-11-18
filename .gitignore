@@ -17,7 +17,6 @@
 !/STATE.md
 !/HISTORY.md
 !/knobs.json
-!/gitroll-dispositions.json
 !/icon.svg
 !/retractions.json
 !/secrets.json
@@ -31,7 +30,6 @@
 !/docs/
 !/examples/
 !/.github/
-!/.shellcheckrc
 
 # ---- build / runtime noise: ignored even inside whitelisted dirs ----
 __pycache__/

@@ -1,8 +1,0 @@
-{
- "history.missing": "no history document at %(path)s -- prose has no legal home then; point REFLECT_HISTORY at the file, or set it to an empty value to state that this repo keeps no history at all (removing the knob does NOT work: it falls back to the default name and stays red)",
- "history.off": "no history document is configured (REFLECT_HISTORY blank) => prose has no legal home in this repo; state it and stand down",
- "history.ok": "history document %(path)s is declared and stays off every scan surface",
- "history.on_scan_surface": "the history document %(path)s is on a scan surface (REFLECT_DOCS / REFLECT_READMES / REFLECT_QUESTIONS / REFLECT_FACTS) -- its 'as it was then' lines would be judged as live state",
- "history.title": "History document",
- "knobs.sem.reflect_history": "the history document: the only carrier where prose is allowed (configurable path)"
-}

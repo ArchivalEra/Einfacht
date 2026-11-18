@@ -49,44 +49,38 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import knobs  # noqa: E402
+from facts import (  # noqa: E402
+    CITE_RE,
+    DATED_RECORD,
+    age_days,
+    facts_of,
+    living_lines,
+    load_or_fatal,
+    value_of,
+)
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
-from ledger import age_days, facts_of, load_or_fatal, value_of  # noqa: E402
-from living import CITE_RE, DATED_RECORD, living_lines  # noqa: E402
 
-# **Resolved at import time via the knob helper**: the parse lives in
-# `knobs.history_secs()` (the single producer -- `check_retractions` reads the
-# same helper), so the two gates cannot drift apart on "what counts as a
-# history section".
+# **Resolved via the knob helper**: the parse lives in `knobs.history_secs()`
+# (single origin shared with `check_retractions`).
 HIST_SECS = knobs.history_secs()
-STALE_DAYS_RAW = os.environ.get("REFLECT_STALE_DAYS", "").strip()
 
 
 def _retired():
-    """The retired-name list (`REFLECT_RETIRED`, same parse shape as
-    `knobs.history_secs()`; unset => empty => the rule stands down)."""
-    return tuple(s for s in os.environ.get("REFLECT_RETIRED", "").split(",") if s)
-
-
-# **None = the knob is unset** (a real decision, distinct from an empty list):
-# `run()` may say "the retired-name rule is declared off" only when the knob is
-# genuinely unset -- collapsing unset and empty would let `REFLECT_RETIRED=`
-# silence the declaration instead of stating it. Resolved by the call-time
-# helper (`_retired()`), never read as a list here.
-RETIRED = None if os.environ.get("REFLECT_RETIRED") is None else _retired()
+    """The retired-name list (`REFLECT_RETIRED`; unset or empty => empty)."""
+    raw = knobs.raw("REFLECT_RETIRED")
+    if not raw:
+        return ()
+    return tuple(s for s in raw.split(",") if s)
 
 
 def _stale_days():
-    """Age-check alert threshold (days, issue #3 item 2): configurable via
-    `REFLECT_STALE_DAYS`.
-
-    Unset / bad value => None -- the rule is **declared off** (same precedent
-    as REFLECT_RETIRED), not silently pretended to be checked.
-    """
-    if not STALE_DAYS_RAW:
+    """Age-check alert threshold (`REFLECT_STALE_DAYS`); unset/bad => None."""
+    raw = (knobs.raw("REFLECT_STALE_DAYS") or "").strip()
+    if not raw:
         return None
     try:
-        return float(STALE_DAYS_RAW)
+        return float(raw)
     except ValueError:
         return None
 
@@ -274,7 +268,7 @@ def run(argv):
     if not os.path.exists(repo(facts_name)):
         return fatal(M("stale.ledger_missing", name=facts_name))
     probs = problems(load_or_fatal(repo(facts_name)), docs)
-    retired = _retired() if RETIRED is None else RETIRED
+    retired = _retired()
     if not probs:
         if not retired:
             print(M("stale.retired_rule_off"), file=sys.stderr)

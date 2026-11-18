@@ -35,7 +35,7 @@
       "contains": [
         "next.commits_count(count=1)",
         "next.tree_state(changed=0, untracked=0)",
-        "next.open_question(name='01-example.md')"
+        "next.open_question(name='02-open.md')"
       ]
     },
     {

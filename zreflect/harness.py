@@ -81,16 +81,15 @@ def _tail(text, n=3):
 
 
 def _has_summary(text):
-    import machine  # noqa: PLC0415
-    return any(machine.is_summary(ln) for ln in (text or "").splitlines())
+    import i18n  # noqa: PLC0415
+    return any(i18n.is_summary(ln) for ln in (text or "").splitlines())
 
 
 def _derive_listing(repo):
-    """Derive the gate listing from `registry --all-runnable` (discovered, not transcribed)."""
-    _rc, out = _run([sys.executable,
-                     os.path.join(repo, "zreflect", "registry.py"),
-                     "--all-runnable"], cwd=repo)
-    return [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
+    """Derive the gate listing from `registry.gates` (in-process, discovered)."""
+    import registry  # noqa: PLC0415
+    gs, _ = registry.gates(os.path.join(repo, "zreflect"))
+    return [g["file"] for g in gs]
 
 
 def _check_one_gate(repo, rel):
@@ -145,9 +144,8 @@ def run_gates(repo, listing=None):
 
 def run_plugins(repo):
     """Pluggable plugins + named specials (roster derived from registry). Returns `(ok, lines)`."""
-    _rc, out = _run([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
-                     "--plugins"], cwd=repo)
-    names = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
+    import registry  # noqa: PLC0415
+    names = registry.plugins(os.path.join(repo, "reflect-hooks"))
     lines = []
     bad = 0
     for p in names:
@@ -180,12 +178,11 @@ def _one_plugin(repo, p):
 
 def run_modules(repo):
     """Platform modules' selftests (set difference: gates' selftests already ran in `run_gates`)."""
-    _rc, out = _run([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
-                     "--selftest-modules"], cwd=repo)
-    mods = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
-    _rc, gout = _run([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
-                      "--all-runnable"], cwd=repo)
-    gates = {ln.strip() for ln in (gout or "").splitlines() if ln.strip()}
+    import registry  # noqa: PLC0415
+    z = os.path.join(repo, "zreflect")
+    mods, _ = registry.selftest_modules(z)
+    gs, _ = registry.gates(z)
+    gates = {g["file"] for g in gs}
     lines = []
     n = bad = 0
     for m in mods:
@@ -261,9 +258,8 @@ def _configurable_fixture(repo, tmp, registry):
     _run([sys.executable, os.path.join(repo, "zreflect", "facts.py"),
           "--render-doc", fx_doc], cwd=repo, env=env)
 
-    _rc, out = _run([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
-                     "--all-runnable"], cwd=repo)
-    gates = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
+    gs, _ = registry.gates(os.path.join(repo, "zreflect"))
+    gates = [g["file"] for g in gs]
     env.update({"REFLECT_DOCS": "%s,AGENTS.md" % fx_doc,
                 "REFLECT_RETRACTIONS": "RETRACT.json",
                 "REFLECT_QUESTIONS": "cases",
@@ -297,12 +293,9 @@ def _default_names_go_red(repo, gates, tmp):
                       env=clean)
         if rc != 0:
             red.add(os.path.basename(rel))
-    _rc, rout = _run([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
-                      "--red-need"], cwd=repo)
-    # ⚠️ `--red-need`'s output is **one line with space-separated** names (not
-    # one per line). Splitting by line would treat the whole string as one
-    # name, so "it didn't go red" would always hit (observed).
-    red_need = (rout or "").split()
+    import registry  # noqa: PLC0415
+    gs, _ = registry.gates(os.path.join(repo, "zreflect"))
+    red_need = registry.red_need(gs)
     return red_need, [b for b in red_need if b not in red]
 
 
@@ -502,9 +495,9 @@ def _cases():
 
 
 def _summary_shape_ok():
-    import machine  # noqa: PLC0415
-    return machine.is_summary("=== 3 PASS / 0 FAIL ===") and \
-        not machine.is_summary("=== 3 PASS / 0 fail ===")
+    import i18n  # noqa: PLC0415
+    return i18n.is_summary("=== 3 PASS / 0 FAIL ===") and \
+        not i18n.is_summary("=== 3 PASS / 0 fail ===")
 
 
 def _selftest():

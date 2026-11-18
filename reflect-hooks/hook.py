@@ -1,35 +1,20 @@
 #!/usr/bin/env python3
-"""Hook entry point: **meant to be called by other hook systems**; it never
-takes over hook slots.
+"""Hook entry point and chained git-hook installer.
 
-`git config core.hooksPath` is git's **global override switch** -- once it is
-set, git **stops looking at** `.git/hooks/` entirely, so husky / lefthook /
-pre-commit (Python) / handwritten hooks are all **silently disabled** (the
-"deployed does not mean running" state this repo exists to eliminate).
+Never touches `git config core.hooksPath` (which overrides `.git/hooks/` and
+silently disables husky/lefthook/pre-commit). Exposes a single command entry
+that external hook managers can call or install as a reversible chain wrapper:
 
-So this repo only **exposes one mouth**: any hook system can call this line
-from its own hook. Hook locations, ordering, other tools -- all yours; we
-provide the criteria and never take the seat.
-
-    Usage (from any hook script):
-        python3 <repo>/reflect-hooks/hook.py commit "$(git rev-parse --show-toplevel)"
-        python3 <repo>/reflect-hooks/hook.py push   "$(git rev-parse --show-toplevel)"
-
-    commit  re-render the machine block (and `git add`) + run every gate with
-            runs_at="commit"
-    push    verify only, modify nothing: the machine block must be fresh + all
-            gates + trilingual READMEs in the same batch
-
-    Exit codes: 0 = green; 1 = criterion red (reject); 2 = environment/config
-    broken.
-
-Python keeps the entry inside `check_i18n`'s AST-scanned surface (shell output
-is invisible to it), avoids depending on `sh` on Windows, and makes pre-push's
-text-parsing ref protocol explicit.
+    python3 <repo>/reflect-hooks/hook.py commit "$(git rev-parse --show-toplevel)"
+    python3 <repo>/reflect-hooks/hook.py push   "$(git rev-parse --show-toplevel)"
+    python3 <repo>/reflect-hooks/hook.py --chain [target repo]
+    python3 <repo>/reflect-hooks/hook.py --uninstall [target repo]
+    python3 <repo>/reflect-hooks/hook.py --instructions
 """
 from __future__ import annotations
 
 import os
+import stat
 import subprocess
 import sys
 
@@ -43,17 +28,24 @@ from i18n import M  # noqa: E402
 
 ZERO_SHA = "0" * 40
 PHASES = ("commit", "push")
+PHASE_OF = {"pre-commit": "commit", "pre-push": "push"}
+GATE_SCRIPT = os.path.abspath(__file__)
 
 
-def _sh(cmd, stdin=None, env=None):
+def _sh(cmd, stdin=None):
     """Run one command, return `(rc, merged output)`."""
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, input=stdin,
-                           env=env,
-                           encoding="utf-8", errors="replace")
+        p = subprocess.run(
+            cmd, capture_output=True, text=True, input=stdin,
+            encoding="utf-8", errors="replace",
+        )
     except (OSError, subprocess.SubprocessError) as e:
         return 127, "hook: %r" % (e,)
     return p.returncode, (p.stdout or "") + (p.stderr or "")
+
+
+def _git(repo, *args):
+    return _sh(["git", "-C", repo, *args])
 
 
 def _usage():
@@ -62,43 +54,32 @@ def _usage():
 
 
 def _refs_from_stdin():
-    """git's pre-push ref protocol: each line is
-    `<local ref> <local sha> <remote ref> <remote sha>`."""
+    """Parse git pre-push stdin lines: `<lref> <lsha> <rref> <rsha>`."""
     try:
         raw = sys.stdin.read() if not sys.stdin.isatty() else ""
     except (OSError, ValueError):
         return []
-    rows = []
-    for ln in raw.splitlines():
-        parts = ln.split()
-        if len(parts) == 4:
-            rows.append(tuple(parts))
-    return rows
+    return [tuple(ln.split()) for ln in raw.splitlines() if len(ln.split()) == 4]
 
 
 def _new_content_refs(repo, refs):
-    """Filter the ref-protocol lines down to "branches actually publishing
-    new content this time"; returns `[(lref, revs)]`."""
+    """Filter ref-protocol lines to non-tag, non-delete branch updates."""
     out = []
     for lref, lsha, _rref, rsha in refs:
-        if lref.startswith("refs/tags/"):
-            continue                       # tags carry no new content
-        if lsha == ZERO_SHA:
-            continue                       # branch deletion
+        if lref.startswith("refs/tags/") or lsha == ZERO_SHA:
+            continue
         if rsha == ZERO_SHA:
-            rc, revs = _sh(["git", "-C", repo, "rev-list", lsha,
-                            "--not", "--remotes"])
+            rc, revs = _git(repo, "rev-list", lsha, "--not", "--remotes")
             revs = revs.strip() if rc == 0 else ""
         else:
-            rc, _o = _sh(["git", "-C", repo, "rev-list", "%s..%s" % (rsha, lsha)])
+            rc, _o = _git(repo, "rev-list", "%s..%s" % (rsha, lsha))
             revs = "%s..%s" % (rsha, lsha) if rc == 0 else lsha
         out.append((lref, revs.strip()))
     return out
 
 
 def _push_readmes_together(repo, refs):
-    """pre-push third check: this push must update the trilingual READMEs in
-    the same batch. Returns (ok, lines)."""
+    """Verify pushed branches keep trilingual READMEs synchronized in one batch."""
     import tempfile  # noqa: PLC0415
     lines = []
     refs_with_content = _new_content_refs(repo, refs)
@@ -112,19 +93,18 @@ def _push_readmes_together(repo, refs):
             checked += 1
             continue
         rev_args = [r for r in revs.splitlines() if r.strip()]
-        rc, log = _sh(["git", "-C", repo, "log", "--name-only",
-                       "--pretty=format:", *rev_args])
+        _rc, log = _git(repo, "log", "--name-only", "--pretty=format:", *rev_args)
         changed = [ln for ln in (log or "").splitlines() if ln.strip()]
         fd, path = tempfile.mkstemp()
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write("\n".join(changed) + "\n")
-            rc, out = _sh([sys.executable,
-                           os.path.join(repo, "zreflect", "check_readme_sync.py"),
-                           "--changed", path])
+            rc, out = _sh([
+                sys.executable, os.path.join(repo, "zreflect", "check_readme_sync.py"),
+                "--changed", path,
+            ])
             if rc != 0:
-                lines.append(str(M("hookgate.push_readmes_not_together",
-                                   ref=lref)))
+                lines.append(str(M("hookgate.push_readmes_not_together", ref=lref)))
                 lines.extend(ln for ln in (out or "").splitlines()[:5])
                 return False, lines
         finally:
@@ -139,15 +119,15 @@ def _has_unstaged_facts(repo):
     facts_rel = knobs.get("REFLECT_FACTS", root=repo)
     if not os.path.isfile(os.path.join(repo, facts_rel)):
         return False, facts_rel
-    rc, diff_out = _sh(["git", "-C", repo, "diff", "--name-only", "--", facts_rel])
+    rc, diff_out = _git(repo, "diff", "--name-only", "--", facts_rel)
     return (rc != 0 or bool(diff_out.strip())), facts_rel
 
 
 def _stage_rendered_docs(repo, doc):
-    """`git add` rendered machine-block documents; returns `True` on error."""
+    """`git add` rendered machine-block documents; returns True on error."""
     for name in (doc, "PRINCIPLES.md"):
         if os.path.isfile(os.path.join(repo, name)):
-            rc, out = _sh(["git", "-C", repo, "add", "--", name])
+            rc, out = _git(repo, "add", "--", name)
             if rc != 0:
                 if out:
                     print(out, file=sys.stderr)
@@ -156,23 +136,12 @@ def _stage_rendered_docs(repo, doc):
 
 
 def _prepare(phase, repo, doc):
-    """(1) The phase's setup step. Returns `(whether to reject)`.
-
-    The two phases do **opposite** things, hence one named branch each:
-
-      - commit -- re-render the machine block and `git add` (**render only,
-        do not re-measure**; re-measuring is a human's job). Refuses when
-        `FACTS.json` has unstaged edits so an unstaged ledger cannot be
-        rendered into the staged `STATE.md`.
-      - push   -- **touches no files, rewrites no history**: a stale block is
-        an outright rejection
-    """
+    """Commit re-renders and stages blocks; push checks freshness without edits."""
     facts = os.path.join(repo, "zreflect", "facts.py")
     if phase == "commit":
         unstaged, facts_rel = _has_unstaged_facts(repo)
         if unstaged:
-            print(str(M("hookgate.unstaged_facts", path=facts_rel)),
-                  file=sys.stderr)
+            print(str(M("hookgate.unstaged_facts", path=facts_rel)), file=sys.stderr)
             return True
         if os.path.isfile(os.path.join(repo, doc)):
             rc, out = _sh([sys.executable, facts, "--render-doc"])
@@ -186,34 +155,27 @@ def _prepare(phase, repo, doc):
     rc, out = _sh([sys.executable, facts, "--check"])
     if rc == 0:
         return False
-    print(str(M("hookgate.blocks_stale", detail=(out or "").strip()[:400])),
-          file=sys.stderr)
+    print(str(M("hookgate.blocks_stale", detail=(out or "").strip()[:400])), file=sys.stderr)
     return True
 
 
 def run(phase, repo, stdin_rows=None):
-    """Run one phase. Returns rc. **Pure orchestration**: every judgment
-    lives inside the commands it calls."""
+    """Run one hook phase. Returns 0, 1, or 2."""
     if phase not in PHASES:
         print(str(M("hookgate.unknown_phase", phase=phase)), file=sys.stderr)
         return 2
     if not os.path.isdir(repo):
         print(str(M("hookgate.repo_missing", repo=repo)), file=sys.stderr)
         return 2
-
     os.environ["GATE_REPO"] = repo
     doc = knobs.get("REFLECT_DOC", root=repo)
-
     if _prepare(phase, repo, doc):
         return 1
-
-    # (2) All gates: the single source of the execution surface (C1)
     rc, out = _sh([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
                    "--run", "commit"])
     if rc != 0:
         print(out, file=sys.stderr)
         return 1
-
     if phase == "push":
         ok, lines = _push_readmes_together(repo, stdin_rows or [])
         for ln in lines:
@@ -223,109 +185,106 @@ def run(phase, repo, stdin_rows=None):
     return 0
 
 
-# -- Self-verification -------------------------------------------------------
+def _chmod_x(path):
+    mode = os.stat(path).st_mode
+    os.chmod(path, mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-def _unstaged_facts_case(mk_repo, shutil):
-    """Unstaged edits in `FACTS.json` must be detected by `_has_unstaged_facts`."""
-    d = mk_repo(True)
+
+def _hooks_dir(repo):
+    """Resolve git hooks directory (supports normal repos and worktrees)."""
+    rc, out = _git(repo, "rev-parse", "--git-path", "hooks")
+    if rc == 0 and out.strip():
+        p = out.strip()
+        return p if os.path.isabs(p) else os.path.join(repo, p)
+    return os.path.join(repo, ".git", "hooks")
+
+
+def _wrapper_body(name, phase):
+    """Fixed chained wrapper preserving stdin across `$PREV`."""
+    py = sys.executable or "python3"
+    return (
+        "#!/bin/sh\n"
+        "# Einfacht chain wrapper (generated by reflect-hooks/hook.py --chain)\n"
+        'HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\n'
+        'PREV="$HERE/%s.einfacht-prev"\n'
+        'if [ -x "$PREV" ]; then\n'
+        "  STDIN=$(cat)\n"
+        '  { [ -n "$STDIN" ] && printf \'%%s\\n\' "$STDIN"; } | "$PREV" "$@" || exit $?\n'
+        '  { [ -n "$STDIN" ] && printf \'%%s\\n\' "$STDIN"; } | "%s" "%s" %s "$(git rev-parse --show-toplevel)"\n'
+        "  exit $?\n"
+        "fi\n"
+        'exec "%s" "%s" %s "$(git rev-parse --show-toplevel)"\n'
+        % (name, py, GATE_SCRIPT, phase, py, GATE_SCRIPT, phase)
+    )
+
+
+def _is_einfacht_hook(body):
+    return "hook.py" in body or "gate.py" in body or "einfacht-gate.sh" in body
+
+
+def _read_hook(path):
     try:
-        _sh(["git", "-C", d, "config", "user.email", "a@b"])
-        _sh(["git", "-C", d, "config", "user.name", "a"])
-        fp = os.path.join(d, "FACTS.json")
-        with open(fp, "w", encoding="utf-8") as fh:
-            fh.write("{}\n")
-        _sh(["git", "-C", d, "add", "FACTS.json"])
-        _sh(["git", "-C", d, "commit", "-q", "-m", "init"])
-        clean, _rel = _has_unstaged_facts(d)
-        with open(fp, "w", encoding="utf-8") as fh:
-            fh.write('{"facts": {}}\n')
-        dirty, _rel2 = _has_unstaged_facts(d)
-        return (not clean) and dirty
-    finally:
-        shutil.rmtree(d, True)
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
 
 
-def _cases():
-    import shutil  # noqa: PLC0415
-    import tempfile  # noqa: PLC0415
-
-    def mk_repo(with_zreflect):
-        d = tempfile.mkdtemp()
-        _sh(["git", "init", "-q", d])
-        if with_zreflect:
-            os.makedirs(os.path.join(d, "zreflect"), exist_ok=True)
-        return d
-
-    def case(args):
-        return _run_cli(list(args), quiet=True)
-
-    return [
-        ("hookgate.no_args_prints_usage", lambda: case([]) == 0),
-        ("★ hookgate.unstaged_facts_rejected",
-         lambda: _unstaged_facts_case(mk_repo, shutil)),
-        ("★ hookgate.unknown_phase_is_2", lambda: case(["bogus", "/tmp"]) == 2),
-        ("★ hookgate.missing_repo_is_2",
-         lambda: case(["commit", "/nonexistent-xyz"]) == 2),
-        ("★ hookgate.missing_root_is_2", lambda: case(["commit"]) == 2),
-        ("★ hookgate.no_zreflect_is_2", lambda: _no_zreflect_case(mk_repo,
-                                                                  shutil)),
-        ("★ hookgate.summary_shape_can_red", lambda: _summary_shape_ok()),
-        ("★ hookgate.refs_skip_deletions", lambda: _refs_case()),
-    ]
+def install_chain(repo):
+    """Install chained wrappers into `.git/hooks/` unless `core.hooksPath` is set."""
+    hooks = _hooks_dir(repo)
+    if not os.path.isdir(hooks):
+        return 2, [str(M("install.no_hooks_dir", path=hooks))]
+    rc, current = _git(repo, "config", "core.hooksPath")
+    if rc == 0 and (current or "").strip():
+        return 2, [str(M("install.chain_blocked_by_hookspath", value=current.strip())),
+                   str(M("install.chain_blocked_fix"))]
+    lines = []
+    for name, phase in PHASE_OF.items():
+        target = os.path.join(hooks, name)
+        if os.path.isfile(target) and not _is_einfacht_hook(_read_hook(target)):
+            os.replace(target, target + ".einfacht-prev")
+            lines.append(str(M("install.kept_existing", name=name)))
+        with open(target, "w", encoding="utf-8") as fh:
+            fh.write(_wrapper_body(name, phase))
+        _chmod_x(target)
+        lines.append(str(M("install.installed_chain", name=name)))
+    lines.append(str(M("install.chain_done")))
+    return 0, lines
 
 
-def _no_zreflect_case(mk_repo, shutil):
-    d = mk_repo(False)
-    try:
-        return _run_cli(["commit", d], quiet=True) == 2
-    finally:
-        shutil.rmtree(d, True)
+def uninstall(repo):
+    """Remove Einfacht chain wrappers and restore `.einfacht-prev` hooks."""
+    lines = []
+    rc, _o = _git(repo, "config", "--unset", "core.hooksPath")
+    lines.append(str(M("install.legacy_removed")) if rc == 0
+                 else str(M("install.legacy_was_not_set")))
+    hooks = _hooks_dir(repo)
+    for name in PHASE_OF:
+        target = os.path.join(hooks, name)
+        prev = target + ".einfacht-prev"
+        if os.path.isfile(target) and _is_einfacht_hook(_read_hook(target)):
+            os.unlink(target)
+            lines.append(str(M("install.chain_removed", name=name)))
+        if os.path.isfile(prev):
+            os.replace(prev, target)
+            lines.append(str(M("install.restored_original", name=name)))
+    return 0, lines
 
 
-def _summary_shape_ok():
-    """Criterion lives in `machine.is_summary()` (single source of truth; no
-    per-file regex copies anymore)."""
-    import machine  # noqa: PLC0415
-    return machine.is_summary("=== 3 PASS / 0 FAIL ===") and \
-        not machine.is_summary("=== 3 PASS / 0 fail ===")
+def usage_lines():
+    return [str(M("install.usage")), str(M("install.usage_no_target")),
+            str(M("install.usage_chain")), str(M("install.usage_uninstall"))]
 
 
-def _refs_case():
-    rows = [("refs/heads/main", ZERO_SHA, "refs/heads/main", ZERO_SHA)]
-    got = _new_content_refs(".", rows)
-    return got == []
-
-
-def _run_cli(argv, quiet=False):
-    """Walk the CLI dispatch once, return rc.
-
-    `quiet=True` (**selftest only**): print nothing -- selftest output is the
-    interface a human checks; if diagnostics flood it, there is nothing left
-    to check (this repo's discipline: "pure functions stay quiet").
-    """
-    def _say(code, **kw):
-        if not quiet:
-            print(str(M(code, **kw)), file=sys.stderr)
-
-    if not argv:
-        if not quiet:
-            _usage()
-        return 0
-    rc = _validate(argv, _say)
-    if rc is not None:
-        return rc
-    return run(argv[0], argv[1], _refs_from_stdin())
+def instructions():
+    """Return human-readable wiring instructions (writes no files)."""
+    return [str(M("install.intro")), str(M("install.example_commit", gate=GATE_SCRIPT)),
+            str(M("install.example_push", gate=GATE_SCRIPT)), str(M("install.chain_hint")),
+            str(M("install.uninstall_hint")), str(M("install.why_not_hookspath"))]
 
 
 def _validate(argv, say):
-    """Command-line shape validation. Returns rc (`None` = shape is legal,
-    may proceed).
-
-    The four checks are each an exit for "not worth continuing"; jamming
-    them all into the call site made complexity 9 -- and they all judge the
-    **same question** (can this invocation run), so they live in one
-    function.
-    """
     phase = argv[0]
     if phase not in PHASES:
         say("hookgate.unknown_phase", phase=phase)
@@ -343,29 +302,158 @@ def _validate(argv, say):
     return None
 
 
+def _run_installer(argv, say):
+    mode = argv[0]
+    target = argv[1] if len(argv) > 1 else ""
+    repo = os.path.abspath(target) if target else TOOL_REPO
+    if target and not os.path.exists(os.path.join(repo, ".git")):
+        say("install.not_a_repo", path=repo)
+        return 2
+    if mode in ("--help", "-h"):
+        for ln in [str(M("hookgate.usage")), *usage_lines()]:
+            print(ln)
+        return 0
+    if mode == "--instructions":
+        for ln in instructions():
+            print(ln)
+        return 0
+    rc, lines = install_chain(repo) if mode == "--chain" else uninstall(repo)
+    for ln in lines:
+        print(ln, file=(sys.stderr if rc else sys.stdout))
+    return rc
+
+
+def _run_cli(argv, quiet=False):
+    def _say(code, **kw):
+        if not quiet:
+            print(str(M(code, **kw)), file=sys.stderr)
+
+    if not argv:
+        if not quiet:
+            _usage()
+        return 0
+    if argv[0] in ("--chain", "--uninstall", "--instructions", "--help", "-h"):
+        if quiet:
+            import contextlib  # noqa: PLC0415
+            import io  # noqa: PLC0415
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                return _run_installer(argv, _say)
+        return _run_installer(argv, _say)
+    rc = _validate(argv, _say)
+    if rc is not None:
+        return rc
+    return run(argv[0], argv[1], _refs_from_stdin())
+
+
+def _t_unstaged(d):
+    _git(d, "config", "user.email", "a@b")
+    _git(d, "config", "user.name", "a")
+    fp = os.path.join(d, "FACTS.json")
+    open(fp, "w", encoding="utf-8").write("{}\n")
+    _git(d, "add", "FACTS.json")
+    _git(d, "commit", "-q", "-m", "init")
+    clean, _r1 = _has_unstaged_facts(d)
+    open(fp, "w", encoding="utf-8").write('{"facts": {}}\n')
+    dirty, _r2 = _has_unstaged_facts(d)
+    return (not clean) and dirty
+
+
+def _t_instructions(d):
+    before = set(os.listdir(_hooks_dir(d)))
+    rc = _run_cli(["--instructions"], quiet=True)
+    return rc == 0 and before == set(os.listdir(_hooks_dir(d)))
+
+
+def _t_chain(d):
+    pre = os.path.join(_hooks_dir(d), "pre-commit")
+    open(pre, "w", encoding="utf-8").write("#!/bin/sh\necho mine\n")
+    _chmod_x(pre)
+    rc, _l = install_chain(d)
+    return rc == 0 and os.path.isfile(pre + ".einfacht-prev") and "hook.py" in _read_hook(pre)
+
+
+def _t_uninstall(d):
+    pre = os.path.join(_hooks_dir(d), "pre-commit")
+    open(pre, "w", encoding="utf-8").write("#!/bin/sh\necho mine\n")
+    _chmod_x(pre)
+    install_chain(d)
+    uninstall(d)
+    body = _read_hook(pre)
+    return "hook.py" not in body and "echo mine" in body
+
+
+def _t_blocked(d):
+    _git(d, "config", "core.hooksPath", "reflect-hooks")
+    rc, _l = install_chain(d)
+    wrapper = os.path.join(_hooks_dir(d), "pre-commit")
+    return rc == 2 and "hook.py" not in _read_hook(wrapper)
+
+
+def _cases():
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+
+    import i18n  # noqa: PLC0415
+
+    def with_repo(fn, with_zreflect=True):
+        d = tempfile.mkdtemp()
+        try:
+            _sh(["git", "init", "-q", d])
+            if with_zreflect:
+                os.makedirs(os.path.join(d, "zreflect"), exist_ok=True)
+            return fn(d)
+        finally:
+            shutil.rmtree(d, True)
+
+    def t_no_hooks(d):
+        shutil.rmtree(_hooks_dir(d), True)
+        return install_chain(d)[0] == 2
+
+    return [
+        ("hookgate.no_args_prints_usage", lambda: _run_cli([], quiet=True) == 0),
+        ("★ hookgate.unstaged_facts_rejected", lambda: with_repo(_t_unstaged)),
+        ("★ hookgate.unknown_phase_is_2", lambda: _run_cli(["bogus", "/tmp"], quiet=True) == 2),
+        ("★ hookgate.missing_repo_is_2",
+         lambda: _run_cli(["commit", "/nonexistent-xyz"], quiet=True) == 2),
+        ("★ hookgate.missing_root_is_2", lambda: _run_cli(["commit"], quiet=True) == 2),
+        ("★ hookgate.no_zreflect_is_2",
+         lambda: with_repo(lambda d: _run_cli(["commit", d], quiet=True) == 2, False)),
+        ("★ hookgate.summary_shape_can_red",
+         lambda: i18n.is_summary("=== 3 PASS / 0 FAIL ===")
+         and not i18n.is_summary("=== 3 PASS / 0 fail ===")),
+        ("★ hookgate.refs_skip_deletions",
+         lambda: _new_content_refs(".", [("refs/heads/main", ZERO_SHA, "refs/heads/main", ZERO_SHA)])
+         == []),
+        ("install.no_args_prints_only", lambda: with_repo(_t_instructions)),
+        ("★ install.unknown_mode_is_2", lambda: _run_cli(["--bogus"], quiet=True) == 2),
+        ("★ install.not_a_repo_is_2",
+         lambda: _run_cli(["--chain", "/nonexistent-xyz"], quiet=True) == 2),
+        ("★ install.chain_keeps_existing", lambda: with_repo(_t_chain)),
+        ("★ install.uninstall_restores", lambda: with_repo(_t_uninstall)),
+        ("★ install.chain_refused_when_hookspath_set", lambda: with_repo(_t_blocked)),
+        ("★ install.missing_hooks_dir_is_2", lambda: with_repo(t_no_hooks)),
+    ]
+
+
 def _main(argv):
-    if "--selftest" in argv:
-        rc = activate_or_fatal()
-        if rc:
-            return rc
-        from gate import selftest  # noqa: PLC0415
-        return selftest(M("gate.title.hookgate"), _cases())
     rc = activate_or_fatal()
     if rc:
         return rc
+    if "--selftest" in argv:
+        from gate import selftest  # noqa: PLC0415
+        return selftest(M("gate.title.hookgate"), _cases())
     return _run_cli(argv)
 
 
-# Declared on purpose: `criteria.suite_file_without_declaration` requires every
-# file under `reflect-hooks/` to say what it is. This is not "the roster picks it
-# up" -- the roster scans `zreflect/` only -- it is what keeps this file from
-# being read as user code and dropped from auditing.
-GATE = meta("Hook entry",
-            "the single mouth called by other hook systems: commit re-renders + "
-            "runs gates; push verifies only + trilingual READMEs in one batch",
-            knobs=("REFLECT_DOC",),
-            runs_at="start-of-work",
-            off_reason="the hook entry is invoked by git, not attached to the pre-commit phase")
+GATE = meta(
+    "Hook entry",
+    "the single mouth called by other hook systems: commit re-renders + "
+    "runs gates; push verifies only + trilingual READMEs; --chain/--uninstall",
+    knobs=("REFLECT_DOC",),
+    runs_at="start-of-work",
+    off_reason="the hook entry is invoked by git, not attached to the pre-commit phase",
+)
 
 
 if __name__ == "__main__":

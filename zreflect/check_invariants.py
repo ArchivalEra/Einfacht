@@ -44,18 +44,9 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import (  # noqa: E402
-    fatal,
-    finish,
-    load_spec,
-    main_selftest_or,
-    meta,
-    off,
-    repo,  # noqa: E402
-)
+import gate  # noqa: E402
+from gate import finish, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
-
-INVARIANTS_RAW = os.environ.get("REFLECT_INVARIANTS", "").strip()
 
 
 def _shape_problems(c):
@@ -154,18 +145,17 @@ def _check_one_problems(c, read):
 
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    name = INVARIANTS_RAW
-    if not name:
-        return off(M("invariants.off"))
-    spec_path = repo(name)
-    if not os.path.exists(spec_path):
-        return fatal(M("invariants.spec_missing", name=name))
-    spec, err = load_spec(spec_path)
-    if err:
-        return fatal(M("invariants.spec_broken", name=spec_path, error=err))
+    spec, spec_name, rc = gate.load_gate_spec(
+        argv, "REFLECT_INVARIANTS",
+        off_msg=lambda _n: M("invariants.off"),
+        missing_msg=lambda n: M("invariants.spec_missing", name=n),
+        broken_msg=lambda n, err: M("invariants.spec_broken", name=repo(n), error=err),
+    )
+    if rc is not None:
+        return rc
     checks = spec.get("checks") if isinstance(spec, dict) else None
     if not isinstance(checks, list):
-        return fatal(M("invariants.bad_shape", path=spec_path))
+        return gate.fatal(M("invariants.bad_shape", path=repo(spec_name)))
     return finish(M("invariants.title"), problems(checks),
                   M("invariants.ok", count=len(checks)))
 

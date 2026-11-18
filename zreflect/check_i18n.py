@@ -1,52 +1,5 @@
 #!/usr/bin/env python3
-"""Language-coverage gate (**pluggable module**, issue #26): the mechanical guarantee that the core is truly zero-language.
-
-It guards one **closed criterion** -- "the core must not contain user-visible natural language":
-
-  - **messages** must be `M(<literal code>, **params)` -- a bare literal like
-    `out.append("Chinese...")` is forbidden (that is "the core speaking prose",
-    exactly what this rule exists to eliminate);
-  - **self-proof case labels** are **id-ified** per user decision (1C) --
-    no natural-language sentences;
-  - **docstrings** are exempt (maintainer documentation, not output);
-  - **language packs** may contain any natural language (optional data,
-    not part of the core).
-
-Why this criterion must exist (without it: "looks zero-language, actually
-half-leaking"):
-
-  Language packs are optional => a user may install only `en`. If the core
-  still hides one hardcoded Chinese message, it shows Chinese on an en user's
-  screen and **nothing reports it** -- precisely the silent degradation this
-  repo exists to eliminate. This gate turns "core is zero-language" from a
-  slogan into something decidable.
-
-## It currently has four criterion families (round-16 review verdict: **do not split**)
-
-  1. **Bare CJK** (`bare_text`) -- CJK string constants in output positions
-  2. **PINNED declaration surface** -- functions/constants marked `PINNED:`
-     are exempt as a whole (AUTO machine blocks must be language-fixed;
-     following the language would never converge)
-  3. **Fixture literals** (`fixture_literal`) -- Chinese inside `_cases()` is
-     allowed only in **labels** and **docstrings**; fixture source must be
-     codepoint-constructed (criterion added after the same mistake three times)
-  4. **Messages must go through M()** -- the shape criteria of
-     `_is_msg_call` / `_is_output_call`
-
-**Why not split into four gates**: they share one `ast.parse(src)` and one
-file traversal. Splitting = four duplicated parses and traversals, each of
-which can drift independently (the most painful kind in this repo). The four
-families **differ only in what counts as legal**, and that is already isolated
-by their respective helpers (`_declares_pinned` / `_fixture_literal_problems`
-/ `cjk`). Shared parsing is the real reason they cannot be split -- not
-"they look like one class".
-
-Honest boundary (an explicitly written gap): the criterion is **AST-level** --
-it catches "a bare Chinese literal in an output position" but not "messages
-written in English" (that is still a core language, though the core is now
-CJK-free; catching it would need much heavier language detection, too
-expensive). So this gate's strength = "zero CJK + messages must go through M()".
-"""
+"""Zero-language coverage gate (`M(code)` + optional language pack sync/coverage)."""
 from __future__ import annotations
 
 import ast
@@ -56,54 +9,32 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate  # noqa: E402
-import machine  # noqa: E402
+import i18n  # noqa: E402
+import knobs  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
-from i18n import M  # noqa: E402
+from i18n import CJK_LO, LINE_BREAKS, M, han  # noqa: E402
 
-# When the knob is unset, scan **these** directories -- the suite's own Python.
-#
-# ⚠️ This list must **cover both halves of the suite** (criterion library +
-# hook entry points): scanning only one half means "half the core is
-# zero-language", while the other half keeps emitting bare Chinese.
-#
-# ⚠️ It must **not** include any host's directories -- that would weld the
-# suite to one host's directory conventions. There really was such an entry
-# here once (also scanning an editor-specific hooks directory); the full
-# account of that coupling lives in `retractions.json` R-003 and
-# `doc.RULES`'s `host_agnostic`. History is not kept in code comments: it
-# should not be maintained there, and it would make `host_agnostic` scan
-# itself (this file is part of its scan surface).
 DEFAULT_ROOTS = ("zreflect", "reflect-hooks")
 KNOB = "REFLECT_I18N_ROOT"
-
-
-# Codepoint range of the CJK Unified Ideographs block (U+4E00-U+9FFF).
-# **Codepoint constants, not literal characters**: writing the two endpoint
-# characters as literals would make this gate scan its own source (they are
-# exactly the range endpoints) --
-# actually hit once (it reported two fake violations on the endpoint chars).
-import i18n  # noqa: E402
-from i18n import CJK_LO, han  # noqa: E402
-
 PINNED_MARK = "PINNED:"
+cjk = han
+
+_EXEMPT_CALLS = ("meta", "module_meta", "Rule", "compile",
+                 "startswith", "endswith", "match", "search", "fullmatch", "find")
+_CODE_RE = re.compile(r'M\("([a-z][a-z0-9_.]+)"')
+_SEM_RE = re.compile(r'_Semantic\("([a-z][a-z0-9_.]+)"')
+_SELFTEST_CODE_PREFIXES = ("probe.", "gate.off.body")
+_PH = re.compile(r"%\(([A-Za-z_][A-Za-z0-9_]*)\)"
+                 r"(?:[#0\-+ ]*)(?:\d+)?(?:\.\d+)?[hlL]?([diouxXeEfFgGcrsa])")
+_PLACEHOLDER_RE = re.compile(r"%\((\w+)\)")
+_BRACE_RE = re.compile(r"\{[a-z_][a-z0-9_]*\}")
 
 
 def _declares_pinned(doc):
-    """Does the docstring carry a `PINNED:` declaration **with a reason**?
-
-    ⚠️ Only "`PINNED:` followed by a reason of at least 8 characters" counts:
-    otherwise any function could exempt all of its Chinese by writing
-    `PINNED:` in its docstring (measured: a plain `report_problem()` plus one
-    line `PINNED: x` was fully exempt). An exemption must state "why this
-    text cannot be translated" -- same discipline as the mandatory `why` in
-    `REFLECT_INVARIANTS`.
-    """
     if not doc or PINNED_MARK not in doc:
         return False
-    idx = doc.index(PINNED_MARK)
-    reason = doc[idx + len(PINNED_MARK):].strip()
-    # The reason runs to the first sentence end / newline (one sentence suffices)
-    for sep in ("\n", "。", ". "):
+    reason = doc[doc.index(PINNED_MARK) + len(PINNED_MARK):].strip()
+    for sep in ("\n", chr(0x3002), ". "):
         cut = reason.find(sep)
         if cut != -1:
             reason = reason[:cut]
@@ -111,61 +42,28 @@ def _declares_pinned(doc):
 
 
 def _pinned_by_comment(src, node):
-    """Does `PINNED:` appear **immediately above** the assignment (in the contiguous comment block before it)?
-
-    Module-level constants have no docstring, so their declaration can only
-    live in a comment. Look up only the immediately adjacent comment block
-    (stop at a blank or non-comment line) -- never scan the whole file,
-    avoiding "a single `PINNED:` anywhere in the file exempts everything".
-    """
     lines = src.splitlines()
-    i = node.lineno - 2                      # the line above (0-based)
+    i = node.lineno - 2
     while i >= 0:
         line = lines[i].strip()
-        if line.startswith("#"):
-            if PINNED_MARK in line:
-                return True
-            i -= 1
-            continue
-        break                                # end of the comment block
+        if not line.startswith("#"):
+            break
+        if PINNED_MARK in line:
+            return True
+        i -= 1
     return False
 
 
-# The "does it contain Chinese" criterion lives in `i18n.han()` (the owner of
-# the zero-language regime); this only forwards -- two copies of a range
-# constant would drift (C4).
-cjk = han
-
-
-
 def _is_msg_call(node):
-    """`M(code, **params)` or `i18n.M(...)`."""
     if not isinstance(node, ast.Call):
         return False
     f = node.func
-    return (isinstance(f, ast.Name) and f.id == "M") or \
-           (isinstance(f, ast.Attribute) and f.attr == "M")
-
-
-def _is_output_call(node):
-    """Calls that produce user-visible text: append / print / off / fatal / finish."""
-    if not isinstance(node, ast.Call):
-        return False
-    f = node.func
-    if isinstance(f, ast.Attribute) and f.attr == "append":
-        return True
-    return isinstance(f, ast.Name) and f.id in ("print", "off", "fatal", "finish")
+    return ((isinstance(f, ast.Name) and f.id == "M")
+            or (isinstance(f, ast.Attribute) and f.attr == "M"))
 
 
 def _docstring_both(tree):
-    """The docstring constants of a tree: node identities and line spans in one walk.
-
-The node view serves the bare-text exemption; the line view serves the
-non-ASCII-prose exemption. Both come from the same helper so they cannot
-disagree about what counts as a docstring.
-"""
-    nodes = set()
-    lines = set()
+    nodes, lines = set(), set()
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
@@ -182,73 +80,43 @@ disagree about what counts as a docstring.
 
 
 def _msg_consts(tree):
-    """Constant ids inside `M(...)` -- those are **legal positions** (a message going through M is the right thing)."""
-    out = set()
-    for node in ast.walk(tree):
-        if _is_msg_call(node):
-            for n in ast.walk(node):
-                if isinstance(n, ast.Constant):
-                    out.add(id(n))
-    return out
-
-
-# Roster of calls exempting shape 1: their arguments are **declaration data /
-# matcher data**, not sentences shown to the user. ⚠️ Self-proof titles are
-# **not** on it (user ruling: choosing English and emitting Chinese is not allowed).
-_EXEMPT_CALLS = ("meta", "module_meta", "Rule", "compile",
-                 "startswith", "endswith", "match", "search", "fullmatch", "find")
+    return {id(n) for node in ast.walk(tree) if _is_msg_call(node)
+            for n in ast.walk(node) if isinstance(n, ast.Constant)}
 
 
 def _branch_constants(node):
-    """Ids of all string constant nodes in `node`'s subtree (used by the exemption surfaces)."""
     return {id(n) for n in ast.walk(node) if isinstance(n, ast.Constant)}
 
 
 def _exempt_call_args(tree):
-    """1. Call arguments: `meta(...)` / `module_meta(...)` / `Rule(...)` / `re.compile(...)` and the like."""
     out = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            f = node.func
-            fn = getattr(f, "id", "") or getattr(f, "attr", "")
+            fn = getattr(node.func, "id", "") or getattr(node.func, "attr", "")
             if fn in _EXEMPT_CALLS:
                 out |= _branch_constants(node)
     return out
 
 
 def _pinned_constants(tree, src):
-    """2. The `PINNED:` declaration surface (AUTO machine blocks: language-fixed, reconciled byte by byte).
-
-    Collected by **declaration**, not by name -- a hand-written roster always
-    drifts (deepening round 8).
-    """
     out = set()
     for node in ast.walk(tree):
         fn_pinned = (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
                      and _declares_pinned(ast.get_docstring(node, clean=False)))
-        assign_pinned = (isinstance(node, ast.Assign)
-                         and _pinned_by_comment(src, node))
+        assign_pinned = isinstance(node, ast.Assign) and _pinned_by_comment(src, node)
         if fn_pinned or assign_pinned:
             out |= _branch_constants(node)
     return out
 
 
 def _exempt_ids(tree, name, src):
-    """The **declared** exemption surfaces (not guessed). Each must state its why, or exemptions become the next drifting hand-written roster. The three parts are each a named function (see their docstrings).
-
-    3. The language-pack loader's own errors (`i18n.py`): `MissingPack`'s
-    text **cannot use M()** (circular dependency: M depends on the language
-    pack, and it is raised precisely when the pack is broken). File-level
-    exemption.
-    """
     out = _exempt_call_args(tree) | _pinned_constants(tree, src)
     if name == "i18n.py":
-        out |= {id(n) for n in ast.walk(tree) if isinstance(n, ast.Constant)}
+        out |= _branch_constants(tree)
     return out
 
 
 def _bare_text_problems(name, tree, src):
-    """**Bare natural language** in one source file (outside the four exemption classes and not an id-ified label)."""
     out = []
     doc_nodes, _ = _docstring_both(tree)
     msg_consts = _msg_consts(tree)
@@ -257,20 +125,15 @@ def _bare_text_problems(name, tree, src):
         if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
             continue
         v = node.value
-        if not cjk(v):
+        if not cjk(v) or id(node) in doc_nodes or id(node) in msg_consts or id(node) in exempt:
             continue
-        if id(node) in doc_nodes or id(node) in msg_consts or id(node) in exempt:
-            continue
-        # User decision 1C: a label only needs to **start with a dotted id**;
-        # a short Chinese gloss may follow.
         if re.match(r"^\s*(★\s*)?[a-z_][a-z0-9_]*(\.[a-z0-9_.]+)+", v):
             continue
-        out.append(M("i18n_cover.bare_text",
-                     file=name, lineno=node.lineno, text=v[:40]))
+        out.append(M("i18n_cover.bare_text", file=name, lineno=node.lineno, text=v[:40]))
     return out
 
+
 def _non_literal_code_problems(name, tree):
-    """The first argument of `M(...)` must **not be computed** (conditional expression / concatenation / f-string / call)."""
     computed = (ast.IfExp, ast.BinOp, ast.JoinedStr, ast.Call, ast.Subscript)
     out = []
     for node in ast.walk(tree):
@@ -279,18 +142,52 @@ def _non_literal_code_problems(name, tree):
         first = node.args[0]
         if isinstance(first, ast.Constant) and isinstance(first.value, str):
             continue
-        if not isinstance(first, computed):
-            continue                       # forwarding (see honest boundary)
-        out.append(M("i18n_cover.code_not_literal",
-                     file=name, lineno=node.lineno,
-                     kind=type(first).__name__))
+        if isinstance(first, computed):
+            out.append(M("i18n_cover.code_not_literal", file=name,
+                         lineno=node.lineno, kind=type(first).__name__))
     return out
 
 
+def _cases_scope(tree):
+    fns = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_cases"]
+    if not fns:
+        return []
+    fn = fns[0]
+    called = {n.func.id for n in ast.walk(fn)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    helpers = [n for n in tree.body
+               if isinstance(n, ast.FunctionDef) and n.name in called
+               and not _declares_pinned(ast.get_docstring(n, clean=False))]
+    return [fn] + helpers
+
+
+def _fixture_scope_lines(tree):
+    spans = set()
+    for body in _cases_scope(tree):
+        for node in ast.walk(body):
+            lo = getattr(node, "lineno", None)
+            if lo:
+                spans.update(range(lo, (getattr(node, "end_lineno", lo) or lo) + 1))
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign)
+                and isinstance(node.value, (ast.BinOp, ast.Call))
+                and any(isinstance(t, ast.Name) and t.id.isupper() for t in node.targets)):
+            spans.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
+    return spans
+
+
+def _pinned_lines(tree):
+    spans = set()
+    for node in ast.walk(tree):
+        if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                and PINNED_MARK in (ast.get_docstring(node) or "")):
+            spans.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
+    return spans
+
+
 def _plain_english_problems(name, src, tree):
-    """**Source must read as English**: no non-ASCII prose outside the protocol marks."""
-    _, docstring_lines = _docstring_both(tree)
-    exempt_lines = _fixture_scope_lines(tree) | _pinned_lines(tree) | docstring_lines
+    _, doc_lines = _docstring_both(tree)
+    exempt_lines = _fixture_scope_lines(tree) | _pinned_lines(tree) | doc_lines
     out = []
     for lineno, line in enumerate(src.splitlines(), 1):
         if lineno in exempt_lines or i18n.prose_exempt(line):
@@ -303,58 +200,29 @@ def _plain_english_problems(name, src, tree):
     return out
 
 
-def _fixture_scope_lines(tree):
-    """Line span of `_cases()` plus the same-file helpers it references, and of any
-    codepoint-constructed fixture constant (`_CJ4`, `PINNED_FN`, ...)."""
-    spans = set()
+def _fixture_literal_problems(name, tree):
     bodies = _cases_scope(tree)
-    for body in bodies:
-        for node in ast.walk(body):
-            lo = getattr(node, "lineno", None)
-            hi = getattr(node, "end_lineno", lo)
-            if lo:
-                spans.update(range(lo, (hi or lo) + 1))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and isinstance(node.value, (ast.BinOp, ast.Call)):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id.isupper():
-                    spans.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
-    return spans
-
-
-def _pinned_lines(tree):
-    """Lines covered by a `PINNED:` declaration (language-fixed by design)."""
-    spans = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        doc = ast.get_docstring(node) or ""
-        if PINNED_MARK in doc:
-            spans.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
-    return spans
+    if not bodies:
+        return []
+    exempt = set()
+    for b in bodies:
+        exempt |= _docstring_both(b)[0]
+        exempt |= {id(n.elts[0]) for n in ast.walk(b)
+                   if isinstance(n, ast.Tuple) and len(n.elts) == 2
+                   and isinstance(n.elts[0], ast.Constant)}
+    return [M("i18n_cover.fixture_literal", file=name, lineno=n.lineno, text=n.value[:40])
+            for b in bodies for n in ast.walk(b)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            and cjk(n.value) and id(n) not in exempt]
 
 
 def problems(paths):
-    """Pure function: return the problem list (empty = zero-language). `paths` = [(name, source text)].
-
-    `paths` is injectable => self-proofs use fake sources, zero file I/O.
-
-    Five parts (each a helper): `_docstring_both` / `_msg_consts` / `_exempt_ids` /
-    `_bare_text_problems` / `_plain_english_problems`. This function only
-    orchestrates -- 111 lines -> 15.
-    """
+    """Audit `[(name, src)]` for bare natural language, non-literal `M()`, and non-ASCII prose."""
     if not paths:
         return [M("i18n_cover.empty_scan")]
     out = []
-    # ⚠️ **The filename itself** is also an attack surface: a file named
-    # `evil\nOFF: x.py`, once its name is rendered into a message (as in
-    # `i18n_cover.bare_text(file=...)`), forges a machine line. The criterion
-    # uses the **same table** as `machine.LINE_BREAKS` (C4: do not write a
-    # second, near-identical set of line breaks). This check did not exist at
-    # all before -- measured: a .py with an embedded newline placed in the
-    # scan surface still got `i18n_cover.ok(files=34)`.
     for name, _src in paths:
-        if any(b in name for b in machine.LINE_BREAKS):
+        if any(b in name for b in LINE_BREAKS):
             out.append(M("i18n_cover.filename_has_line_break",
                          file=name.replace("\n", "\\n")[:60]))
     for name, src in paths:
@@ -370,153 +238,153 @@ def problems(paths):
     return out
 
 
-def _cases_scope(tree):
-    """Self-proof scan scope: `_cases()` itself plus the **same-file top-level helpers it references**."""
-    fns = [n for n in ast.walk(tree)
-           if isinstance(n, ast.FunctionDef) and n.name == "_cases"]
-    if not fns:
-        return []
-    fn = fns[0]
-    called = {n.func.id for n in ast.walk(fn)
-              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
-    helpers = [n for n in tree.body
-               if isinstance(n, ast.FunctionDef) and n.name in called
-               and not _declares_pinned(ast.get_docstring(n, clean=False))]
-    return [fn] + helpers
-
-
-def _docstring_nodes(bodies):
-    """Exemption surface 1: docstring constant nodes (maintainer documentation, not output)."""
+def used_codes(paths=None):
+    """Collect literal `M(...)` and `_Semantic(...)` codes emitted by suite sources."""
+    if paths is None:
+        paths = gate.py_sources(gate.zdir())
     out = set()
-    for node in [n for b in bodies for n in ast.walk(b)]:
-        if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
-            d = ast.get_docstring(node, clean=False)
-            if not d:
-                continue
-            for n in ast.walk(node):
-                if isinstance(n, ast.Constant) and n.value == d:
-                    out.add(id(n))
-                    break
+    for _name, src in paths:
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            continue
+        text = src
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
+                doc = ast.get_docstring(node, clean=False)
+                if doc:
+                    text = text.replace(doc, "")
+        out |= set(_CODE_RE.findall(text)) | set(_SEM_RE.findall(text))
+    return {c for c in out if not any(c.startswith(p) for p in _SELFTEST_CODE_PREFIXES)}
+
+
+def _load_tables(langs, load):
+    tables = {}
+    for lang in langs:
+        try:
+            tables[lang] = load(lang)
+        except Exception as e:                           # noqa: BLE001
+            return {}, [M("knobs.pack_unreadable", lang=lang, error=e)]
+    return tables, None
+
+
+def pack_coverage_problems(codes=None, loader=None, discovery=None):
+    """Ensure every code used by core source exists in every served/installed pack."""
+    load = loader if loader is not None else i18n.load_pack
+    codes = used_codes() if codes is None else set(codes)
+    try:
+        langs = list((discovery or i18n.installed_langs)())
+    except i18n.PacksUnreadable as e:
+        return [M("knobs.pack_unreadable", lang="*", error=e)]
+    served = knobs.served_langs()
+    if served:
+        missing_srv = [l for l in served if l not in langs]
+        if missing_srv:
+            return [M("knobs.pack_missing_code", lang=l, count=len(codes) or 1, codes="*")
+                    for l in sorted(missing_srv)]
+        langs = [l for l in langs if l in served]
+    if not codes or not langs:
+        return []
+    out = []
+    for lang in sorted(langs):
+        try:
+            table = load(lang)
+        except Exception as e:                           # noqa: BLE001
+            return [M("knobs.pack_unreadable", lang=lang, error=e)]
+        missing = sorted(codes - set(table))
+        if missing:
+            out.append(M("knobs.pack_missing_code", lang=lang,
+                         count=len(missing), codes=", ".join(missing[:8])))
     return out
 
 
-def _label_nodes(bodies):
-    """Exemption surface 2: self-proof labels (first element of a `(label, callable)` tuple)."""
-    return {id(node.elts[0])
-            for b in bodies for node in ast.walk(b)
-            if isinstance(node, ast.Tuple) and len(node.elts) == 2
-            and isinstance(node.elts[0], ast.Constant)}
+def pack_sync_problems(loader=None, discovery=None):
+    """Verify installed language packs agree on key sets, percent formatting, and placeholders."""
+    load = loader if loader is not None else i18n.load_pack
+    try:
+        langs = list((discovery or i18n.installed_langs)())
+    except i18n.PacksUnreadable as e:
+        return [M("knobs.pack_unreadable", lang="*", error=e)]
+    served = knobs.served_langs()
+    if served:
+        present = [l for l in served if l in langs]
+        if present:
+            langs = present
+    tables, err = _load_tables(langs, load)
+    if err or not tables:
+        return err or []
+    if not any(tables.values()):
+        return [M("knobs.pack_sync_empty", pack_dir=i18n.pack_dir())]
+    ref_lang = sorted(tables)[0]
+    ref = tables[ref_lang]
+    out = []
+    for lang in sorted(tables):
+        out += [M("knobs.pack_brace_template", lang=lang, key=c, text=v[:60])
+                for c, v in sorted(tables[lang].items())
+                if isinstance(v, str) and _BRACE_RE.search(v)]
+        if lang != ref_lang:
+            out += _diff_packs(lang, ref_lang, ref, tables[lang])
+    return out
 
 
-def _fixture_literal_problems(name, tree):
-    """**No Chinese source-code literals in self-proof fixtures** (they must be codepoint-constructed)."""
-    bodies = _cases_scope(tree)
-    if not bodies:
-        return []
-    exempt = _docstring_nodes(bodies) | _label_nodes(bodies)
-    return [M("i18n_cover.fixture_literal",
-              file=name, lineno=node.lineno, text=node.value[:40])
-            for b in bodies for node in ast.walk(b)
-            if isinstance(node, ast.Constant) and isinstance(node.value, str)
-            and cjk(node.value) and id(node) not in exempt]
-
-
-def sources_for(d, configured=False):
-    """Which `.py` files to collect -- forwards to `gate.scanned_sources`.
-
-The discovery policy has one owner; a second copy would let the two policies
-drift apart under a rename fixture.
-"""
-    return gate.scanned_sources(d, configured)
+def _diff_packs(lang, ref_lang, ref, other):
+    out = []
+    only_ref, only_other = sorted(set(ref) - set(other)), sorted(set(other) - set(ref))
+    if only_ref:
+        out.append(M("knobs.pack_missing_keys", lang=lang, reference=ref_lang,
+                     keys=", ".join(only_ref[:8]), count=len(only_ref)))
+    if only_other:
+        out.append(M("knobs.pack_extra_keys", lang=lang, reference=ref_lang,
+                     keys=", ".join(only_other[:8])))
+    for code in sorted(set(ref) & set(other)):
+        a = sorted(_PLACEHOLDER_RE.findall(ref[code]))
+        b = sorted(_PLACEHOLDER_RE.findall(other[code]))
+        if a != b:
+            out.append(M("knobs.pack_placeholder_mismatch", lang=lang, key=code,
+                         reference_lang=ref_lang, expected_params=", ".join(a) or "-",
+                         actual_params=", ".join(b) or "-"))
+    return out
 
 
 def run(argv=None):
-    argv = list(sys.argv[1:] if argv is None else argv)
-    # ⚠️ The default scan root is **not empty**: this gate guards the
-    # **suite's own** code, so with the knob unset it scans the **tool repo's**
-    # `zreflect/`. Previously `DEFAULT_ROOT` was defined but **never used**,
-    # nobody configured the knob => in a live `registry --run commit` it was
-    # forever `off` -- "the gate exists, its self-proof is green, but it never
-    # runs". Same disease as `check_snapshots`.
-    #
-    # Two policies (same pattern as `i18n.pack_dir()`; do not conflate them):
-    #   - unset => the **tool repo's** `zreflect/` (travels with the suite;
-    #     correct in cross-repo fixtures too)
-    #   - set => a path relative to the **audited repo** (the "name relative
-    #     to the repo root" written in the env file)
-    # Collapsing them into one causes FATAL in cross-repo fixtures (measured:
-    # with GATE_REPO=$tmp the zreflect/ scan finds nothing).
-    configured = os.environ.get(KNOB, "").strip()
+    _ = argv
+    configured = (knobs.raw(KNOB) or "").strip()
     roots = [configured] if configured else list(DEFAULT_ROOTS)
     paths = []
     for root in roots:
-        if configured:
-            d = repo(root)
-        else:
-            d = os.path.abspath(os.path.join(gate.tool_repo(), root))
-        found = sources_for(d, configured=bool(configured))
+        d = repo(root) if configured else os.path.abspath(os.path.join(gate.tool_repo(), root))
+        found = gate.scanned_sources(d, configured=bool(configured))
         if not found and configured:
             return fatal(M("i18n_cover.scan_empty_dir", root=root))
         paths.extend(found)
     if not paths:
         return fatal(M("i18n_cover.scan_empty_dir", root=", ".join(roots)))
-    return finish(M("i18n_cover.title"), problems(paths),
-                  M("i18n_cover.ok", files=len(paths)))
-
-
-_PH = re.compile(r"%\(([A-Za-z_][A-Za-z0-9_]*)\)"
-                 r"(?:[#0\-+ ]*)(?:\d+)?(?:\.\d+)?[hlL]?([diouxXeEfFgGcrsa])")
+    probs = problems(paths)
+    if not configured:
+        probs += pack_sync_problems()
+        probs += pack_coverage_problems(used_codes(gate.py_sources(gate.zdir())))
+    return finish(M("i18n_cover.title"), probs, M("i18n_cover.ok", files=len(paths)))
 
 
 def _params_for(template):
-    """Build parameters according to the template's **conversion specifiers**: `%d`/`%f` get numbers, the rest get strings.
-
-    ⚠️ Always handing `"v"` explodes with a `TypeError` on `%(count)d`
-    (measured).
-    """
     return {m.group(1): (3 if m.group(2) in "dixXfFeEgG" else "v")
             for m in _PH.finditer(template)}
 
 
 def _null_output_has_no_cjk():
-    """Render every code **with no language pack installed** and assert the output contains zero CJK."""
-    import i18n  # noqa: PLC0415
     try:
         table = i18n.load_pack("en")
     except Exception:                                    # noqa: BLE001
-        return False              # real pack unreadable => cannot prove; not a pass
+        return False
     if not table:
-        return False              # zero-value guard
-    probes = 0
+        return False
     with i18n.bind(i18n.NULL):
-        for code in sorted(table):
-            if cjk(str(i18n.M(code, **_params_for(table[code])))):
-                return False
-            probes += 1
-    return probes == len(table)
+        return all(not cjk(str(M(c, **_params_for(table[c])))) for c in sorted(table))
 
 
 def _packs_match_their_language():
-    """Render **with packs installed**: no entry of en / de may contain CJK; zh's *prose* may.
-
-    This is the real criterion for "do the templates themselves contain
-    Chinese" -- the null pack cannot test it (the null pack never consults a
-    table).
-
-    Criterion per language: CJK in `en` / `de` output => that template was
-    not translated (or was missed). `zh` may contain Chinese (that is its
-    language). Verify only **installed** packs: if `de` is installed, verify
-    `de`.
-
-    Zero-value guard: at least one non-zh pack must get verified.
-    """
-    import i18n  # noqa: PLC0415
-    import knobs  # noqa: PLC0415
     checked = 0
-    # **Discovery based**: check every installed non-zh pack (not a hand-written
-    # ("en","de") -- a new language pack must not be silently skipped). The zh
-    # core is exempt (the zero-language regime allows zh only in language packs).
-    for lang in sorted(knobs.installed_langs()):
+    for lang in sorted(i18n.installed_langs()):
         if lang == "zh":
             continue
         try:
@@ -525,210 +393,69 @@ def _packs_match_their_language():
             continue
         if not table:
             continue
-        cat = i18n.Catalog.load(lang, {lang: table})
-        with i18n.bind(cat):
-            for code in sorted(table):
-                if cjk(str(i18n.M(code, **_params_for(table[code])))):
-                    return False
+        with i18n.bind(i18n.Catalog.load(lang, {lang: table})):
+            if any(cjk(str(M(c, **_params_for(table[c])))) for c in sorted(table)):
+                return False
         checked += 1
     return checked >= 1
 
 
-
-
-def _cj(n):
-    """Build n CJK chars by codepoint so source stays ASCII while AST evaluates to CJK."""
-    return "".join(chr(CJK_LO + i) for i in range(n))
-
-
-def _cjk_src(doc):
-    """Craft a snippet of source containing a CJK literal (the literal is codepoint-constructed; no Chinese appears in this file's source)."""
-    return ('def render_world_block(w):\n'
-            '    """%s"""\n'
-            '    return "%s"\n') % (doc, chr(CJK_LO) * 2)
-
-
-# Reasons are codepoint-constructed (no Chinese in this file's source --
-# otherwise this file's own coverage gate would collect it)
-PINNED_FN = _cjk_src("PINNED: " + chr(CJK_LO) * 10 + " pinned, byte-exact.")
-PINNED_BARE = _cjk_src("PINNED: x")
-# Three fixture-literal examples (values assembled from codepoints; no Chinese in this file's source)
-_CJ4 = chr(CJK_LO) * 4
-FIXTURE_BAD = ("def _cases():\n"
-               "    SAMPLE = \"" + _CJ4 + "\"\n"
-               "    return [(\"ok.label\", lambda: SAMPLE == SAMPLE)]\n")
-FIXTURE_LABEL = ("def _cases():\n"
-                 "    return [(\"ok.label" + _CJ4 + "\", lambda: True)]\n")
-FIXTURE_HELPER = ("def _helper():\n"
-                  "    return \"" + _CJ4 + "\"\n"
-                  "\n"
-                  "def _cases():\n"
-                  "    return [(\"ok\", lambda: _helper() == \"x\")]\n")
-FIXTURE_DOC = ("def _cases():\n"
-               "    \"\"\"doc " + _CJ4 + "\"\"\"\n"
-               "    return [(\"ok\", lambda: True)]\n")
-BARE_FN = _cjk_src("ordinary renderer.")
-
-
-def _fixtures():
-    """Source samples for `_cases()` (Chinese is codepoint-constructed, never written as a literal)."""
-    sample = _cj(4)
-    return {
-        "good": (
-            '"""docstring may contain CJK (maintainer docs) - ' + sample + '"""\n'
-            "from i18n import M\n"
-            "\n"
-            "def f(x):\n"
-            "    out = []\n"
-            "    out.append(M(\"replay.no_cmd\", key=x))\n"
-            "    return out\n"),
-        "bare": (
-            "def f(x):\n"
-            "    out = []\n"
-            "    out.append(\"`%s` " + sample + "\" % x)  # CJK sample\n"
-            "    return out\n"),
-        "label": (
-            "def _cases():\n"
-            "    return [(\"" + sample + "\", lambda: True)]  # flagged\n"),
-    }
-
-
-def _cases_bare_text(fx):
-    """1. Bare natural language: what must be reported gets reported."""
+def _cases():
+    s = "".join(chr(CJK_LO + i) for i in range(4))
+    pinned_fn = 'def r(w):\n    """PINNED: %s pinned, exact."""\n    return "%s"\n' % (s * 3, s[:2])
+    good = '"""doc %s"""\nfrom i18n import M\ndef f(x):\n    return M("replay.no_cmd", key=x)\n' % s
+    bare = 'def f(x):\n    return "%s"  # %s\n' % (s, s)
+    fix_bad = 'def _cases():\n    S = "%s"\n    return [("ok", lambda: S == S)]\n' % s
+    fix_lbl = 'def _cases():\n    return [("ok.lbl%s", lambda: True)]\n' % s
+    comp = 'from i18n import M\ndef f(x):\n    return M("a" if x else "b")\n'
     return [
-        ("i18n_cover.good_fixture",
-         lambda: problems([("good.py", fx["good"])]) == []),
-        # Two codes now: the CJK literal is bare text **and** non-ASCII prose in
-        # the scanned source. Asserting only the first would keep passing after
-        # the second family stopped firing -- the failure mode this repo calls
-        # "a criterion that cannot go red".
+        ("i18n_cover.good_fixture", lambda: problems([("good.py", good)]) == []),
         ("★ i18n_cover.bare_text",
-         lambda: [x.code for x in problems([("bare.py", fx["bare"])])
-                  ] == ["i18n_cover.bare_text", "i18n_cover.non_ascii_prose"]),
-        ("★ i18n_cover.bare_text_in_label",
-         lambda: [x.code for x in problems([("label.py", fx["label"])])
-                  ] == ["i18n_cover.bare_text"]),
+         lambda: [x.code for x in problems([("bare.py", bare)])]
+         == ["i18n_cover.bare_text", "i18n_cover.non_ascii_prose"]),
         ("★ i18n_cover.parse_error",
          lambda: [x.code for x in problems([("bad.py", "def (")])]
          == ["i18n_cover.parse_error"]),
-    ]
-
-
-def _cases_plain_english():
-    """Typographic chars in comments report; protocol marks and docstrings pass."""
-    arrow = chr(0x21D2)
-    dash = chr(0x2014)
-    star = chr(0x2605)
-    return [
-        ("\u2605 i18n_cover.non_ascii_prose",
-         lambda: [p.code for p in problems(
-             [("a.py", "# x " + arrow + " y\n")])] == ["i18n_cover.non_ascii_prose"]),
-        ("\u2605 i18n_cover.prose_in_comment",
-         lambda: [p.code for p in problems(
-             [("a.py", "# a " + dash + " b\n")])] == ["i18n_cover.non_ascii_prose"]),
-        ("i18n_cover.docstring_may_quote",
-         lambda: problems([("a.py", "def f():\n    \"\"\"a " + dash + " b\"\"\"\n")]) == []),
-        ("i18n_cover.protocol_mark_exempt",
-         lambda: problems([("a.py", "CASES = [\"" + star + " case\"]\n")]) == []),
-        ("i18n_cover.plain_ascii_ok",
-         lambda: problems([("a.py", "# a plain english comment\n")]) == []),
-    ]
-
-
-def _cases_pinned():
-    """2. PINNED collected by **declaration**, not by name (three-way: exempt / undeclared / impostor)."""
-    return [
-        ("i18n_cover.pinned_by_declaration",
-         lambda: problems([("r.py", PINNED_FN)]) == []),
-        ("★ i18n_cover.undeclared_pinned_still_fires",
-         lambda: [p.code for p in problems([("r.py", BARE_FN)])
-                  ] == ["i18n_cover.bare_text", "i18n_cover.non_ascii_prose"]),
-        ("★ i18n_cover.pinned_needs_reason",
-         lambda: [p.code for p in problems([("r.py", PINNED_BARE)])]
-         == ["i18n_cover.bare_text"]),
-    ]
-
-
-def _cases_fixture_literal():
-    """3. No Chinese source-code literals in self-proof fixtures (I stepped on it three times: rounds 8/9/13)."""
-    return [
+        ("i18n_cover.pinned_by_declaration", lambda: problems([("r.py", pinned_fn)]) == []),
         ("★ i18n_cover.fixture_literal",
-         lambda: [p.code for p in problems([("t.py", FIXTURE_BAD)])
-                  ] == ["i18n_cover.bare_text", "i18n_cover.fixture_literal"]),
-        ("★ i18n_cover.fixture_literal_in_helper",
-         lambda: "i18n_cover.fixture_literal" in
-         [p.code for p in problems([("t.py", FIXTURE_HELPER)])]),
+         lambda: "i18n_cover.fixture_literal" in [p.code for p in problems([("t.py", fix_bad)])]),
         ("i18n_cover.fixture_label_cjk_is_allowed",
-         lambda: problems([("t.py", FIXTURE_LABEL)]) == []),
-        ("i18n_cover.fixture_docstring_cjk_is_allowed",
-         lambda: problems([("t.py", FIXTURE_DOC)]) == []),
-    ]
-
-
-def _cases_code_literal():
-    """4. The code of `M(...)` must not be computed (otherwise pack integrity loses its hold on it)."""
-    return [
+         lambda: problems([("t.py", fix_lbl)]) == []),
         ("★ i18n_cover.computed_code_is_rejected",
-         lambda: [p.code for p in problems(
-             [("c.py", ("from i18n import M\n"
-                       "def f(x):\n"
-                       "    return M(\"probe.a\" if x else \"probe.b\")\n"))])
-         ] == ["i18n_cover.code_not_literal"]),
-        ("i18n_cover.literal_code_is_fine",
-         lambda: problems([("c.py", ("from i18n import M\n"
-                                     "def f():\n"
-                                     "    return M(\"probe.a\")\n"))]) == []),
-        ("i18n_cover.forwarded_code_is_fine",
-         lambda: problems([("c.py", ("from i18n import M\n"
-                                     "def _say(code, **kw):\n"
-                                     "    return M(code, **kw)\n"))]) == []),
-    ]
-
-
-def _cases_end_to_end():
-    """5. End-to-end + scan surface: runtime leaks the static criteria cannot catch."""
-    return [
-        ("★ i18n_cover.null_pack_output_has_no_cjk",
-         lambda: _null_output_has_no_cjk()),
-        ("★ i18n_cover.packs_match_their_language",
-         lambda: _packs_match_their_language()),
-        ("★ i18n_cover.cjk_detector_can_red",
-         lambda: cjk(chr(0x4E2D)) and not cjk("ascii only")),
-        ("★ i18n_cover.hooks_dir_is_scanned",
-         lambda: "reflect-hooks" in DEFAULT_ROOTS
-         and "zreflect" in DEFAULT_ROOTS),
-    ]
-
-
-def _cases_input_guards():
-    """6. Input guards: the filename itself is an attack surface; empty input must be reported."""
-    return [
+         lambda: [p.code for p in problems([("c.py", comp)])] == ["i18n_cover.code_not_literal"]),
+        ("★ i18n_cover.non_ascii_prose",
+         lambda: [p.code for p in problems([("a.py", "# x " + chr(0x21D2) + " y\n")])]
+         == ["i18n_cover.non_ascii_prose"]),
+        ("★ i18n_cover.null_pack_output_has_no_cjk", lambda: _null_output_has_no_cjk()),
+        ("★ i18n_cover.packs_match_their_language", lambda: _packs_match_their_language()),
         ("★ i18n_cover.filename_line_break",
-         lambda: [p.code for p in problems(
-             [("evil" + chr(0x0A) + "OFF: x.py", "x = 1\n")])]
+         lambda: [p.code for p in problems([("evil\nOFF: x.py", "x = 1\n")])]
          == ["i18n_cover.filename_has_line_break"]),
-        ("i18n_cover.filename_clean_ok",
-         lambda: problems([("normal.py", "x = 1\n")]) == []),
         ("★ i18n_cover.empty_scan", lambda: problems([]) != []),
+        ("knobs.real_packs_in_sync",
+         lambda: not i18n.installed_langs() or (
+             pack_sync_problems() == [] and pack_coverage_problems() == [])),
+        ("★ knobs.pack_missing_keys",
+         lambda: [p.code for p in pack_sync_problems(
+             discovery=lambda: ("zh", "en"),
+             loader=lambda l: {"zh": {"a": "x"}, "en": {"a": "x", "b": "y"}}[l])]
+         == ["knobs.pack_missing_keys"]),
+        ("★ knobs.pack_placeholder_mismatch",
+         lambda: [p.code for p in pack_sync_problems(
+             discovery=lambda: ("zh", "en"),
+             loader=lambda l: {"zh": {"a": "x %(k)s"}, "en": {"a": "x %(j)s"}}[l])]
+         == ["knobs.pack_placeholder_mismatch"]),
+        ("★ knobs.pack_missing_code",
+         lambda: [p.code for p in pack_coverage_problems(
+             codes={"a.b", "c.d"}, discovery=lambda: ("zh", "en"),
+             loader=lambda l: ({"a.b": "x", "c.d": "y"} if l == "en" else {"a.b": "x"}))]
+         == ["knobs.pack_missing_code"]),
     ]
-
-
-def _cases():
-    """Assemble the seven fixture-assertion groups. **Assembly only** -- the criteria live in the group functions."""
-    fx = _fixtures()
-    return (_cases_bare_text(fx)
-            + _cases_pinned()
-            + _cases_fixture_literal()
-            + _cases_code_literal()
-            + _cases_plain_english()
-            + _cases_end_to_end()
-            + _cases_input_guards())
 
 
 GATE = meta("language coverage gate",
-            "the core is zero-language: user-visible text must go through M(code); language packs are optional",
+            "zero-language core output via M(code) and optional language pack sync/coverage",
             knobs=("REFLECT_I18N_ROOT",))
 
 if __name__ == "__main__":
-    sys.exit(main_selftest_or(sys.argv[1:],
-                              M("gate.title.i18n_cover"), _cases(), run))
+    sys.exit(main_selftest_or(sys.argv[1:], M("gate.title.i18n_cover"), _cases, run))

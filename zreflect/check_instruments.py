@@ -45,28 +45,27 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gate  # noqa: E402
 import knobs  # noqa: E402
-from gate import (  # noqa: E402
-    fatal,
-    finish,
-    load_spec,
-    main_selftest_or,
-    meta,
-    off,
-    repo,  # noqa: E402
-)
+from facts import facts_of, load_or_fatal  # noqa: E402
+from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
 from i18n import M  # noqa: E402
-from ledger import facts_of, load_or_fatal  # noqa: E402
 
-INSTRUMENTS_RAW = os.environ.get("REFLECT_INSTRUMENTS", "").strip()
-DAYS_RAW = os.environ.get("REFLECT_INSTRUMENT_DAYS", "").strip()
+
+def _instruments_raw():
+    return (knobs.raw("REFLECT_INSTRUMENTS") or "").strip()
+
+
+def _days_raw():
+    return (knobs.raw("REFLECT_INSTRUMENT_DAYS") or "").strip()
 
 
 def _days():
-    if not DAYS_RAW:
+    raw = _days_raw()
+    if not raw:
         return None
     try:
-        return float(DAYS_RAW)
+        return float(raw)
     except ValueError:
         return None
 
@@ -147,27 +146,13 @@ def problems(ledger, methods=None, days=None):
     return out
 
 
-def _load_methods(name):
-    """Read the method registry (the JSON `REFLECT_INSTRUMENTS` points at).
-    Returns `(methods, rc)`."""
-    if not name:
-        return [], 0
-    reg_path = repo(name)
-    if not os.path.exists(reg_path):
-        return [], fatal(M("instruments.registry_missing", name=name))
-    reg, err = load_spec(reg_path)
-    if err:
-        return [], fatal(M("instruments.spec_broken", name=name, error=err))
-    return reg.get("methods") or [], 0
-
-
 def run(argv=None):
-    argv = list(sys.argv[1:] if argv is None else argv)
-    name = INSTRUMENTS_RAW
-    days = _days()
-    if DAYS_RAW and days is None:
+    _ = argv
+    name = _instruments_raw()
+    days_raw, days = _days_raw(), _days()
+    if days_raw and days is None:
         return fatal(M("instruments.days_unparseable",
-                       days_knob="REFLECT_INSTRUMENT_DAYS", value=DAYS_RAW))
+                       days_knob="REFLECT_INSTRUMENT_DAYS", value=days_raw))
     if not name and days is None:
         return off(M("instruments.off",
                      days_knob="REFLECT_INSTRUMENT_DAYS",
@@ -175,9 +160,18 @@ def run(argv=None):
     led_path = repo(knobs.get("REFLECT_FACTS"))
     if not os.path.exists(led_path):
         return fatal(M("instruments.ledger_missing", path=led_path))
-    methods, rc = _load_methods(name)
-    if rc:
-        return rc
+    methods = []
+    if name:
+        reg, _n, rc = gate.load_gate_spec(
+            [], "REFLECT_INSTRUMENTS",
+            off_msg=lambda _k: M("instruments.off", days_knob="REFLECT_INSTRUMENT_DAYS",
+                                 instruments_knob="REFLECT_INSTRUMENTS"),
+            missing_msg=lambda k: M("instruments.registry_missing", name=k),
+            broken_msg=lambda k, err: M("instruments.spec_broken", name=k, error=err),
+        )
+        if rc is not None:
+            return rc
+        methods = reg.get("methods") or []
     probs = problems(load_or_fatal(led_path), methods=methods, days=days)
     return finish(M("instruments.title"), probs, _ok_line(name, methods, days))
 

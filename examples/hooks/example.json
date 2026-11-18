@@ -2,7 +2,7 @@
   "description": "Install chained git hooks, verify them, and uninstall reversibly",
   "steps": [
     {"argv": ["git", "init", "-q"]},
-    {"argv": ["{python}", "reflect-hooks/install.py", "--chain", "{repo}"]},
+    {"argv": ["{python}", "reflect-hooks/hook.py", "--chain", "{repo}"]},
     {"argv": ["{python}", "exercise.py"], "contains": ["hooks example ok"]}
   ]
 }

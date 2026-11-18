@@ -72,9 +72,10 @@ import sys
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gate  # noqa: E402
+import i18n  # noqa: E402
 import knobs  # noqa: E402
-import machine  # noqa: E402
-from gate import fatal, load_spec, main_selftest_or, meta, off, repo  # noqa: E402
+from gate import fatal, main_selftest_or, meta  # noqa: E402
 from i18n import M  # noqa: E402
 
 # Derived from the knob registry (single source of truth) -- a handwritten
@@ -240,7 +241,7 @@ def spec_problems(checks):
 
 def _timeout():
     """Positive timeout seconds; `_timeout_problem()` validates before probing."""
-    raw = os.environ.get("REFLECT_DOCTOR_TIMEOUT", "").strip()
+    raw = (knobs.raw("REFLECT_DOCTOR_TIMEOUT") or "").strip()
     if not raw:
         return DEFAULT_TIMEOUT
     return float(raw)
@@ -265,53 +266,28 @@ def _dispatch(check, timeout):
 
 # ---- Entry ----
 
-def _spec_path():
-    """Resolution order: explicit knob > default name. Explicitly configured
-    but pointing at a missing file => return that path (run FATALs on the
-    spot); unset and the default name absent => None (disabled)."""
-    name = os.environ.get("REFLECT_DOCTOR", "").strip()
-    if name:
-        return repo(name)
-    p = repo(DEFAULT_SPEC)
-    return p if os.path.exists(p) else None
-
-
 def _timeout_problem():
     """`REFLECT_DOCTOR_TIMEOUT` must be a positive number. Returns a problem or None."""
-    raw = os.environ.get("REFLECT_DOCTOR_TIMEOUT", "").strip()
+    raw = (knobs.raw("REFLECT_DOCTOR_TIMEOUT") or "").strip()
     if not raw:
         return None
     try:
         value = float(raw)
     except ValueError:
         return M("doctor.bad_timeout", value=raw)
-    # Range checked explicitly; no `raise ValueError` as control flow (`float()`
-    # already handles "not a number"; this is only "a number but not positive" --
-    # an independent failure cause that shouldn't borrow the exception channel)
     if value <= 0:
         return M("doctor.bad_timeout", value=raw)
     return None
 
 
-def _load_checks():
-    """Load the spec and take `checks`. Returns `(checks, done_rc)`.
-
-    `done_rc is not None` => the caller **must return it directly** (it may be 0;
-    `off` is 0). `None` => keep judging below. "rc non-zero" must **not** be
-    used here as the "already handled" signal, because `off()`'s rc is **0**
-    (off is not a failure). A missing default spec => `off`; a
-    configured-but-missing spec or load error => `fatal` (rc 2).
-    """
-    p = _spec_path()
-    if p is None:
-        return None, off(M("doctor.off", name=DEFAULT_SPEC,
-                           path=os.path.join("zreflect", DEFAULT_SPEC)
-                           + ".example"))
-    if not os.path.exists(p):
-        return None, fatal(M("doctor.spec_missing"))
-    spec, err = load_spec(p)
-    if err:
-        return None, fatal(err)
+def _load_checks(argv):
+    spec, _name, rc = gate.load_gate_spec(
+        argv, "REFLECT_DOCTOR",
+        off_msg=lambda n: M("doctor.off", name=n or DEFAULT_SPEC),
+        missing_msg=lambda _n: M("doctor.spec_missing"),
+    )
+    if rc is not None:
+        return None, rc
     return (spec.get("checks") if isinstance(spec, dict) else None), None
 
 
@@ -320,7 +296,7 @@ def run(argv=None):
     bad = _timeout_problem()
     if bad:
         return fatal(bad)
-    checks, done_rc = _load_checks()
+    checks, done_rc = _load_checks(argv)
     if done_rc is not None:
         return done_rc
     probs = spec_problems(checks)
@@ -331,7 +307,7 @@ def run(argv=None):
         return 2
     downs = down_labels(checks)
     if downs:
-        print(machine().emit("down", ", ".join(downs)))
+        print(i18n.emit("down", ", ".join(downs)))
         return 1
     print("ok")
     return 0

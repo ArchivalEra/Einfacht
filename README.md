@@ -48,7 +48,7 @@ cd <your-repo>
 python3 zreflect/facts.py --init                  # skeleton docs, never overwrites
 python3 zreflect/facts.py                         # first measurement
 python3 zreflect/facts.py --render-doc            # render the state document
-python3 reflect-hooks/install.py --chain          # chain into your git hooks
+python3 reflect-hooks/hook.py --chain             # chain into your git hooks
 ```
 
 `--init` writes the skeleton documents (`STATE.md`, `PRINCIPLES.md`, `AGENTS.md`,
@@ -63,7 +63,7 @@ optional `knobs.json` in the repo root (read identically by hooks, CLI, and CI):
 ```
 
 The suite needs no install step of its own: it is scripts plus a config file, and
-`install.py --chain` adds its lines to the hooks the repo already has instead of
+`hook.py --chain` adds its lines to the hooks the repo already has instead of
 replacing them. Nothing is written outside the repo.
 
 Usage after that — knobs, output, what each exit code means — lives in

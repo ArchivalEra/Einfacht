@@ -2,8 +2,8 @@
 
 Every declared gate has a same-named directory here. The additional directories
 cover the suite's core seams: bootstrap, custom collectors, custom gates and
-phases, git hooks, next-turn collection, CI result recording, environment
-probing, and the registry / knob / machine-line / i18n / harness entry points.
+phases, git hooks, next-turn collection, environment probing, and the
+registry / knob / i18n / harness entry points.
 
 `--check` enforces the gate coverage: adding a gate without an example is a
 red criterion, so an example cannot quietly become decoration.

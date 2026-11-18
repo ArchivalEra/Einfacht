@@ -91,24 +91,16 @@ def _git(repo, *args):
 
 
 def unpublished_commits(repo):
-    """Unpushed commit subjects. Unreadable => None (**not an empty list**).
-
-    ⚠️ The command must carry `HEAD`: `git log --oneline --not --remotes`
-    (**no start point**) **silently returns 0 lines** -- it looks like
-    "everything is pushed" but is really "no start point given, so git took a
-    different default path". Measured: same repo, 26 lines with `HEAD`, 0
-    without. This is the failure this repo hates most: **no error, wrong
-    answer**.
-    """
-    branch = (_git(repo, "rev-parse", "--abbrev-ref", "HEAD") or "").strip()
-    if not branch or branch == "HEAD":
+    """Unpushed commit subjects. Unreadable => None; unborn branch => `[]`."""
+    if _git(repo, "rev-parse", "--git-dir") is None:
         return None
-    # Order matters too: `HEAD` first, `--not --remotes` after (a `git log`
-    # start point must be inside the rev list, `--not` alone is not enough).
+    branch = (_git(repo, "symbolic-ref", "--short", "HEAD") or "").strip()
+    if not branch:
+        return None
+    if _git(repo, "rev-parse", "--verify", "HEAD") is None:
+        return []
     out = _git(repo, "log", "--oneline", "HEAD", "--not", "--remotes")
-    if out is None:
-        return None
-    return [ln.strip() for ln in out.splitlines() if ln.strip()]
+    return [ln.strip() for ln in out.splitlines() if ln.strip()] if out is not None else None
 
 
 def working_tree(repo):
@@ -272,7 +264,21 @@ def _cases():
          lambda: _manual_entry_activates_pack()),
         ("★ next.nonexistent_root_is_loud",
          lambda: _nonexistent_root_loud()),
+        ("next.unborn_branch_is_empty",
+         lambda: _unborn_branch_case()),
     ]
+
+
+def _unborn_branch_case():
+    import shutil
+    import subprocess
+    import tempfile  # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        subprocess.run(["git", "init", "-q", d], check=True)
+        return unpublished_commits(d) == []
+    finally:
+        shutil.rmtree(d, True)
 
 
 def _resolved_question_dropped():

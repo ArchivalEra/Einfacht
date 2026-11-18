@@ -39,7 +39,6 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import criteria  # noqa: E402
 import gate  # noqa: E402
 import knobs  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta  # noqa: E402
@@ -158,7 +157,7 @@ def _settling_problems(name, text, chk):
     # The settler must be a **command**, not the name of a file: `zreflect/
     # facts.py` alone names a script and says nothing about how to run it (a
     # bare path is not a command and cannot be replayed).
-    out += criteria.prose_in_exec_problems(name, "Settling", sv)
+    out += gate.prose_in_exec_problems(name, "Settling", sv)
     return out
 
 

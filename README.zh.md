@@ -44,7 +44,7 @@ cd <你的仓>
 python3 zreflect/facts.py --init                  # 生成骨架文档，不覆盖已有文件
 python3 zreflect/facts.py                         # 量一遍
 python3 zreflect/facts.py --render-doc            # 渲染状态文档
-python3 reflect-hooks/install.py --chain          # 链进你已有的 git 钩子
+python3 reflect-hooks/hook.py --chain             # 链进你已有的 git 钩子
 ```
 
 `--init` 会写出骨架文档（`STATE.md`、`PRINCIPLES.md`、`AGENTS.md`、`README.md`）、
@@ -57,7 +57,7 @@ python3 reflect-hooks/install.py --chain          # 链进你已有的 git 钩�
 }
 ```
 
-它自身不需要安装步骤：就是几个脚本加一份配置文件，`install.py --chain` 把它的
+它自身不需要安装步骤：就是几个脚本加一份配置文件，`hook.py --chain` 把它的
 行加进仓里已有的钩子，而不是替换掉它们。不往仓外写任何东西。
 
 之后的用法 —— 旋钮、输出、每个退出码是什么意思 —— 见

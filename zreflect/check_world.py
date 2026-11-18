@@ -90,20 +90,14 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import (  # noqa: E402
-    fatal,
-    finish,
-    load_spec,
-    main_selftest_or,
-    meta,
-    off,
-    repo,  # noqa: E402
-)
+import gate  # noqa: E402
+import knobs  # noqa: E402
+from gate import finish, main_selftest_or, meta, quote, run_cmd  # noqa: E402
 from i18n import M  # noqa: E402
-from runner import quote, run_cmd  # noqa: E402
 
-WORLD_RAW = os.environ.get("REFLECT_WORLD", "").strip()
-LINE_OVERRIDE = os.environ.get("REFLECT_WORLD_LINE", "").strip()
+
+def _line_override():
+    return (knobs.raw("REFLECT_WORLD_LINE") or "").strip()
 
 # Required fields of a line (the four-piece set of the shape suggested by
 # issue #13; extra fields are allowed to pass through verbatim -- each line's
@@ -120,7 +114,7 @@ def current_branch():
         r = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True, text=True, timeout=5,
-            cwd=repo(),
+            cwd=gate.repo(),
                            encoding="utf-8", errors="replace")
     except (OSError, subprocess.TimeoutExpired):
         return ""
@@ -141,7 +135,7 @@ def resolve_line(spec, branch, override=None):
     lines = lines if isinstance(lines, dict) else {}
     active = str(spec.get("active") or "").strip() \
         if isinstance(spec, dict) else ""
-    ov = (override if override is not None else LINE_OVERRIDE).strip()
+    ov = (_line_override() if override is None else override).strip()
     if ov and ov in lines:
         return ov, lines[ov]
     if branch and branch in lines:
@@ -249,37 +243,24 @@ def stamp_problems(spec, runner=None):
             for p in _one_stamp_problem(name, stamps[name], run)]
 
 
-def _spec_path():
-    """Explicit knob > default name. Explicitly configured but pointing at a
-    missing file => return that path (run FATALs on the spot); unset and the
-    default name absent => None (disabled)."""
-    if WORLD_RAW:
-        return repo(WORLD_RAW)
-    p = repo("world.json")
-    return p if os.path.exists(p) else None
-
-
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    p = _spec_path()
-    if p is None:
-        return off(M("world.off"))
-    if not os.path.exists(p):
-        return fatal(M("world.knob_file_missing"))
-    spec, err = load_spec(p)
-    if err:
-        return fatal(M("world.spec_broken", name=p, error=err))
+    spec, spec_name, rc = gate.load_gate_spec(
+        argv, "REFLECT_WORLD",
+        off_msg=lambda _n: M("world.off"),
+        missing_msg=lambda _n: M("world.knob_file_missing"),
+        broken_msg=lambda n, err: M("world.spec_broken", name=n, error=err),
+    )
+    if rc is not None:
+        return rc
     if not isinstance(spec, dict):
-        return fatal(M("world.spec_shape_bad", name=p))
+        return gate.fatal(M("world.spec_shape_bad", name=spec_name))
+    override = _line_override()
     branch = current_branch()
-    probs = spec_problems(spec, branch, LINE_OVERRIDE)
-    # An execution position must hold a command: a stamp's `cmd` that reads like
-    # prose can never be replayed, and "the stamp did not change" becomes an
-    # unfalsifiable claim.
-    import criteria  # noqa: PLC0415
-    probs += criteria.exec_position_problems(spec, "world.json")
+    probs = spec_problems(spec, branch, override)
+    probs += gate.exec_position_problems(spec, "world.json")
     probs += stamp_problems(spec)
-    line, world = resolve_line(spec, branch, LINE_OVERRIDE)
+    line, world = resolve_line(spec, branch, override)
     return finish(M("world.title"), probs,
                   M("world.ok", line_name=line,
                     container=world.get("container"), site=world.get("site"),

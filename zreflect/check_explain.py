@@ -98,6 +98,8 @@ def function_reports(path, src, chosen):
     cchars = _comment_chars_by_fn(src, fns)
     out = []
     for node in fns:
+        if node.name == "_cases" or node.name.startswith("_cases_"):
+            continue
         doc = ast.get_docstring(node, clean=False) or ""
         if chosen == "strict":
             if doc.strip():
@@ -191,6 +193,7 @@ def _cases():
     plain = "def f(a, b):\n    return a + b\n"
     long_txt = "Sentence of rationale that runs long. " * 10
     over_doc = 'def f():\n    """%s"""\n    return 1\n' % long_txt
+    over_cases = 'def _cases():\n    """%s"""\n    return []\n' % long_txt
     over_cmt = "def f():\n    # %s\n    return 1\n" % long_txt
     branched = ("def f(a, b):\n    # %s\n" % long_txt
                 + "    if a:\n        return 1\n    if b:\n        return 2\n    return 0\n")
@@ -221,6 +224,8 @@ def _cases():
          == ["comments.bad_mode"]),
         ("comments.covers_both_halves",
          lambda: _suite_scope_case()),
+        ("comments.cases_exempt_from_budget",
+         lambda: problems([("x.py", over_cases)], "mismatch") == []),
     ]
 
 

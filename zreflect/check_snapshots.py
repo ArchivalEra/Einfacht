@@ -67,6 +67,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate  # noqa: E402
+import knobs  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta  # noqa: E402
 from i18n import M  # noqa: E402
 
@@ -446,7 +447,7 @@ def problems(paths=None, sources=None):
 
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    configured = os.environ.get(KNOB, "").strip()
+    configured = (knobs.raw(KNOB) or "").strip()
     root = gate.zdir() if not configured \
         else os.path.join(gate.GATE_REPO, configured)
     if not os.path.isdir(root):

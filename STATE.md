@@ -9,25 +9,25 @@
 
 | key | value | measured at | replay cmd |
 |---|---|---|---|
-| `core_seal` | `463bfa804d1d51f0...` | 2026-11-18T15:17:26+0800 | `python3 zreflect/registry.py --verify-seal` |
-| `md_files` | **25** | 2026-11-18T15:17:26+0800 | `python3 zreflect/facts.py --count -files .md` |
-| `md_lines` | **1646** | 2026-11-18T15:17:26+0800 | `python3 zreflect/facts.py --count -md` |
-| `py_files` | **49** | 2026-11-18T15:17:26+0800 | `python3 zreflect/facts.py --count -files .py` |
-| `py_lines` | **18722** | 2026-11-18T15:17:26+0800 | `python3 zreflect/facts.py --count -lines .py` |
+| `core_seal` | `ccd9d63439d7b7a7...` | 2026-11-18T16:00:27+0800 | `python3 zreflect/registry.py --verify-seal` |
+| `md_files` | **26** | 2026-11-18T16:00:27+0800 | `python3 zreflect/facts.py --count -files .md` |
+| `md_lines` | **1651** | 2026-11-18T16:00:27+0800 | `python3 zreflect/facts.py --count -md` |
+| `py_files` | **42** | 2026-11-18T16:00:27+0800 | `python3 zreflect/facts.py --count -files .py` |
+| `py_lines` | **10972** | 2026-11-18T16:00:27+0800 | `python3 zreflect/facts.py --count -lines .py` |
 
 5 facts.
 <!-- /AUTO:FACTS -->
 
 <!-- AUTO:GATES -->
-> This block is rendered by `zreflect/facts.py --render-doc` from the discovered roster (declaration lines in zreflect/registry.py); **do not hand-edit**.
+> This block is rendered by `zreflect/facts.py --render-doc` from the discovered roster; **do not hand-edit**.
 > The execution plane (hooks / CI) reads `registry --run <phase>` -- the phase is a declared field (`runs_at`), not a file name.
 
 | Gate | Phase | What it guards | Knobs consumed | Why it may be off |
 |---|---|---|---|---|
 | `check_ab.py`（A/B gate） | commit | A/B same-flags invariant (a difference outside the allow axis = confounding variable, A/B void) | `REFLECT_AB` | repos that run no A/B experiments do not need it: spec unset => explicitly not enabled |
 | `check_facts.py`（Facts gate） | commit | block agreement / bare numbers / bad citations | `REFLECT_DOC`, `REFLECT_DOCS`, `REFLECT_FACTS`, `REFLECT_NAKED_MIN`, `REFLECT_QUESTIONS` | -- |
-| `check_facts_replay.py`（Replay gate） | commit | ledger cmds re-run verbatim (bare-value contract: stdout must equal the value) | `REFLECT_FACTS`, `REFLECT_REPLAY`, `REFLECT_REPLAY_TIMEOUT` | the whole gate closes only when REFLECT_REPLAY=off is set explicitly (this is the repo-wide exit; unset it still runs) |
-| `check_i18n.py`（language coverage gate） | commit | the core is zero-language: user-visible text must go through M(code); language packs are optional | `REFLECT_I18N_ROOT` | -- |
+| `check_facts_replay.py`（Replay gate） | commit | ledger cmds re-run verbatim (bare-value contract: stdout must equal the value) | `REFLECT_FACTS`, `REFLECT_REPLAY`, `REFLECT_REPLAY_TIMEOUT` | closes only when REFLECT_REPLAY=off is explicitly set |
+| `check_i18n.py`（language coverage gate） | commit | zero-language core output via M(code) and optional language pack sync/coverage | `REFLECT_I18N_ROOT` | -- |
 | `check_instruments.py`（Instrument lifecycle gate） | commit | constancy detection (first_seen) + falsified-method registry | `REFLECT_INSTRUMENTS`, `REFLECT_INSTRUMENT_DAYS`, `REFLECT_FACTS` | both knobs unset => the specialized mechanism is not enabled (pluggable; this repo turns it on when needed) |
 | `check_invariants.py`（Invariants gate） | commit | declarative invariants: repo files must / must not contain a snippet (grep level) | `REFLECT_INVARIANTS` | repos that write no declarative invariants do not need it: spec unset => explicitly not enabled (pluggable) |
 | `check_lint.py`（Static machine check） | commit | ruff's C901/F/E9/B, criteria in ruff.toml -- the 'all clear' must be re-established by every commit, not handwritten into the ledger from a single manual run (R-004) | -- | ruff not installed on this machine (external tool, not a repo dependency) => explicitly not enabled; CI pip-installs it, and there the gate really runs |
@@ -44,5 +44,5 @@
 | `check_history.py`（History document） | start-of-work | the one carrier where prose is allowed: it must exist and must stay off every scan surface | `REFLECT_HISTORY`, `REFLECT_DOCS`, `REFLECT_READMES`, `REFLECT_QUESTIONS`, `REFLECT_FACTS` | a repo that keeps no history document states so by pointing REFLECT_HISTORY at nothing; the exemption then has no subject |
 | `doctor.py`（start-of-work doctor） | start-of-work | process / port liveness (probes things that can die => runs_at=start-of-work, not in pre-commit) | `REFLECT_DOCTOR`, `REFLECT_DOCTOR_TIMEOUT` | this repo has no doctor.json spec: no process/port liveness is checked => state it is off |
 
-19 gates (derived from the discovered roster -- a hand-written list drifts; adding a gate = landing one declaration line, and it grows here automatically); 13 of them **may be disabled** (the last column is a **declared** justification, not runtime state -- who is off right now is seen via `registry --run <phase>`).
+19 gates; 13 may be disabled.
 <!-- /AUTO:GATES -->

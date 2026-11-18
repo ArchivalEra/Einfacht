@@ -12,17 +12,16 @@ Einfacht is a **portable suite**, not specific to this repo. All criteria live
 in `zreflect/`:
 
 ```
-zreflect/gate.py         rc contract / off state / three-tier selftest / phase executor
-zreflect/machine.py      machine-row protocol: which line is a machine row (single origin)
-zreflect/i18n.py         zero-language core + language packs (zh/en/de)
+zreflect/gate.py         rc contract / off state / runner / selftest / phase executor
+zreflect/i18n.py         zero-language core / machine-row protocol / language packs (zh/en/de)
 zreflect/doc.py          document system: the discipline registry (rules' single origin)
 zreflect/next.py         the "pick up from the last turn" collector (host-agnostic: stdout lines)
 zreflect/check_*.py      gates (roster: registry --gates)
 zreflect/examples.py     runnable examples: every gate + every core entry, in a temp repo
-zreflect/lang/<lang>/    language packs; none installed is a legal state (output: code+args)
+zreflect/lang/<lang>.json language packs; none installed is a legal state (output: code+args)
 examples/<name>/         one example per gate plus the core entry points
 ruff.toml                static checks' criteria (read by check_lint; CI reads the same file)
-reflect-hooks/           hook entries (one mouth; never grabs a hook seat)
+reflect-hooks/           hook entry & installer (`hook.py`; never grabs a hook seat)
 zreflect/harness.py      discovery-based selftest harness
 secrets.json             this repo's credential-scan declaration (exemptions carry reasons)
 ```
@@ -102,7 +101,7 @@ Copy `zreflect/` + `reflect-hooks/` over, then in that repo:
 python3 zreflect/facts.py --init     # generate a qualified skeleton (never overwrites)
 python3 zreflect/facts.py            # measure once
 python3 zreflect/facts.py --render-doc            # render machine blocks
-python3 reflect-hooks/install.py --chain          # wire git hooks
+python3 reflect-hooks/hook.py --chain             # wire git hooks
 ```
 
 `--init` creates `STATE.md` / `PRINCIPLES.md` / `AGENTS.md` / `README.md` /
@@ -111,8 +110,8 @@ python3 reflect-hooks/install.py --chain          # wire git hooks
 - **`STATE.md` comes pre-seeded with `<!-- AUTO:FACTS -->` / `<!-- AUTO:GATES -->`
   markers** -- without them `--render-doc` fails with
   `FATAL: facts.markers_missing_render`;
-- **`REGISTRY` defaults match the skeleton docs** (`STATE.md,PRINCIPLES.md,AGENTS.md,README.md`
-  and `README.md`) so a fresh repo needs no extra carrier file to pass.
+- **`REGISTRY` defaults match the skeleton docs** (`STATE.md,AGENTS.md,README.md`
+  plus `PRINCIPLES.md` unless `REFLECT_NO_PRINCIPLES=1`, and `README.md`) so a fresh repo needs no extra carrier file to pass.
 
 After those four commands, `registry --run commit` must be **failed=0 /
 fatal=0**. If not, check `--init` output for `already exists, left alone`
@@ -159,7 +158,7 @@ This is the **tool repo**: other agents' findings go through issues (with
 reproduction and root cause file:line), the owner session rules on them and
 lands patches. **Never write directly.**
 
-Each repo wires its own git hooks (`reflect-hooks/install.py --chain`); for
+Each repo wires its own git hooks (`reflect-hooks/hook.py --chain`); for
 "pick up from the last turn" run `python3 zreflect/next.py <repo>` in that
 repo. The host does not manage this (`host_agnostic` stands) -- never register
 session hooks in user-level config.

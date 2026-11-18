@@ -1,6 +1,0 @@
-{
-  "description": "Detect a hand-copied assertion across two carriers",
-  "steps": [
-    {"argv": ["{python}", "zreflect/echoes.py", "--selftest"], "contains": ["0 FAIL"]}
-  ]
-}

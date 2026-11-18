@@ -1,8 +1,0 @@
-{
- "comments.bad_mode": "REFLECT_COMMENTS=%(mode)r ist kein Modus (unterstützt: %(supported)s)",
- "comments.docstring_in_strict_mode": "%(file)s:%(line)d `%(name)s` trägt einen Docstring, und dieses Repo deklariert `strict`: eine Funktion muss aus Signatur und Rumpf lesbar sein",
- "comments.explain_exceeds_complexity": "%(file)s:%(line)d `%(name)s` nutzt %(chars)d Erklärungszeichen (Docstring + Kommentare) und überschreitet das Komplexitätsbudget %(budget)d (%(branches)d Verzweigungen, %(args)d Argumente) — nur Aufrufvertrag, keine Historie",
- "comments.off": "REFLECT_COMMENTS=off => Kommentar-Disziplin explizit deaktiviert",
- "comments.ok": "Kommentarmodus %(mode)s: %(files)d Dateien geprüft, %(count)d Verstöße",
- "comments.title": "Kommentar-Disziplin"
-}

@@ -1,6 +1,0 @@
-{
-  "description": "Record CI checks without parallel arrays and reject a missing record",
-  "steps": [
-    {"argv": ["sh", "exercise.sh"], "contains": ["quality-record example ok"]}
-  ]
-}

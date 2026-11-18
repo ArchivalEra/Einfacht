@@ -1,8 +1,0 @@
-{
- "comments.bad_mode": "REFLECT_COMMENTS=%(mode)r 不是合法模式（支持：%(supported)s）",
- "comments.docstring_in_strict_mode": "%(file)s:%(line)d 的 `%(name)s` 带 docstring，而本仓声明了 `strict`：函数必须能从签名与函数体读懂",
- "comments.explain_exceeds_complexity": "%(file)s:%(line)d 的 `%(name)s` 用了 %(chars)d 字符解释（docstring + 注释），超出复杂度预算 %(budget)d（%(branches)d 分支，%(args)d 参数）—— 只写调用契约，不要写设计历史",
- "comments.off": "REFLECT_COMMENTS=off ⇒ 注释纪律已显式关闭",
- "comments.ok": "注释模式 %(mode)s：扫了 %(files)d 个文件，%(count)d 处违规",
- "comments.title": "注释纪律"
-}

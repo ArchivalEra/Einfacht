@@ -115,8 +115,8 @@ def is_configured():
     Unset is different: it means "use the registry default", and then the
     document is expected to exist.
     """
-    return os.environ.get("REFLECT_HISTORY") is not None \
-        and not os.environ.get("REFLECT_HISTORY", "").strip()
+    raw = knobs.raw("REFLECT_HISTORY")
+    return raw is not None and not raw.strip()
 
 
 def run(argv=None):

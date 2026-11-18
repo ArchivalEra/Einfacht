@@ -1,8 +1,0 @@
-{
- "comments.bad_mode": "REFLECT_COMMENTS=%(mode)r is not a mode (supported: %(supported)s)",
- "comments.docstring_in_strict_mode": "%(file)s:%(line)d `%(name)s` carries a docstring, and this repo declares `strict`: a function must be legible from its signature and body",
- "comments.explain_exceeds_complexity": "%(file)s:%(line)d `%(name)s` uses %(chars)d explanation chars (docstring + comments), exceeding complexity budget %(budget)d (%(branches)d branches, %(args)d args) — state only contract, not rationale",
- "comments.off": "REFLECT_COMMENTS=off => comment discipline explicitly disabled",
- "comments.ok": "comment mode %(mode)s: %(files)d files scanned, %(count)d violations",
- "comments.title": "Comment discipline"
-}

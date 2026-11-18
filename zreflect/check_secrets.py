@@ -25,7 +25,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate  # noqa: E402
 import knobs  # noqa: E402
-from gate import fatal, finish, load_spec, main_selftest_or, meta, off, repo  # noqa: E402
+from gate import finish, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
 
 DEFAULT_SPEC = knobs.REGISTRY["REFLECT_SECRETS"][1]
@@ -205,16 +205,13 @@ def scan(root, spec):
 
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    name, explicit = gate.resolve_spec(argv, os.environ.get("REFLECT_SECRETS", ""),
-                                       DEFAULT_SPEC)
-    path = gate.repo_path(name)
-    if not os.path.isfile(path):
-        if explicit:
-            return fatal(M("secrets.spec_missing", name=name))
-        return off(M("secrets.off", name=name))
-    spec, error = load_spec(path)
-    if error:
-        return fatal(error)
+    spec, _name, rc = gate.load_gate_spec(
+        argv, "REFLECT_SECRETS",
+        off_msg=lambda n: M("secrets.off", name=n),
+        missing_msg=lambda n: M("secrets.spec_missing", name=n),
+    )
+    if rc is not None:
+        return rc
     shape = spec_problems(spec)
     if shape:
         for problem in shape:

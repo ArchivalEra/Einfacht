@@ -48,37 +48,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate  # noqa: E402
-import knobs  # noqa: E402
-import machine  # noqa: E402
-from gate import (  # noqa: E402
-    fatal,
-    finish,
-    load_spec,
-    main_selftest_or,
-    meta,
-    off,
-    repo,  # noqa: E402
-)
+from gate import main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
-
-# Derived from the knob registry (single origin) -- a handwritten literal would
-# drift from it (the most expensive class of debt in this repo).
-DEFAULT_SPEC = knobs.REGISTRY["REFLECT_LOCKS"][1]
-
-
-def resolve_spec(argv, knob=""):
-    """See `gate.resolve_spec`: the implementation lives in one place; this only
-    binds this gate's default name."""
-    return gate.resolve_spec(argv, knob, DEFAULT_SPEC)
-
-
-def _sha(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
 
 REQUIRED_FIELDS = ("name", "url", "file")
 
@@ -112,7 +83,7 @@ def _check_one(entry, hasher, root):
     return [], []
 
 
-def check(spec, hasher=_sha, root=None):
+def check(spec, hasher=gate.sha256_file, root=None):
     """Pure logic (the selftest injects `hasher`). Returns `(problems, skips)`.
 
     `root` = the anchor for resolving relative `file` paths (default: the repo
@@ -134,21 +105,16 @@ def check(spec, hasher=_sha, root=None):
 
 
 def main(argv):
-    spec_path, explicit = resolve_spec(argv, os.environ.get("REFLECT_LOCKS", ""))
-    path = gate.repo_path(spec_path)
-    if not os.path.isfile(path):
-        if explicit:
-            return fatal(M("locks.explicit_spec_missing", name=spec_path))
-        return off(M("locks.off", name=spec_path))
-    spec, err = load_spec(path)
-    if err:
-        return fatal(M("locks.spec_broken", name=spec_path, error=err))
-    problems, skips = check(spec)
-    for x in skips:
-        print(machine().emit("skip", str(x)), file=sys.stderr)
-    return finish(M("locks.title"), problems,
-                  M("locks.ok", count=len(spec.get("locked")
-                                         or spec.get("sources") or [])))
+    return gate.run_spec_gate(
+        argv, "REFLECT_LOCKS",
+        off_msg=lambda n: M("locks.off", name=n),
+        missing_msg=lambda n: M("locks.explicit_spec_missing", name=n),
+        broken_msg=lambda n, err: M("locks.spec_broken", name=n, error=err),
+        title=M("locks.title"),
+        judge=check,
+        ok_msg=lambda spec: M("locks.ok", count=len(spec.get("locked")
+                                                 or spec.get("sources") or [])),
+    )
 
 
 def _cases():
@@ -178,9 +144,10 @@ def _cases():
     empty = {"locked": []}
     return [
         ("locks.resolve_spec",
-         lambda: resolve_spec(["--spec", "x.json"], "K.json") == ("x.json", True)
-         and resolve_spec([], "K.json") == ("K.json", True)
-         and resolve_spec([]) == ("upstream-lock.json", False)),
+         lambda: gate.resolve_spec(["--spec", "x.json"], "K.json", "upstream-lock.json")
+         == ("x.json", True)
+         and gate.resolve_spec([], "K.json", "upstream-lock.json") == ("K.json", True)
+         and gate.resolve_spec([], "", "upstream-lock.json") == ("upstream-lock.json", False)),
         # (1) compliant input: nothing reported
         ("locks.ok",
          lambda: check(spec, root=d)[0] == [] and check(spec, root=d)[1] != []),

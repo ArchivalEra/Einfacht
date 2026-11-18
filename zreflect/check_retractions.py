@@ -21,12 +21,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import criteria  # noqa: E402
+import gate  # noqa: E402
 import knobs  # noqa: E402
+from facts import HIST_MARK, living_lines, load_or_fatal  # noqa: E402
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
-from ledger import load_or_fatal  # noqa: E402
-from living import HIST_MARK, living_lines  # noqa: E402
 
 REQUIRED = ("id", "text", "evidence", "fixed_in")
 # **Resolved via the knob helper**: the parse lives in `knobs.history_secs()`
@@ -51,7 +50,7 @@ def _evidence_problems(retractions):
     for r in retractions:
         ev = r.get("evidence")
         if (not str(ev or "").strip()
-                or criteria.prose_in_exec_problems(
+                or gate.prose_in_exec_problems(
                     "retractions/%s" % r.get("id", "?"), "evidence", ev)):
             out.append(M("retractions.evidence_not_runnable",
                          entry=r.get("id"), evidence=str(ev)[:60]))
@@ -62,7 +61,7 @@ def _resurfaced_problems(retractions, docs, hist):
     """Resurfacing: the living-state line containing `text` **must carry a
     correction marker**.
 
-    Only **living state** is scanned (`zreflect/living.py`'s judgment):
+    Only **living state** is scanned (`zreflect/facts.py`'s `living_lines`):
     append-only history sections declared via `REFLECT_HISTORY_SECS` are exempt
     -- their "as it was then" is not "as it is now". Resurfacings inside them do
     **not** need a correction marker.

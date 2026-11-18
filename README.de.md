@@ -49,7 +49,7 @@ cd <dein-repo>
 python3 zreflect/facts.py --init                  # Skelett-Dokumente, überschreibt nie
 python3 zreflect/facts.py                         # erste Messung
 python3 zreflect/facts.py --render-doc            # Statusdokument rendern
-python3 reflect-hooks/install.py --chain          # in vorhandene Git-Hooks einketten
+python3 reflect-hooks/hook.py --chain             # in vorhandene Git-Hooks einketten
 ```
 
 `--init` schreibt die Skelett-Dokumente (`STATE.md`, `PRINCIPLES.md`, `AGENTS.md`,
@@ -65,7 +65,7 @@ identisch gelesen):
 ```
 
 Die Suite braucht keinen eigenen Installationsschritt: sie besteht aus Skripten und
-einer Konfigurationsdatei, und `install.py --chain` hängt ihre Zeilen an die Hooks,
+einer Konfigurationsdatei, und `hook.py --chain` hängt ihre Zeilen an die Hooks,
 die das Repo schon hat, statt sie zu ersetzen. Nichts wird außerhalb des Repos
 geschrieben.
 

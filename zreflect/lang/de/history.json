@@ -1,8 +1,0 @@
-{
- "history.missing": "kein Historien-Dokument unter %(path)s -- Prosa hat dann kein legales Zuhause; REFLECT_HISTORY darauf zeigen lassen oder auf einen leeren Wert setzen, um zu erklären, dass dieses Repo keine Historie führt (den Knopf zu entfernen wirkt NICHT: er fällt auf den Standardnamen zurück und bleibt rot)",
- "history.off": "kein Historien-Dokument konfiguriert (REFLECT_HISTORY leer) => Prosa hat in diesem Repo kein legales Zuhause; sagen und stillstehen",
- "history.ok": "Historien-Dokument %(path)s ist deklariert und liegt auf keiner Scanfläche",
- "history.on_scan_surface": "das Historien-Dokument %(path)s liegt auf einer Scanfläche (REFLECT_DOCS / REFLECT_READMES / REFLECT_QUESTIONS / REFLECT_FACTS) -- seine 'so war es damals'-Zeilen würden als Lebendzustand beurteilt",
- "history.title": "Historien-Dokument",
- "knobs.sem.reflect_history": "das Historien-Dokument: der einzige Träger, in dem Prosa erlaubt ist (Pfad konfigurierbar)"
-}

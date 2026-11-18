@@ -54,28 +54,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate  # noqa: E402
-import knobs  # noqa: E402
-import machine  # noqa: E402
-from gate import (  # noqa: E402
-    fatal,
-    finish,
-    load_spec,
-    main_selftest_or,
-    meta,
-    off,
-    repo,  # noqa: E402
-)
+from gate import main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
-
-# Derived from the knob registry (single origin) -- a handwritten literal would
-# drift from it (the most expensive class of debt in this repo).
-DEFAULT_SPEC = knobs.REGISTRY["REFLECT_PINS"][1]
-
-
-def resolve_spec(argv, knob=""):
-    """See `gate.resolve_spec`: the implementation lives in one place; this only
-    binds this gate's default name."""
-    return gate.resolve_spec(argv, knob, DEFAULT_SPEC)
 
 
 def _run(cmd):
@@ -178,8 +158,7 @@ def check(spec, run=_run, root=None):
     pins = spec.get("pins") or []
     if not pins:
         return [M("pins.empty")], []
-    import criteria  # noqa: PLC0415
-    problems, skips = criteria.exec_position_problems(spec, "pins.json"), []
+    problems, skips = gate.exec_position_problems(spec, "pins.json"), []
     for p in pins:
         probs, sks = _pin_problems(p, root, run)
         problems += probs
@@ -188,20 +167,15 @@ def check(spec, run=_run, root=None):
 
 
 def main(argv):
-    spec_path, explicit = resolve_spec(argv, os.environ.get("REFLECT_PINS", ""))
-    path = gate.repo_path(spec_path)
-    if not os.path.isfile(path):
-        if explicit:
-            return fatal(M("pins.explicit_spec_missing", name=spec_path))
-        return off(M("pins.off", name=spec_path))
-    spec, err = load_spec(path)
-    if err:
-        return fatal(M("pins.spec_broken", name=spec_path, error=err))
-    problems, skips = check(spec)
-    for x in skips:
-        print(machine().emit("skip", str(x)), file=sys.stderr)
-    return finish(M("pins.title"), problems,
-                  M("pins.ok", count=len(spec.get("pins") or [])))
+    return gate.run_spec_gate(
+        argv, "REFLECT_PINS",
+        off_msg=lambda n: M("pins.off", name=n),
+        missing_msg=lambda n: M("pins.explicit_spec_missing", name=n),
+        broken_msg=lambda n, err: M("pins.spec_broken", name=n, error=err),
+        title=M("pins.title"),
+        judge=check,
+        ok_msg=lambda spec: M("pins.ok", count=len(spec.get("pins") or [])),
+    )
 
 
 def _fixture():
@@ -251,9 +225,9 @@ def _cases():
     d = fx["d"]
     return [
         ("pins.resolve_spec",
-         lambda: resolve_spec(["--spec", "x.json"], "K.json") == ("x.json", True)
-         and resolve_spec([], "K.json") == ("K.json", True)
-         and resolve_spec([], "") == ("pins.json", False)),
+         lambda: gate.resolve_spec(["--spec", "x.json"], "K.json", "pins.json") == ("x.json", True)
+         and gate.resolve_spec([], "K.json", "pins.json") == ("K.json", True)
+         and gate.resolve_spec([], "", "pins.json") == ("pins.json", False)),
         # (1) compliant input: nothing reported
         ("pins.ok", lambda: check(fx["ok"], run=_run, root=d) == ([], [])),
         # (2) what must be reported is reported

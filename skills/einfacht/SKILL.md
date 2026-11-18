@@ -24,13 +24,14 @@ cd <repo>
 python3 zreflect/facts.py --init          # bootstraps skeleton docs; never overwrites
 python3 zreflect/facts.py                 # first measurement
 python3 zreflect/facts.py --render-doc    # machine block into the state doc
-python3 reflect-hooks/install.py --chain  # chain into existing git hooks (never hooksPath)
+python3 reflect-hooks/hook.py --chain     # chain into existing git hooks (never hooksPath)
 ```
 
 `--init` creates STATE.md / PRINCIPLES.md / AGENTS.md / README.md /
 retractions.json / questions/ (one sample). Defaults in `knobs.py` match the
-skeleton docs directly (`STATE.md,PRINCIPLES.md,AGENTS.md,README.md` and
-`README.md`), so no extra carrier file is needed for a fresh single-README repo.
+skeleton docs directly (`STATE.md,AGENTS.md,README.md` plus `PRINCIPLES.md`
+unless `REFLECT_NO_PRINCIPLES=1`, and `README.md`), so no extra carrier file
+is needed for a fresh single-README repo.
 If anything exists it is left alone — read the `already exists, left alone`
 lines.
 

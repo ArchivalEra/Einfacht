@@ -1,6 +1,0 @@
-{
-  "description": "Machine-line protocol: which line of output is a machine line (single source of truth)",
-  "steps": [
-    {"argv": ["{python}", "zreflect/machine.py", "--selftest"], "contains": ["0 FAIL"]}
-  ]
-}

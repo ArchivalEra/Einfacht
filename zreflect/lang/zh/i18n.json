@@ -1,6 +1,0 @@
-{
-  "i18n.module_banner": "i18n 是模块（被各闸门与平台模块消费）；--selftest 看自证。",
-  "i18n.value_masquerades_contract": "语言包 %(lang)s 的值 `%(key)s` 第 %(line)d 行伪装成了机器行（%(value)r）—— 机器契约不许被翻译，请改写这条文案",
-  "i18n_cover.filename_has_line_break": "扫描面里的文件名含分行符：%(file)s —— 它一旦被渲染进消息就能伪造机器行（与 machine.LINE_BREAKS 同一张表）",
-  "i18n_cover.non_ascii_prose": "%(file)s:%(lineno)d 有非 ASCII 散文（%(chars)s）：%(text)s —— 源码必须是英文；★ · ℹ ⚠️ → 是协议记号已豁免，其余都是漏进散文的排版字符"
-}
