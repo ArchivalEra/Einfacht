@@ -1,18 +1,18 @@
-# 20: 彻底清零 `OFF:`/`SKIP:`/`WARN:` 与 `optional` 降级（强制二值 `PASS / FAIL`）
+# 20: 收口 `OFF:` 核准边界并彻底清零 `SKIP:`/`WARN:` 与 `optional` 降级
 
-**What to build:** 消除全套门禁中所有允许“关闭、跳过、警告放行或自愿标注 optional”的逃生口，收敛到严格的二值 `PASS / FAIL`。
+**What to build:** 禁止核心闸门 `OFF:`，仅允许可插拔闸门在“显式声明 + 经委托核准（见 26 号悬案）”下退出 `OFF:`；同时彻底清零 `SKIP:`、`WARN:` 与 `"optional": true` 的静默放行口。
 
 **Blocked by:** None (can start immediately)
 
 **Status:** ready-for-agent
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含 `REFLECT_REQUIRED_GATES` 覆盖默认关闭项、stderr `SKIP:` 不得计入 `ran`、`optional: true` 被拒、`REFLECT_MEASURE_MODULE` 缺配即红）
+**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含核心闸门禁 `OFF:`、未核准可插拔 `OFF:` 被拒、stderr `SKIP:` 不得计入 `ran`、`optional: true` 被拒、`REFLECT_MEASURE_MODULE` 缺配即红）
 
 ## 实测问题清单
 
 1. **核心与插拔闸门仍可通过默认配置或环境变量静默 `OFF:` (`rc=0`)**（`knobs.json:1-4`、`zreflect/knobs.py:61`、`zreflect/registry.py:331-335`、`.github/workflows/gates.yml:57-58`）：
    - `knobs.json` 与 CI 均未设置 `REFLECT_REQUIRED_GATES`，默认 `registry --run commit` 下 6/16 闸门呈 `OFF:` 仍返回 `rc=0`。
-   - 设置 `REFLECT_REPLAY=off`、`REFLECT_COMMENTS=off`、`REFLECT_READMES=`、`REFLECT_HISTORY=`、`REFLECT_NO_PRINCIPLES=1` 或删除 `ruff.toml`/`secrets.json`，均可把核心闸门关成 `OFF:` 而 `rc=0` 放行。
+   - 设置 `REFLECT_REPLAY=off`、`REFLECT_COMMENTS=off`、`REFLECT_READMES=`、`REFLECT_HISTORY=`、`REFLECT_NO_PRINCIPLES=1` 或删除 `ruff.toml`/`secrets.json`，均可把核心闸门关成 `OFF:` 而 `rc=0` 放行；可插拔闸门的 `OFF:` 也缺乏显式声明与核准验证（与 26 号悬案联动）。
 2. **`gate.run_phase` 把 `stderr` 的 `SKIP:` 误计为 `ran`，且 `SKIP:` 仍退出 `0`**（`zreflect/gate.py:232-234, 475, 504-514`、`zreflect/registry.py:325-335`）：
    - `run_spec_gate()` 将 `SKIP:` 打到 `stderr`、将 `ok_msg` 打到 `stdout`，`run_phase` 只扫描第一行非空输出，导致任何 `"optional": true` 跳过在汇总中都伪装成 `ran`。
    - `check_ab.py:118`、`check_pins.py:94,118`、`check_locks.py:87` 仍支持 `"optional": true` 自愿降级为 `SKIP:` (`rc=0`)。
