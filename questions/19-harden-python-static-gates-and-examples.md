@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（涵盖 `M(var)` 缺码、小写/原地修改跨模块快照、模块/类级 docstring 与 `measure_*.py` 漏扫、以及 `run_configurable` 变 `OFF:` 假绿）
+**Settling:** python3 zreflect/check_i18n.py --selftest && python3 zreflect/check_snapshots.py --selftest && python3 zreflect/check_explain.py --selftest && python3 zreflect/check_lint.py --selftest && python3 zreflect/harness.py && python3 zreflect/examples.py --all —— rc=0 ⇒ Python 静态闸门、harness 与 examples 覆盖盲区全部收口；rc≠0 ⇒ 仍有静态门禁或假绿口子
 
 ## 实测问题清单
 

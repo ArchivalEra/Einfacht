@@ -70,17 +70,19 @@ def suite_files():
         if not os.path.isdir(base):
             continue
         for rel, _src in gate.py_sources(base):
-            p = os.path.join(base, rel)
-            if gate.declares_itself(p):
-                out.append(os.path.join(sub, rel).replace(os.sep, "/"))
+            out.append(os.path.join(sub, rel).replace(os.sep, "/"))
     return sorted(out)
 
 
 def ruff_argv():
     """Ruff argv targeting `suite_files()` only (empty => caller goes `off`)."""
+    import importlib.util  # noqa: PLC0415
     targets = suite_files()
-    return [sys.executable, "-m", "ruff", "check", "--output-format=concise",
-            *targets]
+    if importlib.util.find_spec("ruff") is not None:
+        return [sys.executable, "-m", "ruff", "check", "--output-format=concise",
+                *targets]
+    exe = shutil.which("ruff") or "ruff"
+    return [exe, "check", "--output-format=concise", *targets]
 
 
 def _has_located_finding(out):

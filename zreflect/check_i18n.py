@@ -98,7 +98,8 @@ def _exempt_call_args(tree):
         if isinstance(node, ast.Call):
             fn = getattr(node.func, "id", "") or getattr(node.func, "attr", "")
             if fn in _EXEMPT_CALLS:
-                out |= _branch_constants(node)
+                for arg in list(node.args) + [kw.value for kw in node.keywords]:
+                    out |= _branch_constants(arg)
     return out
 
 
@@ -131,14 +132,13 @@ def _bare_text_problems(name, tree, src):
         v = node.value
         if not cjk(v) or id(node) in doc_nodes or id(node) in msg_consts or id(node) in exempt:
             continue
-        if re.match(r"^\s*(★\s*)?[a-z_][a-z0-9_]*(\.[a-z0-9_.]+)+", v):
+        if re.fullmatch(r"\s*(?:★\s*)?[a-z_][a-z0-9_]*(?:\.[a-z0-9_]+)+", v):
             continue
         out.append(M("i18n_cover.bare_text", file=name, lineno=node.lineno, text=v[:40]))
     return out
 
 
 def _non_literal_code_problems(name, tree):
-    computed = (ast.IfExp, ast.BinOp, ast.JoinedStr, ast.Call, ast.Subscript)
     out = []
     for node in ast.walk(tree):
         if not _is_msg_call(node) or not node.args:
@@ -146,9 +146,8 @@ def _non_literal_code_problems(name, tree):
         first = node.args[0]
         if isinstance(first, ast.Constant) and isinstance(first.value, str):
             continue
-        if isinstance(first, computed):
-            out.append(M("i18n_cover.code_not_literal", file=name,
-                         lineno=node.lineno, kind=type(first).__name__))
+        out.append(M("i18n_cover.code_not_literal", file=name,
+                     lineno=node.lineno, kind=type(first).__name__))
     return out
 
 
@@ -255,13 +254,12 @@ def used_codes(paths=None):
             tree = ast.parse(src)
         except SyntaxError:
             continue
-        text = src
         for node in ast.walk(tree):
-            if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)):
-                doc = ast.get_docstring(node, clean=False)
-                if doc:
-                    text = text.replace(doc, "")
-        out |= set(_CODE_RE.findall(text)) | set(_SEM_RE.findall(text))
+            if (_is_msg_call(node) and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and isinstance(node.args[0].value, str)):
+                out.add(node.args[0].value)
+        out |= set(_SEM_RE.findall(src))
     return {c for c in out if not any(c.startswith(p) for p in _SELFTEST_CODE_PREFIXES)}
 
 
@@ -363,7 +361,7 @@ def run(argv=None):
     paths = []
     for root in roots:
         d = repo(root) if configured else os.path.abspath(os.path.join(gate.tool_repo(), root))
-        found = gate.scanned_sources(d, configured=bool(configured))
+        found = gate.py_sources(d)
         if not found and configured:
             return fatal(M("i18n_cover.scan_empty_dir", root=root))
         paths.extend(found)

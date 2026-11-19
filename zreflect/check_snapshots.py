@@ -409,8 +409,6 @@ def _frozen_imports(ix, mod, node):
     out = []
     for alias in node.names:
         name = alias.name
-        if name != name.upper():
-            continue                    # functions / classes / lowercase names are not "value snapshots"
         if name not in ix["assigned"][src_mod]:
             continue                    # the source module has no such module-level name
         if (src_mod, name) not in ix["mutable"]:
@@ -452,7 +450,7 @@ def run(argv=None):
         else os.path.join(gate.GATE_REPO, configured)
     if not os.path.isdir(root):
         return fatal(M("snapshot.scan_empty_dir", root=root))
-    paths = gate.scanned_sources(root, configured=bool(configured))
+    paths = gate.py_sources(root)
     if not paths:
         return fatal(M("snapshot.scan_empty_dir", root=root))
     return finish(M("snapshot.title"), problems(paths),

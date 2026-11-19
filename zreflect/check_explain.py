@@ -28,7 +28,7 @@ _BRANCH_NODES = (
     ast.If, ast.For, ast.AsyncFor, ast.While, ast.ExceptHandler,
     ast.With, ast.AsyncWith, ast.BoolOp, ast.IfExp, ast.Raise,
 )
-_PRAGMAS = ("noqa", "type:", "pragma:", "pylint:", "pyright:", "fmt:", "isort:", "!")
+_PRAGMAS = ("noqa", "type:", "pragma:", "pylint:", "pyright:", "fmt:", "isort:")
 
 
 def mode():

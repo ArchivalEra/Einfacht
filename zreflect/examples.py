@@ -170,6 +170,17 @@ def _argv(argv, target):
     return [replacements.get(arg, arg.replace("{repo}", target)) for arg in argv]
 
 
+def _unexpected_off_problems(step, expected, output):
+    if expected != 0 or step.get("allow_off"):
+        return []
+    raw_c = step.get("contains", [])
+    allowed = " ".join(raw_c) if isinstance(raw_c, list) else str(raw_c)
+    return [M("examples.output_forbidden", fragment=marker)
+            for marker in ("OFF:", "SKIP:")
+            if marker not in allowed
+            and any(ln.lstrip().startswith(marker) for ln in output.splitlines())]
+
+
 def judge_step(step, rc, output):
     """Compare one completed step with its declared result."""
     out = []
@@ -185,7 +196,7 @@ def judge_step(step, rc, output):
             present = fragment in output
             if (field == "contains" and not present) or (field != "contains" and present):
                 out.append(M(code, fragment=fragment))
-    return out
+    return out + _unexpected_off_problems(step, expected, output)
 
 
 def _decode_output(val):

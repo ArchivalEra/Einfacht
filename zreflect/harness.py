@@ -182,7 +182,9 @@ def run_modules(repo):
     """Platform modules' selftests (set difference: gates' selftests already ran in `run_gates`)."""
     import registry  # noqa: PLC0415
     z = os.path.join(repo, "zreflect")
-    mods, _ = registry.selftest_modules(z)
+    mods, missing = registry.selftest_modules(z)
+    if missing:
+        return False, [str(M("harness.no_selftest_entry", file=m)) for m in missing]
     gs, _ = registry.gates(z)
     gates = {g["file"] for g in gs}
     lines = []
@@ -268,13 +270,22 @@ def _configurable_fixture(repo, tmp, registry):
     return env, gates
 
 
+_CORE_MUST_RUN = frozenset({
+    "check_facts.py", "check_facts_replay.py", "check_questions.py",
+    "check_retractions.py", "check_history.py", "check_readme_sync.py",
+    "check_stale.py", "check_i18n.py", "check_snapshots.py", "check_explain.py",
+})
+
+
 def _renamed_all_green(repo, gates, env):
-    """After renaming, every single gate must be green. Returns `(ok_count, [(rel, detail)])`."""
+    """After renaming, every single gate must be green (and core gates not OFF). Returns `(ok_count, [(rel, detail)])`."""
     bad = []
     for rel in gates:
         rc, out = _run([sys.executable, os.path.join(repo, rel)], cwd=repo, env=env)
         if rc != 0:
             bad.append((rel, " | ".join(_tail(out, 2)) or ("rc=%d" % rc)))
+        elif os.path.basename(rel) in _CORE_MUST_RUN and (out or "").lstrip().startswith("OFF:"):
+            bad.append((rel, "unexpected OFF in configurable fixture"))
     return len(gates) - len(bad), bad
 
 

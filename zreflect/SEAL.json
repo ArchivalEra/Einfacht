@@ -10,7 +10,7 @@
    "file_sha256": "84c37c7ad84ce4c7349f60435e51cf9c80e8e872685b1b7c1c57d77aea17ec15"
   },
   "zreflect/check_explain.py": {
-   "file_sha256": "c740f427dc9a81314109713dd583044f68c93c1dc48cddddcc5ffce50936ba36"
+   "file_sha256": "0f1039d6ccc75b568731d28dd7d08b6d9664118dec939f4ad10ebc9cbd6ebdb6"
   },
   "zreflect/check_facts.py": {
    "file_sha256": "e2783a24452a8cefead0fcde9991bc1106ec85daf5ab6ce9d1dfcea5eb3a8e96"
@@ -22,7 +22,7 @@
    "file_sha256": "af6c2d45c818d9667794dd0dbbc813dbe9068804b20d6651b80782ca6b3c806f"
   },
   "zreflect/check_i18n.py": {
-   "file_sha256": "a61edd35fec3874824a28f06c3c62e8148116c99c9fc91d1abe9b0220b9b4a14"
+   "file_sha256": "a64cac3866e6c0b0c765292a6e158de5c7f792fa54fc4317fb219c1cdc4b62a8"
   },
   "zreflect/check_instruments.py": {
    "file_sha256": "825c21966f89209abd498cd9d08d26d81448c6d00a07c240d9ae2024aafb02c1"
@@ -31,7 +31,7 @@
    "file_sha256": "115c915e41302fec290528f64381e6c986b052977993e848f32327c72c748029"
   },
   "zreflect/check_lint.py": {
-   "file_sha256": "2385a912c0974156249356b5cd213c9b1cdfafddda320300e65483e02eca6d51"
+   "file_sha256": "9422ced9d5f0d205fe221e0126f9d24b189bfb4f074b7db824b8165f79c8071d"
   },
   "zreflect/check_locks.py": {
    "file_sha256": "1c23319c89c540901d2fe56a03caaabc45a3a1bcaf288d0090a37910a3b49436"
@@ -52,7 +52,7 @@
    "file_sha256": "5e2746492bb8f067cf0214eb9a310c9fc97c4f68901f002930eb47f12757b1b5"
   },
   "zreflect/check_snapshots.py": {
-   "file_sha256": "fb03a1eb73d5b3d76f4f88e336b64aae6d33d386c4f94b12f70f326d6917854e"
+   "file_sha256": "4f0401a427087ed54f8840de92499223ec8d489e4923fcffb9328d85aa3f9d17"
   },
   "zreflect/check_stale.py": {
    "file_sha256": "7277a5007fcb7c93ab8c497d43b43415d5bf30eeda42a9d0c3182858335b7d52"
@@ -67,7 +67,7 @@
    "file_sha256": "71016a57c0bf8d15c11f388ffd0d3fe1b25bd9a8bcf90ad9f794b407229301ad"
   },
   "zreflect/examples.py": {
-   "file_sha256": "52370d3286f0abc90c07ca8e5313cd3aab53b5b1bf2fc8ddff684d6896553017"
+   "file_sha256": "f1da153acf20e42dce4fd868c8b652c5ae0f0f85a7bfb3272da32c549efd52b8"
   },
   "zreflect/facts.py": {
    "file_sha256": "8b5013ec7a93944d192a7e8c666b5dbe3db6051dd31a6e40d1fa3e0b6220769d"
@@ -76,7 +76,7 @@
    "file_sha256": "9e43aad8410d80a5146c3279158cac2a693293a9a6fa8343ef352806b42cae3f"
   },
   "zreflect/harness.py": {
-   "file_sha256": "bab6dbcce36f1f9c3feb358c84744fb8d4756497ad14927d66c6ba8b9d9fd7ca"
+   "file_sha256": "abb8a05fdd4406db5ee8ff5963c8c8195a0635f267744a8acddea4ec72a310ae"
   },
   "zreflect/i18n.py": {
    "file_sha256": "9308f755a259e05cdd7e10ede9495d4bf0e8a665e8585d668f0dab63f425b2cd"
@@ -104,5 +104,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "3c45957b96ff01652e0586975917fb875aa2a69821047b3d73925bc422022694"
+ "tree_sha256": "2ea83a8d049fcb46b2cf1f35ae0f9a1572fea3ed23b97ca123e9ea446d38e766"
 }
