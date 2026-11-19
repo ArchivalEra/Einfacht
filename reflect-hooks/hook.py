@@ -32,11 +32,11 @@ PHASE_OF = {"pre-commit": "commit", "pre-push": "push"}
 GATE_SCRIPT = os.path.abspath(__file__)
 
 
-def _sh(cmd, stdin=None):
+def _sh(cmd, stdin=None, cwd=None):
     """Run one command, return `(rc, merged output)`."""
     try:
         p = subprocess.run(
-            cmd, capture_output=True, text=True, input=stdin,
+            cmd, capture_output=True, text=True, input=stdin, cwd=cwd,
             encoding="utf-8", errors="replace",
         )
     except (OSError, subprocess.SubprocessError) as e:
@@ -93,7 +93,13 @@ def _push_readmes_together(repo, refs):
             checked += 1
             continue
         rev_args = [r for r in revs.splitlines() if r.strip()]
-        _rc, log = _git(repo, "log", "--name-only", "--pretty=format:", *rev_args)
+        log_args = ["log", "--name-only", "--pretty=format:"]
+        if all(".." not in r for r in rev_args):
+            log_args.append("--no-walk")
+        rc_log, log = _git(repo, *log_args, *rev_args)
+        if rc_log != 0:
+            lines.append(str(M("hookgate.push_readmes_not_together", ref=lref)))
+            return False, lines
         changed = [ln for ln in (log or "").splitlines() if ln.strip()]
         fd, path = tempfile.mkstemp()
         try:
@@ -102,7 +108,7 @@ def _push_readmes_together(repo, refs):
             rc, out = _sh([
                 sys.executable, os.path.join(repo, "zreflect", "check_readme_sync.py"),
                 "--changed", path,
-            ])
+            ], cwd=repo)
             if rc != 0:
                 lines.append(str(M("hookgate.push_readmes_not_together", ref=lref)))
                 lines.extend(ln for ln in (out or "").splitlines()[:5])
@@ -115,12 +121,15 @@ def _push_readmes_together(repo, refs):
 
 
 def _has_unstaged_facts(repo):
-    """Does `FACTS.json` have unstaged changes in `repo`?"""
+    """Does `FACTS.json` have unstaged, untracked, or deleted changes in `repo`?"""
     facts_rel = knobs.get("REFLECT_FACTS", root=repo)
-    if not os.path.isfile(os.path.join(repo, facts_rel)):
-        return False, facts_rel
-    rc, diff_out = _git(repo, "diff", "--name-only", "--", facts_rel)
-    return (rc != 0 or bool(diff_out.strip())), facts_rel
+    rc, status_out = _git(repo, "status", "--porcelain", "--", facts_rel)
+    if rc != 0:
+        return os.path.isfile(os.path.join(repo, facts_rel)), facts_rel
+    for ln in (status_out or "").splitlines():
+        if len(ln) >= 2 and (ln[1] != " " or ln[:2] == "??"):
+            return True, facts_rel
+    return False, facts_rel
 
 
 def _stage_rendered_docs(repo, doc):
@@ -144,7 +153,7 @@ def _prepare(phase, repo, doc):
             print(str(M("hookgate.unstaged_facts", path=facts_rel)), file=sys.stderr)
             return True
         if os.path.isfile(os.path.join(repo, doc)):
-            rc, out = _sh([sys.executable, facts, "--render-doc"])
+            rc, out = _sh([sys.executable, facts, "--render-doc"], cwd=repo)
             if rc != 0:
                 if out:
                     print(out, file=sys.stderr)
@@ -152,7 +161,7 @@ def _prepare(phase, repo, doc):
             if _stage_rendered_docs(repo, doc):
                 return True
         return False
-    rc, out = _sh([sys.executable, facts, "--check"])
+    rc, out = _sh([sys.executable, facts, "--check"], cwd=repo)
     if rc == 0:
         return False
     print(str(M("hookgate.blocks_stale", detail=(out or "").strip()[:400])), file=sys.stderr)
@@ -172,7 +181,7 @@ def run(phase, repo, stdin_rows=None):
     if _prepare(phase, repo, doc):
         return 1
     rc, out = _sh([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
-                   "--run", "commit"])
+                   "--run", "commit"], cwd=repo)
     if rc != 0:
         print(out, file=sys.stderr)
         return 1

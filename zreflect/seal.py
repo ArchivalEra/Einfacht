@@ -93,6 +93,9 @@ def _collect_lang_packs(root, zdir, out):
 def _sealed_zreflect(root, zdir, builtin, include_gates=True):
     """Collect sorted repo-relative paths of sealed files inside `zreflect/`."""
     out = []
+    init_p = os.path.join(zdir, "__init__.py")
+    if os.path.isfile(init_p):
+        out.append(os.path.relpath(init_p, root).replace(os.sep, "/"))
     for name in sorted(os.listdir(zdir)):
         if name.endswith(".py") and not name.startswith("measure_") and name != "__init__.py":
             full = os.path.join(zdir, name)
@@ -206,6 +209,8 @@ def verify_problems(root=None, zdir=None):
     for rel in _sealed_targets(rt, zd, include_gates=False):
         if rel not in sealed_files:
             out.append(M("seal.unsealed_core_file", file=rel))
+    if os.path.isfile(os.path.join(rt, "ruff.toml")) and "ruff.toml" not in sealed_files:
+        out.append(M("seal.unsealed_core_file", file="ruff.toml"))
     return out
 
 
@@ -238,6 +243,10 @@ def reseal(targets, root=None, zdir=None):
         data, err = _load_seal(sp)
         if err:
             return None, err
+        untouched_probs = [p for p in verify_problems(root=rt, zdir=zd)
+                           if not any(t in str(p) for t in resolved)]
+        if untouched_probs:
+            return None, untouched_probs[0]
         files_map = dict(data["files"])
     for rel in resolved:
         files_map[rel] = _entry_for(rt, rel)

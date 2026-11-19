@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（涵盖 `registry --run` 存在损坏 `knobs.json`/孤儿闸门、`seal` 删掉内置闸门、`hook.py` 未提交新 `FACTS.json` 及新分支只改单份 README 推送）
+**Settling:** python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --selftest && python3 zreflect/seal.py --selftest && python3 zreflect/knobs.py --selftest && python3 reflect-hooks/hook.py --selftest —— rc=0 ⇒ registry/seal/knobs/hook 漏洞全部收口；rc≠0 ⇒ 仍有执行入口或 hook 绕过
 
 ## 实测问题清单
 

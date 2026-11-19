@@ -118,6 +118,19 @@ def modules(zdir=None):
     return declared, undeclared
 
 
+def _has_selftest_code(text):
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and node.value == "--selftest":
+            return True
+        if isinstance(node, ast.Name) and node.id in ("main_selftest_or", "_selftest"):
+            return True
+    return False
+
+
 def selftest_modules(zdir=None):
     """Return `(runnable_module_files, missing_selftest_entry_files)`."""
     declared, _und = modules(zdir)
@@ -127,7 +140,7 @@ def selftest_modules(zdir=None):
         if not m.get("selftest"):
             continue
         text = open(os.path.join(d, os.path.basename(m["file"])), encoding="utf-8").read()
-        if "--selftest" in text or "main_selftest_or" in text or "_selftest()" in text:
+        if _has_selftest_code(text):
             mods.append(m["file"])
         else:
             missing.append(m["file"])
@@ -227,7 +240,7 @@ def plugins(hooks_dir=None):
             text = open(os.path.join(d, n), encoding="utf-8", errors="replace").read()
         except OSError:
             continue
-        if "--selftest" in text:
+        if _has_selftest_code(text):
             out.append("reflect-hooks/" + n)
     return out
 
@@ -254,7 +267,7 @@ def render_gates(gs):
 
 def _arg_after(argv, flag):
     i = argv.index(flag)
-    return argv[i + 1] if len(argv) > i + 1 and not argv[i + 1].startswith("-") else "commit"
+    return argv[i + 1] if len(argv) > i + 1 else "commit"
 
 
 _MAX_GATE_BULLETS = 5
@@ -291,6 +304,14 @@ def _emit_phase_group(files, code, fail_out):
 
 def _main_run(argv):
     phase = _arg_after(argv, "--run")
+    if phase not in phases():
+        return fatal(M("registry.empty_phase", phase=phase))
+    gs, missing = gates()
+    reg_probs = problems(gs, missing)
+    if reg_probs:
+        for p in reg_probs:
+            print("  · %s" % p, file=sys.stderr)
+        return 1
     gs = runnable(phase)
     if not gs:
         return fatal(M("registry.empty_phase", phase=phase))

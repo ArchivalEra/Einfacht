@@ -178,17 +178,36 @@ def questions_path(root=None):
 
 def history_secs(root=None):
     """Append-only history section numbers from `REFLECT_HISTORY_SECS`."""
-    return tuple(s for s in (raw("REFLECT_HISTORY_SECS", root) or "").split(",") if s)
+    return tuple(s.strip() for s in (raw("REFLECT_HISTORY_SECS", root) or "").split(",")
+                 if s.strip())
+
+
+def _config_kind_problem(base, k, val, msg):
+    import math  # noqa: PLC0415
+    kind = REGISTRY[k][0]
+    if kind == "number":
+        try:
+            ok = math.isfinite(float(val))
+        except ValueError:
+            ok = False
+        return [] if ok else [msg("knobs.config_invalid_value", knob=k)]
+    if kind == "flag" and val.lower() not in FLAG_TRUTHY | FLAG_FALSY:
+        return [msg("knobs.config_invalid_value", knob=k)]
+    if ((kind == "file" and not os.path.isfile(os.path.join(base, val)))
+            or (kind == "dir" and not os.path.isdir(os.path.join(base, val)))):
+        return [msg("knobs.config_missing_target", knob=k, target=val)]
+    return []
 
 
 def _config_entry_problems(base, k, v, msg):
     if k not in REGISTRY:
         return [msg("knobs.phantom_token", token=k)]
-    if not isinstance(v, str) or not v.strip():
+    if not isinstance(v, str):
         return [msg("knobs.config_invalid_value", knob=k)]
-    if REGISTRY[k][0] in ("file", "dir") and not os.path.exists(os.path.join(base, v.strip())):
-        return [msg("knobs.config_missing_target", knob=k, target=v.strip())]
-    return []
+    val = v.strip()
+    if not val:
+        return [] if k == "REFLECT_READMES" else [msg("knobs.config_invalid_value", knob=k)]
+    return _config_kind_problem(base, k, val, msg)
 
 
 def config_problems(root=None):
@@ -210,16 +229,19 @@ def config_problems(root=None):
 
 
 def _environ_read_key(node):
-    """Return `REFLECT_*` key if AST node reads `os.environ.get('REFLECT_...')` or `os.environ['REFLECT_...']`."""
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get":
+    """Return `REFLECT_*` key if AST node reads `os.environ` or `os.getenv('REFLECT_...')`."""
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("get", "getenv"):
         tgt = node.func.value
         key_node = node.args[0] if node.args else None
+        is_env = ((node.func.attr == "getenv" and isinstance(tgt, ast.Name) and tgt.id == "os")
+                  or (node.func.attr == "get" and isinstance(tgt, ast.Attribute)
+                      and tgt.attr == "environ" and isinstance(tgt.value, ast.Name) and tgt.value.id == "os"))
     elif isinstance(node, ast.Subscript):
         tgt, key_node = node.value, node.slice
+        is_env = (isinstance(tgt, ast.Attribute) and tgt.attr == "environ"
+                  and isinstance(tgt.value, ast.Name) and tgt.value.id == "os")
     else:
         return None
-    is_env = (isinstance(tgt, ast.Attribute) and tgt.attr == "environ"
-              and isinstance(tgt.value, ast.Name) and tgt.value.id == "os")
     if (is_env and isinstance(key_node, ast.Constant)
             and isinstance(key_node.value, str) and key_node.value.startswith("REFLECT_")):
         return key_node.value
@@ -229,8 +251,11 @@ def _environ_read_key(node):
 def _is_test_node(stmt):
     """Exempt test/selftest functions and `__main__` blocks from direct-env check."""
     if isinstance(stmt, ast.FunctionDef):
-        return stmt.name == "_cases" or "case" in stmt.name or stmt.name.endswith("_ok")
-    return isinstance(stmt, ast.If)
+        return (stmt.name == "_cases"
+                or stmt.name.startswith(("_cases_", "_case_", "test_"))
+                or stmt.name.endswith(("_case", "_ok")))
+    return (isinstance(stmt, ast.If) and isinstance(stmt.test, ast.Compare)
+            and isinstance(stmt.test.left, ast.Name) and stmt.test.left.id == "__name__")
 
 
 def _suite_py_sources():

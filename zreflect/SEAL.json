@@ -1,7 +1,7 @@
 {
  "files": {
   "reflect-hooks/hook.py": {
-   "file_sha256": "03f91a9a0346f84ed43f8a0e388cb26d2bbb116a60550aab6c3868b06bc65c4d"
+   "file_sha256": "d0672004f43e731346620cd63b1ad40c84ebbd86daf11735a13c18a5f86eabd8"
   },
   "ruff.toml": {
    "file_sha256": "803da73ceae59051f76b4f14a89b76962af42f799ab3c8feee95cfb7b8262cdc"
@@ -82,7 +82,7 @@
    "file_sha256": "75696a7e219fcf4fc9e27dec0a58619cdf5eccf53bb1b40c5698d0092c1b3639"
   },
   "zreflect/knobs.py": {
-   "file_sha256": "26115a7cacc7e73bb73afc55957e42e582c080dfbddf1e97ec6d97f6a0f6af54"
+   "file_sha256": "edfc7a8de9ab7b258cc6b5a85c43731b8a89fe11d2a3e43037e24aba1fec793a"
   },
   "zreflect/lang/de.json": {
    "file_sha256": "c39331d46fc474129dfc8383d767cd76d949dad6a6bbeb78bc966b9c16c52637"
@@ -97,12 +97,12 @@
    "file_sha256": "1b75abe9e91f3bad08bbf7dcd915a86c19c0fd95b91bf48a35ecf0ba743f08da"
   },
   "zreflect/registry.py": {
-   "file_sha256": "6a61502ee9045e88d6efd64e4725976c4eee8671ef82838b32fcfe33352c4213"
+   "file_sha256": "5e3a540386d498cb58c6061af8b6b53b501169bfcceed99e2b576da0d4c18b13"
   },
   "zreflect/seal.py": {
-   "file_sha256": "0313d35687194be0132617b55b70143afff89569f3baef242031c4622f3cf6ae"
+   "file_sha256": "a8c5ad10313b1275bc6bdb9e5771e856da526f43e1fa94665257c52a6918c09c"
   }
  },
  "schema": 1,
- "tree_sha256": "b707f9675be6d9013f41cd6332e85c15eb00fb912c5d291b5ded71cdf9f41c8e"
+ "tree_sha256": "2ed90fd2eae5a4a49796d8eb42e6057bd136153e6cb39756840fc36a0e7e7a25"
 }
