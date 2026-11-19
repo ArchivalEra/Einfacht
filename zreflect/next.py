@@ -188,11 +188,8 @@ def _open_question_names(repo):
     d = knobs.questions_path(repo)
     if not os.path.isdir(d):
         return []
-    names = [n for n in sorted(os.listdir(d)) if n.endswith(".md")]
-    # Terminal states come from check_questions.CLOSED_STATUS (single origin,
-    # issue #38): wontfix is as closed as resolved -- a decision not to do a
-    # thing must not be re-raised every turn.
     import check_questions  # noqa: PLC0415
+    names = [n for n in sorted(os.listdir(d), key=check_questions.sort_key) if n.endswith(".md")]
     return [n for n in names if check_questions.status_of(_read_question(d, n))
             not in check_questions.CLOSED_STATUS]
 

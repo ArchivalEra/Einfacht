@@ -57,7 +57,7 @@ def _question_exec_problems(qdir):
     out: list[i18n.Message] = []
     if not qdir or not os.path.isdir(qdir):
         return out
-    for qp in sorted(glob.glob(os.path.join(qdir, "*.md"))):
+    for qp in sorted(glob.glob(os.path.join(qdir, "*.md")), key=check_questions.sort_key):
         body = open(qp, encoding="utf-8", errors="replace").read()
         sv = check_questions.field(body, "Settling")
         if sv and not sv.strip().lower().startswith(check_questions.NONE_LIKE):

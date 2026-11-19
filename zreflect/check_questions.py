@@ -258,13 +258,20 @@ def _resolved_targets_to_verify(qdir, files, all_resolved):
     return {k for k in resolved if os.path.normpath(k) in dirty}
 
 
+def sort_key(name):
+    """Numeric-prefix sort key so `100-foo.md` sorts after `99-bar.md`."""
+    base = os.path.basename(name)
+    m = re.match(r"^(\d+)(.*)$", base)
+    return (0, int(m.group(1)), m.group(2)) if m else (1, 0, base)
+
+
 def collect(d=None, root=None):
     # The directory name is configurable via `knobs.questions_dir()`.
     d = d or knobs.questions_dir()
     base = os.path.join(root or gate.GATE_REPO, d)
     files = {}
     if os.path.isdir(base):
-        for f in sorted(os.listdir(base)):
+        for f in sorted(os.listdir(base), key=sort_key):
             if f.endswith(".md"):
                 files["%s/%s" % (d, f)] = open(os.path.join(base, f), encoding="utf-8",
                                                errors="replace").read()
@@ -295,6 +302,9 @@ def _cases():
     return [
         ("questions.ok",
          lambda: problems(ok, exists=lambda p: True) == []),
+        ("questions.numeric_sort_beyond_two_digits",
+         lambda: sorted(["100-z.md", "20-a.md", "09-b.md"], key=sort_key)
+         == ["09-b.md", "20-a.md", "100-z.md"]),
         ("questions.none_first_deliverable",
          lambda: problems({"questions/02.md": _q(
              settling=_NOT_EXISTS + " -- the " + _FIRST_DELIVERABLE + " is to build it")},

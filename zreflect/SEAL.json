@@ -40,7 +40,7 @@
    "file_sha256": "e153310513fcf560fb5c1723c18525975b43695197a2b63e07ea3e9773d3af46"
   },
   "zreflect/check_questions.py": {
-   "file_sha256": "f7807658cb41186e9e89080cd03c91ed9db9a2824c784b646a14d82b97e021c1"
+   "file_sha256": "6a6c69fcea2f28630d1dec658da27afe9c88e86dd97cc2e1095dded694328881"
   },
   "zreflect/check_readme_sync.py": {
    "file_sha256": "8bd2092ab170b0474667546fa272ff38a9032654dfc90db0a1eb2a6c7f3a434e"
@@ -61,7 +61,7 @@
    "file_sha256": "78bdff5695842257344328fbb2e43fdb9d9c51daa25b6034e5fb7b2b571f8d82"
   },
   "zreflect/doc.py": {
-   "file_sha256": "143f445051020d977b83705049d7327dd07a8f89514af6b7a6df550deff8fe43"
+   "file_sha256": "e6450cea3d2517d02b1fbdb41093a3061c7b0d7611db160d097e3d321775888a"
   },
   "zreflect/doctor.py": {
    "file_sha256": "71016a57c0bf8d15c11f388ffd0d3fe1b25bd9a8bcf90ad9f794b407229301ad"
@@ -94,7 +94,7 @@
    "file_sha256": "ac1bb495bc27d4449def2ac9070b3f3adbe53a7289ad1536423050ae337b6f8a"
   },
   "zreflect/next.py": {
-   "file_sha256": "cb0be2a2079df272d4f9ea2d2c105b53db2c18b0fd28d790c7d59cc0ec123b3e"
+   "file_sha256": "84e52347aa4767de9431e7d20579d5474ef28bb01f90f34f6cb5c66c4231f611"
   },
   "zreflect/registry.py": {
    "file_sha256": "5e3a540386d498cb58c6061af8b6b53b501169bfcceed99e2b576da0d4c18b13"
@@ -104,5 +104,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "25b30d4d730126c4f17db3974071fd06c8663c4e98d472a215b50ad661d9261c"
+ "tree_sha256": "35f6868206e1c2c7a068eb94807ad6a5b0d9784cb3705e6c02a8315f35b8d3ae"
 }
