@@ -24,12 +24,19 @@ class Rule(NamedTuple):
 
 
 def enforced_by(script):
-    """Print enforcing gate file if declared in `registry.gates()`, else return rc=1."""
+    """Run enforcing gate `script` and verify it is active (not OFF) and passes."""
     import registry  # noqa: PLC0415
     gs, _m = registry.gates()
     hits = [g["file"] for g in gs if os.path.basename(g["file"]) == script]
     if not hits:
         print("missing_gate=%s" % script)
+        return 1
+    res = gate.run_phase("commit", [{"file": hits[0], "runs_at": None}], repo_root=gate.GATE_REPO)
+    if res["off"]:
+        print("off_gate=%s" % script)
+        return 1
+    if res["failed"] or res["fatal"] or res["error"]:
+        print("failed_gate=%s" % script)
         return 1
     print("enforced_by=%s" % hits[0])
     return 0
@@ -243,6 +250,18 @@ def _accepts_principles_ok():
                 os.environ.pop("REFLECT_NO_PRINCIPLES", None)
 
 
+def _enforced_by_off_ok():
+    saved = os.environ.get("REFLECT_COMMENTS")
+    os.environ["REFLECT_COMMENTS"] = "off"
+    try:
+        return enforced_by("check_explain.py") == 1
+    finally:
+        if saved is None:
+            os.environ.pop("REFLECT_COMMENTS", None)
+        else:
+            os.environ["REFLECT_COMMENTS"] = saved
+
+
 def _cases():
     return [
         ("doc.rules_well_formed", lambda: _cmd_shape_problems() == []),
@@ -256,6 +275,7 @@ def _cases():
         ("★ doc.empty_cmd_is_rejected",
          lambda: _cmd_shape_problems([Rule("x", "t", "")]) == [("x", "empty_cmd")]),
         ("★ doc.enforced_by_missing_fails", lambda: enforced_by("check_nope_xyz.py") == 1),
+        ("★ doc.enforced_by_off_fails", lambda: _enforced_by_off_ok()),
         ("doc.state_name_uses_knob", lambda: state_name() == knobs.get("REFLECT_DOC")),
         ("★ doc.accepts_principles_opt_out", lambda: _accepts_principles_ok()),
         ("★ doc.exec_position_rejects_prose",

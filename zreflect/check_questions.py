@@ -35,6 +35,7 @@ Rules and rationale:
 """
 import os
 import re
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -141,12 +142,22 @@ def _none_like_problems(name, sv):
     return [M("questions.none_without_first_deliverable", name=name)]
 
 
-def _settling_problems(name, text, chk):
+def _settling_cmd(sv):
+    cmd = gate._OUTCOME_SEP.split(sv, 1)[0].strip()
+    if cmd.startswith("`") and cmd.endswith("`") and len(cmd) >= 2:
+        cmd = cmd[1:-1].strip()
+    return cmd
+
+
+def _settling_problems(name, text, chk, runner=None, verify_resolved=False, cache=None):
     """`Settling` field: exists / two distinguishable outcomes / settler actually runs."""
     sv = field(text, "Settling")
     if not sv:
         return [M("questions.missing_settling", name=name)]
+    st = status_of(text)
     if sv.startswith(NONE_LIKE):
+        if st == "resolved":
+            return [M("questions.resolved_cannot_be_none", name=name)]
         return _none_like_problems(name, sv)
     out = []
     if not any(t in sv for t in ("rc=", "\u21d2", "=>")):
@@ -154,33 +165,67 @@ def _settling_problems(name, text, chk):
     tok = sv.split()[0].strip("`")
     if any(tok.endswith(x) or x in tok for x in PATHISH) and not chk(tok):
         out.append(M("questions.settler_missing", name=name, target=tok))
-    # The settler must be a **command**, not the name of a file: `zreflect/
-    # facts.py` alone names a script and says nothing about how to run it (a
-    # bare path is not a command and cannot be replayed).
     out += gate.prose_in_exec_problems(name, "Settling", sv)
+    if out or st != "resolved" or not (verify_resolved or runner is not None):
+        return out
+    cmd = _settling_cmd(sv)
+    rc, _ = _run_cached(cmd, runner, cache)
+    if rc != 0:
+        out.append(M("questions.resolved_settler_failed", name=name, rc=str(rc), cmd=cmd[:60]))
     return out
 
 
-def problems(files, exists=None):
-    """Return the problem list (pure function: the selftest needs that).
-    `files` = {filename: body}.
+def _run_cached(cmd, runner, cache):
+    if runner is not None:
+        return runner(cmd)
+    if cache is not None and cmd in cache:
+        return cache[cmd]
+    res = gate.run_cmd(cmd)
+    if cache is not None:
+        cache[cmd] = res
+    return res
 
-    `exists` is injectable (for test fixtures) -- by default it checks whether a
-    repo-root-relative path exists. Each field has its own named helpers (Status
-    / Settling): they judge different fields, and `Settling` has three mutually
-    exclusive branches (missing / declared-none / has a command). An empty
-    `files` is `questions.empty`, not a pass.
-    """
+
+def _verify_set(verify_resolved, files):
+    if isinstance(verify_resolved, (set, frozenset, list, tuple)):
+        return set(verify_resolved)
+    return set(files) if verify_resolved else set()
+
+
+def problems(files, exists=None, runner=None, verify_resolved=False):
+    """Return the problem list (pure function: the selftest needs that)."""
     if not files:
-        # Zero-value guard: no questions received at all => "no question lacks a
-        # settler" is vacuously true and says nothing.
         return [M("questions.empty")]
     chk = exists or (lambda p: os.path.exists(os.path.join(gate.GATE_REPO, p)))
+    targets = _verify_set(verify_resolved, files)
+    cache: dict[str, tuple[int | None, str]] = {}
     out = []
     for name, text in sorted(files.items()):
         out += _status_problems(name, text)
-        out += _settling_problems(name, text, chk)
+        out += _settling_problems(name, text, chk, runner=runner,
+                                  verify_resolved=(name in targets), cache=cache)
     return out
+
+
+def _resolved_targets_to_verify(qdir, files, all_resolved):
+    if int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0) >= 1:
+        return set()
+    resolved = {k for k, v in files.items() if status_of(v) == "resolved"}
+    if all_resolved or not resolved:
+        return resolved
+    wt = subprocess.run(["git", "-C", gate.GATE_REPO, "rev-parse", "--is-inside-work-tree"],
+                        capture_output=True, text=True, check=False)
+    if wt.returncode != 0:
+        return resolved
+    st = subprocess.run(["git", "-C", gate.GATE_REPO, "status", "--porcelain", "--", qdir],
+                        capture_output=True, text=True, check=False)
+    if st.returncode != 0:
+        return resolved
+    dirty = set()
+    for ln in st.stdout.splitlines():
+        rel = ln[3:].strip().strip('"').split(" -> ")[-1]
+        dirty.add(os.path.normpath(rel))
+    return {k for k in resolved if os.path.normpath(k) in dirty}
 
 
 def collect(d=None, root=None):
@@ -197,13 +242,14 @@ def collect(d=None, root=None):
 
 
 def run(argv):
-    files = collect(argv[0] if argv else None)
+    all_res = "--all-resolved" in argv
+    pos = [a for a in argv if a != "--all-resolved"]
+    qdir = pos[0] if pos else knobs.questions_dir()
+    files = collect(pos[0] if pos else None)
     if not files:
-        # The rc-flavored zero-value guard (`guard_nonempty` in gate.py emits free
-        # text -- after this gate went zero-language it emits M() itself; the rc
-        # contract is unchanged, still 2).
         return fatal(M("questions.guard_empty", count=0))
-    probs = problems(files)
+    targets = _resolved_targets_to_verify(qdir, files, all_res)
+    probs = problems(files, verify_resolved=targets)
     n_open = sum(1 for t in files.values() if not is_resolved(t))
     return finish(M("questions.title"), probs,
                   M("questions.ok", count=len(files), open=n_open))
@@ -224,7 +270,14 @@ def _cases():
              settling=_NOT_EXISTS + " -- the " + _FIRST_DELIVERABLE + " is to build it")},
              exists=lambda p: False) == []),
         ("questions.resolved_also_compliant", lambda: problems(
-            {"questions/03.md": _q(status="resolved")}, exists=lambda p: True) == []),
+            {"questions/03.md": _q(status="resolved")}, exists=lambda p: True,
+            runner=lambda _c: (0, "ok")) == []),
+        ("★ questions.resolved_cannot_be_none", lambda: [p.code for p in problems(
+            {"questions/10.md": _q(status="resolved", settling=_NOT_EXISTS + " -- " + _FIRST_DELIVERABLE)},
+            exists=lambda p: False)] == ["questions.resolved_cannot_be_none"]),
+        ("★ questions.resolved_settler_failed", lambda: [p.code for p in problems(
+            {"questions/11.md": _q(status="resolved")}, exists=lambda p: True,
+            runner=lambda _c: (1, "fail"))] == ["questions.resolved_settler_failed"]),
         ("questions.wontfix_also_compliant", lambda: problems(
             {"questions/09.md": _q(status="wontfix")}, exists=lambda p: True) == []),
         ("★ questions.closed_status_table", lambda:

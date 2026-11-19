@@ -40,13 +40,13 @@
    "file_sha256": "13f91118bfa927b6ad559f87ba3b18a8d092bc2fa2ac0fa3a8309b516ed6218e"
   },
   "zreflect/check_questions.py": {
-   "file_sha256": "d017d807d891e7a7b8ee76bc0e64ba6995818bd8197823ca90956deee4f05fb4"
+   "file_sha256": "759dffde2a19a55a51991e79f0841ba6473a092ac7ee6d237cade96ec77cabf4"
   },
   "zreflect/check_readme_sync.py": {
    "file_sha256": "5496466ac19d733397cc9cef469d8c400f0fb4666f39ccebadbd723ba991f2d0"
   },
   "zreflect/check_retractions.py": {
-   "file_sha256": "27060d5d02e6546a7fd7eb731cafb90d794ae1d2fb224bb7ccd69f7ae4567fe5"
+   "file_sha256": "fea878fe358fa2cbf5fe1b26f685048dfb5966e6b0c4d5f96706d614f55abc2d"
   },
   "zreflect/check_secrets.py": {
    "file_sha256": "0a55deac8ccda0a9766720aacf1e9b05046f95126f999a770d3c43bce6ae8e4f"
@@ -61,7 +61,7 @@
    "file_sha256": "8cca071ac749e606c5869df6719f66a3be7a5804880d2707682bb613569c0711"
   },
   "zreflect/doc.py": {
-   "file_sha256": "84e4f8bf6c85f9c41837983efbfce7a3dcba13133d2ac0056d754dbc353bb6e0"
+   "file_sha256": "109d6a394920d12eb4d25f66cfb84145260be5ec339b4f50fd63b2c1f315cb8b"
   },
   "zreflect/doctor.py": {
    "file_sha256": "0b4cf148f021224498b61599ad074d1f681a60100106897fd876aa8101ac8365"
@@ -70,7 +70,7 @@
    "file_sha256": "52370d3286f0abc90c07ca8e5313cd3aab53b5b1bf2fc8ddff684d6896553017"
   },
   "zreflect/facts.py": {
-   "file_sha256": "55b7276ef428cc6316eb6d24f228623fcb57cd2044088948acd44a7f640e1193"
+   "file_sha256": "a0f9ed6ecad4da050eb03e45f11f601c7c11813c176886ef1e0e73a6d48ee8b4"
   },
   "zreflect/gate.py": {
    "file_sha256": "38eb3474d061a32c5c56aec9adb545d1c302f9fc563906ad17c315fac1b246d7"
@@ -85,13 +85,13 @@
    "file_sha256": "074dd8212e0312efdbd8b50fa6c410042d288032c1173aea4a5f9ccac6177d92"
   },
   "zreflect/lang/de.json": {
-   "file_sha256": "5b40ac813443c165adf6d33a6ca1b1ab7f6c89ea0441251b375c97dcdb99a260"
+   "file_sha256": "f8b34af15e0b8d0efa3800922f252047ff5c6808fea12a8dedaa7df92d6a4b14"
   },
   "zreflect/lang/en.json": {
-   "file_sha256": "ba7a632f18bb7524308987de0d469c3e7eccabdee1bad8fe5ad57cb6c991dda5"
+   "file_sha256": "1333532bbc244617ec6fed18e2c7b31e23351eaecadafa220c37028aff969edc"
   },
   "zreflect/lang/zh.json": {
-   "file_sha256": "21aee06bc72f1349b4d93ebf1cf7963bee541ca06721a977eb68dfd6bbbf6bc6"
+   "file_sha256": "9bfb858d4683d7c7ee2a6c90c296ca11d85c9691b22fb1a5e82df5162a67c58f"
   },
   "zreflect/next.py": {
    "file_sha256": "8c1c58667f496ae4124b3b534ec44628703bc483fa20c17a8f96d0bab27ff341"
@@ -104,5 +104,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "a8af8cbac91847ab82d5b946ef679e45f151680affd2a1847009b9de161d9656"
+ "tree_sha256": "82d13879c183dbf13a75a9529defec0aa5a0703911cc56bcd6ed827fd9fd087c"
 }

@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含 `Status: resolved` 但 `Settling:` 实际 `rc=1`、`retractions.evidence` 实际失败、`facts.py --accept` 传入假值）
+**Settling:** python3 zreflect/check_questions.py --selftest && python3 zreflect/check_retractions.py --selftest && python3 zreflect/facts.py --selftest && python3 zreflect/doc.py --selftest && python3 zreflect/registry.py --verify-seal —— rc=0 ⇒ 假命令闭环与四项自证全绿；rc≠0 ⇒ 仍有未执行或未耦合的假命令
 
 ## 实测问题清单
 

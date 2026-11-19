@@ -42,11 +42,21 @@ def _entry_field_problems(retractions):
             for fld in REQUIRED if not r.get(fld)]
 
 
-def _evidence_problems(retractions):
-    """`evidence` must be **replayable**: it promises "how to replay the
-    refutation", delegating command checking to `criteria.prose_in_exec_problems`.
-    """
+def _run_evidence(ev, runner, cache):
+    if runner is not None:
+        return runner(ev)
+    if cache is not None and ev in cache:
+        return cache[ev]
+    res = gate.run_cmd(ev)
+    if cache is not None:
+        cache[ev] = res
+    return res
+
+
+def _evidence_problems(retractions, runner=None, verify_evidence=False):
+    """`evidence` must be **replayable** and pass when `verify_evidence` is enabled."""
     out = []
+    cache: dict[str, tuple[int | None, str]] = {}
     for r in retractions:
         ev = r.get("evidence")
         if (not str(ev or "").strip()
@@ -54,6 +64,12 @@ def _evidence_problems(retractions):
                     "retractions/%s" % r.get("id", "?"), "evidence", ev)):
             out.append(M("retractions.evidence_not_runnable",
                          entry=r.get("id"), evidence=str(ev)[:60]))
+            continue
+        if verify_evidence or runner is not None:
+            rc, _ = _run_evidence(str(ev), runner, cache)
+            if rc != 0:
+                out.append(M("retractions.evidence_failed",
+                             entry=r.get("id"), rc=str(rc), evidence=str(ev)[:60]))
     return out
 
 
@@ -79,37 +95,22 @@ def _resurfaced_problems(retractions, docs, hist):
     return out
 
 
-def problems(retractions, docs, hist_secs=None):
-    """Return the problem list (pure function: the selftest needs that).
-    `retractions` = the retraction structure; `docs` = {filename: body}.
-
-    A missing `retractions` key => `retractions.missing_key`; empty `docs` =>
-    `retractions.no_docs` (empty is not a pass). Otherwise `_entry_problems`
-    concatenates the three rule reports; `hist_secs=None` uses `HIST_SECS`.
-    """
+def problems(retractions, docs, hist_secs=None, runner=None, verify_evidence=False):
+    """Return the problem list (pure function: the selftest needs that)."""
     hist = HIST_SECS if hist_secs is None else hist_secs
     if retractions is None or "retractions" not in (retractions or {}):
-        # Zero-value guard: with the structure itself wrong, "no violations"
-        # is not even on the table.
         return [M("retractions.missing_key")]
     if not docs:
-        # Zero-value guard: not one document scanned => "no resurfacing found"
-        # is an empty claim.
         return [M("retractions.no_docs")]
     entries = [r for r in (retractions.get("retractions") or [])
                if isinstance(r, dict)]
-    return _entry_problems(entries, docs, hist)
+    return _entry_problems(entries, docs, hist, runner=runner, verify_evidence=verify_evidence)
 
 
-def _entry_problems(entries, docs, hist):
-    """Three named helpers, each scanning a different thing, concatenated in
-    this order: field completeness (`_entry_field_problems`), evidence
-    re-runnability (`_evidence_problems`) and resurfacing in documents
-    (`_resurfaced_problems`). Only dict entries are passed to them; the first
-    two judge the ledger itself, the third the documents.
-    """
+def _entry_problems(entries, docs, hist, runner=None, verify_evidence=False):
+    """Concatenate field completeness, evidence checks, and document resurfacing."""
     return (_entry_field_problems(entries)
-            + _evidence_problems(entries)
+            + _evidence_problems(entries, runner=runner, verify_evidence=verify_evidence)
             + _resurfaced_problems(entries, docs, hist))
 
 
@@ -134,7 +135,8 @@ def run(argv):
     if rc:
         return rc
     led = load_or_fatal(rp)
-    probs = problems(led, docs)
+    verify_ev = int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0) == 0
+    probs = problems(led, docs, verify_evidence=verify_ev)
     n = len(led.get("retractions") or [])
     return finish(M("retractions.title"), probs,
                   M("retractions.ok", count=n, documents=len(docs)))
@@ -181,6 +183,10 @@ def _cases():
         ("★ retractions.missing_key_none",
          lambda: [p.code for p in problems(None, {"A.md": "x\n"})]
          == ["retractions.missing_key"]),
+        ("★ retractions.evidence_failed",
+         lambda: [p.code for p in problems(
+             ok_r, {"A.md": "clean\n"}, runner=lambda _c: (1, "fail"))]
+         == ["retractions.evidence_failed"]),
     ]
 
 

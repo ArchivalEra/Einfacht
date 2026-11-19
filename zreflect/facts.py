@@ -684,8 +684,16 @@ def cmd_init(argv):
 def cmd_accept(argv):
     if len(argv) < 5 or not argv[1] or not argv[3].strip():
         return fatal(M("facts.accept_usage"))
+    probs = gate.prose_in_exec_problems("accept/%s" % argv[1], "cmd", argv[3])
+    if probs:
+        return fatal(probs[0])
+    rc_cmd, actual = gate.run_cmd(argv[3])
+    if rc_cmd is None or rc_cmd != 0:
+        return fatal(M("facts.accept_cmd_failed", key=argv[1], rc=str(rc_cmd), cmd=argv[3][:60]))
     raw_val = argv[2]
     val = int(raw_val) if re.fullmatch(r"-?\d+", raw_val) else raw_val
+    if actual.strip() != str(val):
+        return fatal(M("facts.accept_value_mismatch", key=argv[1], expected=str(val), actual=actual.strip()[:60]))
     out = _out()
     led = load_or_fatal(out) if os.path.exists(out) else {"schema": 1, "facts": {}}
     old = facts_of(led)
@@ -799,6 +807,10 @@ def _inproc_bootstrap_ok(d):
             return False
         led = load_or_fatal(_out())
         if cmd_accept(["--accept", "manual_n", "250", "echo 250", "cli"]) != 0:
+            return False
+        if cmd_accept(["--accept", "bad_n", "42", "echo 99", "cli"]) != 2:
+            return False
+        if cmd_accept(["--accept", "bad_cmd", "42", "prose command", "cli"]) != 2:
             return False
         if load_or_fatal(_out())["facts"]["manual_n"]["value"] != 250:
             return False
