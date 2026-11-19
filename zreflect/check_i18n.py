@@ -132,13 +132,14 @@ def _bare_text_problems(name, tree, src):
         v = node.value
         if not cjk(v) or id(node) in doc_nodes or id(node) in msg_consts or id(node) in exempt:
             continue
-        if re.fullmatch(r"\s*(?:★\s*)?[a-z_][a-z0-9_]*(?:\.[a-z0-9_]+)+", v):
+        if re.match(r"^\s*(?:★\s*)?[a-z_][a-z0-9_]*(?:\.[a-z0-9_.]+)+", v):
             continue
         out.append(M("i18n_cover.bare_text", file=name, lineno=node.lineno, text=v[:40]))
     return out
 
 
 def _non_literal_code_problems(name, tree):
+    computed = (ast.IfExp, ast.BinOp, ast.JoinedStr, ast.Call, ast.Subscript)
     out = []
     for node in ast.walk(tree):
         if not _is_msg_call(node) or not node.args:
@@ -146,8 +147,9 @@ def _non_literal_code_problems(name, tree):
         first = node.args[0]
         if isinstance(first, ast.Constant) and isinstance(first.value, str):
             continue
-        out.append(M("i18n_cover.code_not_literal", file=name,
-                     lineno=node.lineno, kind=type(first).__name__))
+        if isinstance(first, computed):
+            out.append(M("i18n_cover.code_not_literal", file=name,
+                         lineno=node.lineno, kind=type(first).__name__))
     return out
 
 

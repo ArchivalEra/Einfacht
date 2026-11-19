@@ -22,7 +22,7 @@
    "file_sha256": "af6c2d45c818d9667794dd0dbbc813dbe9068804b20d6651b80782ca6b3c806f"
   },
   "zreflect/check_i18n.py": {
-   "file_sha256": "a64cac3866e6c0b0c765292a6e158de5c7f792fa54fc4317fb219c1cdc4b62a8"
+   "file_sha256": "109a86bd0deeba7cb7162d75568294cf2b89240c224fb49229f66ee1b386a8c9"
   },
   "zreflect/check_instruments.py": {
    "file_sha256": "825c21966f89209abd498cd9d08d26d81448c6d00a07c240d9ae2024aafb02c1"
@@ -104,5 +104,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "2ea83a8d049fcb46b2cf1f35ae0f9a1572fea3ed23b97ca123e9ea446d38e766"
+ "tree_sha256": "25b30d4d730126c4f17db3974071fd06c8663c4e98d472a215b50ad661d9261c"
 }
