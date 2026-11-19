@@ -17,6 +17,7 @@
   "comments.ok": "注释模式 %(mode)s：扫了 %(files)d 个文件，%(count)d 处违规",
   "comments.title": "注释纪律",
   "criteria.exec_position_is_prose": "%(where)s 的 `%(field)s` 是散文不是命令：%(value)s —— 执行位必须以解释器（python3 / sh / node）或绝对路径开头",
+  "doc.corrupt_json": "%(path)s 中 JSON 损坏：%(error)s",
   "doctor.bad_timeout": "REFLECT_DOCTOR_TIMEOUT=%(value)r 不是正数秒 —— 超时是探针的解耦绳，不许坏",
   "doctor.container_not_running": "容器不在 running（inspect 说 %(actual)r）",
   "doctor.docker_bad_state": "`%(check)s` 的 state 只支持 running（给的是 %(actual)r）",

@@ -57,7 +57,9 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import knobs  # noqa: E402
 from i18n import M, Message  # noqa: E402
 
@@ -94,10 +96,8 @@ def unpublished_commits(repo):
     """Unpushed commit subjects. Unreadable => None; unborn branch => `[]`."""
     if _git(repo, "rev-parse", "--git-dir") is None:
         return None
-    branch = (_git(repo, "symbolic-ref", "--short", "HEAD") or "").strip()
-    if not branch:
-        return None
     if _git(repo, "rev-parse", "--verify", "HEAD") is None:
+        return [] if _git(repo, "symbolic-ref", "--short", "HEAD") else None
         return []
     out = _git(repo, "log", "--oneline", "HEAD", "--not", "--remotes")
     return [ln.strip() for ln in out.splitlines() if ln.strip()] if out is not None else None

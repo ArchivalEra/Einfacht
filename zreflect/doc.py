@@ -42,25 +42,26 @@ def enforced_by(script):
     return 0
 
 
-def _read_json_safe(path):
+def _read_json_checked(path):
     try:
-        return json.loads(open(path, encoding="utf-8").read()) or {}
-    except (OSError, ValueError):
-        return {}
+        data = json.loads(open(path, encoding="utf-8").read())
+        return (data if isinstance(data, dict) else {}), None
+    except (OSError, ValueError) as exc:
+        return None, str(exc)
 
 
 def _question_exec_problems(qdir):
     import glob  # noqa: PLC0415
+
+    import check_questions  # noqa: PLC0415
     out: list[i18n.Message] = []
     if not qdir or not os.path.isdir(qdir):
         return out
     for qp in sorted(glob.glob(os.path.join(qdir, "*.md"))):
-        for line in open(qp, encoding="utf-8", errors="replace").read().splitlines():
-            if line.startswith("**Settling:**"):
-                sv = line[len("**Settling:**"):].strip()
-                if sv and not sv.lower().startswith(("none", "n/a")):
-                    out += gate.prose_in_exec_problems(os.path.basename(qp), "Settling", sv)
-                break
+        body = open(qp, encoding="utf-8", errors="replace").read()
+        sv = check_questions.field(body, "Settling")
+        if sv and not sv.strip().lower().startswith(check_questions.NONE_LIKE):
+            out += gate.prose_in_exec_problems(os.path.basename(qp), "Settling", sv)
     return out
 
 
@@ -71,13 +72,21 @@ def all_exec_position_problems(root=None):
     for knob_key, name in (("REFLECT_WORLD", "world.json"), ("REFLECT_PINS", "pins.json")):
         p = knobs.repo_path(knob_key, base)
         if p and os.path.isfile(p):
-            out += gate.exec_position_problems(_read_json_safe(p), name)
+            data, err = _read_json_checked(p)
+            if err:
+                out.append(i18n.M("doc.corrupt_json", path=name, error=err))
+            else:
+                out += gate.exec_position_problems(data, name)
     ret = knobs.repo_path("REFLECT_RETRACTIONS", base)
     if ret and os.path.isfile(ret):
-        for r in _read_json_safe(ret).get("retractions") or []:
-            if isinstance(r, dict):
-                out += gate.prose_in_exec_problems("retractions/%s" % r.get("id", "?"),
-                                                   "evidence", r.get("evidence"))
+        rdata, rerr = _read_json_checked(ret)
+        if rerr:
+            out.append(i18n.M("doc.corrupt_json", path="retractions.json", error=rerr))
+        else:
+            for r in rdata.get("retractions") or []:
+                if isinstance(r, dict):
+                    out += gate.prose_in_exec_problems("retractions/%s" % r.get("id", "?"),
+                                                       "evidence", r.get("evidence"))
     return out + _question_exec_problems(knobs.questions_path(base))
 
 
@@ -228,6 +237,10 @@ def _cmd_shape_problems(rows=None):
             out.append((r.id, "not_an_interpreter"))
         elif re.search(r"(^|[;&|]\s*)(export|set\s+-a)|>\s*\S", cmd.replace(">/dev/null", "")):
             out.append((r.id, "mutates_env"))
+        else:
+            unquoted = re.sub(r"'[^']*'|\"[^\"]*\"", "", cmd)
+            if "||" in unquoted or ";" in unquoted:
+                out.append((r.id, "chains_or_suppresses"))
     return out
 
 

@@ -61,7 +61,7 @@
    "file_sha256": "8cca071ac749e606c5869df6719f66a3be7a5804880d2707682bb613569c0711"
   },
   "zreflect/doc.py": {
-   "file_sha256": "109d6a394920d12eb4d25f66cfb84145260be5ec339b4f50fd63b2c1f315cb8b"
+   "file_sha256": "143f445051020d977b83705049d7327dd07a8f89514af6b7a6df550deff8fe43"
   },
   "zreflect/doctor.py": {
    "file_sha256": "90629a3be843153b36a88b0235bdcbbf6239c456e338cde3e3b588b027ca4a92"
@@ -73,28 +73,28 @@
    "file_sha256": "5432fa4db1f02ad51471393c55a76d161b5128cbacebbbce57aec90cdcf69a2f"
   },
   "zreflect/gate.py": {
-   "file_sha256": "be7a8244d657b7bef97109be1b69304cdd4ea30a1458c6338ce841b7d44b5f1c"
+   "file_sha256": "9e43aad8410d80a5146c3279158cac2a693293a9a6fa8343ef352806b42cae3f"
   },
   "zreflect/harness.py": {
    "file_sha256": "bab6dbcce36f1f9c3feb358c84744fb8d4756497ad14927d66c6ba8b9d9fd7ca"
   },
   "zreflect/i18n.py": {
-   "file_sha256": "75696a7e219fcf4fc9e27dec0a58619cdf5eccf53bb1b40c5698d0092c1b3639"
+   "file_sha256": "9308f755a259e05cdd7e10ede9495d4bf0e8a665e8585d668f0dab63f425b2cd"
   },
   "zreflect/knobs.py": {
    "file_sha256": "edfc7a8de9ab7b258cc6b5a85c43731b8a89fe11d2a3e43037e24aba1fec793a"
   },
   "zreflect/lang/de.json": {
-   "file_sha256": "c39331d46fc474129dfc8383d767cd76d949dad6a6bbeb78bc966b9c16c52637"
+   "file_sha256": "fcf2176641bcfe1d93828b2068799334102428f5e19e277f8af526a28aa52d2c"
   },
   "zreflect/lang/en.json": {
-   "file_sha256": "73367fe69d47ef2f4c4c2aeacc17392006465422512b87bfedc4178e6073aef5"
+   "file_sha256": "93fa9f2a3c600a843866a024c0799130323119193bc1e2c613d0ca43b7ae82f7"
   },
   "zreflect/lang/zh.json": {
-   "file_sha256": "2f43a5f3c7e6a3eedbb9bee5098f347440a4198e334527a9dfaecd64e8f73fac"
+   "file_sha256": "dd9d32ede061d6fe9cc47a24f6e2a19f197a4a9f2c1a059b7a3d8370eb12b772"
   },
   "zreflect/next.py": {
-   "file_sha256": "1b75abe9e91f3bad08bbf7dcd915a86c19c0fd95b91bf48a35ecf0ba743f08da"
+   "file_sha256": "cb0be2a2079df272d4f9ea2d2c105b53db2c18b0fd28d790c7d59cc0ec123b3e"
   },
   "zreflect/registry.py": {
    "file_sha256": "5e3a540386d498cb58c6061af8b6b53b501169bfcceed99e2b576da0d4c18b13"
@@ -104,5 +104,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "2ed90fd2eae5a4a49796d8eb42e6057bd136153e6cb39756840fc36a0e7e7a25"
+ "tree_sha256": "f2417bd13648cad2f5544179ec5928f88ceb7e6d79b012bd979f8a8a5626560a"
 }

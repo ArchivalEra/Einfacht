@@ -2,6 +2,7 @@
 """Gate platform: rc contract, zero-trust guards, spec helpers, verbatim command runner, phase executor."""
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -27,7 +28,7 @@ EXEC_PREFIXES = (
 _OUTCOME_SEP = re.compile(r"\s+(?:——|—|----|--)\s+")
 _PROSE_CHARS = re.compile(r"[\u4e00-\u9fff（）【】；：，。]")
 _QUOTED = re.compile(r'"([^"]*)"|(\S+)')
-_PY_CMD = re.compile(r"^\s*python3(?=\s)")
+_PY_CMD = re.compile(r"(?:^|(?<=[\s;&]))python3?(?=\s)")
 _TOOL_REL = re.compile(r"(?<!\w)(zreflect/[A-Za-z_][A-Za-z0-9_]*\.py)")
 _NEEDS_QUOTING = re.compile(r"""[\s\\$`"'|&;<>()*?{}\[\]#~]""")
 
@@ -99,12 +100,17 @@ def fatal_exit(msg):
 
 
 def declares_itself(path):
-    """Check whether `path` declares `GATE =` or `MODULE =`."""
+    """Check whether `path` declares top-level `GATE =` or `MODULE =`."""
     try:
-        text = open(path, encoding="utf-8", errors="replace").read()
-    except OSError:
+        tree = ast.parse(open(path, encoding="utf-8", errors="replace").read())
+    except (OSError, SyntaxError, UnicodeError):
         return False
-    return "GATE =" in text or "MODULE =" in text
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign):
+            names = {t.id for t in stmt.targets if isinstance(t, ast.Name)}
+            if names & {"GATE", "MODULE"}:
+                return True
+    return False
 
 
 def suite_sources(sub="zreflect"):
@@ -160,8 +166,10 @@ def py_sources(base):
 def resolve_spec(argv, knob, default):
     """Resolve spec path (`--spec` > `knob` > `default`) and return `(path, was_explicit)`."""
     for i, a in enumerate(argv):
-        if a == "--spec" and i + 1 < len(argv):
-            return argv[i + 1], True
+        if a == "--spec":
+            return (argv[i + 1] if i + 1 < len(argv) else ""), True
+        if a.startswith("--spec="):
+            return a[len("--spec="):], True
     k = (knob or "").strip()
     if k:
         return k, True
@@ -196,8 +204,12 @@ def load_gate_spec(argv, knob_name, *, off_msg, missing_msg, broken_msg=None):
     """
     spec_name, explicit = _resolve_gate_spec_name(argv, knob_name)
     if not spec_name:
+        if explicit:
+            return None, "", fatal(missing_msg(""))
         return None, "", off(off_msg(""))
     path = repo_path(spec_name)
+    if os.path.isdir(path):
+        return None, spec_name, fatal(missing_msg(spec_name))
     if not os.path.isfile(path):
         rc = fatal(missing_msg(spec_name)) if explicit else off(off_msg(spec_name))
         return None, spec_name, rc
@@ -246,11 +258,14 @@ def starts_with_interpreter(value, field_name="cmd"):
         s = s[1:-1].strip()
     if not s:
         return False
-    first = s.split(" ", 1)[0].strip("`\"'")
+    parts = s.split(None, 1)
+    first = parts[0].strip("`\"'")
     if not (first in EXEC_PREFIXES or first.startswith("/")):
         return False
+    if first == "test" and (len(parts) < 2 or not parts[1].lstrip().startswith(("-", "!", "("))):
+        return False
     stripped = re.sub(r"'[^']*'", "", re.sub(r'"[^"]*"', "", s))
-    if _PROSE_CHARS.search(stripped):
+    if _PROSE_CHARS.search(stripped) or "||" in stripped or ";" in stripped:
         return False
     try:
         return bool(shlex.split(s))
@@ -322,9 +337,8 @@ def _quote_for_shell(path):
 
 def _python_of(cmd):
     interp = _quote_for_shell(sys.executable)
-    out = _PY_CMD.sub(lambda _m: interp, cmd, count=1)
-    return _TOOL_REL.sub(lambda m: _quote_for_shell(os.path.join(tool_repo(), m.group(1))),
-                          out, count=1)
+    out = _PY_CMD.sub(lambda _m: interp, cmd)
+    return _TOOL_REL.sub(lambda m: _quote_for_shell(os.path.join(tool_repo(), m.group(1))), out)
 
 
 def _shell_argv(cmd):
@@ -486,14 +500,18 @@ def run_phase(phase, gates, runner=None, repo_root=None):
             res["failed"] += 1
             res["fail_list"].append(f)
             res["fail_out"][f] = out or ""
-        elif any(kind == "off" for _i, kind, _ln in i18n.scan(out)):
-            res["off"] += 1
-            res["off_list"].append(f)
-        elif any(kind == "skip" for _i, kind, _ln in i18n.scan(out)):
-            res["skipped"] += 1
-            res["skip_list"].append(f)
         else:
-            res["ran"] += 1
+            first_ln = next((ln for ln in (out or "").splitlines() if ln.strip()), "")
+            scanned = i18n.scan(first_ln)
+            kind = scanned[0][1] if scanned else None
+            if kind == "off":
+                res["off"] += 1
+                res["off_list"].append(f)
+            elif kind == "skip":
+                res["skipped"] += 1
+                res["skip_list"].append(f)
+            else:
+                res["ran"] += 1
     return res
 
 
@@ -520,6 +538,11 @@ def _cases():
         ("gate.quote_formats", lambda: quote("ok") == "'ok'" and quote("a" * 80).endswith("...'")),
         ("gate.windows_argv_splits",
          lambda: _windows_argv('"C:\\Py\\python.exe" a\\b') == ["C:\\Py\\python.exe", "a\\b"]),
+        ("★ gate.prose_test_if_rejected",
+         lambda: not starts_with_interpreter("test if this works")
+         and not starts_with_interpreter("python3 a.py || true")),
+        ("gate.spec_equals_syntax",
+         lambda: resolve_spec(["--spec=foo.json"], "", "d.json") == ("foo.json", True)),
     ]
 
 

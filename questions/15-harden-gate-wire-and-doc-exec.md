@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含 `python3 fail.py || true`、`test if works` 英文散文命令、`ab.json/` 目录冒充 spec、损坏 `world.json` 逃过 `doc.all_exec_position_problems`）
+**Settling:** python3 zreflect/gate.py --selftest && python3 zreflect/i18n.py --selftest && python3 zreflect/doc.py --selftest && python3 zreflect/next.py --selftest —— rc=0 ⇒ gate/i18n/doc/next 执行位置与线协议漏洞全部收口；rc≠0 ⇒ 仍有执行位置绕过
 
 ## 实测问题清单
 

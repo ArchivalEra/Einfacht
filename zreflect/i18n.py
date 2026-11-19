@@ -174,12 +174,22 @@ def _render(code, params, table):
     return "%s(%s)" % (code, inner)
 
 
+class _FmtProbe(dict):
+    def __missing__(self, key):
+        return 1
+
+
 def _validate(table, lang):
     if not isinstance(table, dict) or not table:
         raise MissingPack("i18n.pack_empty", lang=lang)
+    probe = _FmtProbe()
     for code, value in table.items():
         if not isinstance(value, str):
             raise MissingPack("i18n.value_not_string", lang=lang, key=code)
+        try:
+            value % probe
+        except (TypeError, ValueError, KeyError) as exc:
+            raise MissingPack("i18n.value_not_string", lang=lang, key=code) from exc
         hit = reject(value)
         if hit:
             cur = _DEFAULT[0].table if _DEFAULT else None
@@ -244,7 +254,9 @@ def installed_langs():
     try:
         for n in sorted(os.listdir(base)):
             p = os.path.join(base, n)
-            if os.path.isdir(p) and any(x.endswith(".json") for x in os.listdir(p)):
+            if os.path.isdir(p) and any(
+                    x.endswith(".json") and _looks_like_pack(os.path.join(p, x))
+                    for x in os.listdir(p)):
                 out.add(n)
             elif n.endswith(".json") and _looks_like_pack(p):
                 out.add(n[:-len(".json")])

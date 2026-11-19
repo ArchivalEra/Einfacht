@@ -17,6 +17,7 @@
   "comments.ok": "Kommentarmodus %(mode)s: %(files)d Dateien geprüft, %(count)d Verstöße",
   "comments.title": "Kommentar-Disziplin",
   "criteria.exec_position_is_prose": "%(where)s Feld `%(field)s` enthält Prosa statt eines Befehls: %(value)s -- eine Ausführungsposition muss mit einem Interpreter (python3 / sh / node) oder einem absoluten Pfad beginnen",
+  "doc.corrupt_json": "beschädigtes JSON in %(path)s: %(error)s",
   "doctor.bad_timeout": "REFLECT_DOCTOR_TIMEOUT=%(value)r ist keine positive Sekundenzahl — die Zeitgrenze ist die Leine der Sonde; sie darf nicht reißen",
   "doctor.container_not_running": "Container läuft nicht (inspect sagte %(actual)r)",
   "doctor.docker_bad_state": "`%(check)s`: state unterstützt nur running (erhalten %(actual)r)",

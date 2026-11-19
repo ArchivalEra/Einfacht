@@ -17,6 +17,7 @@
   "comments.ok": "comment mode %(mode)s: %(files)d files scanned, %(count)d violations",
   "comments.title": "Comment discipline",
   "criteria.exec_position_is_prose": "%(where)s field `%(field)s` holds prose, not a command: %(value)s -- an execution position must start with an interpreter (python3 / sh / node) or an absolute path",
+  "doc.corrupt_json": "corrupt JSON in %(path)s: %(error)s",
   "doctor.bad_timeout": "REFLECT_DOCTOR_TIMEOUT=%(value)r is not a positive number of seconds — the timeout is the probe's leash; it must not be broken",
   "doctor.container_not_running": "container is not running (inspect said %(actual)r)",
   "doctor.docker_bad_state": "`%(check)s` state only supports running (got %(actual)r)",
