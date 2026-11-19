@@ -39,6 +39,7 @@ it. So CI (`.github/workflows/readme-sync.yml`) runs **the same criterion**:
 the local hook is the first pain, CI is the commitment's front line.
 """
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -63,6 +64,30 @@ def lang_names():
     """
     import knobs  # noqa: PLC0415
     return tuple(knobs.readme_names())
+
+
+def _structure_sig(body):
+    """Count top-level `#`, `##` headings and ``` fences for cross-language parity."""
+    return (
+        len(re.findall(r"^#\s+", body, re.M)),
+        len(re.findall(r"^##\s+", body, re.M)),
+        len(re.findall(r"^```", body, re.M)),
+    )
+
+
+def _parity_problems(files, langs):
+    if len(langs) <= 1 or langs[0] not in files:
+        return []
+    want = _structure_sig(files[langs[0]] or "")
+    out = []
+    for name in langs[1:]:
+        if name not in files:
+            continue
+        got = _structure_sig(files[name] or "")
+        if got != want:
+            out.append(M("readme.structure_mismatch", name=name, expected=langs[0],
+                         got="%d/%d/%d" % got, want="%d/%d/%d" % want))
+    return out
 
 
 def problems_structure(files, langs):
@@ -93,7 +118,7 @@ def problems_structure(files, langs):
             if other not in body:
                 out.append(M("readme.switcher_incomplete",
                              name=name, expected=other))
-    return out
+    return out + _parity_problems(files, langs)
 
 
 def problems_push(changed, langs):
@@ -218,6 +243,10 @@ def _cases_structure():
         ("\u2605 readme.names_empty_structure",
          lambda: [p.code for p in problems_structure(_trio(), ())]
          == ["readme.names_empty_structure"]),
+        ("\u2605 readme.structure_mismatch",
+         lambda: [p.code for p in problems_structure(
+             dict(_trio(), **{"README.zh.md": "## extra\n" + _trio()["README.zh.md"]}),
+             LANGS)] == ["readme.structure_mismatch"]),
     ]
 
 

@@ -18,12 +18,9 @@ engine + contract:
     { "checks": [
       { "kind": "http", "url": "http://127.0.0.1:8761/",
         "expect_status": 200,
-        "expect_headers": {"Cross-Origin-Opener-Policy": "same-origin"},
-        "why": "acceptance baseline: must be alive and carry the COI header" },
-      { "kind": "docker", "container": "o113",
-        "state": "running", "why": "build lane" },
-      { "kind": "port-free", "port": 8868,
-        "why": "experiment-exclusive port -- occupied => probe misjudges" } ] }
+        "expect_headers": {"Cross-Origin-Opener-Policy": "same-origin"} },
+      { "kind": "docker", "container": "o113", "state": "running" },
+      { "kind": "port-free", "port": 8868 } ] }
 
 Both kinds of assertion are needed: "must be alive" (http / docker) and
 "must be free" (port-free). Output obeys the **stdout bare-value contract**:
@@ -55,7 +52,7 @@ contract can't hold things that die).
 probing, no content validation (content is governed by existing gates /
 acceptance); "which services must be alive, which ports must be exclusive"
 is **policy**, configured per repo (spec data). Zero-value guards: empty
-list / missing kind / missing why / unknown kind => all reported (an unknown
+list / missing kind / unknown kind => all reported (an unknown
 criterion = silent pass).
 
 Usage (run directly, cwd=repo root):

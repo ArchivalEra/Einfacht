@@ -28,7 +28,7 @@ Spec (`REFLECT_AB`, default `ab.json`; data, not code):
   (absence semantics belong to the producer);
 - an artifact that cannot be read => `SKIP:`, stated openly (a cross-machine
   reality, not a pass);
-- empty `pairs` / an entry missing why => report (zero-value guard);
+- empty `pairs` / an entry missing a required field => report (zero-value guard);
 - `REFLECT_AB` unset => explicitly not enabled, exit 0; explicitly specified
   (--spec / knob) but the file missing => FATAL exit 2.
 
@@ -69,7 +69,7 @@ def _dig(obj, dotted):
 
 
 def _pair_field_problems(pr):
-    """A pair entry missing a required field (name / a / b / why) => report."""
+    """A pair entry missing a required field (name / a / b) => report."""
     return [M("ab.pair_missing_field", field=f, entry=pr)
             for f in ("name", "a", "b") if not pr.get(f)]
 

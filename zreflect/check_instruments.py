@@ -24,7 +24,7 @@ go red). Enabling (each part independent):
     read, say so; guessing is not allowed).
 
   - `REFLECT_INSTRUMENTS=instruments.json` -- **the method registry**
-    (schema: `{"methods": [{text, why, fixed_in}]}`): falsified **measuring
+    (schema: `{"methods": [{text, fixed_in}]}`): falsified **measuring
     methods** get a registration slot, the way `retractions.json` handles
     "retracted assertions"; any ledger `cmd` containing a falsified snippet =>
     report (a broken measuring method must not stay in the ledger). Knob set

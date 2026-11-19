@@ -68,8 +68,7 @@ def _run(cmd):
 
 
 def _required_field_problems(p):
-    """A pin entry missing a required field (name / worktree) => report (the
-    family rule that why/name are mandatory)."""
+    """A pin entry missing a required field (name / worktree) => report."""
     return [M("pins.pin_missing_field", field=f, entry=p)
             for f in ("name", "worktree") if not p.get(f)]
 

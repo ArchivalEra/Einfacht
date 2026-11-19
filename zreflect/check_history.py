@@ -93,6 +93,20 @@ def is_exempt(path, known=None, root=None):
     return True
 
 
+def _content_problems(target):
+    """Lightweight format check: non-empty, has a `#` title and a prose/quote line."""
+    try:
+        body = open(target, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return [M("history.empty_or_malformed", path=target)]
+    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+    has_title = any(ln.startswith("# ") and len(ln) > 2 for ln in lines)
+    has_prose = any(not ln.startswith("#") for ln in lines)
+    if not (has_title and has_prose):
+        return [M("history.empty_or_malformed", path=target)]
+    return []
+
+
 def problems(known=None, path=None):
     """The exemption's own criterion: history must exist and stay unscanned.
 
@@ -104,6 +118,8 @@ def problems(known=None, path=None):
     out = []
     if not os.path.exists(target):
         out.append(M("history.missing", path=target))
+    else:
+        out += _content_problems(target)
     if not is_exempt(target, known):
         out.append(M("history.on_scan_surface", path=target))
     return out
@@ -129,6 +145,17 @@ def run(argv=None):
                        M("history.ok", path=os.path.basename(location())))
 
 
+def _empty_case():
+    import tempfile  # noqa: PLC0415
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
+        fh.write("# HISTORY\n")
+        p = fh.name
+    try:
+        return [c.code for c in problems({}, path=p)] == ["history.empty_or_malformed"]
+    finally:
+        os.unlink(p)
+
+
 def _cases():
     surfaces_a = {"REFLECT_DOCS": ["STATE.md", "PRINCIPLES.md"],
                   "REFLECT_QUESTIONS": ["questions"]}
@@ -146,6 +173,7 @@ def _cases():
         ("\u2605 history.missing_is_reported",
          lambda: [p.code for p in problems({}, path="/nonexistent/HISTORY.md")]
          == ["history.missing"]),
+        ("\u2605 history.empty_or_malformed", _empty_case),
         ("history.this_repo_is_exempt",
          lambda: problems() == []),
     ]

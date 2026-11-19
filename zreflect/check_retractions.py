@@ -10,8 +10,10 @@ Each entry in `retractions.json` = one retracted assertion:
   There is no `why` field: it would be free prose that nothing reads. The
   evidence command is what explains the correction, and it can be re-run.
 
-Criterion: the line in a living-state document that contains `text` **must
-carry a correction marker**. This is the only mechanism that raises the alarm
+Criterion: a retracted assertion (`text`) may **not** appear on any living-state
+line in a declared document, even with a history marker; historical accounts
+belong in `HISTORY.md` (off every scan surface) or a declared
+`REFLECT_HISTORY_SECS` section. This is the only mechanism that raises the alarm
 when "a retracted sentence reappears" -- a measured cost: one corrected
 assertion survived **in the same file**, and also had a copy in another
 document. Prose relies on good intentions; this relies on a gate.
@@ -23,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate  # noqa: E402
 import knobs  # noqa: E402
-from facts import HIST_MARK, living_lines, load_or_fatal  # noqa: E402
+from facts import living_lines, load_or_fatal  # noqa: E402
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
 
@@ -74,13 +76,12 @@ def _evidence_problems(retractions, runner=None, verify_evidence=False):
 
 
 def _resurfaced_problems(retractions, docs, hist):
-    """Resurfacing: the living-state line containing `text` **must carry a
-    correction marker**.
+    """Resurfacing: living-state lines may **not** contain retracted `text`
+    (even with a history tag -- prose belongs in `HISTORY.md`).
 
     Only **living state** is scanned (`zreflect/facts.py`'s `living_lines`):
     append-only history sections declared via `REFLECT_HISTORY_SECS` are exempt
-    -- their "as it was then" is not "as it is now". Resurfacings inside them do
-    **not** need a correction marker.
+    -- their "as it was then" is not "as it is now".
     """
     out = []
     for r in retractions:
@@ -89,7 +90,7 @@ def _resurfaced_problems(retractions, docs, hist):
             continue
         for name, body in sorted(docs.items()):
             for i, line, is_living in living_lines(body or "", hist):
-                if is_living and text in line and not HIST_MARK.search(line):
+                if is_living and text in line:
                     out.append(M("retractions.resurfaced", name=name, line=i,
                                  text=text, entry=r.get("id", "?")))
     return out
@@ -146,10 +147,11 @@ def _cases():
     ok_r = {"retractions": [{"id": "R-1", "text": "this thing is green",
                              "evidence": "python3 zreflect/facts.py --check",
                              "fixed_in": "doc y"}]}
-    doc_ok = "(record) this thing is green -- retracted, see R-1\n"
+    doc_marked = "(record) this thing is green -- retracted, see R-1\n"
     return [
-        ("retractions.marked",
-         lambda: problems(ok_r, {"A.md": doc_ok}) == []),
+        ("\u2605 retractions.hist_mark_does_not_exempt",
+         lambda: [p.code for p in problems(ok_r, {"A.md": doc_marked})]
+         == ["retractions.resurfaced"]),
         ("retractions.assertion_absent",
          lambda: problems(ok_r, {"A.md": "clean document\n"}) == []),
         ("retractions.no_retractions",

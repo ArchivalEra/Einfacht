@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -59,8 +60,41 @@ PLACEHOLDER = re.compile(
     r"|your[-_][\w-]*|example[-_][\w-]*)$")
 
 
+def _is_covered(rel, prefixes):
+    norm = rel.replace(os.sep, "/")
+    if norm.startswith("./"):
+        norm = norm[2:]
+    for p in prefixes:
+        base = str(p or "").replace(os.sep, "/").strip().strip("/")
+        if not base or base == ".":
+            return True
+        if norm == base or norm.startswith(base + "/"):
+            return True
+    return False
+
+
+def _git_tracked(root):
+    try:
+        r = subprocess.run(["git", "-C", root, "ls-files"],
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            return []
+        return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+
+def _uncovered_tracked_problems(root, spec, tracked=None):
+    tracked_files = _git_tracked(root) if tracked is None else list(tracked)
+    if not tracked_files:
+        return []
+    covered = list(spec.get("paths") or []) + list(spec.get("ignore_paths") or [])
+    return [M("secrets.uncovered_tracked", path=rel)
+            for rel in sorted(tracked_files) if not _is_covered(rel, covered)]
+
+
 def spec_problems(spec):
-    """Validate paths and allow entries without reading the target tree."""
+    """Validate paths, ignore_paths, and allow entries without reading the target tree."""
     if not isinstance(spec, dict):
         return [M("secrets.spec_not_object")]
     out = []
@@ -68,6 +102,10 @@ def spec_problems(spec):
     if (not isinstance(paths, list) or not paths
             or any(not isinstance(path, str) or not path.strip() for path in paths)):
         out.append(M("secrets.paths_empty"))
+    ignore = spec.get("ignore_paths", [])
+    if (not isinstance(ignore, list)
+            or any(not isinstance(path, str) or not path.strip() for path in ignore)):
+        out.append(M("secrets.ignore_not_list"))
     allow = spec.get("allow", [])
     if not isinstance(allow, list):
         return out + [M("secrets.allow_not_list")]
@@ -185,11 +223,12 @@ def _unused_allow_problems(findings, allow):
             if (entry.get("path"), entry.get("rule")) not in pairs]
 
 
-def scan(root, spec):
+def scan(root, spec, tracked=None):
     """Scan a spec and return ``(problems, stats)`` suitable for ``gate.finish``."""
     paths = spec.get("paths") or []
     allow = spec.get("allow") or []
     files, problems, stats = collect_files(root, paths)
+    problems += _uncovered_tracked_problems(root, spec, tracked=tracked)
     findings = []
     for path in files:
         current, error = _scan_file(root, path, stats)
@@ -281,13 +320,36 @@ def _cases():
         # stale allow entry silently pre-authorises a future leak
         ("★ secrets.allow_stale",
          lambda: _stale_allow_case(tempfile)),
+        ("★ secrets.uncovered_tracked",
+         lambda: _uncovered_tracked_case(tempfile)),
+        ("secrets.ignore_paths_covers",
+         lambda: _ignore_paths_case(tempfile)),
     ]
+
+
+def _uncovered_tracked_case(tempfile):
+    with tempfile.TemporaryDirectory() as root:
+        os.makedirs(os.path.join(root, "src"))
+        open(os.path.join(root, "src", "a.py"), "w").write("x = 1\n")
+        problems, _stats = scan(
+            root, {"paths": ["src"]}, tracked=["src/a.py", "scripts/run.sh"])
+        return [p.code for p in problems] == ["secrets.uncovered_tracked"]
+
+
+def _ignore_paths_case(tempfile):
+    with tempfile.TemporaryDirectory() as root:
+        os.makedirs(os.path.join(root, "src"))
+        open(os.path.join(root, "src", "a.py"), "w").write("x = 1\n")
+        problems, _stats = scan(
+            root, {"paths": ["src"], "ignore_paths": ["scripts"]},
+            tracked=["src/a.py", "scripts/run.sh"])
+        return problems == []
 
 
 def _stale_allow_case(tempfile):
     with tempfile.TemporaryDirectory() as root:
         problems, _stats = scan(root, {"paths": ["."], "allow": [
-            {"path": "gone.txt", "rule": "jwt", "why": "no longer needed"}]})
+            {"path": "gone.txt", "rule": "jwt"}]})
         return [p.code for p in problems] == ["secrets.allow_stale", "secrets.empty"]
 
 

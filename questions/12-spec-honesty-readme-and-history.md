@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含 `git ls-files` 新增目录未进 `secrets.json`、活文档行尾塞 `HIST_MARK` 留存已撤回句、三语 `README` 标题数失配）
+**Settling:** python3 zreflect/check_retractions.py --selftest && python3 zreflect/check_secrets.py --selftest && python3 zreflect/check_readme_sync.py --selftest && python3 zreflect/check_history.py --selftest && python3 zreflect/check_secrets.py —— rc=0 ⇒ 活文档无 HIST_MARK 免检、secrets 覆盖全仓库 git ls-files、三语 README 结构同构、HISTORY 格式有效；rc≠0 ⇒ 仍有 spec/文档诚实度缺口
 
 ## 实测问题清单
 
