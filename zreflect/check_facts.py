@@ -22,7 +22,7 @@ _SHAPE_PATTERNS = (
     r"\b\d+\s*(?:KiB|MiB|GiB|TiB|KB|MB|GB|TB|ms|us|ns|fps|Hz|kHz|MHz|GHz|[KMB])\b",
     r"\b\d+(?:\.\d+)?%",
     r"\b(?=[0-9a-f]*[a-f])[0-9a-f]{7,64}\b",
-    r"(?:sha256|sha512|md5|rc|exit|pid|uid|gid|port|line|step|stage|issue|row|col|column|bytes?)\s*[=:]?\s*\d+\b",
+    r"\b(?:sha256|sha512|md5|rc|exit|pid|uid|gid|port|line|step|stage|issue|row|col|column|bytes?)\s*[=:]?\s*\d+\b",
     r"\b(?:19|20)\d{2}\b",
     r"(?:https?://|[A-Za-z0-9_.-]+/)[^\s)]+",
 )
@@ -57,7 +57,8 @@ def _number_lines(doc_text):
         if m:
             fence = m.group(1)
             continue
-        out.append((i, re.sub(r"`[^`]*`", "", line)))
+        cleaned_line = re.sub(r"<!--.*?-->", "", line)
+        out.append((i, re.sub(r"`[^`]*`", "", cleaned_line)))
     return out
 
 
@@ -82,9 +83,8 @@ def _unaccounted_numbers(f, bm, nlines, doc_name="STATE.md"):
     strip_re = re.compile("|".join(_SHAPE_PATTERNS))
     out = []
     for lineno, line in nlines:
-        if ledger.DATED_RECORD.search(line):
-            continue
-        out.extend(_line_unaccounted(line, lineno, f, bm, known, strip_re, doc_name))
+        stripped = ledger.DATED_RECORD.sub(" ", line)
+        out.extend(_line_unaccounted(stripped, lineno, f, bm, known, strip_re, doc_name))
     return out
 
 
@@ -148,6 +148,7 @@ def extra_block_problems(docs_by_name, homes):
         doc_key = name if name in docs_by_name else next(
             (k for k in docs_by_name if os.path.basename(k) == name), None)
         if doc_key is None:
+            out.append(M("facts.doc_missing", path=name))
             continue
         rest = [(b, e, exp) for b, e, exp in blocks if b != ledger.BLOCK_BEGIN]
         out += ledger.doc_block_problems(doc_key, docs_by_name[doc_key], rest)
@@ -164,8 +165,34 @@ def _docs_to_scan(argv):
     return names
 
 
+def _scan_doc_item(doc_name, argv, f, single_doc):
+    p = gate.repo_path(doc_name)
+    if not os.path.exists(p):
+        if single_doc and argv:
+            return None, None, fatal(M("facts.doc_missing", path=p))
+        return [], None, 0
+    text = open(p, encoding="utf-8").read()
+    probs = []
+    if ledger.BLOCK_BEGIN in text and ledger.BLOCK_END in text:
+        probs += problems(ledger_wrap(f), text, doc_name=doc_name)
+    else:
+        nlines = _number_lines(text)
+        probs += _cite_problems(nlines, f, doc_name)
+        probs += _copied_fact_problems(f, nlines, _bare_min(), doc_name)
+    if os.path.basename(doc_name) in rendered_docs():
+        probs += hand_written_problems(ledger.prose_of(text), doc_name)
+    return probs, text, None
+
+
+def ledger_wrap(f):
+    return {"facts": f}
+
+
 def run(argv):
     docs = _docs_to_scan(list(argv))
+    rc = gate.guard_nonempty("check_facts", docs, M("facts.scanned_docs"))
+    if rc:
+        return rc
     facts_name = knobs.get("REFLECT_FACTS")
     led_path = repo(facts_name)
     if not os.path.exists(led_path):
@@ -174,23 +201,15 @@ def run(argv):
     f = ledger.facts_of(led)
     probs, loaded, scanned = [], {}, 0
     for doc_name in docs:
-        p = gate.repo_path(doc_name)
-        if not os.path.exists(p):
-            if len(docs) == 1 and argv:
-                return fatal(M("facts.doc_missing", path=p))
-            probs.append(M("facts.doc_missing", path=p))
+        dprobs, text, err_rc = _scan_doc_item(doc_name, argv, f, len(docs) == 1)
+        if err_rc is not None:
+            return err_rc
+        if text is None:
+            probs.append(M("facts.doc_missing", path=gate.repo_path(doc_name)))
             continue
         scanned += 1
-        text = open(p, encoding="utf-8").read()
         loaded[doc_name] = text
-        if ledger.BLOCK_BEGIN in text and ledger.BLOCK_END in text:
-            probs += problems(led, text, doc_name=doc_name)
-        else:
-            nlines = _number_lines(text)
-            probs += _cite_problems(nlines, f, doc_name)
-            probs += _copied_fact_problems(f, nlines, _bare_min(), doc_name)
-        if os.path.basename(doc_name) in rendered_docs():
-            probs += hand_written_problems(ledger.prose_of(text), doc_name)
+        probs += dprobs
     homes, err = ledger.block_homes(led)
     if err:
         return fatal(err)

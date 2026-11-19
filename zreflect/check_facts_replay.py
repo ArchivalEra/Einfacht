@@ -29,8 +29,8 @@ _DEPTH_ENV = "EINFACHT_REPLAY_DEPTH"
 _MAX_DEPTH = 2
 
 
-def _judge_ok(k, entry, cmd, stdout, out, stats):
-    if entry.get("kind") == "principle":
+def _judge_ok(k, entry, cmd, stdout, out, stats, rule_keys=()):
+    if entry.get("kind") == "principle" and k in rule_keys:
         got = stdout.strip()
         if not got:
             out.append(M("replay.principle_said_nothing", key=k, command=cmd))
@@ -40,14 +40,18 @@ def _judge_ok(k, entry, cmd, stdout, out, stats):
             return
         stats["ok"] += 1
         return
-    if stdout.strip() != str(value_of(entry)):
+    expected = str(value_of(entry))
+    if not expected.strip():
+        out.append(M("replay.empty_value", key=k))
+        return
+    if stdout.strip() != expected:
         out.append(M("replay.mismatch", key=k, command=cmd,
-                     actual=quote(stdout.strip()), expected=quote(str(value_of(entry)))))
+                     actual=quote(stdout.strip()), expected=quote(expected)))
         return
     stats["ok"] += 1
 
 
-def _replay_one(k, raw_entry, run, seconds, out, stats, cache):
+def _replay_one(k, raw_entry, run, seconds, out, stats, cache, rule_keys=()):
     entry = raw_entry if isinstance(raw_entry, dict) else {"value": raw_entry}
     cmd = str(entry.get("cmd") or "").strip()
     if entry.get("replay") is False:
@@ -68,18 +72,25 @@ def _replay_one(k, raw_entry, run, seconds, out, stats, cache):
                      command=cmd, detail=quote(stdout.strip()[:200])))
         return
     stats["ran"] += 1
-    _judge_ok(k, entry, cmd, stdout, out, stats)
+    _judge_ok(k, entry, cmd, stdout, out, stats, rule_keys=rule_keys)
 
 
 def _run_probes(f, run, seconds, out, stats):
+    import gate  # noqa: PLC0415
     for key in sorted(f):
         entry = f[key] if isinstance(f[key], dict) else {"value": f[key]}
+        if "calibrate" not in entry:
+            continue
         probe = str(entry.get("calibrate") or "").strip()
-        if not probe:
+        if not probe or gate.prose_in_exec_problems("facts/%s" % key, "calibrate", probe):
+            out.append(M("replay.calibrate_command_failed", key=key, return_code=2, command=probe))
+            continue
+        if entry.get("calibrate_expect") is None:
+            out.append(M("replay.calibrate_missing_expect", key=key))
             continue
         stats["calibrate_attempts"] += 1
         rc, stdout = run(probe)
-        want = str(entry.get("calibrate_expect") if entry.get("calibrate_expect") is not None else "")
+        want = str(entry.get("calibrate_expect"))
         if rc is None:
             out.append(M("replay.calibrate_timeout", key=key, seconds=seconds, command=probe))
         elif rc != 0:
@@ -97,7 +108,7 @@ def replay_all(ledger, runner=None):
         depth = int(os.environ.get(_DEPTH_ENV, "0") or 0)
     except ValueError:
         depth = 0
-    if depth >= _MAX_DEPTH:
+    if depth < 0 or depth >= _MAX_DEPTH:
         return {"problems": [M("replay.too_deep", depth=depth, limit=_MAX_DEPTH)],
                 "ok": 0, "attempts": 0, "ran": 0, "calibrate_attempts": 0, "calibrated": 0}
     run = runner or run_cmd
@@ -109,11 +120,12 @@ def replay_all(ledger, runner=None):
     if not f:
         stats["problems"] = [M("replay.empty_ledger")]
         return stats
+    rule_keys = set(doc.facts_of_rules()) if doc.accepts_principles() else set()
     out: list[i18n.Message] = []
     cache: dict[str, tuple[int | None, str]] = {}
     seconds = default_timeout()
     for k in sorted(f):
-        _replay_one(k, f[k], run, seconds, out, stats, cache)
+        _replay_one(k, f[k], run, seconds, out, stats, cache, rule_keys=rule_keys)
     if stats["attempts"] and stats["ran"] == 0:
         out.append(M("replay.none_ran", attempts=stats["attempts"]))
     _run_probes(f, run, seconds, out, stats)
@@ -147,7 +159,7 @@ def run(argv):
 def _cases():
     led = {"facts": {"n": {"value": 12, "cmd": "c"}}}
     two = {"facts": {"a": {"value": 1, "cmd": "x"}, "b": {"value": 2, "cmd": "y"}}}
-    cal = {"facts": {"obj": {"value": "ok", "cmd": "c1", "calibrate": "c2", "calibrate_expect": "k"}}}
+    cal = {"facts": {"obj": {"value": "ok", "cmd": "c1", "calibrate": "python3 -c 'print(2)'", "calibrate_expect": "k"}}}
     seen = []
     dup_led = {"facts": {"a": {"value": 1, "cmd": "same"}, "b": {"value": 1, "cmd": "same"}}}
 

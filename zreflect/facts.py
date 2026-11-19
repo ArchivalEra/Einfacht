@@ -36,7 +36,7 @@ CITE_RE = re.compile(r"\[\[([A-Za-z_][A-Za-z0-9_]*)\]\]")
 
 _COUNT_CMD = "python3 zreflect/facts.py --count"
 _AUTO_BLOCK = re.compile(r"^\s*<!--\s*(/?AUTO:[A-Z]+)\s*-->\s*$")
-_PROTECTED = ("value", "cmd", "calibrate", "calibrate_expect")
+_PROTECTED = ("value", "cmd", "calibrate", "calibrate_expect", "kind", "source", "first_seen")
 _OWN_CODE_DIRS = ("src", "lib", "app", "pkg", "packages")
 
 
@@ -240,22 +240,25 @@ def body_of(block):
     return block.split(BLOCK_BEGIN, 1)[1].split(BLOCK_END, 1)[0] if BLOCK_BEGIN in block else ""
 
 
+_KNOWN_AUTO = ("<!-- AUTO:FACTS -->", "<!-- AUTO:GATES -->", "<!-- AUTO:RULES -->")
+
+
 def prose_of(doc_text):
-    """Strip all `<!-- AUTO:... -->...<!-- /AUTO:... -->` machine blocks from `doc_text`."""
+    """Strip known `AUTO:FACTS` / `AUTO:GATES` / `AUTO:RULES` machine blocks from `doc_text`."""
     out, i = [], 0
-    while True:
-        b = doc_text.find("<!-- AUTO:", i)
-        if b < 0:
+    while i < len(doc_text):
+        hits = [(doc_text.find(b, i), b) for b in _KNOWN_AUTO if doc_text.find(b, i) >= 0]
+        if not hits:
             out.append(doc_text[i:])
             break
+        b, tag = min(hits)
         out.append(doc_text[i:b])
-        e = doc_text.find("-->", b + len("<!-- AUTO:"))
-        end = doc_text.find("<!-- /AUTO:", e) if e >= 0 else -1
+        end_tag = tag.replace("<!-- AUTO:", "<!-- /AUTO:")
+        end = doc_text.find(end_tag, b + len(tag))
         if end < 0:
             out.append(doc_text[b:])
             break
-        close = doc_text.find("-->", end)
-        i = close + 3 if close >= 0 else len(doc_text)
+        i = end + len(end_tag)
     return "".join(out)
 
 
@@ -674,18 +677,20 @@ def cmd_init(argv):
         print(str(M("facts.init_created", name=name)))
     for name in kept:
         print(str(M("facts.init_kept", name=name)))
-    if not created:
-        return 0
-    if doc.accepts_principles() and write_doc(doc.PRINCIPLES, {"schema": 1, "facts": {}}) != 0:
+    if (doc.accepts_principles() and doc.PRINCIPLES in created
+            and write_doc(doc.PRINCIPLES, {"schema": 1, "facts": {}}) != 0):
         return 2
     _init_questions_dir(root)
-    print(str(M("facts.init_next")))
+    if created:
+        print(str(M("facts.init_next")))
     return 0
 
 
 def cmd_accept(argv):
     if len(argv) < 5 or not argv[1] or not argv[3].strip():
         return fatal(M("facts.accept_usage"))
+    if "|" in argv[1] or "\n" in argv[1] or "|" in argv[2] or "\n" in argv[2]:
+        return fatal(M("facts.accept_bad_value", key=argv[1]))
     probs = gate.prose_in_exec_problems("accept/%s" % argv[1], "cmd", argv[3])
     if probs:
         return fatal(probs[0])
@@ -744,9 +749,14 @@ _COMMANDS = {
 }
 
 
+def _is_measure_flags(argv):
+    return all(a == "--allow-drop" or a == "--accept-changes" or a.startswith("--accept-changes=")
+               for a in argv)
+
+
 def main(argv):
     """Dispatch `facts.py` CLI arguments (`measure` when empty or modifier-only)."""
-    if not argv or argv[0].startswith(("--allow-drop", "--accept-changes")):
+    if not argv or _is_measure_flags(argv):
         return measure(argv)
     if argv[0] in ("--help", "-h", "help"):
         print(M("facts.usage"), file=sys.stderr)

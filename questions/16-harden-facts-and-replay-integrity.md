@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含篡改 `FACTS.json` 的 `kind`/`measured_at`、插入 `<!-- AUTO:FAKE -->`、`<!-- [[key]] -->`、`-20260101` 整行豁免、`REFLECT_DOCS=","` 与 `EINFACHT_REPLAY_DEPTH=-1`）
+**Settling:** python3 zreflect/facts.py --selftest && python3 zreflect/check_facts.py --selftest && python3 zreflect/check_facts_replay.py --selftest —— rc=0 ⇒ facts/check_facts/check_facts_replay 台账守卫与重放漏洞全部收口；rc≠0 ⇒ 仍有台账或裸数绕过
 
 ## 实测问题清单
 
