@@ -435,6 +435,12 @@ def activate_or_fatal(lang=None):
     except Exception as e:                               # noqa: BLE001
         print(i18n.emit("fatal", i18n.M("gate.pack_assembly_failed", error=e)), file=sys.stderr)
         return 2
+    import knobs  # noqa: PLC0415
+    cfg_probs = knobs.config_problems()
+    if cfg_probs:
+        for p in cfg_probs:
+            print(i18n.emit("fatal", p), file=sys.stderr)
+        return 2
     return 0
 
 

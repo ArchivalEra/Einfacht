@@ -39,7 +39,7 @@ def _declares_pinned(doc):
         cut = reason.find(sep)
         if cut != -1:
             reason = reason[:cut]
-    return len(reason.strip()) >= 8
+    return len(reason.strip()) >= 20
 
 
 def _pinned_by_comment(src, node):
@@ -245,7 +245,10 @@ def problems(paths):
 def used_codes(paths=None):
     """Collect literal `M(...)` and `_Semantic(...)` codes emitted by suite sources."""
     if paths is None:
-        paths = gate.py_sources(gate.zdir())
+        paths = list(gate.py_sources(gate.zdir()))
+        hooks_dir = os.path.join(gate.tool_repo(), "reflect-hooks")
+        if os.path.isdir(hooks_dir):
+            paths += list(gate.py_sources(hooks_dir))
     out = set()
     for _name, src in paths:
         try:
@@ -323,6 +326,9 @@ def pack_sync_problems(loader=None, discovery=None):
     ref = tables[ref_lang]
     out = []
     for lang in sorted(tables):
+        out += [M("knobs.pack_empty_value", lang=lang, key=c)
+                for c, v in sorted(tables[lang].items())
+                if isinstance(v, str) and not v.strip()]
         out += [M("knobs.pack_brace_template", lang=lang, key=c, text=v[:60])
                 for c, v in sorted(tables[lang].items())
                 if isinstance(v, str) and _BRACE_RE.search(v)]
@@ -366,7 +372,7 @@ def run(argv=None):
     probs = problems(paths)
     if not configured:
         probs += pack_sync_problems()
-        probs += pack_coverage_problems(used_codes(gate.py_sources(gate.zdir())))
+        probs += pack_coverage_problems(used_codes())
     return finish(M("i18n_cover.title"), probs, M("i18n_cover.ok", files=len(paths)))
 
 
@@ -454,6 +460,13 @@ def _cases():
              codes={"a.b", "c.d"}, discovery=lambda: ("zh", "en"),
              loader=lambda l: ({"a.b": "x", "c.d": "y"} if l == "en" else {"a.b": "x"}))]
          == ["knobs.pack_missing_code"]),
+        ("★ knobs.pack_empty_value",
+         lambda: [p.code for p in pack_sync_problems(
+             discovery=lambda: ("zh", "en"),
+             loader=lambda l: {"zh": {"a": ""}, "en": {"a": "x"}}[l])]
+         == ["knobs.pack_empty_value"]),
+        ("★ i18n_cover.pinned_too_short",
+         lambda: not _declares_pinned("PINNED: short")),
     ]
 
 

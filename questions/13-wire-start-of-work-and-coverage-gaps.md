@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是让 `registry --run start-of-work` 纳入 CI 且 `check_i18n` / `knobs` / `next` 覆盖全部盲区的验证用例
+**Settling:** python3 zreflect/registry.py --run start-of-work && python3 zreflect/check_i18n.py --selftest && python3 zreflect/next.py --selftest && python3 zreflect/seal.py --selftest —— rc=0 ⇒ start-of-work 纳入 CI 且 i18n/next/seal/knobs 盲区全部受控；rc≠0 ⇒ 仍有执行面盲区
 
 ## 实测问题清单
 

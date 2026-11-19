@@ -165,9 +165,10 @@ def current_tree_sha(root=None, zdir=None, verified=False):
 
 
 def _skip_optional(root, rel):
-    """Allow hooks to be absent in minimal unit-test fixtures that omit `reflect-hooks/`."""
-    return rel.startswith("reflect-hooks/") and not os.path.isdir(
-        os.path.join(root, "reflect-hooks"))
+    """Allow hooks to be absent only in non-git minimal unit-test fixtures."""
+    return (rel.startswith("reflect-hooks/")
+            and not os.path.isdir(os.path.join(root, "reflect-hooks"))
+            and not os.path.isdir(os.path.join(root, ".git")))
 
 
 def _verify_entry(root, rel, expected, out):

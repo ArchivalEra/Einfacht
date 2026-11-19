@@ -149,14 +149,20 @@ def _tree_lines(repo, last, pending):
 
 def _question_lines(repo, pending):
     """Append unresolved open-question names to `pending`, up to the remaining
-    `MAX_LISTED` budget (the commits and worktree sections may already have
-    consumed part of it).
+    `MAX_LISTED` budget (emitting `+N more` if truncated).
     """
     room = MAX_LISTED - len(pending)
     if room <= 0:
         return
-    pending.extend(M("next.open_question", name=q)
-                   for q in _open_question_names(repo)[:room])
+    qs = _open_question_names(repo)
+    if len(qs) <= room:
+        pending.extend(M("next.open_question", name=q) for q in qs)
+    elif room == 1:
+        pending.append(M("next.open_questions_more", count=len(qs)))
+    else:
+        shown = room - 1
+        pending.extend(M("next.open_question", name=q) for q in qs[:shown])
+        pending.append(M("next.open_questions_more", count=len(qs) - shown))
 
 
 def collect(repo):
@@ -188,7 +194,7 @@ def _open_question_names(repo):
     # thing must not be re-raised every turn.
     import check_questions  # noqa: PLC0415
     return [n for n in names if check_questions.status_of(_read_question(d, n))
-            not in check_questions.CLOSED_STATUS][:MAX_LISTED]
+            not in check_questions.CLOSED_STATUS]
 
 
 def _read_question(d, name):
