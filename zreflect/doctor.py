@@ -113,15 +113,25 @@ def _port_free_verdict(connect_succeeded):
 
 # ---- Real transports (thin layer; the selftest never runs them, the selftest must be network- and docker-free) ----
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def _http_probe(check, timeout):
+    opener = urllib.request.build_opener(_NoRedirect)
     try:
         req = urllib.request.Request(check["url"], method="GET")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            ok, why = _http_verdict(
+        with opener.open(req, timeout=timeout) as resp:
+            return _http_verdict(
                 resp.status,
                 {k.lower(): v for k, v in resp.headers.items()},
                 check)
-            return ok, why
+    except urllib.error.HTTPError as e:
+        return _http_verdict(
+            e.code,
+            {k.lower(): v for k, v in (e.headers.items() if e.headers else ())},
+            check)
     # URLError is a subclass of OSError; no need to list it separately.
     except (OSError, ValueError) as e:
         return False, M("doctor.get_failed", error=e)
@@ -140,14 +150,18 @@ def _docker_probe(check, timeout):
 
 
 def _port_free_probe(check, timeout):
-    try:
-        socket.create_connection(("127.0.0.1", check["port"]),
-                                 timeout=timeout).close()
-    except ConnectionRefusedError:
-        return True, ""                       # connection refused = free
-    except OSError as e:
-        return False, M("doctor.probe_inconclusive", error=e)
-    return _port_free_verdict(True)
+    last_err = None
+    for host in ("127.0.0.1", "::1"):
+        try:
+            socket.create_connection((host, check["port"]), timeout=timeout).close()
+            return _port_free_verdict(True)
+        except ConnectionRefusedError:
+            continue
+        except OSError as e:
+            last_err = e
+    if last_err is not None:
+        return False, M("doctor.probe_inconclusive", error=last_err)
+    return True, ""
 
 
 _PROBES = {"http": _http_probe, "docker": _docker_probe,
@@ -164,8 +178,9 @@ def label(check):
 # ---- Spec validation (pure functions: zero-value guards + shape criteria) ----
 
 def _http_shape_problems(c):
-    """Field criteria for an http check (missing url / non-int expect_status / expect_headers shape)."""
-    if not str(c.get("url") or "").strip():
+    """Field criteria for an http check (missing/bad-scheme url / non-int expect_status / expect_headers shape)."""
+    url = str(c.get("url") or "").strip()
+    if not url or not url.startswith(("http://", "https://")):
         return [M("doctor.http_missing_url", check=label(c))]
     es = c.get("expect_status")
     if es is not None and (isinstance(es, bool) or not isinstance(es, int)):

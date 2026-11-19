@@ -59,12 +59,8 @@ from i18n import M, Message  # noqa: E402
 
 
 def _run(cmd):
-    try:
-        p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60,
-                           encoding="utf-8", errors="replace")
-        return p.returncode, p.stdout.strip()
-    except (OSError, subprocess.TimeoutExpired) as e:
-        return -1, str(e)
+    rc, out = gate.run_cmd(cmd)
+    return (-1 if rc is None else rc), out.strip()
 
 
 def _required_field_problems(p):
@@ -99,20 +95,21 @@ def _tree_pin_problems(p, head, run):
         target.append(M("pins.stamp_unreadable", name=p["name"]))
         return problems, skips
     parts = out.split()
-    if len(parts) < 3:
+    if len(parts) < 4:
         problems.append(M("pins.stamp_malformed", name=p["name"], actual=out[:40]))
         return problems, skips
     if parts[2] != head:
         problems.append(M("pins.commit_mismatch", name=p["name"],
                           declared=parts[2][:12], actual=head[:12]))
-    if len(parts) > 3 and parts[3] not in ("0", ""):
+    if parts[3] != "0":
         problems.append(M("pins.dirty", name=p["name"], count=parts[3]))
     return problems, skips
 
 
 def _version_pin_problems(p, run):
     """kind=version: the first line of the command output must contain
-    expect_version. Returns (problems, skips)."""
+    expect_version (token-bounded). Returns (problems, skips)."""
+    import re  # noqa: PLC0415
     problems: list[Message] = []
     skips: list[Message] = []
     rc, out = run(p.get("version_read", ""))
@@ -121,9 +118,10 @@ def _version_pin_problems(p, run):
         target = skips if p.get("optional") else problems
         target.append(M("pins.version_unreadable", name=p["name"]))
         return problems, skips
-    if p.get("expect_version") and p["expect_version"] not in first:
+    expect = p.get("expect_version")
+    if expect and not re.search(r"(?<![0-9A-Za-z.])%s(?![0-9A-Za-z.])" % re.escape(expect), first):
         problems.append(M("pins.version_drift", name=p["name"],
-                          declared=p["expect_version"], actual=first[:48]))
+                          declared=expect, actual=first[:48]))
     return problems, skips
 
 

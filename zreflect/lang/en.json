@@ -1,4 +1,6 @@
 {
+  "ab.allow_key_missing": "pair %(name)s allow key %(field)s missing from a or b",
+  "ab.allow_not_list": "pair %(name)s allow must be a list of key names",
   "ab.artifact_unreadable": "%(name)s: artifact unreadable (%(error_a)s / %(error_b)s) ⇒ not checked this run",
   "ab.confound": "%(name)s: confounding variable — %(key)s key %(field)r: A=%(value_a)r B=%(value_b)r (non-allow axis differs ⇒ A/B is void)",
   "ab.empty": "pairs is empty (zero-value guard: an empty assertion surface is not a pass)",
@@ -250,6 +252,7 @@
   "install.why_not_hookspath": "why not core.hooksPath: it is a global override switch — once set, git ignores .git/hooks entirely, so husky / lefthook / pre-commit / hand-written hooks silently die (commits still succeed, no warning).",
   "instruments.constant_return": "`%(key)s` has not changed since %(first_seen)s (%(days).0f days, constant threshold %(threshold).0f days) — confirm by hand: is this cmd measuring, or returning the same number forever? (instrument-silent-drift check, issue #6 ①)",
   "instruments.days_unparseable": "%(days_knob)s=%(value)r cannot be parsed as a number of days — fix the config (or drop the knob)",
+  "instruments.empty_registry": "instrument registry %(name)s declares no methods",
   "instruments.entry_malformed": "method registry entry has a malformed shape (text is required): %(entry)r",
   "instruments.falsified_method": "`%(key)s`'s cmd contains a falsified method fragment %(text)r (correct method in %(fixed_in)s) -- a broken measuring method must not stay in the ledger",
   "instruments.first_seen_unparseable": "`%(key)s` has an unparseable first_seen (%(first_seen)r) — the constant-value rule cannot be evaluated (if it cannot be read, say so; do not guess)",
@@ -340,6 +343,7 @@
   "lint.title": "Static machine check (ruff)",
   "lint.tool_broken": "ruff cannot run: %(error)r",
   "locks.absent_optional": "%(name)s: absent on this machine (optional ⇒ stated, not a pass)",
+  "locks.bad_form": "lock %(name)s has unknown form %(form)s (expected file or dir)",
   "locks.empty": "locked list is empty (zero-value guard: an empty assertion surface is not a pass)",
   "locks.entry_missing_field": "locked entry missing field %(field)s: %(entry)r (an unexplained lock is a zombie)",
   "locks.explicit_spec_missing": "explicitly specified spec %(name)s does not exist (--spec) — write it or drop the flag",

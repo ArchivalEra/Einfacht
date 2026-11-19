@@ -261,9 +261,10 @@ def run(argv=None):
     probs += gate.exec_position_problems(spec, "world.json")
     probs += stamp_problems(spec)
     line, world = resolve_line(spec, branch, override)
+    w = world if isinstance(world, dict) else {}
     return finish(M("world.title"), probs,
-                  M("world.ok", line_name=line,
-                    container=world.get("container"), site=world.get("site"),
+                  M("world.ok", line_name=line or "-",
+                    container=w.get("container"), site=w.get("site"),
                     count=len(spec.get("stamps") or {})))
 
 

@@ -61,13 +61,15 @@ def _days_raw():
 
 
 def _days():
+    import math  # noqa: PLC0415
     raw = _days_raw()
     if not raw:
         return None
     try:
-        return float(raw)
+        v = float(raw)
     except ValueError:
         return None
+    return v if (math.isfinite(v) and v >= 0) else None
 
 
 def _age_days(first_seen):
@@ -89,7 +91,9 @@ def _constant_return_problems(f, days):
         entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
         fs = entry.get("first_seen")
         if not fs:
-            continue                  # old ledger entries have no first_seen: do not guess, do not report
+            out.append(M("instruments.first_seen_unparseable",
+                         key=k, first_seen=fs))
+            continue
         age = _age_days(fs)
         if age is None:
             out.append(M("instruments.first_seen_unparseable",
@@ -101,12 +105,14 @@ def _constant_return_problems(f, days):
 
 
 def _falsified_hits(text, fixed, f):
-    """The ledger keys hit by one falsified snippet (a hit = that fact still
-    uses the broken measuring method)."""
+    """The ledger keys hit by one falsified snippet (whitespace-normalized)."""
+    import re  # noqa: PLC0415
     hits = []
+    ntext = re.sub(r"\s+", " ", text).strip()
     for k in sorted(f):
         entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
-        if text in str(entry.get("cmd") or ""):
+        ncmd = re.sub(r"\s+", " ", str(entry.get("cmd") or "")).strip()
+        if ntext in ncmd:
             hits.append(M("instruments.falsified_method", key=k, text=text,
                           fixed_in=fixed))
     return hits
@@ -171,7 +177,9 @@ def run(argv=None):
         )
         if rc is not None:
             return rc
-        methods = reg.get("methods") or []
+        methods = reg.get("methods")
+        if not isinstance(methods, list) or not methods:
+            return fatal(M("instruments.empty_registry", name=name))
     probs = problems(load_or_fatal(led_path), methods=methods, days=days)
     return finish(M("instruments.title"), probs, _ok_line(name, methods, days))
 
@@ -212,9 +220,9 @@ def _cases():
          lambda: problems(led, days=30) == []),
         ("instruments.registered_method_absent",
          lambda: problems(led, methods=methods, days=30) == []),
-        ("instruments.first_seen_absent",
-         lambda: problems({"facts": {"n": {"value": 1, "cmd": "c"}}},
-                          days=30) == []),
+        ("★ instruments.first_seen_missing",
+         lambda: [p.code for p in problems({"facts": {"n": {"value": 1, "cmd": "c"}}}, days=30)]
+         == ["instruments.first_seen_unparseable"]),
         # (2) what must be reported is reported
         ("★ instruments.constant_return",
          lambda: [p.code for p in problems(led_old, days=30)]

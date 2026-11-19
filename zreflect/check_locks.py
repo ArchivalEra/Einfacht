@@ -62,6 +62,21 @@ def _entry_missing_fields(entry):
             for f in REQUIRED_FIELDS if not entry.get(f)]
 
 
+def _sha_problems(entry, path, form, hasher):
+    import re  # noqa: PLC0415
+    want = entry.get("sha256")
+    if not want:
+        return [] if form == "dir" else [M("locks.no_sha256", name=entry["name"])]
+    if not isinstance(want, str) or not re.fullmatch(r"[0-9a-f]{64}", want):
+        return [M("locks.sha_mismatch", name=entry["name"],
+                  declared=str(want)[:12], actual="invalid-sha256")]
+    got = hasher(path)
+    if got != want:
+        return [M("locks.sha_mismatch", name=entry["name"],
+                  declared=want[:12], actual=got[:12])]
+    return []
+
+
 def _check_one(entry, hasher, root):
     """Check one locked entry. Returns `(problem list, skip list)`."""
     missing = _entry_missing_fields(entry)
@@ -72,16 +87,12 @@ def _check_one(entry, hasher, root):
         if entry.get("optional"):
             return [], [M("locks.absent_optional", name=entry["name"])]
         return [M("locks.file_missing", name=entry["name"], path=path)], []
-    want = entry.get("sha256")
-    if not want:
-        if (entry.get("form") or "file") == "dir":
-            return [], []                     # dir form: existence only
-        return [M("locks.no_sha256", name=entry["name"])], []
-    got = hasher(path)
-    if got != want:
-        return [M("locks.sha_mismatch", name=entry["name"],
-                  declared=want[:12], actual=got[:12])], []
-    return [], []
+    form = entry.get("form") or "file"
+    if form not in ("file", "dir"):
+        return [M("locks.bad_form", name=entry["name"], form=str(form))], []
+    if (form == "dir" and not os.path.isdir(path)) or (form == "file" and not os.path.isfile(path)):
+        return [M("locks.file_missing", name=entry["name"], path=path)], []
+    return _sha_problems(entry, path, form, hasher), []
 
 
 def check(spec, hasher=gate.sha256_file, root=None):

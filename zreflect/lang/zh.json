@@ -1,4 +1,6 @@
 {
+  "ab.allow_key_missing": "pair %(name)s 的 allow 键 %(field)s 在 a 或 b 中缺失",
+  "ab.allow_not_list": "pair %(name)s 的 allow 必须是键名列表",
   "ab.artifact_unreadable": "%(name)s: 工件读不到（%(error_a)s / %(error_b)s）⇒ 本次未核对",
   "ab.confound": "%(name)s: 混淆变量——%(key)s 键 %(field)r: A=%(value_a)r B=%(value_b)r（非 allow 轴不一致 ⇒ A/B 作废）",
   "ab.empty": "pairs 为空（零值守卫：空断言面不是通过）",
@@ -250,6 +252,7 @@
   "install.why_not_hookspath": "为什么不设 core.hooksPath：它是全局覆盖开关，设了之后 git 完全不看 .git/hooks —— husky / lefthook / pre-commit / 手写钩子会被静默废掉（提交照样成功、没有提示）。",
   "instruments.constant_return": "`%(key)s` 的值自 %(first_seen)s 起没变过（%(days).0f 天，恒常阈值 %(threshold).0f 天） —— 人工确认：这条 cmd 是在量，还是恒返回同一个数？（仪器静默失真检查，issue #6 ①）",
   "instruments.days_unparseable": "%(days_knob)s=%(value)r 不可解析成天数 —— 修配置（或撤掉该旋钮）",
+  "instruments.empty_registry": "量法登记表 %(name)s 未声明任何方法",
   "instruments.entry_malformed": "量法登记条目形状残缺（必须给出 text）：%(entry)r",
   "instruments.falsified_method": "`%(key)s` 的 cmd 含被证伪的量法片段 %(text)r（正确量法见 %(fixed_in)s）—— 坏量法不许留在台账里",
   "instruments.first_seen_unparseable": "`%(key)s` 的 first_seen 不可解析（%(first_seen)r）—— 恒常判据无法评估（读不到就明说，不许猜）",
@@ -340,6 +343,7 @@
   "lint.title": "静态机器检查（ruff）",
   "lint.tool_broken": "ruff 跑不起来：%(error)r",
   "locks.absent_optional": "%(name)s: 本机缺席（optional ⇒ 明说，不是通过）",
+  "locks.bad_form": "锁定项 %(name)s 的 form %(form)s 无效（仅支持 file 或 dir）",
   "locks.empty": "locked 清单为空（零值守卫：空断言面不是通过）",
   "locks.entry_missing_field": "锁定条目缺字段 %(field)s: %(entry)r（没有理由的锁定是僵尸）",
   "locks.explicit_spec_missing": "显式指定的规格 %(name)s 不存在（--spec）—— 先写规格（或撤掉指定）",

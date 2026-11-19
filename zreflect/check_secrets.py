@@ -56,8 +56,9 @@ RULE_NAMES = frozenset(name for name, _pattern in RULES)
 # that merely contained "example" somewhere in the middle.
 PLACEHOLDER = re.compile(
     r"(?i)^(?:\$\{[^}]*\}|\{\{[^}]*\}\}|<[^>]*>|x{6,}|\*{6,}|\.{6,}"
-    r"|changeme|placeholder|dummy|redacted|secret|password|token"
-    r"|your[-_][\w-]*|example[-_][\w-]*)$")
+    r"|changeme|placeholder|dummy|redacted"
+    r"|your[-_](?:password[-_]here|token[-_]here|api[-_]key[-_]here|secret[-_]here)"
+    r"|example[-_](?:token|key|password|secret))$")
 
 
 def _is_covered(rel, prefixes):
@@ -199,7 +200,8 @@ def _scan_file(root, path, stats):
     findings: list[dict[str, object]] = []
     try:
         with open(path, "rb") as fh:
-            if b"\0" in fh.read(8192):
+            head = fh.read(8192)
+            if head.count(b"\0") >= 4:
                 stats["binary"] += 1
                 return findings, None
         stats["scanned"] += 1

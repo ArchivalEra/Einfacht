@@ -1,1 +1,1 @@
-{"methods": []}
+{"methods": [{"text": "grep -c relaxed_madd", "fixed_in": "calibrate=sample"}]}

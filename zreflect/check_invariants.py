@@ -60,7 +60,8 @@ def _shape_problems(c):
     """
     if not isinstance(c, dict):
         return [M("invariants.not_object", entry=c)], None
-    path = str(c.get("path") or "").strip()
+    raw_path = c.get("path")
+    path = raw_path.strip() if isinstance(raw_path, str) else ""
     mc, mnc = c.get("must_contain"), c.get("must_not_contain")
     if not path:
         return [M("invariants.missing_path", entry=c)], None
@@ -71,22 +72,30 @@ def _shape_problems(c):
 
 
 def _criteria_problems(path, mc, mnc):
-    """Shape validation for the criteria fields (must_contain / must_not_contain).
-
-    Returns None = shape usable; returns a list = shape broken (caller exits
-    early). The three bad shapes each get a guard (no criteria / not a list /
-    element not a string), split out of `_shape_problems` -- what remains over
-    there is "collect values field by field"; this one is "the criteria itself".
-    """
+    """Shape validation for the criteria fields (must_contain / must_not_contain)."""
     if not isinstance(mc, list) and not isinstance(mnc, list):
         return [M("invariants.no_criteria", path=path)]
     if (mc is not None and not isinstance(mc, list)) or \
             (mnc is not None and not isinstance(mnc, list)):
         return [M("invariants.not_string_list", path=path)]
-    if any(not isinstance(x, str) for x in (mc or [])) or \
-            any(not isinstance(x, str) for x in (mnc or [])):
+    if not (mc or []) and not (mnc or []):
+        return [M("invariants.no_criteria", path=path)]
+    if any(not isinstance(x, str) or not x for x in (mc or [])) or \
+            any(not isinstance(x, str) or not x for x in (mnc or [])):
         return [M("invariants.fragment_not_string", path=path)]
     return None
+
+
+def _safe_repo_read(p):
+    target = repo(p)
+    root_abs = os.path.abspath(repo())
+    try:
+        inside = os.path.commonpath((root_abs, os.path.abspath(target))) == root_abs
+    except ValueError:
+        inside = False
+    if not inside or os.path.islink(target):
+        raise OSError("path escapes repo or is symlink")
+    return open(target, encoding="utf-8").read()
 
 
 def _content_problems(path, mc, mnc, read):
@@ -94,7 +103,7 @@ def _content_problems(path, mc, mnc, read):
     `must_not_contain` must be absent."""
     try:
         text = read(path)
-    except OSError:
+    except (OSError, UnicodeError):
         return [M("invariants.unreadable", path=path)]
     out = []
     for frag in mc:
@@ -125,7 +134,7 @@ def problems(checks, read=None):
     """
     if not checks:
         return [M("invariants.empty")]
-    read = read or (lambda p: open(repo(p), encoding="utf-8").read())
+    read = read or _safe_repo_read
     out = []
     for c in checks:
         out += _check_one_problems(c, read)

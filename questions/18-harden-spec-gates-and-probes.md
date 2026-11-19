@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组覆盖 8 道 Spec 闸门的失效回归用例（含 `must_contain: [""]`、`secrets` 首字节 `\x00` 与 `"secret"` 豁免、`pins` 缺第 4 token、`doctor` 3xx/4xx 与 `::1`）
+**Settling:** python3 zreflect/check_ab.py --selftest && python3 zreflect/check_invariants.py --selftest && python3 zreflect/check_instruments.py --selftest && python3 zreflect/check_locks.py --selftest && python3 zreflect/check_pins.py --selftest && python3 zreflect/check_secrets.py --selftest && python3 zreflect/check_world.py --selftest && python3 zreflect/doctor.py --selftest —— rc=0 ⇒ 8 个 Spec 配置型闸门与探针漏洞全部收口；rc≠0 ⇒ 仍有类型、路径或探测绕过
 
 ## 实测问题清单
 

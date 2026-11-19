@@ -80,15 +80,25 @@ def _declared(obj, key):
     return _dig(obj, key) if key else obj
 
 
+_MISSING = object()
+
+
 def _confound_problems(pr, key, da, db):
     """A value mismatch on any key outside the allow axis => confounding
     variable (A/B void)."""
-    allow = set(pr.get("allow") or [])
-    return [M("ab.confound", name=pr["name"],
+    raw_allow = pr.get("allow")
+    if raw_allow is not None and not isinstance(raw_allow, list):
+        return [M("ab.allow_not_list", name=pr["name"])]
+    allow_list = [str(k) for k in (raw_allow or [])]
+    out = [M("ab.allow_key_missing", name=pr["name"], field=k)
+           for k in allow_list if k not in da or k not in db]
+    allow = set(allow_list)
+    out += [M("ab.confound", name=pr["name"],
               key=key or M("ab.root_label"), field=k,
               value_a=da.get(k), value_b=db.get(k))
             for k in sorted(set(da) | set(db))
-            if k not in allow and da.get(k) != db.get(k)]
+            if k not in allow and da.get(k, _MISSING) != db.get(k, _MISSING)]
+    return out
 
 
 def _pair_problems(pr, root, loader):

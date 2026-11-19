@@ -1,4 +1,6 @@
 {
+  "ab.allow_key_missing": "allow-Schlüssel %(field)s von pair %(name)s fehlt in a oder b",
+  "ab.allow_not_list": "allow von pair %(name)s muss eine Liste von Schlüsselnamen sein",
   "ab.artifact_unreadable": "%(name)s: Artefakt nicht lesbar (%(error_a)s / %(error_b)s) ⇒ diesmal nicht geprüft",
   "ab.confound": "%(name)s: Störvariable — %(key)s Schlüssel %(field)r: A=%(value_a)r B=%(value_b)r (Nicht-allow-Achse weicht ab ⇒ A/B ist hinfällig)",
   "ab.empty": "pairs ist leer (Nullwert-Wächter: eine leere Zusicherungsfläche gilt nicht als bestanden)",
@@ -250,6 +252,7 @@
   "install.why_not_hookspath": "warum kein core.hooksPath: das ist ein globaler Überschreibschalter — einmal gesetzt, ignoriert git .git/hooks vollständig; husky / lefthook / pre-commit / handgeschriebene Hooks sterben still (Commits gehen trotzdem durch, keine Warnung).",
   "instruments.constant_return": "`%(key)s` hat sich seit %(first_seen)s nicht geändert (%(days).0f Tage, Konstant-Schwelle %(threshold).0f Tage) — von Hand bestätigen: misst diese cmd, oder gibt sie ewig dieselbe Zahl zurück? (Prüfung auf stille Messinstrument-Drift, issue #6 ①)",
   "instruments.days_unparseable": "%(days_knob)s=%(value)r lässt sich nicht als Tageszahl parsen — Konfiguration korrigieren (oder den Knopf entfernen)",
+  "instruments.empty_registry": "Messmethoden-Register %(name)s deklariert keine Methoden",
   "instruments.entry_malformed": "Messmethoden-Eintrag hat eine falsche Form (text ist Pflicht): %(entry)r",
   "instruments.falsified_method": "die cmd von `%(key)s` enthält ein widerlegtes Messmethoden-Fragment %(text)r (korrekte Methode in %(fixed_in)s) -- eine defekte Messmethode darf nicht im Register bleiben",
   "instruments.first_seen_unparseable": "`%(key)s` hat ein nicht parsbares first_seen (%(first_seen)r) — die Konstantwert-Regel ist nicht auswertbar (wenn unlesbar, sag es; nicht raten)",
@@ -340,6 +343,7 @@
   "lint.title": "Statische Maschinenprüfung (ruff)",
   "lint.tool_broken": "ruff läuft nicht: %(error)r",
   "locks.absent_optional": "%(name)s: auf dieser Maschine nicht vorhanden (optional ⇒ wird gesagt, kein Bestehen)",
+  "locks.bad_form": "Sperre %(name)s hat unbekannte Form %(form)s (erwartet file oder dir)",
   "locks.empty": "Sperrliste ist leer (Nullwert-Wächter: eine leere Zusicherungsfläche ist kein Bestehen)",
   "locks.entry_missing_field": "Sperreintrag fehlt Feld %(field)s: %(entry)r (eine unbegründete Sperre ist ein Zombie)",
   "locks.explicit_spec_missing": "explizit angegebene Spec %(name)s existiert nicht (--spec) — schreiben oder Flag entfernen",
