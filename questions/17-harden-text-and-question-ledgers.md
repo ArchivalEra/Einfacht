@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含 `## 附` 豁免、大小写/空格绕过 `text in line`、`Settling: python3 missing.py`、空 `HISTORY.md`、symlink 逃逸及 `check_readme_sync --bogus`）
+**Settling:** python3 zreflect/check_retractions.py --selftest && python3 zreflect/check_stale.py --selftest && python3 zreflect/check_questions.py --selftest && python3 zreflect/check_history.py --selftest && python3 zreflect/check_readme_sync.py --selftest —— rc=0 ⇒ 文本、撤回、陈旧、悬案、历史与 README 细节漏洞全部收口；rc≠0 ⇒ 仍有文本/解析边界绕过
 
 ## 实测问题清单
 

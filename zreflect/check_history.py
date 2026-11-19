@@ -60,7 +60,7 @@ def surfaces():
 
 
 def _norm(path):
-    return os.path.normcase(os.path.abspath(str(path)))
+    return os.path.normcase(os.path.realpath(str(path)))
 
 
 def is_exempt(path, known=None, root=None):

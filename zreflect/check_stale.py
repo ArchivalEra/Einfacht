@@ -71,7 +71,7 @@ def _retired():
     raw = knobs.raw("REFLECT_RETIRED")
     if not raw:
         return ()
-    return tuple(s for s in raw.split(",") if s)
+    return tuple(s.strip() for s in raw.split(",") if s.strip())
 
 
 def _stale_days_status():
@@ -93,7 +93,7 @@ def _stale_days():
     """Age-check alert threshold (`REFLECT_STALE_DAYS`); unset/bad => None."""
     return _stale_days_status()[0]
 
-SHA_NEAR = re.compile(r"sha|hash|校验|指纹", re.I)
+SHA_NEAR = re.compile(r"sha|hash|commit|digest|checksum|校验|指纹", re.I)
 SHA_TOKEN = re.compile(r"(?<![0-9a-f`])([0-9a-f]{8,64})(?![0-9a-f`])")
 
 
@@ -119,48 +119,32 @@ def _has_dated_record(line):
     return bool(DATED_RECORD.search(line))
 
 
-def _has_ledger_citation(line):
-    """`[[key]]` is a re-playable citation of a ledger fact (`CITE_RE`)."""
-    return bool(CITE_RE.search(line))
+def _has_ledger_citation(line, f=None):
+    """`[[key]]` is a re-playable citation of an existing ledger fact (`CITE_RE`)."""
+    keys = CITE_RE.findall(line)
+    if not keys:
+        return False
+    return True if f is None else any(k in f for k in keys)
 
 
-def _is_sourced(line):
-    """Does this line carry **explicit, verifiable** provenance?
-
-    A bare "history" marker is a **hint**, not evidence: it means "not reconciled
-    against today", not an exemption. To exempt a historical assertion, register
-    it in `retractions.json` / `REFLECT_RETIRED`, or give a delivery-name/sha
-    citation. The two accepted forms are judged by `_has_dated_record` and
-    `_has_ledger_citation`.
-    """
-    return _has_dated_record(line) or _has_ledger_citation(line)
+def _is_sourced(line, f=None):
+    """Does this line carry **explicit, verifiable** provenance?"""
+    return _has_dated_record(line) or _has_ledger_citation(line, f)
 
 
 def _sha_assertion_problems(f, docs, hist):
-    """R1: hex strings near sha / hash words in living state need verifiable
-    provenance.
-
-    Three homes (ledger fact / verifiable provenance); none => report. Zero
-    sha-class facts in the ledger => a separate "measure it into the ledger
-    first" report (empty is not a pass).
-    """
+    """R1: hex strings near sha / hash words in living state need verifiable provenance."""
     out = []
     shas = _sha_facts(f)
     for name, body in sorted(docs.items()):
         for lineno, line, is_living in living_lines(body, hist):
-            out += _sha_line_problems(name, lineno, line, is_living, shas)
+            out += _sha_line_problems(name, lineno, line, is_living, shas, f)
     return out
 
 
-def _sha_line_problems(name, lineno, line, is_living, shas):
-    """Per-line sha provenance verdict: not living / not near a sha word /
-    already sourced => no report.
-
-    With zero shas in the ledger, report "measure it into the ledger first"
-    first (empty is not a pass); with a ledger present but a string matching
-    no known sha (including prefix relations) => report unsourced.
-    """
-    if not is_living or not SHA_NEAR.search(line) or _is_sourced(line):
+def _sha_line_problems(name, lineno, line, is_living, shas, f=None):
+    """Per-line sha provenance verdict."""
+    if not is_living or not SHA_NEAR.search(line) or _is_sourced(line, f):
         return []
     toks = SHA_TOKEN.findall(line)
     if not toks:
@@ -207,7 +191,7 @@ def _retired_name_problems(docs, hist, retired):
     out = []
     for name, body in sorted(docs.items()):
         for lineno, line, is_living in living_lines(body, hist):
-            if not is_living or _is_sourced(line):
+            if not is_living or _has_dated_record(line):
                 continue
             for w in retired:
                 if re.search(r"(?<![0-9A-Za-z_-])%s(?![0-9A-Za-z_.-])" % re.escape(w),

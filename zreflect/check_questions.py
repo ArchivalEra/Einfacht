@@ -67,20 +67,24 @@ NONE_LIKE = (_NOT_EXISTS, "none", "None", "n/a", "N/A")
 PATHISH = (".py", ".sh", ".mjs", ".js", ".md", "/")
 
 
+_NONE_RE = re.compile(
+    r"(?i)^(?:%s)(?:\s|$|--|—)" % "|".join(re.escape(w) for w in NONE_LIKE)
+)
+
+
+def _is_none_like(sv):
+    return bool(_NONE_RE.match((sv or "").strip()))
+
+
+def _field_count(text, name):
+    pat = re.compile(r"(?i)^\*{0,2}%s\*{0,2}\s*:\s*\*{0,2}\s*(.*?)\s*$" % re.escape(name))
+    return sum(1 for ln in text.splitlines() if pat.match(ln))
+
+
 def field(text, name):
     """Read `**Name:** value` / `**Name**: value` / `Name: value` (three spellings;
     anchored at line start, first match wins).
-
-    Warning: this was bitten once -- the regex was written as
-    `\\*{0,2}Name\\*{0,2}\\s*:`, which cannot match `**Status:**` (the real order is
-    `**` + `Status` + `:` + `**`; the colon sits **between** the pair of asterisks).
-    Every field then read as None, and the gate reported "missing field" even for
-    compliant questions. **A pair of asterisks after the colon must also be allowed.**
     """
-    # The value supports **continuation lines** (issue #15 B1): if the next line
-    # does not start with `**X:**` / `X:`, it is folded into this field. The same
-    # shape bit downstream twice (a wrapped Settling => the rc= criterion landed on
-    # the second line => false "no distinguishable pair of outcomes").
     lines = text.splitlines()
     for i, ln in enumerate(lines):
         m = re.match(r"(?i)^\*{0,2}%s\*{0,2}\s*:\s*\*{0,2}\s*(.*?)\s*$"
@@ -89,7 +93,7 @@ def field(text, name):
             continue
         val = [m.group(1).strip()]
         for nxt in lines[i + 1:]:
-            if re.match(r"^\s*(?:\*\*)?[A-Za-z][A-Za-z0-9_-]*(?:\*\*)?\s*:", nxt):
+            if re.match(r"^\s*(?:\*\*)?(?!https?:)[A-Za-z][A-Za-z0-9_-]*(?:\*\*)?\s*:", nxt):
                 break                    # next field starts
             if nxt.strip():
                 val.append(nxt.strip())
@@ -120,7 +124,9 @@ def is_resolved(text):
 
 
 def _status_problems(name, text):
-    """`Status` field: must exist and be a known value (yardstick: `status_of`)."""
+    """`Status` field: must exist, be unique, and be a known value."""
+    if _field_count(text, "Status") > 1:
+        return [M("questions.duplicate_field", name=name, field="Status")]
     st = status_of(text)
     if not st:
         return [M("questions.missing_status", name=name)]
@@ -149,22 +155,46 @@ def _settling_cmd(sv):
     return cmd
 
 
+def _missing_settler_path(cmd, chk):
+    import shlex  # noqa: PLC0415
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        tokens = cmd.split()
+    skip_next = False
+    for raw_tok in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        tok = raw_tok.strip("`\"'")
+        if tok in ("-c", "-m"):
+            skip_next = True
+            continue
+        if tok.startswith("-") or "://" in tok:
+            continue
+        if any(tok.endswith(x) or x in tok for x in PATHISH) and not chk(tok):
+            return tok
+    return None
+
+
 def _settling_problems(name, text, chk, runner=None, verify_resolved=False, cache=None):
-    """`Settling` field: exists / two distinguishable outcomes / settler actually runs."""
+    """`Settling` field: exists / unique / two distinguishable outcomes / settler actually runs."""
+    if _field_count(text, "Settling") > 1:
+        return [M("questions.duplicate_field", name=name, field="Settling")]
     sv = field(text, "Settling")
     if not sv:
         return [M("questions.missing_settling", name=name)]
     st = status_of(text)
-    if sv.startswith(NONE_LIKE):
-        if st == "resolved":
-            return [M("questions.resolved_cannot_be_none", name=name)]
-        return _none_like_problems(name, sv)
+    if _is_none_like(sv):
+        return ([M("questions.resolved_cannot_be_none", name=name)]
+                if st == "resolved" else _none_like_problems(name, sv))
     out = []
     if not any(t in sv for t in ("rc=", "\u21d2", "=>")):
         out.append(M("questions.no_distinct_outcomes", name=name))
-    tok = sv.split()[0].strip("`")
-    if any(tok.endswith(x) or x in tok for x in PATHISH) and not chk(tok):
-        out.append(M("questions.settler_missing", name=name, target=tok))
+    cmd = _settling_cmd(sv)
+    bad_tok = _missing_settler_path(cmd, chk)
+    if bad_tok:
+        out.append(M("questions.settler_missing", name=name, target=bad_tok))
     out += gate.prose_in_exec_problems(name, "Settling", sv)
     if out or st != "resolved" or not (verify_resolved or runner is not None):
         return out

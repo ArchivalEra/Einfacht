@@ -90,34 +90,29 @@ def _parity_problems(files, langs):
     return out
 
 
-def problems_structure(files, langs):
-    """Structural criterion (pure function: the selftest depends on that).
-    `files` = {name: body (unreadable => no key for it)}."""
+def _one_readme_problems(name, files, langs):
+    if name not in files:
+        return [M("readme.file_missing", name=name)]
+    body = re.sub(r"<!--.*?-->", "", files[name] or "", flags=re.S)
     out = []
-    if not langs:
-        # Zero-value guard: an empty list => "all README group members are
-        # present" is an undecidable sentence.
-        return [M("readme.names_empty_structure")]
-    # Single entry => cross-link criterion degrades (issue #8): with only one
-    # language, "the switcher must point at every language" holds vacuously
-    # and self-reference is a degenerate requirement. The exist / non-empty
-    # criteria still apply as usual; cross-links are not checked (run()
-    # states the degraded criterion is not applicable -- never pretend to
-    # have checked).
-    switcher_applies = len(langs) > 1
-    for name in langs:
-        if name not in files:
-            out.append(M("readme.file_missing", name=name))
-            continue
-        body = files[name] or ""
-        if not body.strip():
-            out.append(M("readme.file_empty", name=name))
-        if not switcher_applies:
-            continue
+    if not body.strip():
+        out.append(M("readme.file_empty", name=name))
+    if len(langs) > 1:
         for other in langs:
             if other not in body:
-                out.append(M("readme.switcher_incomplete",
-                             name=name, expected=other))
+                out.append(M("readme.switcher_incomplete", name=name, expected=other))
+    return out
+
+
+def problems_structure(files, langs):
+    """Structural criterion (pure function: the selftest depends on that)."""
+    if not langs:
+        return [M("readme.names_empty_structure")]
+    if len(set(langs)) != len(langs):
+        return [M("readme.duplicate_name")]
+    out = []
+    for name in langs:
+        out += _one_readme_problems(name, files, langs)
     return out + _parity_problems(files, langs)
 
 
@@ -167,7 +162,10 @@ def _push_mode(argv, langs):
         return fatal(M("readme.changed_file_missing", name=src))
     else:
         lines = open(src, encoding="utf-8", errors="replace").read().splitlines()
-    changed = {l.strip().strip('"') for l in lines if l.strip()}
+    changed = {
+        (s[2:] if s.startswith("./") else s)
+        for l in lines if (s := l.strip().strip('"'))
+    }
     probs = problems_push(changed, langs)
     return finish(M("readme.title"), probs,
                   M("readme.ok_push", count=len(langs)))
@@ -182,6 +180,8 @@ def run(argv):
         return off(M("readme.off_empty_group"))
     if argv and argv[0] == "--changed":
         return _push_mode(argv, langs)
+    if argv:
+        return fatal(M("readme.unknown_arg", arg=argv[0]))
     files = {}
     for name in langs:
         p = repo(name)

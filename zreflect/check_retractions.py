@@ -19,6 +19,7 @@ assertion survived **in the same file**, and also had a copy in another
 document. Prose relies on good intentions; this relies on a gate.
 """
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -36,12 +37,19 @@ REQUIRED = ("id", "text", "evidence", "fixed_in")
 HIST_SECS = knobs.history_secs()
 
 
+_PLACEHOLDER_FIXED = frozenset({"tbd", "todo", "none", "n/a", "-", "?"})
+
+
 def _entry_field_problems(retractions):
     """Required fields of every retraction entry (one missing => the ledger
     entry cannot be trusted)."""
-    return [M("retractions.entry_missing_field", field=fld, entry=r.get("id"))
-            for r in retractions
-            for fld in REQUIRED if not r.get(fld)]
+    out = []
+    for r in retractions:
+        for fld in REQUIRED:
+            val = str(r.get(fld) or "").strip()
+            if not val or (fld == "fixed_in" and val.lower() in _PLACEHOLDER_FIXED):
+                out.append(M("retractions.entry_missing_field", field=fld, entry=r.get("id")))
+    return out
 
 
 def _run_evidence(ev, runner, cache):
@@ -75,22 +83,23 @@ def _evidence_problems(retractions, runner=None, verify_evidence=False):
     return out
 
 
+def _norm_ws(s):
+    return re.sub(r"\s+", " ", s or "").strip().lower()
+
+
 def _resurfaced_problems(retractions, docs, hist):
     """Resurfacing: living-state lines may **not** contain retracted `text`
-    (even with a history tag -- prose belongs in `HISTORY.md`).
-
-    Only **living state** is scanned (`zreflect/facts.py`'s `living_lines`):
-    append-only history sections declared via `REFLECT_HISTORY_SECS` are exempt
-    -- their "as it was then" is not "as it is now".
+    (normalized for case and whitespace; prose belongs in `HISTORY.md`).
     """
     out = []
     for r in retractions:
         text = r.get("text") or ""
-        if not text:
+        ntext = _norm_ws(text)
+        if not ntext:
             continue
         for name, body in sorted(docs.items()):
             for i, line, is_living in living_lines(body or "", hist):
-                if is_living and text in line:
+                if is_living and ntext in _norm_ws(line):
                     out.append(M("retractions.resurfaced", name=name, line=i,
                                  text=text, entry=r.get("id", "?")))
     return out
@@ -127,17 +136,19 @@ def run(argv):
     rp = repo(knobs.get("REFLECT_RETRACTIONS"))
     if not os.path.exists(rp):
         return fatal(M("retractions.file_missing", name=rp))
-    docs = {}
+    docs, missing_docs = {}, []
     for name in (argv or scanned_docs()):
         p = repo(name)
         if os.path.exists(p):
             docs[name] = open(p, encoding="utf-8", errors="replace").read()
+        else:
+            missing_docs.append(M("retractions.doc_missing", name=name))
     rc = guard_nonempty("check_retractions", docs, M("retractions.scanned_docs"))
     if rc:
         return rc
     led = load_or_fatal(rp)
     verify_ev = int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0) == 0
-    probs = problems(led, docs, verify_evidence=verify_ev)
+    probs = missing_docs + problems(led, docs, verify_evidence=verify_ev)
     n = len(led.get("retractions") or [])
     return finish(M("retractions.title"), probs,
                   M("retractions.ok", count=n, documents=len(docs)))

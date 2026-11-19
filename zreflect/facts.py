@@ -137,11 +137,11 @@ def age_days(entry):
 
 
 def section_is_living(heading, historical_secs=()):
-    """Return True if a `## ` section is living state (historical_secs and appendix exempt)."""
+    """Return True if a `## ` section is living state (only `historical_secs` exempt)."""
     m = re.match(r"^##\s+([0-9]+)", heading)
     if m:
         return m.group(1) not in {str(s) for s in historical_secs}
-    return not heading.startswith("## " + chr(0x9644))
+    return True
 
 
 def living_lines(text, historical_secs=()):
@@ -150,6 +150,8 @@ def living_lines(text, historical_secs=()):
     for i, ln in enumerate(text.split("\n"), 1):
         if re.match(r"^##\s+", ln):
             keep = section_is_living(ln, historical_secs)
+        elif re.match(r"^#\s+", ln):
+            keep = True
         out.append((i, ln, keep))
     return out
 
@@ -879,7 +881,7 @@ def _cases():
         ("★ living.sections_and_appendix",
          lambda: section_is_living("## 5 old", ("5",)) is False
          and section_is_living("## 6 new", ("5",)) is True
-         and section_is_living("## " + chr(0x9644)) is False),
+         and section_is_living("## " + chr(0x9644)) is True),
         ("facts.render_and_prose_roundtrip",
          lambda: BLOCK_BEGIN in render_block({"facts": {"n": {"value": 1, "cmd": "c"}}})
          and prose_of("x<!-- AUTO:FACTS -->y<!-- /AUTO:FACTS -->").strip() == "x"),
