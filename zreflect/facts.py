@@ -525,6 +525,8 @@ def _write_guarded(out, old, facts, argv, accept_all=False):
 def measure(argv):
     """Run measurement collector, check guards, preserve `first_seen`, and write ledger."""
     facts = _measure()
+    if not isinstance(facts, dict) or not facts:
+        return fatal(M("guard.empty_ledger"))
     if _attach_core_seal(facts):
         return 2
     bad = sorted(k for k, v in (facts or {}).items() if not (isinstance(v, dict) and "value" in v))

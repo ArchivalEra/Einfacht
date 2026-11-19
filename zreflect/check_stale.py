@@ -74,15 +74,24 @@ def _retired():
     return tuple(s for s in raw.split(",") if s)
 
 
-def _stale_days():
-    """Age-check alert threshold (`REFLECT_STALE_DAYS`); unset/bad => None."""
+def _stale_days_status():
+    """Return `(float_days_or_None, bad_raw_or_None)` for `REFLECT_STALE_DAYS`."""
+    import math  # noqa: PLC0415
     raw = (knobs.raw("REFLECT_STALE_DAYS") or "").strip()
     if not raw:
-        return None
+        return None, None
     try:
-        return float(raw)
+        v = float(raw)
     except ValueError:
-        return None
+        return None, raw
+    if not math.isfinite(v) or v < 0:
+        return None, raw
+    return v, None
+
+
+def _stale_days():
+    """Age-check alert threshold (`REFLECT_STALE_DAYS`); unset/bad => None."""
+    return _stale_days_status()[0]
 
 SHA_NEAR = re.compile(r"sha|hash|校验|指纹", re.I)
 SHA_TOKEN = re.compile(r"(?<![0-9a-f`])([0-9a-f]{8,64})(?![0-9a-f`])")
@@ -260,6 +269,9 @@ def scanned_docs():
 
 
 def run(argv):
+    days, bad_days = _stale_days_status()
+    if bad_days is not None:
+        return fatal(M("stale.bad_days", value=bad_days))
     docs = _load_docs(scanned_docs())
     rc = guard_nonempty("check_stale", docs, M("stale.scanned_docs"))
     if rc:
@@ -272,7 +284,7 @@ def run(argv):
     if not probs:
         if not retired:
             print(M("stale.retired_rule_off"), file=sys.stderr)
-        if _stale_days() is None:
+        if days is None:
             print(M("stale.age_rule_off"), file=sys.stderr)
     rc = finish(M("stale.title"), probs,
                 M("stale.ok", count=len(docs),

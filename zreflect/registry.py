@@ -301,9 +301,16 @@ def _main_run(argv):
     _emit_phase_group(res["fail_list"], "registry.phase_failed", fail_out)
     _emit_phase_group(res.get("fatal_list", ()), "registry.phase_fatal", fail_out)
     _emit_phase_group(res.get("error_list", ()), "registry.phase_error", fail_out)
+    if res.get("skip_list"):
+        print(M("registry.phase_skip_list", count=len(res["skip_list"]),
+                files=", ".join(res["skip_list"])))
     if res["off_list"]:
         print(M("registry.phase_off_list", count=len(res["off_list"]),
                 files=", ".join(res["off_list"])))
+    req = set(knobs.required_gates())
+    bad_off = [f for f in res["off_list"] if f in req or os.path.basename(f) in req]
+    if bad_off:
+        return fatal(M("registry.required_gate_off", files=", ".join(bad_off)))
     return 1 if (res["failed"] or res.get("fatal") or res.get("error")) else 0
 
 

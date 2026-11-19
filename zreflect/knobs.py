@@ -58,6 +58,7 @@ REGISTRY = {
     "REFLECT_I18N_ROOT": ("dir", "", _Semantic("knobs.sem.reflect_i18n_root")),
     "REFLECT_SNAPSHOT_ROOT": ("dir", "", _Semantic("knobs.sem.reflect_snapshot_root")),
     "REFLECT_SECRETS": ("file", "secrets.json", _Semantic("knobs.sem.reflect_secrets")),
+    "REFLECT_REQUIRED_GATES": ("list", "", _Semantic("knobs.sem.reflect_required_gates")),
 }
 
 KINDS = ("file", "list", "dir", "number", "flag", "value")
@@ -87,6 +88,14 @@ def knobs_table(rows=None):
         kind, default, sem = rows[name]
         lines.append("| `%s` | %s | %s | %s |" % (name, kind, default or "--", sem))
     return "\n".join(lines)
+
+
+def required_gates(root=None):
+    """Gate names declared forbidden from going `OFF` via `REFLECT_REQUIRED_GATES`."""
+    raw_val = raw("REFLECT_REQUIRED_GATES", root)
+    if not raw_val or not raw_val.strip():
+        return []
+    return [s.strip() for s in raw_val.split(",") if s.strip()]
 
 
 def repo_config(root=None):

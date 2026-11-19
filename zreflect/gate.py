@@ -73,12 +73,11 @@ def require_nonempty(name, seq, what=None):
 
 def guard_nonempty(name, seq, what=None):
     """RC-returning form of `require_nonempty`: empty prints FATAL to stderr and returns 2."""
-    try:
-        require_nonempty(name, seq, what)
+    items = list(seq)
+    if items:
         return None
-    except SystemExit as e:
-        print("%s" % e, file=sys.stderr)
-        return 2
+    label = what if what is not None else i18n.M("gate.default_input_label")
+    return fatal(i18n.M("gate.require_nonempty", name=name, what=str(label)))
 
 
 def off(notice):
@@ -95,7 +94,8 @@ def fatal(msg):
 
 def fatal_exit(msg):
     """Abort with `FATAL:` SystemExit(2)."""
-    raise SystemExit(i18n.emit("fatal", msg))
+    print(i18n.emit("fatal", msg), file=sys.stderr)
+    raise SystemExit(2)
 
 
 def declares_itself(path):
@@ -456,11 +456,12 @@ def default_runner(f, repo_root=None):
 
 
 def run_phase(phase, gates, runner=None, repo_root=None):
-    """Run phase gates and aggregate `{ran, off, failed, fatal, error, *_list, fail_out}`."""
+    """Run phase gates and aggregate `{ran, off, skipped, failed, fatal, error, *_list, fail_out}`."""
     run = runner or (lambda f: default_runner(f, repo_root))
     res: dict[str, Any] = {
-        "ran": 0, "off": 0, "failed": 0, "fatal": 0, "error": 0,
-        "off_list": [], "fail_list": [], "fatal_list": [], "error_list": [], "fail_out": {},
+        "ran": 0, "off": 0, "skipped": 0, "failed": 0, "fatal": 0, "error": 0,
+        "off_list": [], "skip_list": [], "fail_list": [], "fatal_list": [],
+        "error_list": [], "fail_out": {},
     }
     for item in gates:
         f = item["file"] if isinstance(item, dict) else item
@@ -482,6 +483,9 @@ def run_phase(phase, gates, runner=None, repo_root=None):
         elif any(kind == "off" for _i, kind, _ln in i18n.scan(out)):
             res["off"] += 1
             res["off_list"].append(f)
+        elif any(kind == "skip" for _i, kind, _ln in i18n.scan(out)):
+            res["skipped"] += 1
+            res["skip_list"].append(f)
         else:
             res["ran"] += 1
     return res
@@ -491,11 +495,13 @@ def _cases():
     return [
         ("★ gate.empty_input_fatals", lambda: raises(lambda: require_nonempty("x", []))),
         ("★ gate.phase_tracks_four_tiers",
-         lambda: (lambda ph: ph["fatal_list"] == ["d.py"]
+         lambda: (lambda ph: ph["fatal_list"] == ["d.py"] and ph["skip_list"] == ["e.py"]
+                  and ph["ran"] == 1
                   and "FATAL: cfg" in ph["fail_out"].get("d.py", ""))(
-             run_phase("commit", ["a.py", "b.py", "c.py", "d.py"],
+             run_phase("commit", ["a.py", "b.py", "c.py", "d.py", "e.py"],
                        runner=lambda f: {"a.py": (0, ""), "b.py": (0, "OFF: x"),
-                                         "c.py": (1, "bad"), "d.py": (2, "FATAL: cfg")}[f]))),
+                                         "c.py": (1, "bad"), "d.py": (2, "FATAL: cfg"),
+                                         "e.py": (0, "SKIP: opt")}[f]))),
         ("★ gate.prose_in_exec_rejected",
          lambda: [p.code for p in prose_in_exec_problems("w", "cmd", "not a command")]
          == ["criteria.exec_position_is_prose"]),

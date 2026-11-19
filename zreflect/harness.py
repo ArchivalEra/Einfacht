@@ -78,8 +78,11 @@ def _tail(text, n=5):
 
 
 def _has_summary(text):
-    import i18n  # noqa: PLC0415
-    return any(i18n.is_summary(ln) for ln in (text or "").splitlines())
+    for ln in (text or "").splitlines():
+        m = re.fullmatch(r"=== ([0-9]+) PASS / ([0-9]+) FAIL ===", ln.strip())
+        if m and int(m.group(1)) >= 1 and int(m.group(2)) == 0:
+            return True
+    return False
 
 
 def _derive_listing(repo):

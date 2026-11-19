@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含 `check_pins` 探针非 0 退出、`check_stale` 非数字天数、`facts.measure` 空 `{}` 配合 `SEAL.json`、`harness` 空摘要 `0 PASS / 0 FAIL`）
+**Settling:** python3 zreflect/gate.py --selftest && python3 zreflect/check_ab.py --selftest && python3 zreflect/check_pins.py --selftest && python3 zreflect/check_stale.py --selftest && python3 zreflect/facts.py --selftest && python3 zreflect/harness.py --selftest && python3 zreflect/registry.py --verify-seal —— rc=0 ⇒ 静默降级、exit 2、SKIP、空台账、假摘要与必跑闸门全部自证通过；rc≠0 ⇒ 仍有降级逃生口
 
 ## 实测问题清单
 

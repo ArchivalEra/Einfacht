@@ -96,7 +96,8 @@ def _tree_pin_problems(p, head, run):
     skips: list[Message] = []
     rc, out = run(p["stamp_read"])
     if rc != 0 or not out:
-        skips.append(M("pins.stamp_unreadable", name=p["name"]))
+        target = skips if p.get("optional") else problems
+        target.append(M("pins.stamp_unreadable", name=p["name"]))
         return problems, skips
     parts = out.split()
     if len(parts) < 3:
@@ -118,7 +119,8 @@ def _version_pin_problems(p, run):
     rc, out = run(p.get("version_read", ""))
     first = out.splitlines()[0] if out else ""
     if rc != 0 or not first:
-        skips.append(M("pins.version_unreadable", name=p["name"]))
+        target = skips if p.get("optional") else problems
+        target.append(M("pins.version_unreadable", name=p["name"]))
         return problems, skips
     if p.get("expect_version") and p["expect_version"] not in first:
         problems.append(M("pins.version_drift", name=p["name"],
@@ -244,7 +246,11 @@ def _cases():
          lambda: [p.code for p in check(fx["version_drift"], run=_run,
                                         root=d)[0]] == ["pins.version_drift"]),
         ("\u2605 pins.stamp_unreadable",
-         lambda: [p.code for p in check(fx["skip"], run=_run, root=d)[1]]
+         lambda: [p.code for p in check(fx["skip"], run=_run, root=d)[0]]
+         == ["pins.stamp_unreadable"]),
+        ("\u2605 pins.stamp_unreadable_optional_skips",
+         lambda: [p.code for p in check(
+             {"pins": [{**fx["skip"]["pins"][0], "optional": True}]}, run=_run, root=d)[1]]
          == ["pins.stamp_unreadable"]),
         ("\u2605 pins.worktree_missing",
          lambda: [p.code for p in check(
