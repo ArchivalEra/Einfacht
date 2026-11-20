@@ -384,7 +384,7 @@ def _git_prev_sha_and_diff(root, rel):
     return prev_sha, diff_txt
 
 
-def build_requests(changed_paths, root=None, repo_name=None, diff_fn=None, sha_fn=None):
+def build_requests(changed_paths, root=None, repo_name=None, diff_fn=None, sha_fn=None, reason=""):
     """Build controlled-scope approval request payloads from changed paths (purely mechanical)."""
     base = root or gate.GATE_REPO
     rname = repo_name or os.path.basename(os.path.abspath(base))
@@ -409,6 +409,8 @@ def build_requests(changed_paths, root=None, repo_name=None, diff_fn=None, sha_f
             "target_path": rel,
             "prev_sha256": prev_sha,
             "target_sha256": target_sha,
+            "reason": reason or "",
+            "target_content": (text or "")[:32000],
             "diff_summary": diff_sum or ("(new or binary file %s)" % rel),
         })
     return out
@@ -456,7 +458,8 @@ def _post_one_request(url, payload, wait):
     if resp.get("status") == "rejected_duplicate_2m":
         print(M("approval.request_rejected_duplicate", target=payload["target_path"]), file=sys.stderr)
         return False
-    print(M("approval.request_submitted", id=resp.get("id", ""), status=resp.get("status", ""),
+    label = resp.get("display_id") or resp.get("id", "")
+    print(M("approval.request_submitted", id=label, status=resp.get("status", ""),
             action=payload["action"], target=payload["target_path"], url=url))
     if wait and resp.get("status") == "pending":
         deadline = _time.time() + 300
@@ -475,7 +478,12 @@ def _post_one_request(url, payload, wait):
 
 def _submit_all(argv):
     import impact  # noqa: PLC0415
-    reqs = build_requests(impact.git_changed_files(gate.GATE_REPO), root=gate.GATE_REPO)
+    reason = ""
+    if "--reason" in argv:
+        idx = argv.index("--reason")
+        if idx + 1 < len(argv):
+            reason = argv[idx + 1]
+    reqs = build_requests(impact.git_changed_files(gate.GATE_REPO), root=gate.GATE_REPO, reason=reason)
     if not reqs:
         print(M("approval.no_controlled_changes"))
         return 0
