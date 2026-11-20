@@ -40,7 +40,7 @@
    "file_sha256": "b628ce73bffc63799d1b5f17480002e4d09a7031eee42fc0c6f07fa9404718db"
   },
   "zreflect/check_questions.py": {
-   "file_sha256": "85e072d475449cb1badc17e2a57bb148f7a398725deda2b2cbc92a1d3cf1c73a"
+   "file_sha256": "f0b8c6dd2b3f422baf594fff84de69a160bf9e68ceac37c63f81882e3642a35b"
   },
   "zreflect/check_readme_sync.py": {
    "file_sha256": "8bd2092ab170b0474667546fa272ff38a9032654dfc90db0a1eb2a6c7f3a434e"
@@ -85,13 +85,13 @@
    "file_sha256": "ec670e50c609a3b6be766e98f0cce36d2d1c60c8ea7df34f92a23157d9dad169"
   },
   "zreflect/lang/de.json": {
-   "file_sha256": "8f7c6e43ac46746d5cacc184eddfd7ba4e1bae44115e323e580f7fe21dd2181d"
+   "file_sha256": "084308e2cb2a19a86c5a55ed5bd3478f76409fe515c98864e6e5d23188dc5d81"
   },
   "zreflect/lang/en.json": {
-   "file_sha256": "9bfc4a4cf1c8c194ba62458104271b045b2428c57d5bac626c128b281aac6e39"
+   "file_sha256": "103ce803f1b810039edf3b7bc519113f61f6c349c38b1aa13ebacb1f786ebc75"
   },
   "zreflect/lang/zh.json": {
-   "file_sha256": "575fa006796d2ebe6b91cb4665c331931afd710bcd5bf45e1a435e09dd6c209a"
+   "file_sha256": "02c5157634a1a67cc2f405f685754038559b1c7132d057372819c47ec510cc39"
   },
   "zreflect/next.py": {
    "file_sha256": "84e52347aa4767de9431e7d20579d5474ef28bb01f90f34f6cb5c66c4231f611"
@@ -104,5 +104,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "59b1160279cddbe7e893977d2485bce181269f7b5544d7c16c4f313497a2c0b2"
+ "tree_sha256": "83f01adc1661ce78410d1b7a5fd656f916cbffc1c685488833f7a99157219136"
 }

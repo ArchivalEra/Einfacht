@@ -386,6 +386,7 @@
   "pins.version_drift": "%(name)s: 版本漂移（期望 %(declared)s，实测 %(actual)s）",
   "pins.version_unreadable": "%(name)s: 版本命令读不到",
   "pins.worktree_missing": "%(name)s: worktree %(path)s 不存在（指针在、树不在）",
+  "questions.bad_parallel": "%(name)s：非法 Parallel 值 %(actual)r（仅允许 true 或 false）",
   "questions.bad_status": "%(name)s：Status 不合法：%(actual)s（合法：%(expected)s）",
   "questions.duplicate_field": "%(name)s 重复声明了 %(field)s",
   "questions.empty": "一条悬案都没收集到 —— 空输入不是通过（零值守卫）：先查 questions/ 目录",

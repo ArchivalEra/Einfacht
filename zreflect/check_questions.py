@@ -211,15 +211,74 @@ def _settling_problems(name, text, chk, runner=None, verify_resolved=False, cach
     return out
 
 
-def _run_cached(cmd, runner, cache):
+def _parallel_problems(name, text):
+    if _field_count(text, "Parallel") > 1:
+        return [M("questions.duplicate_field", name=name, field="Parallel")]
+    raw = field(text, "Parallel")
+    if raw is None:
+        return []
+    val = raw.strip().lower()
+    if val not in ("true", "false"):
+        return [M("questions.bad_parallel", name=name, actual=raw)]
+    return []
+
+
+def is_parallel(text):
+    """Whether a question explicitly opts into parallel settler replay (`Parallel: true`)."""
+    raw = field(text, "Parallel")
+    return (raw or "").strip().lower() == "true"
+
+
+def _split_and_chain(cmd):
+    parts: list[str] = []
+    buf: list[str] = []
+    quote = ""
+    i = 0
+    while i < len(cmd):
+        ch = cmd[i]
+        if ch in ("'", '"') and (not quote or quote == ch):
+            quote = "" if quote else ch
+        if not quote and cmd[i:i + 2] == "&&":
+            parts.append("".join(buf).strip())
+            buf, i = [], i + 2
+            continue
+        buf.append(ch)
+        i += 1
+    parts.append("".join(buf).strip())
+    if len(parts) <= 1 or any(not p for p in parts):
+        return [cmd]
+    unsafe = ("cd ", "export ", "unset ")
+    if any(p.startswith(unsafe) or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", p) for p in parts):
+        return [cmd]
+    return parts
+
+
+def _run_one_cached(sub, runner, cache, cache_lock):
+    if cache_lock is not None:
+        with cache_lock:
+            if sub in cache:
+                return cache[sub]
+    elif cache is not None and sub in cache:
+        return cache[sub]
+    res = gate.run_cmd(sub)
+    if cache is not None:
+        if cache_lock is not None:
+            with cache_lock:
+                cache[sub] = res
+        else:
+            cache[sub] = res
+    return res
+
+
+def _run_cached(cmd, runner, cache, cache_lock=None):
     if runner is not None:
         return runner(cmd)
-    if cache is not None and cmd in cache:
-        return cache[cmd]
-    res = gate.run_cmd(cmd)
-    if cache is not None:
-        cache[cmd] = res
-    return res
+    last = (0, "")
+    for sub in _split_and_chain(cmd):
+        last = _run_one_cached(sub, runner, cache, cache_lock)
+        if last[0] != 0:
+            return last
+    return last
 
 
 def _verify_set(verify_resolved, files):
@@ -228,18 +287,49 @@ def _verify_set(verify_resolved, files):
     return set(files) if verify_resolved else set()
 
 
+def _check_one_question(name, text, chk, runner, verify, cache, cache_lock):
+    out = _status_problems(name, text) + _parallel_problems(name, text)
+    if out or not verify:
+        return out + _settling_problems(name, text, chk, runner=runner, verify_resolved=False, cache=cache)
+    sv = field(text, "Settling")
+    if not sv or _is_none_like(sv) or status_of(text) not in ("resolved", "wontfix"):
+        return _settling_problems(name, text, chk, runner=runner, verify_resolved=False, cache=cache)
+    pre = _check_settler_exec(name, sv, chk)
+    if pre:
+        return pre
+    rc, _ = _run_cached(_settling_cmd(sv), runner, cache, cache_lock)
+    if rc != 0:
+        return [M("questions.resolved_settler_failed", name=name, rc=str(rc), cmd=_settling_cmd(sv)[:60])]
+    return []
+
+
 def problems(files, exists=None, runner=None, verify_resolved=False):
     """Return the problem list (pure function: the selftest needs that)."""
+    import concurrent.futures  # noqa: PLC0415
+    import threading  # noqa: PLC0415
     if not files:
         return [M("questions.empty")]
     chk = exists or (lambda p: os.path.exists(os.path.join(gate.GATE_REPO, p)))
     targets = _verify_set(verify_resolved, files)
     cache: dict[str, tuple[int | None, str]] = {}
+    cache_lock = threading.Lock()
+    ordered = sorted(files.items())
+    par_items = [(n, t) for n, t in ordered if is_parallel(t) and runner is None and n in targets]
+    par_results: dict[str, list] = {}
+    if par_items:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(par_items))) as pool:
+            futs = {
+                n: pool.submit(_check_one_question, n, t, chk, runner, True, cache, cache_lock)
+                for n, t in par_items
+            }
+            for n, fut in futs.items():
+                par_results[n] = fut.result()
     out = []
-    for name, text in sorted(files.items()):
-        out += _status_problems(name, text)
-        out += _settling_problems(name, text, chk, runner=runner,
-                                  verify_resolved=(name in targets), cache=cache)
+    for name, text in ordered:
+        if name in par_results:
+            out += par_results[name]
+        else:
+            out += _check_one_question(name, text, chk, runner, name in targets, cache, cache_lock)
     return out
 
 
@@ -373,6 +463,13 @@ def _cases():
         ("★ questions.empty",
          lambda: [p.code for p in problems({}, exists=lambda p: True)]
          == ["questions.empty"]),
+        ("★ questions.bad_parallel_rejected",
+         lambda: [p.code for p in problems(
+             {"questions/13.md": _q() + "**Parallel:** maybe\n"}, exists=lambda p: True)]
+         == ["questions.bad_parallel"]),
+        ("questions.parallel_and_and_chain_split",
+         lambda: is_parallel(_q() + "**Parallel:** true\n")
+         and _split_and_chain("python3 a.py && python3 b.py") == ["python3 a.py", "python3 b.py"]),
     ]
 
 

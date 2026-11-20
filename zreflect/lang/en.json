@@ -386,6 +386,7 @@
   "pins.version_drift": "%(name)s: version drift (expected %(declared)s, measured %(actual)s)",
   "pins.version_unreadable": "%(name)s: version command unreadable",
   "pins.worktree_missing": "%(name)s: worktree %(path)s does not exist (the pointer is there, the tree is not)",
+  "questions.bad_parallel": "%(name)s: invalid Parallel value %(actual)r (expected true or false)",
   "questions.bad_status": "%(name)s: invalid Status: %(actual)s (valid: %(expected)s)",
   "questions.duplicate_field": "%(name)s declares %(field)s more than once",
   "questions.empty": "no questions collected — empty input is not a pass (zero-value guard): check the questions/ directory first",

@@ -386,6 +386,7 @@
   "pins.version_drift": "%(name)s: Versions-Drift (erwartet %(declared)s, gemessen %(actual)s)",
   "pins.version_unreadable": "%(name)s: Versionsbefehl unlesbar",
   "pins.worktree_missing": "%(name)s: Arbeitsbaum %(path)s existiert nicht (der Zeiger ist da, der Baum nicht)",
+  "questions.bad_parallel": "%(name)s: ungültiger Parallel-Wert %(actual)r (erwartet true oder false)",
   "questions.bad_status": "%(name)s: ungültiger Status: %(actual)s (gültig: %(expected)s)",
   "questions.duplicate_field": "%(name)s deklariert %(field)s mehrfach",
   "questions.empty": "keine Fragen gesammelt — leere Eingabe ist kein Bestehen (Nullwert-Wächter): erst das Verzeichnis questions/ prüfen",

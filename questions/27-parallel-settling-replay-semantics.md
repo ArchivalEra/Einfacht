@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含非法 `Parallel:` 值被拦截、`Parallel: true` 并发重放与串行判定一致、以及并发/子命令去重后 `check_questions.py` 正确捕获失败且耗时显著下降）
+**Settling:** `python3 zreflect/check_questions.py --selftest && python3 zreflect/check_lint.py` -- rc=0 => Parallel field validation, sub-command dedup, and parallel replay hold; rc!=0 => parallel replay regression
 
 ## 实测问题清单
 
