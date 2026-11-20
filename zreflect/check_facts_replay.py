@@ -20,7 +20,7 @@ from gate import (  # noqa: E402
     off,
     quote,
     repo,
-    run_cmd,
+    run_cmd_cached,
     timeout_with_status,
 )
 from i18n import Catalog, M, bind, load_pack  # noqa: E402
@@ -112,7 +112,7 @@ def replay_all(ledger, runner=None):
         if depth < 0 or depth >= _MAX_DEPTH:
             return {"problems": [M("replay.too_deep", depth=depth, limit=_MAX_DEPTH)],
                     "ok": 0, "attempts": 0, "ran": 0, "calibrate_attempts": 0, "calibrated": 0}
-    run = runner or run_cmd
+    run = runner or run_cmd_cached
     f = facts_of(ledger)
     stats: dict[str, Any] = {
         "ok": 0, "attempts": 0, "ran": 0, "calibrate_attempts": 0, "calibrated": 0,

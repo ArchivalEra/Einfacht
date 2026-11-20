@@ -420,6 +420,8 @@
   "readme.switcher_not_applicable": "Trilingual README gate: REFLECT_READMES has only one entry (%(name)s) ⇒ the switcher cross-link rule does not apply (with a single entry 'must point at every language' holds trivially, and self-reference is a degenerate requirement); the existence / non-empty rules still apply",
   "readme.title": "Trilingual README gate",
   "readme.unknown_arg": "unknown argument %(arg)s (expected --changed <file|->)",
+  "registry.affected_none": "affected selection: 0 gates matched",
+  "registry.affected_plan": "affected selection: %(selected)d/%(total)d gates (reason=%(reason)s)",
   "registry.builtin_phase_repeated": "%(phases)s in REFLECT_PHASES are built-in phases (commit / start-of-work cannot be duplicated and need not be re-declared) — drop them and keep only the custom phases",
   "registry.core_gate_off": "core gate(s) went OFF: %(files)s (core gates may never go OFF)",
   "registry.empty_phase": "phase %(phase)s has no runnable gates — zero-value guard: an empty list is not a pass (is the predicate or a declaration broken?)",

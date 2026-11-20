@@ -393,6 +393,34 @@ def run_cmd(cmd, timeout=None):
     return p.returncode, p.stdout
 
 
+def run_cmd_cached(cmd, timeout=None):
+    """Run `cmd`, sharing results across processes via `EINFACHT_RUN_CACHE` for a single run."""
+    cdir = os.environ.get("EINFACHT_RUN_CACHE")
+    reentrant = ("check_questions.py", "check_facts_replay.py", "registry.py --run", "harness.py")
+    if not cdir or not os.path.isdir(cdir) or any(tok in cmd for tok in reentrant):
+        return run_cmd(cmd, timeout=timeout)
+    import hashlib  # noqa: PLC0415
+    import json  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    raw_key = "%s|%s|%s" % (os.path.abspath(GATE_REPO), os.environ.get("EINFACHT_REPLAY_DEPTH", "0"), cmd)
+    key = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+    path = os.path.join(cdir, key + ".json")
+    try:
+        data = json.load(open(path, encoding="utf-8"))
+        return data["rc"], data["out"]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    rc, out = run_cmd(cmd, timeout=timeout)
+    try:
+        fd, tmp = tempfile.mkstemp(dir=cdir, prefix=".tmp-")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({"rc": rc, "out": out}, fh)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+    return rc, out
+
+
 def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit", off_reason=None):
     """Gate declaration dict parsed by `registry.gates()`."""
     return {

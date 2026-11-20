@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是 `zreflect/impact.py` 的纯函数契约与一组会红的验收用例（覆盖单文件改 `questions/` 只命中相关闸门、改 `zreflect/gate.py` 经 AST 反向传播命中全量闸门、未知文件/读 `git` 失败保守退化全量、以及禁止人工自愿指定跳过列表）
+**Settling:** python3 zreflect/impact.py --selftest && python3 zreflect/registry.py --selftest && python3 zreflect/harness.py --selftest -- rc=0 => pure mechanical affected-gate planner, registry --affected, harness --affected and cross-gate run cache pass; rc!=0 => impact regression
 
 ## 设计约束（`codebase-design`）
 

@@ -260,7 +260,7 @@ def _run_one_cached(sub, runner, cache, cache_lock):
                 return cache[sub]
     elif cache is not None and sub in cache:
         return cache[sub]
-    res = gate.run_cmd(sub)
+    res = gate.run_cmd_cached(sub)
     if cache is not None:
         if cache_lock is not None:
             with cache_lock:

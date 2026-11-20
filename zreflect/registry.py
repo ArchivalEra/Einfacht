@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import ast
 import os
+import shutil
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate  # noqa: E402
+import impact  # noqa: E402
 import knobs  # noqa: E402
 import seal  # noqa: E402
 from gate import fatal, main_selftest_or, module_meta, repo  # noqa: E402
@@ -325,20 +328,32 @@ def _off_policy_error(off_list):
     return None
 
 
-def _main_run(argv):
-    phase = _arg_after(argv, "--run")
-    if phase not in phases():
-        return fatal(M("registry.empty_phase", phase=phase))
-    gs, missing = gates()
-    reg_probs = problems(gs, missing)
-    if reg_probs:
-        for p in reg_probs:
-            print("  · %s" % p, file=sys.stderr)
-        return 1
-    gs = runnable(phase)
-    if not gs:
-        return fatal(M("registry.empty_phase", phase=phase))
-    res = gate.run_phase(phase, gs)
+def _select_affected(gs, argv):
+    if "--affected" not in argv:
+        return gs
+    plan = impact.affected_plan(impact.git_changed_files(), gs)
+    print(M("registry.affected_plan", selected=len(plan["selected"]),
+            total=plan["total"], reason=plan["reason"]))
+    if not plan["selected"]:
+        print(M("registry.affected_none"))
+    return plan["selected"]
+
+
+def _run_with_cache(phase, gs):
+    cache_dir = tempfile.mkdtemp(prefix="einfacht-run-")
+    prev_cache = os.environ.get("EINFACHT_RUN_CACHE")
+    os.environ["EINFACHT_RUN_CACHE"] = cache_dir
+    try:
+        return gate.run_phase(phase, gs)
+    finally:
+        if prev_cache is None:
+            os.environ.pop("EINFACHT_RUN_CACHE", None)
+        else:
+            os.environ["EINFACHT_RUN_CACHE"] = prev_cache
+        shutil.rmtree(cache_dir, True)
+
+
+def _emit_run_result(phase, res):
     print(M("registry.phase_summary", phase=phase, ran=res["ran"], off=res["off"],
             failed=res["failed"], fatal=res.get("fatal", 0), error=res.get("error", 0)))
     fail_out = res.get("fail_out", {})
@@ -357,6 +372,25 @@ def _main_run(argv):
         if off_err is not None:
             return fatal(off_err)
     return 1 if (res["failed"] or res.get("fatal") or res.get("error")) else 0
+
+
+def _main_run(argv):
+    phase = _arg_after(argv, "--run")
+    if phase not in phases():
+        return fatal(M("registry.empty_phase", phase=phase))
+    gs, missing = gates()
+    reg_probs = problems(gs, missing)
+    if reg_probs:
+        for p in reg_probs:
+            print("  · %s" % p, file=sys.stderr)
+        return 1
+    gs = runnable(phase)
+    if not gs:
+        return fatal(M("registry.empty_phase", phase=phase))
+    gs = _select_affected(gs, argv)
+    if not gs:
+        return 0
+    return _emit_run_result(phase, _run_with_cache(phase, gs))
 
 
 def _main_seal(argv):
@@ -426,7 +460,7 @@ def _main_selftest_mods():
 
 _KNOWN_FLAGS = frozenset({
     "--red-need", "--runnable", "--all-runnable", "--plugins", "--fixture-renames",
-    "--verify-seal", "--force", "--run", "--selftest-modules", "--gates", "--selftest",
+    "--verify-seal", "--force", "--run", "--affected", "--selftest-modules", "--gates", "--selftest",
 })
 
 

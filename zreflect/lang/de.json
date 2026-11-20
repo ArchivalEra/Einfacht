@@ -420,6 +420,8 @@
   "readme.switcher_not_applicable": "Dreisprachiges-README-Tor: REFLECT_READMES hat nur einen Eintrag (%(name)s) ⇒ die Umschalter-Quervernetzung greift nicht (bei einem Eintrag gilt 'muss auf jede Sprache zeigen' trivial, und Selbstverweis ist eine entartete Anforderung); die Existenz- / Nichtleer-Regeln gelten weiter",
   "readme.title": "Dreisprachiges-README-Tor",
   "readme.unknown_arg": "unbekanntes Argument %(arg)s (erwartet --changed <file|->)",
+  "registry.affected_none": "Auswirkungsauswahl: 0 Pruefer betroffen",
+  "registry.affected_plan": "Auswirkungsauswahl: %(selected)d/%(total)d Pruefer (reason=%(reason)s)",
   "registry.builtin_phase_repeated": "%(phases)s in REFLECT_PHASES sind eingebaute Phasen (commit / start-of-work können nicht dupliziert werden und brauchen keine erneute Deklaration) — entferne sie und behalte nur die eigenen Phasen",
   "registry.core_gate_off": "Kern-Gate(s) standen auf OFF: %(files)s (Kern-Gates dürfen niemals OFF sein)",
   "registry.empty_phase": "Phase %(phase)s hat keine ausführbaren Tore — Nullwert-Wächter: eine leere Liste ist kein Bestehen (ist das Prädikat oder eine Deklaration kaputt?)",

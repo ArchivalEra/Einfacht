@@ -420,6 +420,8 @@
   "readme.switcher_not_applicable": "三语 README 闸门：REFLECT_READMES 只有一份（%(name)s）⇒ 切换器互链判据不适用（单条目时「必须指全全部语言」自动成立，自引用是退化要求）；存在 / 非空判据照常",
   "readme.title": "三语 README 闸门",
   "readme.unknown_arg": "未知参数 %(arg)s（仅支持 --changed <file|->）",
+  "registry.affected_none": "波及筛选：命中 0 个闸门",
+  "registry.affected_plan": "波及筛选：选中 %(selected)d/%(total)d 个闸门（reason=%(reason)s）",
   "registry.builtin_phase_repeated": "REFLECT_PHASES 里的 %(phases)s 是内置相位（commit / start-of-work 不可重名也不必重报）—— 删掉它们，只留自定义相位",
   "registry.core_gate_off": "核心闸门处于 OFF 状态：%(files)s（核心闸门严禁 OFF）",
   "registry.empty_phase": "相位 %(phase)s 没有可跑的闸门 —— 零值守卫：空清单不是通过（谓词或声明坏了？）",

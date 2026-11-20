@@ -439,10 +439,32 @@ def _section(heading, runner):
     return 0 if ok else 1
 
 
+def _main_affected(repo):
+    import impact  # noqa: PLC0415
+    import registry  # noqa: PLC0415
+    gs, _ = registry.gates(os.path.join(repo, "zreflect"))
+    plan = impact.affected_plan(impact.git_changed_files(repo), gs)
+    print(str(M("registry.affected_plan", selected=len(plan["selected"]),
+                total=plan["total"], reason=plan["reason"])))
+    if not plan["selected"]:
+        print(str(M("registry.affected_none")))
+        return 0
+    listing = [g["file"] for g in plan["selected"]]
+    rc = _section("harness.heading", lambda: run_gates(repo, listing=listing))
+    if not plan["full_fallback"]:
+        return rc
+    rc = rc or _section("harness.plugins_heading", lambda: run_plugins(repo))
+    rc = rc or _section("harness.modules_heading", lambda: run_modules(repo))
+    rc = rc or _section("harness.configurable_heading", lambda: run_configurable(repo))
+    return rc or _section("harness.zero_lang_heading", lambda: run_zero_language(repo))
+
+
 def main(argv):
     repo = HERE
     if "--selftest" in argv:
         return _selftest()
+    if "--affected" in argv:
+        return _main_affected(repo)
     rc = _section("harness.heading", lambda: run_gates(repo))
     rc = rc or _section("harness.plugins_heading",
                         lambda: run_plugins(repo))
