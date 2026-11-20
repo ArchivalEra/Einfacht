@@ -1,0 +1,190 @@
+{
+  "approver_pub": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAvf9ckQEI6CkK30ookgtqjT6I3H0PXzo6ov25212pyDQ=\n-----END PUBLIC KEY-----\n",
+  "off_gates": [
+    "check_ab.py",
+    "check_instruments.py",
+    "check_invariants.py",
+    "check_locks.py",
+    "check_pins.py",
+    "check_world.py",
+    "doctor.py"
+  ],
+  "principles": {
+    "doc_py_sha256": "afcee811dcca2c5f524f93bc38804ac0eef1dea45c949a1effc1a4842bd8abc0",
+    "no_principles": false,
+    "principles_md_sha256": "84823fd6d461f974a66b38c5e8a3820163a09d11bf814d0de637da1654b2492b"
+  },
+  "questions": {
+    "questions/01-example.md": {
+      "body_sha256": "ccbde9b3917816950cf5522b9df513d5bddf1f07a934b1f30f0058faf82e354f",
+      "settling": "python3 zreflect/facts.py --selftest —— rc=0 ⇒ 两道守卫的断言全过，本单可结案；rc≠0 ⇒ 有断言失效，先修守卫",
+      "sha256": "ed7cfa96b44ff71936a7fdfe8767642e4fcb83bde384d0734593508c1ed164ef",
+      "status": "resolved"
+    },
+    "questions/02-comment-triage.md": {
+      "body_sha256": "d3d53c70a7a6c3c2e50223d72acd0b171214444804325f7c81b83d857ca63921",
+      "settling": "python3 zreflect/check_explain.py —— rc=0 ⇒ 原分类裁决已由 04 改用复杂度额度模型接管；rc≠0 ⇒ 注释纪律失败",
+      "sha256": "311747d869a6e48950843f13ecb4f79d0fec848defb40b2f7d59f84ca17e5dcb",
+      "status": "resolved"
+    },
+    "questions/03-strict-docstrings.md": {
+      "body_sha256": "adf1fba8a0dadd9bddc7d15a81c5df27c6fe81501621ab256113ec1a5b42a1c3",
+      "settling": "python3 zreflect/check_explain.py --selftest —— rc=0 ⇒ 注释纪律已改由复杂度额度模型接管（本单 wontfix，由 04 吸纳）；rc≠0 ⇒ 注释闸门自证失效",
+      "sha256": "5da8c2d083b12f04957f3adfa7072994c490499f7025b670dc5709ac0a8fd155",
+      "status": "wontfix"
+    },
+    "questions/04-sealed-core-and-zero-handcopy.md": {
+      "body_sha256": "35d89737682085540d29d25d006da01728bc9dbc4f5269790544f3d55951a533",
+      "settling": "python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/harness.py —— rc=0 ⇒ 已全部完成：新增 `zreflect/seal.py` 与 `zreflect/SEAL.json`（双层 SHA-256 封条，放开 `measure_*.py` / `Einfacht.env` / 自定义相位闸门）；加深 `never_falsifiable` 辅助函数穿透、多 lambda 检查与 `dependency_coverage`/`dead_interface` AST 范围；守卫 `cmd`/`calibrate` 并合并三块渲染与校对；统一执行位、`knobs.get()` 与动态引用发现；将 `check_explain.py` 改为 `300 + 120*branches + 60*args` 复杂度预算并默认开启。",
+      "sha256": "34f605318cbe01612623e2fa6a753984055ded44282f679c8bd3d1db6cfa34ad",
+      "status": "resolved"
+    },
+    "questions/05-prune-carrier-ledger-and-hooks.md": {
+      "body_sha256": "d2bc9706d0d6a95f98d81bc86530100da1c5b56816ef62c316551db20a4cd822",
+      "settling": "python3 -c \"import json,os,sys; gone=('reflect-hooks/Einfacht.env','reflect-hooks/Einfacht.env.example','reflect-hooks/einfacht-env.sh','zreflect/check_envfile.py','zreflect/guard.py','zreflect/render.py','reflect-hooks/pre-commit','reflect-hooks/pre-push','reflect-hooks/gate.py','gates-selftest.sh'); facts=json.load(open('FACTS.json',encoding='utf-8')).get('facts',{}); sys.exit(0 if (not any(os.path.exists(p) for p in gone) and os.path.isfile('reflect-hooks/hook.py') and not any(k.startswith('principle.') for k in facts)) else 1)\" && python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/harness.py —— rc=0 ⇒ 壳层载体、冗余台账模块、旧钩子垫片与 `gates-selftest.sh` 已移除，`hook.py` 与单层封条就位且全量闸门与自证通过；rc≠0 ⇒ 仍有待删文件/`principle.*` 残留或闸门未绿",
+      "sha256": "cf32d3fc36baefadfaaa7c452f30fae58c6143cb457264d9142c8093b6023165",
+      "status": "resolved"
+    },
+    "questions/06-deepen-modules-and-prune-bloat.md": {
+      "body_sha256": "4a68a723bc9a2fc662c7f87e3bd1bafe93f3f7c6aa5c4773d8174e57d875bf6b",
+      "settling": "python3 -c \"import os,sys; gone=('zreflect/criteria.py','zreflect/ledger.py','zreflect/living.py','zreflect/runner.py','zreflect/machine.py','zreflect/echoes.py','reflect-hooks/install.py','reflect-hooks/quality-record.sh','.shellcheckrc','gitroll-dispositions.json','examples/echoes','examples/quality_record','zreflect/lang/en','zreflect/lang/zh','zreflect/lang/de'); packs=('zreflect/lang/en.json','zreflect/lang/zh.json','zreflect/lang/de.json'); sys.exit(0 if (not any(os.path.exists(p) for p in gone) and all(os.path.isfile(p) for p in packs)) else 1)\" && python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/harness.py —— rc=0 ⇒ 碎模块、自指元警察、99 语言包目录与残余 shell 已收敛完毕，三份单文件语言包就位，且封签与全量闸门/自证全绿；rc≠0 ⇒ 仍有待删模块/目录残留或校验未通过",
+      "sha256": "e6963f1b7e70d17b4a0fa328dd1decb6359eb154c936eaa1db60eeb28a4a1ba1",
+      "status": "resolved"
+    },
+    "questions/07-improve-log-signal-and-prune-noise.md": {
+      "body_sha256": "3f925831d19d8f09eb7fcb344d58e50a691173acd358cadcd8854c5739ad2522",
+      "settling": "python3 -c \"import os,sys; sys.path.insert(0,'zreflect'); import check_facts,check_facts_replay,facts,gate,registry; ph=gate.run_phase('commit',['ok.py','off.py','bad.py','fat.py'],runner=lambda f:{'ok.py':(0,''),'off.py':(0,'OFF: x'),'bad.py':(1,'h\\n  · p1\\n  · p2\\n  · p3\\n'),'fat.py':(2,'FATAL: bad_cfg\\n')}[f]); assert 'fat.py' in ph['fail_out'] and 'FATAL: bad_cfg' in ph['fail_out']['fat.py']; cf=check_facts.problems({'facts':{'n':{'value':1,'cmd':'c'}}},'p 999\\n'+facts.render_block({'facts':{'n':{'value':1,'cmd':'c'}}}),doc_name='README.md'); assert cf and cf[0].params.get('file')=='README.md'; rp=[]; check_facts_replay._judge_ok('k',{'value':1,'cmd':'echo 2'},'echo 2','2',rp,{'ok':0}); assert rp and rp[0].params.get('command')=='echo 2'\" && python3 -c \"import json; packs=[json.load(open(f'zreflect/lang/{l}.json',encoding='utf-8')) for l in ('en','zh','de')]; bad=[(l,k) for l,d in zip(('en','zh','de'),packs) for k,v in d.items() if any(t in v for t in ('**','✓','✗','❌','──'))]; assert not bad, bad\" && python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/harness.py —— rc=0 ⇒ 失败日志（FATAL output/多条问题/文件名/复跑命令/block_stale rc=1）完整不吞错，off 已聚合为单行且语言包与输出已去花哨去重复；rc≠0 ⇒ 仍有失败上下文缺失、重复刷屏或花哨装饰残留",
+      "sha256": "74fd7e88b8781002b59b69f0ccd47c0e32d120b09c782340c4f37a0cecf4d216",
+      "status": "resolved"
+    },
+    "questions/08-fix-core-mypy-type-contracts.md": {
+      "body_sha256": "868a48ed5286c2c9a783edadebdbc6bc111bebccfd815bee9eb6c0168d3cef72",
+      "settling": "python3 -c \"import os,subprocess,sys; files=['zreflect/i18n.py','zreflect/knobs.py','zreflect/gate.py','zreflect/registry.py','zreflect/examples.py','zreflect/doctor.py','zreflect/doc.py','zreflect/facts.py','zreflect/next.py']; env=dict(os.environ, MYPYPATH='zreflect'); r=subprocess.run([sys.executable,'-m','mypy']+files+['--check-untyped-defs','--ignore-missing-imports','--no-error-summary'], env=env); sys.exit(r.returncode)\" && python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/harness.py —— rc=0 ⇒ 核心与基础 9 个模块在 mypy 1.13.0 下零报错、TimeoutExpired 安全处理验证成立、seal 与全部门禁全绿；rc≠0 ⇒ 仍有 mypy 报错、核心破坏或门禁失败",
+      "sha256": "f433f37187798bb670d82eeaaceaba6346266e367be6cdaa720ece899940433a",
+      "status": "resolved"
+    },
+    "questions/09-fix-gates-mypy-and-pass-act-ci.md": {
+      "body_sha256": "992bd062d156cfce2f6a0b93501541ee0fc649d746553ed8ee020f9465432d71",
+      "settling": "python3 -c \"import glob,os,subprocess,sys; env=dict(os.environ, MYPYPATH='zreflect'); files=sorted(glob.glob('zreflect/*.py'))+sorted(glob.glob('reflect-hooks/*.py')); sys.exit(subprocess.run([sys.executable,'-m','mypy']+files+['--check-untyped-defs','--ignore-missing-imports','--no-error-summary'], env=env).returncode)\" && python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/examples.py --all && python3 zreflect/harness.py —— rc=0 ⇒ 全仓 zreflect/ + reflect-hooks/ mypy 1.13.0 零报错且全部闸门/示范/自证全绿；rc≠0 ⇒ mypy 报错或任一门禁/示范/自证失败",
+      "sha256": "bc5f08856638d6e88f07feaec87dbbfbf70c1537e1ebc1d6e5bb9b284e8cdd5c",
+      "status": "resolved"
+    },
+    "questions/10-close-execution-loops.md": {
+      "body_sha256": "45d419d623eaa4dc2564f7363bfafad8771a696ace37264c3792f58bcd72b264",
+      "settling": "python3 zreflect/check_questions.py --selftest && python3 zreflect/check_retractions.py --selftest && python3 zreflect/facts.py --selftest && python3 zreflect/doc.py --selftest && python3 zreflect/registry.py --verify-seal —— rc=0 ⇒ 假命令闭环与四项自证全绿；rc≠0 ⇒ 仍有未执行或未耦合的假命令",
+      "sha256": "9a49f3a56c721b87b9b34b0c1bf2e1b60f8b191c0101cd9441cbead3ac78234f",
+      "status": "resolved"
+    },
+    "questions/11-eliminate-silent-downgrades.md": {
+      "body_sha256": "bbbfa24a76fc4e497f72eff8d8c99c20783c1952b4eba06f690b505ad47ba876",
+      "settling": "python3 zreflect/gate.py --selftest && python3 zreflect/check_ab.py --selftest && python3 zreflect/check_pins.py --selftest && python3 zreflect/check_stale.py --selftest && python3 zreflect/facts.py --selftest && python3 zreflect/harness.py --selftest && python3 zreflect/registry.py --verify-seal —— rc=0 ⇒ 静默降级、exit 2、SKIP、空台账、假摘要与必跑闸门全部自证通过；rc≠0 ⇒ 仍有降级逃生口",
+      "sha256": "70482a0bd3cb5a89ffca37c8dd4b0b4333847e6886c31221f2316c713fea2834",
+      "status": "resolved"
+    },
+    "questions/12-spec-honesty-readme-and-history.md": {
+      "body_sha256": "60f9020a8632ef210d29076894437e55ede373c84a813cc3ebecee6f5d774f32",
+      "settling": "python3 zreflect/check_retractions.py --selftest && python3 zreflect/check_secrets.py --selftest && python3 zreflect/check_readme_sync.py --selftest && python3 zreflect/check_history.py --selftest && python3 zreflect/check_secrets.py —— rc=0 ⇒ 活文档无 HIST_MARK 免检、secrets 覆盖全仓库 git ls-files、三语 README 结构同构、HISTORY 格式有效；rc≠0 ⇒ 仍有 spec/文档诚实度缺口",
+      "sha256": "6eef2555d058679b38b0d5bf06830837e84d692a8fea8556b8568125e68e35d2",
+      "status": "resolved"
+    },
+    "questions/13-wire-start-of-work-and-coverage-gaps.md": {
+      "body_sha256": "0b70bcffb47c1f6ed0d2dde5e3fc35631a8097ec40f273866c830af409837c56",
+      "settling": "python3 zreflect/registry.py --run start-of-work && python3 zreflect/check_i18n.py --selftest && python3 zreflect/next.py --selftest && python3 zreflect/seal.py --selftest —— rc=0 ⇒ start-of-work 纳入 CI 且 i18n/next/seal/knobs 盲区全部受控；rc≠0 ⇒ 仍有执行面盲区",
+      "sha256": "62ba4873b213afbd5d70f26718d3e81650a368659cce1ee99a9a98fe23c9d83f",
+      "status": "resolved"
+    },
+    "questions/14-harden-registry-seal-knobs-and-hooks.md": {
+      "body_sha256": "fba8d83fe887b4923b86d41442b88e75efb51c7ae3f0fba38026169f5a7ac042",
+      "settling": "python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --selftest && python3 zreflect/seal.py --selftest && python3 zreflect/knobs.py --selftest && python3 reflect-hooks/hook.py --selftest —— rc=0 ⇒ registry/seal/knobs/hook 漏洞全部收口；rc≠0 ⇒ 仍有执行入口或 hook 绕过",
+      "sha256": "0a157470cb3ccbc5d65e6b4b871083af48d88cc89f67dd126f033da01e72a206",
+      "status": "resolved"
+    },
+    "questions/15-harden-gate-wire-and-doc-exec.md": {
+      "body_sha256": "6c9a4bb17e329633e014c4f2b901802924bf6a13aa7bd3ac811bc2c62715cc77",
+      "settling": "python3 zreflect/gate.py --selftest && python3 zreflect/i18n.py --selftest && python3 zreflect/doc.py --selftest && python3 zreflect/next.py --selftest —— rc=0 ⇒ gate/i18n/doc/next 执行位置与线协议漏洞全部收口；rc≠0 ⇒ 仍有执行位置绕过",
+      "sha256": "a087dcd6e29474906a20802510eb19c31c626d2d3e85b624816b8a8fa26a2686",
+      "status": "resolved"
+    },
+    "questions/16-harden-facts-and-replay-integrity.md": {
+      "body_sha256": "3e70a676de8e573f656eee4aac895c4b030f65bc19dbb3a9229f425a7908524d",
+      "settling": "python3 zreflect/facts.py --selftest && python3 zreflect/check_facts.py --selftest && python3 zreflect/check_facts_replay.py --selftest —— rc=0 ⇒ facts/check_facts/check_facts_replay 台账守卫与重放漏洞全部收口；rc≠0 ⇒ 仍有台账或裸数绕过",
+      "sha256": "edcd6ed42da01b4520bbe6ed152cc67b84ec1f0cf03d508b478e0a692a120b67",
+      "status": "resolved"
+    },
+    "questions/17-harden-text-and-question-ledgers.md": {
+      "body_sha256": "c1fc8b0f44c2caddee93c9d579602e45895a8c6b11fe721b09d0dc4e1b8cebdd",
+      "settling": "python3 zreflect/check_retractions.py --selftest && python3 zreflect/check_stale.py --selftest && python3 zreflect/check_questions.py --selftest && python3 zreflect/check_history.py --selftest && python3 zreflect/check_readme_sync.py --selftest —— rc=0 ⇒ 文本、撤回、陈旧、悬案、历史与 README 细节漏洞全部收口；rc≠0 ⇒ 仍有文本/解析边界绕过",
+      "sha256": "5792c188654c50c77673ce242e9919fa567df6b2c637673d0489e9c89020bb4a",
+      "status": "resolved"
+    },
+    "questions/18-harden-spec-gates-and-probes.md": {
+      "body_sha256": "79bc4a89f9fdbfc79b661c7f5cd4ee0ef22dd87b3466914597c41ecba86d1ade",
+      "settling": "python3 zreflect/check_ab.py --selftest && python3 zreflect/check_invariants.py --selftest && python3 zreflect/check_instruments.py --selftest && python3 zreflect/check_locks.py --selftest && python3 zreflect/check_pins.py --selftest && python3 zreflect/check_secrets.py --selftest && python3 zreflect/check_world.py --selftest && python3 zreflect/doctor.py --selftest —— rc=0 ⇒ 8 个 Spec 配置型闸门与探针漏洞全部收口；rc≠0 ⇒ 仍有类型、路径或探测绕过",
+      "sha256": "8c99b8cfc09ef31c366d29f5b8878055cff1a62a18cfd3e4f2f148c62a6569db",
+      "status": "resolved"
+    },
+    "questions/19-harden-python-static-gates-and-examples.md": {
+      "body_sha256": "3229c5317aa889563cb2342ce878e0d0cfb66650c14a7fc91580b12e897c3668",
+      "settling": "python3 zreflect/check_i18n.py --selftest && python3 zreflect/check_snapshots.py --selftest && python3 zreflect/check_explain.py --selftest && python3 zreflect/check_lint.py --selftest && python3 zreflect/harness.py && python3 zreflect/examples.py --all —— rc=0 ⇒ Python 静态闸门、harness 与 examples 覆盖盲区全部收口；rc≠0 ⇒ 仍有静态门禁或假绿口子",
+      "sha256": "ca73ee793e8a83aea4a91180464a06e539b4e3a58a41d48d3dc92a3eed13a751",
+      "status": "resolved"
+    },
+    "questions/20-eliminate-off-skip-warn-and-optional-downgrades.md": {
+      "body_sha256": "4409385f945a1585733e433e67e71677b0a5c06ddf917ea67885c55711115351",
+      "settling": "`python3 zreflect/registry.py --selftest && python3 zreflect/gate.py --selftest && python3 zreflect/check_ab.py --selftest && python3 zreflect/check_pins.py --selftest && python3 zreflect/check_locks.py --selftest && python3 zreflect/check_facts.py --selftest && python3 zreflect/check_facts_replay.py --selftest` -- rc=0 => core OFF/SKIP/WARN/optional guards hold; rc!=0 => bypass regression",
+      "sha256": "854f2212e70a61cc466f4bb9114877a8507465e187d37aa077f51d26193d599a",
+      "status": "resolved"
+    },
+    "questions/21-enforce-full-replay-of-questions-retractions-and-hooks.md": {
+      "body_sha256": "c35a4d470b73f9e5663e3c4b7e0920cb86f8beb897cb9860b155289cb1d83345",
+      "settling": "`python3 zreflect/check_questions.py --selftest && python3 zreflect/check_retractions.py --selftest && python3 zreflect/check_facts_replay.py --selftest && python3 reflect-hooks/hook.py --selftest` -- rc=0 => full replay and hook checks hold; rc!=0 => replay or hook regression",
+      "sha256": "44d586e5a0c9e5338e6aa4b62be2e424dbadec113be192cbfde093ba0a2183a5",
+      "status": "resolved"
+    },
+    "questions/22-close-seal-and-registry-tampering-gaps.md": {
+      "body_sha256": "b246dd9ac12199d6f61481198a6a2800670f14705c16ce1c798fd261fffccee0",
+      "settling": "`python3 zreflect/registry.py --verify-seal && python3 zreflect/seal.py --selftest && python3 zreflect/knobs.py --selftest && python3 zreflect/registry.py --selftest` -- rc=0 => seal, registry flag, and knobs AST guards hold; rc!=0 => tampering or AST bypass regression",
+      "sha256": "26394db2597b873a27a712dd61dbb4911c6164a12a2bbf4894380df7c346ebdc",
+      "status": "resolved"
+    },
+    "questions/23-close-exec-position-and-i18n-wire-escapes.md": {
+      "body_sha256": "a13b881aa9d33c31b3b0814344cd04b3c3289d86b70eff16d108e8a78a6f4852",
+      "settling": "`python3 zreflect/gate.py --selftest && python3 zreflect/i18n.py --selftest && python3 zreflect/check_i18n.py --selftest && python3 zreflect/doc.py --selftest` -- rc=0 => exec-position prose/escapes and i18n guards hold; rc!=0 => escape regression",
+      "sha256": "37ae5a76c210ddc6ec214a20af513aa02beb8db1346859c8f15375334c31b055",
+      "status": "resolved"
+    },
+    "questions/24-eliminate-handwritten-prose-in-living-docs-and-python.md": {
+      "body_sha256": "b6ada5d83f43d5ba158823859bda317a9357572987a9da84002c3e5f722b88f1",
+      "settling": "`python3 zreflect/check_explain.py --selftest && python3 zreflect/check_facts.py --selftest && python3 zreflect/check_stale.py --selftest && python3 zreflect/check_retractions.py --selftest && python3 zreflect/check_explain.py && python3 zreflect/check_facts.py && python3 zreflect/check_stale.py && python3 zreflect/check_retractions.py` -- rc=0 => all living-doc and Python prose/number/SHA/retraction guards hold; rc!=0 => bypass regression",
+      "sha256": "557021d294245d4311db8d74dd1e2858d097d4fa1bdeeba17a836b8d79b36c7a",
+      "status": "resolved"
+    },
+    "questions/25-close-static-spec-and-harness-remaining-gaps.md": {
+      "body_sha256": "a6ab1c7ba260bbc62d12840d7d27833b910c1ca33e5fb4846117db341330d37a",
+      "settling": "python3 zreflect/check_snapshots.py --selftest && python3 zreflect/check_secrets.py --selftest && python3 zreflect/examples.py --check && python3 zreflect/harness.py -- rc=0 => all static snapshot, spec gate, secrets reason, harness and examples coverage gaps closed; rc!=0 => gap regression",
+      "sha256": "513836746690c84a224a4798ac90a1d319f4d013049adef66273d1db92377598",
+      "status": "resolved"
+    },
+    "questions/26-lock-questions-and-delegated-akr-approval.md": {
+      "body_sha256": "e1516d3da63f8cbbe1bd23c0477bde1cf93846b2692d6a67bd9d0715f92a26df",
+      "settling": "python3 zreflect/approval.py --selftest && python3 zreflect/check_questions.py && python3 zreflect/check_facts.py && python3 zreflect/check_facts_replay.py && python3 zreflect/registry.py --verify-seal -- rc=0 => offline Ed25519 approval verifier, question/PRINCIPLES tamper anchors, and receipt-free forced-execution settling hold; rc!=0 => approval/anchor regression",
+      "sha256": "e4c6443942d0e854115ac3f1fc1f80c48272173ee2a7dc9c47573cf446167c59",
+      "status": "resolved"
+    },
+    "questions/27-parallel-settling-replay-semantics.md": {
+      "body_sha256": "1534b96ee9d1b98d76e0337dddb6f6cf6065122d29a16f73a839c94314d3b8c2",
+      "settling": "`python3 zreflect/check_questions.py --selftest && python3 zreflect/check_lint.py` -- rc=0 => Parallel field validation, sub-command dedup, and parallel replay hold; rc!=0 => parallel replay regression",
+      "sha256": "856137abae51a70e002907f09524ab48fe4f8ef6544ab82fa2c85291786bd16f",
+      "status": "resolved"
+    },
+    "questions/28-mechanical-affected-gate-rerun.md": {
+      "body_sha256": "c32bc63978b34d7c7c0135cde06683c6f32d0d44a80e70f772aaee36dbf625f2",
+      "settling": "python3 zreflect/impact.py --selftest && python3 zreflect/registry.py --selftest && python3 zreflect/harness.py --selftest -- rc=0 => pure mechanical affected-gate planner, registry --affected, harness --affected and cross-gate run cache pass; rc!=0 => impact regression ## 设计约束（`codebase-design`） 1. **单一深模块与小接口（Deep Module / Small Interface）**： - **Module**：`zreflect/impact.py`（需要同时在 `zreflect/registry.py` 的 `MODULE = ...` 登记），把 AST 反向依赖构图、knob→路径映射、保守退化判定全藏在实现内部。 - **Interface**：只暴露极简纯函数入口（如 `affected_plan(changed_paths, phase_gates, zdir=..., knobs=...) -> dict`），**接收依赖、返回结果、不产生副作用**；CLI/hook 适配器在 `registry._main_run` 与 `harness.py` 的接缝（seam）处把 `git status`/`git diff` 注入进去，测试可直接注入 `changed_paths` 列表实现零 IO 单测。 2. **非自愿式、纯机械筛选（无人工白/黑名单逃逸口）**： - 不提供“手动指定跳过某闸门”或“手动声明某文件安全”的开关；筛选结果完全由以下三项机械推导： - **静态 AST import 图**：扫描 `zreflect/*.py` 的 `import` / `from ... import ...`（含传递依赖），计算每个 `.py` 文件的反向波及闸门集；改 `gate.py`/`i18n.py`/`knobs.py`/`doc.py`/`seal.py`/`registry.py` 等公共底座时自动扇出到全部依赖闸门。 - **闸门声明与 `knobs` 路径映射**：从 `GATE = meta(knobs=...)` 与 `knobs.REGISTRY` / `knobs.json` 推导每个闸门读取的输入面（`REFLECT_DOCS`、`REFLECT_QUESTIONS`、`REFLECT_RETRACTIONS`、`REFLECT_READMES`、`REFLECT_LANGS`、`ruff.toml`、`secrets.json`、`examples/*` 等）。 - **保守闭环退化（Fail-closed）**：修改 `knobs.json`、`SEAL.json`、`reflect-hooks/*`、`.github/*`、未知根目录文件或 `git` 不可用时，机械标记 `full_fallback=True` 并选中全部可运行闸门，绝不静默漏跑。 3. **接入接缝与可观测输出**： - `zreflect/registry.py` `--run <phase>` 默认启用机械 `--affected` 筛选（`--all` 才跑全量，取代初版显式 `--affected` 开关），`zreflect/harness.py --affected` 在同一个接缝调用 `impact`，并在输出中明确打印选中原因（命中闸门数 / 总闸门数，或 `full_fallback` 原因），杜绝把局部验证伪装成全量通过。 - `zreflect/check_facts_replay.py` 与 `zreflect/check_questions.py` 在单次 `registry --run` 生命周期内可共享纯只读子进程命令结果缓存，避免同一检查命令在原则与悬案之间重复冷启动。 ## 复跑方式 ```sh python3 zreflect/impact.py --selftest && python3 zreflect/registry.py --selftest && python3 zreflect/harness.py ```",
+      "sha256": "86fb81148b5e9f560d770269ac2261b2574cf55351fff052991eb7bc18645614",
+      "status": "resolved"
+    }
+  },
+  "repo": "Einfacht",
+  "revoked_ids": [],
+  "schema": 1
+}
