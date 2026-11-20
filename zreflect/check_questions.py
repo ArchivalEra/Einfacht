@@ -216,15 +216,7 @@ def _run_cached(cmd, runner, cache):
         return runner(cmd)
     if cache is not None and cmd in cache:
         return cache[cmd]
-    saved = os.environ.get("EINFACHT_REPLAY_DEPTH")
-    os.environ["EINFACHT_REPLAY_DEPTH"] = str(_replay_depth() + 1)
-    try:
-        res = gate.run_cmd(cmd)
-    finally:
-        if saved is None:
-            os.environ.pop("EINFACHT_REPLAY_DEPTH", None)
-        else:
-            os.environ["EINFACHT_REPLAY_DEPTH"] = saved
+    res = gate.run_cmd(cmd)
     if cache is not None:
         cache[cmd] = res
     return res
@@ -288,8 +280,8 @@ def collect(d=None, root=None):
 
 def run(argv):
     depth = _replay_depth()
-    if depth < 0 or depth >= 2:
-        return fatal(M("replay.too_deep", depth=depth, limit=2))
+    if depth < 0 or depth >= 3:
+        return fatal(M("replay.too_deep", depth=depth, limit=3))
     all_res = "--all-resolved" in argv
     pos = [a for a in argv if a != "--all-resolved"]
     qdir = pos[0] if pos else knobs.questions_dir()

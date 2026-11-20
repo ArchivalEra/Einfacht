@@ -26,7 +26,7 @@ from gate import (  # noqa: E402
 from i18n import Catalog, M, bind, load_pack  # noqa: E402
 
 _DEPTH_ENV = "EINFACHT_REPLAY_DEPTH"
-_MAX_DEPTH = 2
+_MAX_DEPTH = 3
 
 
 def _judge_ok(k, entry, cmd, stdout, out, stats, rule_keys=()):
@@ -104,13 +104,14 @@ def _run_probes(f, run, seconds, out, stats):
 
 def replay_all(ledger, runner=None):
     """Replay every fact/principle entry in `ledger`, deduplicating identical `cmd` strings."""
-    try:
-        depth = int(os.environ.get(_DEPTH_ENV, "0") or 0)
-    except ValueError:
-        depth = 0
-    if depth < 0 or depth >= _MAX_DEPTH:
-        return {"problems": [M("replay.too_deep", depth=depth, limit=_MAX_DEPTH)],
-                "ok": 0, "attempts": 0, "ran": 0, "calibrate_attempts": 0, "calibrated": 0}
+    if runner is None:
+        try:
+            depth = int(os.environ.get(_DEPTH_ENV, "0") or 0)
+        except ValueError:
+            depth = 0
+        if depth < 0 or depth >= _MAX_DEPTH:
+            return {"problems": [M("replay.too_deep", depth=depth, limit=_MAX_DEPTH)],
+                    "ok": 0, "attempts": 0, "ran": 0, "calibrate_attempts": 0, "calibrated": 0}
     run = runner or run_cmd
     f = facts_of(ledger)
     stats: dict[str, Any] = {

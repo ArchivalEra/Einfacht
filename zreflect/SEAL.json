@@ -16,7 +16,7 @@
    "file_sha256": "001e0ad2390dd2c58413ef9b83adefb2b88030637c5f4a29bc754cfd16305b18"
   },
   "zreflect/check_facts_replay.py": {
-   "file_sha256": "3bd9dfa9de1646371edefdb0ee5245207fb64b18b1dc2585c6da89b708a9cd3d"
+   "file_sha256": "44e17a49d4e3597d88b1e41f529870d63121b0e7a5a8232aaf05e1bc3910ac15"
   },
   "zreflect/check_history.py": {
    "file_sha256": "af6c2d45c818d9667794dd0dbbc813dbe9068804b20d6651b80782ca6b3c806f"
@@ -40,13 +40,13 @@
    "file_sha256": "b628ce73bffc63799d1b5f17480002e4d09a7031eee42fc0c6f07fa9404718db"
   },
   "zreflect/check_questions.py": {
-   "file_sha256": "c06192d5063c62f372a28648bffe1c1d7d0d1186628ed205f88f30f9dceec4ec"
+   "file_sha256": "85e072d475449cb1badc17e2a57bb148f7a398725deda2b2cbc92a1d3cf1c73a"
   },
   "zreflect/check_readme_sync.py": {
    "file_sha256": "8bd2092ab170b0474667546fa272ff38a9032654dfc90db0a1eb2a6c7f3a434e"
   },
   "zreflect/check_retractions.py": {
-   "file_sha256": "3df0db330e046837863ff647c182a904fac77280f6ecdcc274245eebc0196e48"
+   "file_sha256": "d354b97344023fd5a2941e34e1f3c5e4151a5742eae1cf0fd0f0eaea9c81d1d6"
   },
   "zreflect/check_secrets.py": {
    "file_sha256": "5e2746492bb8f067cf0214eb9a310c9fc97c4f68901f002930eb47f12757b1b5"
@@ -104,5 +104,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "d36202eae4e54b52c056375ccc1b8adeec4b60b8196a5d773b2035f03e336025"
+ "tree_sha256": "8360f768e2806553e50761ba29ec40690296366de03f34e36ae066262d4f8a25"
 }

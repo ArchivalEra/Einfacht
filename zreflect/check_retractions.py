@@ -150,8 +150,8 @@ def run(argv):
         depth = int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0)
     except ValueError:
         depth = 0
-    if depth < 0 or depth >= 2:
-        return fatal(M("replay.too_deep", depth=depth, limit=2))
+    if depth < 0 or depth >= 3:
+        return fatal(M("replay.too_deep", depth=depth, limit=3))
     led = load_or_fatal(rp)
     if depth >= 1:
         reentrant = ("check_retractions.py", "check_questions.py", "registry.py --run", "harness.py")
