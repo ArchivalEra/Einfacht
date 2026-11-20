@@ -14,8 +14,6 @@ from i18n import M
 _GLOBAL_FALLBACK_FILES = frozenset({
     "ANCHORS.json",
     "knobs.json",
-    "SEAL.json",
-    "zreflect/SEAL.json",
 })
 _GLOBAL_FALLBACK_PREFIXES = (
     "reflect-hooks/",
@@ -159,6 +157,22 @@ def _match_non_py(rel, phase_gates, kp):
     return _match_by_knobs(rel, phase_gates, kp)
 
 
+def _select_for_path(rel, rev, gates_list, kp):
+    if _is_global_fallback(rel):
+        return None, "global:%s" % rel
+    if rel in ("SEAL.json", "zreflect/SEAL.json"):
+        return set(rev.get("zreflect/seal.py", ())), None
+    if rel in rev:
+        out = set(rev[rel])
+        if any(os.path.basename(f) == "check_facts_replay.py" for f in out):
+            out.add("zreflect/check_facts_replay.py")
+        return out, None
+    matched, known = _match_non_py(rel, gates_list, kp)
+    if not known:
+        return None, "unmapped:%s" % rel
+    return matched, None
+
+
 def affected_plan(changed_paths, phase_gates, zdir=None, knob_values=None):
     """Pure mechanical selector: return `{full_fallback, reason, selected, total, changed_count}`."""
     gates_list = list(phase_gates or [])
@@ -174,19 +188,11 @@ def affected_plan(changed_paths, phase_gates, zdir=None, knob_values=None):
     kp = _knob_paths(knob_values)
     selected_files: set[str] = set()
     for rel in normed:
-        if _is_global_fallback(rel):
-            return {"full_fallback": True, "reason": "global:%s" % rel,
+        hit, fallback_reason = _select_for_path(rel, rev, gates_list, kp)
+        if fallback_reason is not None:
+            return {"full_fallback": True, "reason": fallback_reason,
                     "selected": gates_list, "total": total, "changed_count": len(normed)}
-        if rel in rev:
-            selected_files |= rev[rel]
-            if any(os.path.basename(f) == "check_facts_replay.py" for f in rev[rel]):
-                selected_files.add("zreflect/check_facts_replay.py")
-            continue
-        matched, known = _match_non_py(rel, gates_list, kp)
-        if not known:
-            return {"full_fallback": True, "reason": "unmapped:%s" % rel,
-                    "selected": gates_list, "total": total, "changed_count": len(normed)}
-        selected_files |= matched
+        selected_files |= hit
     selected = [g for g in gates_list if g["file"] in selected_files]
     return {"full_fallback": False, "reason": "impacted",
             "selected": selected, "total": total, "changed_count": len(normed)}

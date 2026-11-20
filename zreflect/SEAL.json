@@ -7,7 +7,7 @@
    "file_sha256": "803da73ceae59051f76b4f14a89b76962af42f799ab3c8feee95cfb7b8262cdc"
   },
   "zreflect/approval.py": {
-   "file_sha256": "a5a9c8087e9618ebba7e3ac5a5ba83e8c1fee6c4acb76ecc79418de16381b426"
+   "file_sha256": "65758c95a418c9f6f9a8f2aa229fcb3622ad28f7a57e4e2e5591f51ce83ca6be"
   },
   "zreflect/check_ab.py": {
    "file_sha256": "d7b43177f5621d7697fc649233d2083aafae26841ecc7ce6858c4762b8578fd9"
@@ -70,7 +70,7 @@
    "file_sha256": "71016a57c0bf8d15c11f388ffd0d3fe1b25bd9a8bcf90ad9f794b407229301ad"
   },
   "zreflect/examples.py": {
-   "file_sha256": "28b65106d8ae646cf6177c0958852ededfd1d1fb51db0d4b5b1c1c3b8a5bfeb7"
+   "file_sha256": "e2604b9debfae487a0d497f703f70daa76ea7a116df67c3ed4bf9dc1ce21c611"
   },
   "zreflect/facts.py": {
    "file_sha256": "5148b0fae93529b88d4a5040daae6e06b99c67f2a1c53639ccdce507f39a032c"
@@ -85,19 +85,19 @@
    "file_sha256": "57b8bdf28864175b692f8c20ec454b04085ebea2a02e2ae972462e578bd49205"
   },
   "zreflect/impact.py": {
-   "file_sha256": "93f56abc33795426b6ea790d162688bce0127571dd10593d0f68cce251ae53dd"
+   "file_sha256": "1ef6cb82d034e742e1f4ff3b2440ff1d1839d137a26f826d3b567df6cc003326"
   },
   "zreflect/knobs.py": {
    "file_sha256": "7754e6d46233e0f37c68c62fccf35deb8cb8636dcbfc4c70140588556ee92b76"
   },
   "zreflect/lang/de.json": {
-   "file_sha256": "750559bd2e8bcb2cef71288a29f9e6b330acf753c168ed0b7ca99caa7d3a1e32"
+   "file_sha256": "6364f93ec6b02a1f6d46f1c9fca12ac3fb26b20f03df44fecb066806c176b6bc"
   },
   "zreflect/lang/en.json": {
-   "file_sha256": "375b9246cc17366827bd03e8ccedfd3523d70a5cf94806598ed04de8f3de1291"
+   "file_sha256": "122ce859f4668f4eb57981b7150b97c1472f9d495ec0e0719ae2f70d86c45373"
   },
   "zreflect/lang/zh.json": {
-   "file_sha256": "25a82f6aa24067966fb1a49e1838bc124ea374b0722797ac453d7ac13db178b6"
+   "file_sha256": "ac64c57d3071b45afc725afed022445a0f4464a5245de69a090db90634fd5f15"
   },
   "zreflect/next.py": {
    "file_sha256": "84e52347aa4767de9431e7d20579d5474ef28bb01f90f34f6cb5c66c4231f611"
@@ -110,5 +110,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "aa1395cffa99a35b5b9ebcfab0ec159aaffb60ee88edce6e68b9f8f1fa5d49e8"
+ "tree_sha256": "5b78090a84ee7d0e7229c7cd3062a3b058057e8e2ec1709d5229a9c25c8ccfb0"
 }

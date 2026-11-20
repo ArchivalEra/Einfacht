@@ -284,6 +284,7 @@ def _print_problems(problems):
         else:
             print("  · " + str(problem), file=sys.stderr)
 def _run_all(root):
+    import concurrent.futures  # noqa: PLC0415
     manifests, problems = discover(root)
     gates, missing = registry.gates()
     mods, _ = registry.modules()
@@ -292,9 +293,12 @@ def _run_all(root):
     if problems:
         _print_problems(problems)
         return 2
+    names = sorted(manifests)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, max(1, len(names)))) as pool:
+        results = dict(zip(names, pool.map(lambda n: run_example(n, root), names), strict=True))
     failed = skipped = 0
-    for name in sorted(manifests):
-        current, was_skipped = run_example(name, root)
+    for name in names:
+        current, was_skipped = results[name]
         if was_skipped:
             skipped += 1
             print(M("examples.skip", example=name, platform=platform_name()))

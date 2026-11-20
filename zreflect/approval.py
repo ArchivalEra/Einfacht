@@ -16,6 +16,11 @@ from i18n import M
 
 ANCHORS_FILE = "ANCHORS.json"
 RECEIPT_ENV = "EINFACHT_APPROVAL_RECEIPT"
+APPROVER_URL_ENV = "EINFACHT_APPROVER_URL"
+DEFAULT_APPROVER_URL = "http://127.0.0.1:18443"
+CONTROLLED_PREFIXES = ("zreflect/", "reflect-hooks/", "questions/")
+CONTROLLED_FILES = frozenset({"PRINCIPLES.md", "knobs.json", "ruff.toml"})
+DUPLICATE_COOLDOWN_SECONDS = 120
 
 
 def sha256_bytes(data):
@@ -51,6 +56,8 @@ def _strip_status_settling(text):
 
 
 def _field_val(text, name):
+    if not text:
+        return ""
     import check_questions  # noqa: PLC0415
     return check_questions.field(text, name) or ""
 
@@ -343,6 +350,141 @@ def _sync_settled(root):
     return 0
 
 
+def _is_controlled_path(rel):
+    norm = str(rel or "").replace("\\", "/").lstrip("./")
+    return norm in CONTROLLED_FILES or any(norm.startswith(p) for p in CONTROLLED_PREFIXES)
+
+
+def _classify_action(rel, text=None):
+    if rel == "zreflect/doc.py":
+        return "seal.doc"
+    if rel.startswith(("zreflect/", "reflect-hooks/")) or rel == "ruff.toml":
+        return "seal.core"
+    if rel == "PRINCIPLES.md":
+        return "principles.edit"
+    if rel.startswith("questions/"):
+        return "question.wontfix" if _field_val(text, "Status").lower() == "wontfix" else "question.modify"
+    return "gate.off"
+
+
+def _git_prev_sha_and_diff(root, rel):
+    import subprocess  # noqa: PLC0415
+    prev_sha = "NONE"
+    diff_txt = ""
+    try:
+        r1 = subprocess.run(["git", "-C", root, "show", "HEAD:" + rel],
+                            capture_output=True, timeout=10)
+        if r1.returncode == 0:
+            prev_sha = sha256_bytes(r1.stdout)
+        r2 = subprocess.run(["git", "-C", root, "diff", "HEAD", "--", rel],
+                            capture_output=True, text=True, timeout=10)
+        if r2.returncode == 0:
+            diff_txt = r2.stdout[:2000]
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return prev_sha, diff_txt
+
+
+def build_requests(changed_paths, root=None, repo_name=None, diff_fn=None, sha_fn=None):
+    """Build controlled-scope approval request payloads from changed paths (purely mechanical)."""
+    base = root or gate.GATE_REPO
+    rname = repo_name or os.path.basename(os.path.abspath(base))
+    out = []
+    for raw in sorted(set(changed_paths or ())):
+        rel = str(raw or "").replace("\\", "/").lstrip("./")
+        if not _is_controlled_path(rel):
+            continue
+        full = os.path.join(base, rel)
+        text = None
+        if os.path.isfile(full):
+            try:
+                text = open(full, encoding="utf-8", errors="replace").read()
+            except OSError:
+                text = None
+        target_sha = sha_fn(full) if sha_fn else (sha256_file(full) or "DELETED")
+        prev_sha, diff_sum = diff_fn(base, rel) if diff_fn else _git_prev_sha_and_diff(base, rel)
+        out.append({
+            "repo": rname,
+            "agent_id": os.environ.get("USER", "agent"),
+            "action": _classify_action(rel, text),
+            "target_path": rel,
+            "prev_sha256": prev_sha,
+            "target_sha256": target_sha,
+            "diff_summary": diff_sum or ("(new or binary file %s)" % rel),
+        })
+    return out
+
+
+def check_duplicate_cooldown(existing_requests, candidate, now_ts=None, cooldown_seconds=DUPLICATE_COOLDOWN_SECONDS):
+    """Enforce per-repo 2-minute duplicate/denied cooldown without blocking other repos."""
+    import time as _time  # noqa: PLC0415
+    now = int(_time.time()) if now_ts is None else int(now_ts)
+    key = (
+        candidate.get("repo"), candidate.get("action"), candidate.get("target_path"),
+        candidate.get("prev_sha256"), candidate.get("target_sha256"),
+    )
+    for req in reversed(list(existing_requests or ())):
+        rkey = (req.get("repo"), req.get("action"), req.get("target_path"),
+                req.get("prev_sha256"), req.get("target_sha256"))
+        if rkey != key:
+            continue
+        st = req.get("status")
+        if st == "pending":
+            return "duplicate_pending", req
+        if st == "denied":
+            ts = int(req.get("denied_at") or req.get("created_at") or 0)
+            if (now - ts) < cooldown_seconds:
+                return "rejected_duplicate_2m", req
+        if str(st or "").startswith("approved") and req.get("receipt"):
+            exp = _parse_iso(_receipt_body(req["receipt"]).get("expires_at"))
+            if exp and exp.timestamp() > now:
+                return "already_approved", req
+    return "new", None
+
+
+def _post_one_request(url, payload, wait):
+    import time as _time  # noqa: PLC0415
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    req = urllib.request.Request(url + "/requests", data=json.dumps(payload).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        resp = json.loads(urllib.request.urlopen(req, timeout=15).read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        print(M("approval.receipt_required", action=payload["action"], target=payload["target_path"]) + f" ({exc})", file=sys.stderr)
+        return False
+    if resp.get("status") == "rejected_duplicate_2m":
+        print(M("approval.request_rejected_duplicate", target=payload["target_path"]), file=sys.stderr)
+        return False
+    print(M("approval.request_submitted", id=resp.get("id", ""), status=resp.get("status", ""),
+            action=payload["action"], target=payload["target_path"], url=url))
+    if wait and resp.get("status") == "pending":
+        deadline = _time.time() + 300
+        while _time.time() < deadline:
+            _time.sleep(3)
+            polled = json.loads(urllib.request.urlopen(f"{url}/requests/{resp['id']}", timeout=10).read().decode("utf-8"))
+            if polled.get("status") != "pending":
+                resp = polled
+                break
+    if resp.get("receipt"):
+        out_path = os.environ.get(RECEIPT_ENV) or os.path.join(gate.GATE_REPO, ".git", "einfacht-receipt.json")
+        with open(out_path, "w", encoding="utf-8") as fh:
+            json.dump(resp["receipt"], fh, indent=2)
+    return True
+
+
+def _submit_all(argv):
+    import impact  # noqa: PLC0415
+    reqs = build_requests(impact.git_changed_files(gate.GATE_REPO), root=gate.GATE_REPO)
+    if not reqs:
+        print(M("approval.no_controlled_changes"))
+        return 0
+    url = (os.environ.get(APPROVER_URL_ENV) or DEFAULT_APPROVER_URL).rstrip("/")
+    wait = "--wait" in argv
+    return 0 if all(_post_one_request(url, p, wait) for p in reqs) else 2
+
+
 def _sign_fixture(priv, payload_dict):
     raw = json.dumps(payload_dict, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     rec = dict(payload_dict)
@@ -421,6 +563,22 @@ def _cases():
              "q/26.md", q_weak, anc, receipt=valid_rec, pub_b64=pub_b64, repo_name="Einfacht", now=now) == []
          and check_question_change(
              "q/26.md", q_weak, anc, receipt=daemon_rec, pub_b64=pub_pem, repo_name="Einfacht", now=now) == []),
+        ("approval.request_scope_and_2m_cooldown",
+         lambda: [r["target_path"] for r in build_requests(
+             ["src/app.py", "zreflect/doc.py", "questions/26.md"],
+             root=".", repo_name="Einfacht",
+             diff_fn=lambda _r, _p: ("p1", "+diff"), sha_fn=lambda _p: "t1")]
+         == ["questions/26.md", "zreflect/doc.py"]
+         and check_duplicate_cooldown(
+             [{"repo": "Einfacht", "action": "seal.doc", "target_path": "zreflect/doc.py",
+               "prev_sha256": "p1", "target_sha256": "t1", "status": "denied", "denied_at": 1000}],
+             {"repo": "Einfacht", "action": "seal.doc", "target_path": "zreflect/doc.py",
+              "prev_sha256": "p1", "target_sha256": "t1"}, now_ts=1060)[0] == "rejected_duplicate_2m"
+         and check_duplicate_cooldown(
+             [{"repo": "Einfacht", "action": "seal.doc", "target_path": "zreflect/doc.py",
+               "prev_sha256": "p1", "target_sha256": "t1", "status": "denied", "denied_at": 1000}],
+             {"repo": "OtherRepo", "action": "seal.doc", "target_path": "zreflect/doc.py",
+              "prev_sha256": "p1", "target_sha256": "t1"}, now_ts=1060)[0] == "new"),
     ]
 
 
@@ -430,6 +588,8 @@ def main(argv):
         return rc
     if "--selftest" in argv:
         return selftest(M("approval.title"), _cases())
+    if "--request" in argv:
+        return _submit_all(argv)
     if "--sync-settled" in argv:
         return _sync_settled(gate.GATE_REPO)
     if "--init-anchors" in argv:
