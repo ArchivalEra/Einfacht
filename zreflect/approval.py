@@ -62,11 +62,20 @@ def question_snapshot(text):
 
 
 def canonical_payload(receipt):
+    if isinstance(receipt.get("payload"), dict):
+        body = receipt["payload"]
+        return json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
     body = {k: v for k, v in receipt.items() if k != "sig"}
     return json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
+def _receipt_body(receipt):
+    return receipt["payload"] if isinstance(receipt.get("payload"), dict) else receipt
+
+
 def _parse_iso(ts):
+    if isinstance(ts, (int, float)):
+        return datetime.fromtimestamp(ts, tz=timezone.utc)
     try:
         dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
         return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
@@ -74,14 +83,24 @@ def _parse_iso(ts):
         return None
 
 
-def _verify_sig(payload, sig_b64, pub_b64):
+def _load_pubkey(pub_key):
+    from cryptography.hazmat.primitives import serialization  # noqa: PLC0415
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey  # noqa: PLC0415
+    if "BEGIN PUBLIC KEY" in str(pub_key):
+        loaded = serialization.load_pem_public_key(str(pub_key).encode("ascii"))
+        if not isinstance(loaded, Ed25519PublicKey):
+            raise ValueError("not ed25519")
+        return loaded
+    return Ed25519PublicKey.from_public_bytes(base64.b64decode(pub_key))
+
+
+def _verify_sig(payload, sig_b64, pub_key):
     try:
         from cryptography.exceptions import InvalidSignature  # noqa: PLC0415
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey  # noqa: PLC0415
     except ImportError:
         return False, "crypto_unavailable"
     try:
-        pub = Ed25519PublicKey.from_public_bytes(base64.b64decode(pub_b64))
+        pub = _load_pubkey(pub_key)
         pub.verify(base64.b64decode(sig_b64), payload)
         return True, None
     except (InvalidSignature, ValueError, TypeError):
@@ -93,17 +112,22 @@ def verify_receipt(receipt, *, repo_name, action, target, prev_sha256, target_sh
     """Verify an Ed25519 approval receipt offline. Returns list of `Message` (empty = valid)."""
     if not isinstance(receipt, dict) or not pub_b64:
         return [M("approval.receipt_required", action=action, target=target)]
-    if str(receipt.get("id") or "") in set(revoked_ids):
-        return [M("approval.revoked", id=str(receipt.get("id") or ""))]
-    exp = _parse_iso(receipt.get("expires_at"))
+    body = _receipt_body(receipt)
+    rec_id = str(body.get("id") or body.get("receipt_id") or "")
+    deleg_id = str(body.get("delegation_id") or "")
+    rev = set(revoked_ids)
+    if rec_id in rev or (deleg_id and deleg_id in rev):
+        return [M("approval.revoked", id=deleg_id or rec_id)]
+    exp = _parse_iso(body.get("expires_at"))
     cur = now or datetime.now(timezone.utc)
     if exp is None or exp <= cur:
-        return [M("approval.expired", id=str(receipt.get("id") or ""))]
-    if (receipt.get("repo") != repo_name or receipt.get("action") != action
-            or receipt.get("target") != target):
+        return [M("approval.expired", id=rec_id)]
+    rec_target = body.get("target") or body.get("target_path")
+    if (body.get("repo") != repo_name or body.get("action") != action
+            or rec_target != target):
         return [M("approval.scope_mismatch", action=action, target=target)]
-    if (receipt.get("prev_sha256") != prev_sha256
-            or receipt.get("target_sha256") != target_sha256):
+    if (body.get("prev_sha256") != prev_sha256
+            or body.get("target_sha256") != target_sha256):
         return [M("approval.hash_mismatch", target=target)]
     ok, err = _verify_sig(canonical_payload(receipt), str(receipt.get("sig") or ""), pub_b64)
     if not ok:
@@ -339,6 +363,19 @@ def _cases():
         "id": "r-rev", "repo": "Einfacht", "action": "question.modify", "target": "q/26.md",
         "prev_sha256": anc["sha256"], "target_sha256": sha256_text(q_weak), "expires_at": future,
     })
+    pub_pem = priv.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode("ascii")
+    daemon_payload = {
+        "receipt_id": "rec-daemon-1", "repo": "Einfacht", "agent_id": "worker",
+        "action": "question.modify", "target_path": "q/26.md",
+        "prev_sha256": anc["sha256"], "target_sha256": sha256_text(q_weak),
+        "delegation_id": None, "issued_at": int(now.timestamp()), "expires_at": int(now.timestamp()) + 600,
+    }
+    daemon_rec = {
+        "payload": daemon_payload,
+        "sig": base64.b64encode(priv.sign(
+            json.dumps(daemon_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        )).decode("ascii"),
+    }
     return [
         ("approval.settling_needs_no_receipt",
          lambda: check_question_change("q/26.md", q_settled, anc, pub_b64=pub_b64, repo_name="Einfacht", now=now) == []),
@@ -365,7 +402,9 @@ def _cases():
              revoked_ids=["r-rev"], now=now)] == ["approval.revoked"]),
         ("approval.valid_ed25519_receipt_passes",
          lambda: check_question_change(
-             "q/26.md", q_weak, anc, receipt=valid_rec, pub_b64=pub_b64, repo_name="Einfacht", now=now) == []),
+             "q/26.md", q_weak, anc, receipt=valid_rec, pub_b64=pub_b64, repo_name="Einfacht", now=now) == []
+         and check_question_change(
+             "q/26.md", q_weak, anc, receipt=daemon_rec, pub_b64=pub_pem, repo_name="Einfacht", now=now) == []),
     ]
 
 
