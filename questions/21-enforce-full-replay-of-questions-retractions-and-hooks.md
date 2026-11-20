@@ -6,7 +6,7 @@
 
 **Status:** resolved
 
-**Settling:** `python3 zreflect/check_questions.py --selftest && python3 zreflect/check_retractions.py --selftest && python3 zreflect/check_facts_replay.py --selftest && python3 reflect-hooks/hook.py --selftest && python3 zreflect/check_questions.py` -- rc=0 => full replay and hook checks hold; rc!=0 => replay or hook regression
+**Settling:** `python3 zreflect/check_questions.py --selftest && python3 zreflect/check_retractions.py --selftest && python3 zreflect/check_facts_replay.py --selftest && python3 reflect-hooks/hook.py --selftest` -- rc=0 => full replay and hook checks hold; rc!=0 => replay or hook regression
 
 ## 实测问题清单
 

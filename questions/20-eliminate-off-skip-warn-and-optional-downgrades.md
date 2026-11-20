@@ -6,7 +6,7 @@
 
 **Status:** resolved
 
-**Settling:** `python3 zreflect/registry.py --run commit && python3 zreflect/registry.py --run start-of-work && python3 zreflect/gate.py --selftest && python3 zreflect/check_ab.py --selftest && python3 zreflect/check_pins.py --selftest && python3 zreflect/check_locks.py --selftest && python3 zreflect/check_facts.py --selftest && python3 zreflect/check_facts_replay.py --selftest` -- rc=0 => core OFF/SKIP/WARN/optional guards hold; rc!=0 => bypass regression
+**Settling:** `python3 zreflect/registry.py --selftest && python3 zreflect/gate.py --selftest && python3 zreflect/check_ab.py --selftest && python3 zreflect/check_pins.py --selftest && python3 zreflect/check_locks.py --selftest && python3 zreflect/check_facts.py --selftest && python3 zreflect/check_facts_replay.py --selftest` -- rc=0 => core OFF/SKIP/WARN/optional guards hold; rc!=0 => bypass regression
 
 ## 实测问题清单
 

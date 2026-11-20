@@ -212,7 +212,7 @@ def _cases():
         ("★ replay.bad_timeout_fatals", lambda: _bad_timeout_fatals_ok()),
         ("★ replay.principle_skip_rejected", lambda: (
             [p.code for p in replay_all(
-                {"facts": {"principle.x": {"value": "ok", "cmd": "c", "kind": "principle"}}},
+                {"facts": {"principle.only_measured": {"value": "ok", "cmd": "c", "kind": "principle"}}},
                 runner=lambda _c: (0, "SKIP: nope\n"))["problems"]] == ["replay.principle_is_off"])),
     ]
 

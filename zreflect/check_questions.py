@@ -35,7 +35,6 @@ Rules and rationale:
 """
 import os
 import re
-import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -177,6 +176,17 @@ def _missing_settler_path(cmd, chk):
     return None
 
 
+def _check_settler_exec(name, sv, chk):
+    out = []
+    if not any(t in sv for t in ("rc=", "\u21d2", "=>")):
+        out.append(M("questions.no_distinct_outcomes", name=name))
+    cmd = _settling_cmd(sv)
+    bad_tok = _missing_settler_path(cmd, chk)
+    if bad_tok:
+        out.append(M("questions.settler_missing", name=name, target=bad_tok))
+    return out + gate.prose_in_exec_problems(name, "Settling", sv)
+
+
 def _settling_problems(name, text, chk, runner=None, verify_resolved=False, cache=None):
     """`Settling` field: exists / unique / two distinguishable outcomes / settler actually runs."""
     if _field_count(text, "Settling") > 1:
@@ -191,14 +201,7 @@ def _settling_problems(name, text, chk, runner=None, verify_resolved=False, cach
         if st == "wontfix":
             return [M("questions.wontfix_needs_reason", name=name)]
         return _none_like_problems(name, sv)
-    out = []
-    if not any(t in sv for t in ("rc=", "\u21d2", "=>")):
-        out.append(M("questions.no_distinct_outcomes", name=name))
-    cmd = _settling_cmd(sv)
-    bad_tok = _missing_settler_path(cmd, chk)
-    if bad_tok:
-        out.append(M("questions.settler_missing", name=name, target=bad_tok))
-    out += gate.prose_in_exec_problems(name, "Settling", sv)
+    out = _check_settler_exec(name, sv, chk)
     if out or st not in ("resolved", "wontfix") or not (verify_resolved or runner is not None):
         return out
     cmd = _settling_cmd(sv)
@@ -213,7 +216,15 @@ def _run_cached(cmd, runner, cache):
         return runner(cmd)
     if cache is not None and cmd in cache:
         return cache[cmd]
-    res = gate.run_cmd(cmd)
+    saved = os.environ.get("EINFACHT_REPLAY_DEPTH")
+    os.environ["EINFACHT_REPLAY_DEPTH"] = str(_replay_depth() + 1)
+    try:
+        res = gate.run_cmd(cmd)
+    finally:
+        if saved is None:
+            os.environ.pop("EINFACHT_REPLAY_DEPTH", None)
+        else:
+            os.environ["EINFACHT_REPLAY_DEPTH"] = saved
     if cache is not None:
         cache[cmd] = res
     return res
@@ -251,7 +262,8 @@ def _resolved_targets_to_verify(_qdir, files, _all_resolved, depth=0):
     targets = {k for k, v in files.items() if status_of(v) in ("resolved", "wontfix")}
     if depth <= 0:
         return targets
-    return {k for k in targets if "check_questions.py" not in _settling_cmd(field(files[k], "Settling") or "")}
+    reentrant = ("check_questions.py", "registry.py --run", "harness.py")
+    return {k for k in targets if not any(tok in _settling_cmd(field(files[k], "Settling") or "") for tok in reentrant)}
 
 
 def sort_key(name):

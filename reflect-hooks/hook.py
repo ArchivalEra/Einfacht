@@ -214,20 +214,7 @@ def _verify_push_commit(repo, lsha):
         shutil.rmtree(tmp, True)
 
 
-def run(phase, repo, stdin_rows=None):
-    """Run one hook phase. Returns 0, 1, or 2."""
-    if phase not in PHASES:
-        print(str(M("hookgate.unknown_phase", phase=phase)), file=sys.stderr)
-        return 2
-    if not os.path.isdir(repo):
-        print(str(M("hookgate.repo_missing", repo=repo)), file=sys.stderr)
-        return 2
-    os.environ["GATE_REPO"] = repo
-    doc = knobs.get("REFLECT_DOC", root=repo)
-    if phase == "commit":
-        if _prepare(phase, repo, doc):
-            return 1
-        return _run_repo_gates(repo)
+def _run_push(repo, stdin_rows):
     refs, err = _resolve_push_refs(repo, stdin_rows or [])
     if err is not None:
         print(str(err), file=sys.stderr)
@@ -241,6 +228,22 @@ def run(phase, repo, stdin_rows=None):
     for ln in lines:
         print(ln, file=sys.stderr)
     return 0 if ok else 1
+
+
+def run(phase, repo, stdin_rows=None):
+    """Run one hook phase. Returns 0, 1, or 2."""
+    if phase not in PHASES:
+        print(str(M("hookgate.unknown_phase", phase=phase)), file=sys.stderr)
+        return 2
+    if not os.path.isdir(repo):
+        print(str(M("hookgate.repo_missing", repo=repo)), file=sys.stderr)
+        return 2
+    os.environ["GATE_REPO"] = repo
+    if phase == "commit":
+        if _prepare(phase, repo, knobs.get("REFLECT_DOC", root=repo)):
+            return 1
+        return _run_repo_gates(repo)
+    return _run_push(repo, stdin_rows)
 
 
 def _chmod_x(path):

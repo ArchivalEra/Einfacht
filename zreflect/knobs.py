@@ -200,7 +200,7 @@ def _config_kind_problem(base, k, val, msg):
         except ValueError:
             ok = False
         return [] if ok else [msg("knobs.config_invalid_value", knob=k)]
-    if kind == "flag" and val.lower() not in FLAG_TRUTHY | FLAG_FALSY:
+    if kind == "flag" and val.lower() not in FLAG_TRUTHY + FLAG_FALSY:
         return [msg("knobs.config_invalid_value", knob=k)]
     if ((kind == "file" and not os.path.isfile(os.path.join(base, val)))
             or (kind == "dir" and not os.path.isdir(os.path.join(base, val)))):

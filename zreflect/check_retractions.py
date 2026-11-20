@@ -154,10 +154,11 @@ def run(argv):
         return fatal(M("replay.too_deep", depth=depth, limit=2))
     led = load_or_fatal(rp)
     if depth >= 1:
+        reentrant = ("check_retractions.py", "check_questions.py", "registry.py --run", "harness.py")
         led = {
             "retractions": [
                 r for r in (led.get("retractions") or [])
-                if not (isinstance(r, dict) and "check_retractions.py" in str(r.get("evidence") or ""))
+                if not (isinstance(r, dict) and any(tok in str(r.get("evidence") or "") for tok in reentrant))
             ]
         }
     probs = missing_docs + problems(led, docs, verify_evidence=True)

@@ -1,7 +1,7 @@
 {
  "files": {
   "reflect-hooks/hook.py": {
-   "file_sha256": "c6971d69e7ad43fce0185171606ef7658091abc5f5a241bc939c42ae0e75d3d3"
+   "file_sha256": "02d96b7cf5aef95635a15db614dd4c730261c492cbdaedfe2487579f069449c3"
   },
   "ruff.toml": {
    "file_sha256": "803da73ceae59051f76b4f14a89b76962af42f799ab3c8feee95cfb7b8262cdc"
@@ -16,7 +16,7 @@
    "file_sha256": "001e0ad2390dd2c58413ef9b83adefb2b88030637c5f4a29bc754cfd16305b18"
   },
   "zreflect/check_facts_replay.py": {
-   "file_sha256": "bff67cb5164d20403f2aa0b0c173917e2e0f7a01bbc06f0be7aa2ab779e1bf01"
+   "file_sha256": "3bd9dfa9de1646371edefdb0ee5245207fb64b18b1dc2585c6da89b708a9cd3d"
   },
   "zreflect/check_history.py": {
    "file_sha256": "af6c2d45c818d9667794dd0dbbc813dbe9068804b20d6651b80782ca6b3c806f"
@@ -40,13 +40,13 @@
    "file_sha256": "b628ce73bffc63799d1b5f17480002e4d09a7031eee42fc0c6f07fa9404718db"
   },
   "zreflect/check_questions.py": {
-   "file_sha256": "14a72c4a351e77b882fa8706bdc12e418726c54ea1c3328d81affaa306bdfe16"
+   "file_sha256": "c06192d5063c62f372a28648bffe1c1d7d0d1186628ed205f88f30f9dceec4ec"
   },
   "zreflect/check_readme_sync.py": {
    "file_sha256": "8bd2092ab170b0474667546fa272ff38a9032654dfc90db0a1eb2a6c7f3a434e"
   },
   "zreflect/check_retractions.py": {
-   "file_sha256": "1845abb4aafdb6db83fff3c014669739c35d652ef84da006973f92a17d756fa0"
+   "file_sha256": "3df0db330e046837863ff647c182a904fac77280f6ecdcc274245eebc0196e48"
   },
   "zreflect/check_secrets.py": {
    "file_sha256": "5e2746492bb8f067cf0214eb9a310c9fc97c4f68901f002930eb47f12757b1b5"
@@ -82,7 +82,7 @@
    "file_sha256": "9308f755a259e05cdd7e10ede9495d4bf0e8a665e8585d668f0dab63f425b2cd"
   },
   "zreflect/knobs.py": {
-   "file_sha256": "2dcf87f053e906061f3f5e707e1bc2f1858de030799e309d85c004ec7a05929e"
+   "file_sha256": "a2bebd28d99ecff436dae7a9a4bff6437bc43e96abc41fd4dee5d0d748d7751d"
   },
   "zreflect/lang/de.json": {
    "file_sha256": "3b1009c1998aa0d8c51bd0d2e4b10e18640e3161e1dfd5842ea099c221c660a1"
@@ -104,5 +104,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "f0c4e4682adb6d72140b1ca9b4bf820c4cfb4947149a1f6fabc1334d39e21f14"
+ "tree_sha256": "d36202eae4e54b52c056375ccc1b8adeec4b60b8196a5d773b2035f03e336025"
 }
