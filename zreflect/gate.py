@@ -452,6 +452,8 @@ def trusted_replay_depth():
 _INPROC_CACHE: dict[str, tuple[int | None, str]] | None = None
 _INPROC_REPLAY_DEPTH = 0
 _INPROC_LOCK = threading.RLock()
+_CACHE_MUTEX = threading.Lock()
+_INFLIGHT: dict[str, threading.Event] = {}
 
 
 def with_run_cache(fn):
@@ -511,9 +513,25 @@ def _run_inproc_script(script_path, extra_args, bump_depth=True):
 
 
 def _cache_key(cmd):
-    depth_sensitive = any(s in cmd for s in ("check_questions", "check_retractions", "registry.py", "check_facts_replay"))
+    depth_sensitive = any(s in cmd for s in ("check_questions", "check_retractions", "registry.py"))
     d = trusted_replay_depth() if depth_sensitive else 0
     return "%s|%s|%s" % (os.path.abspath(GATE_REPO), d, cmd)
+
+
+def _acquire_cache_slot(key):
+    with _CACHE_MUTEX:
+        if _INPROC_CACHE is not None and key in _INPROC_CACHE:
+            return _INPROC_CACHE[key], None
+        ev = _INFLIGHT.get(key)
+        if ev is None:
+            ev = threading.Event()
+            _INFLIGHT[key] = ev
+            return None, ev
+    ev.wait()
+    with _CACHE_MUTEX:
+        if _INPROC_CACHE is not None and key in _INPROC_CACHE:
+            return _INPROC_CACHE[key], None
+    return _acquire_cache_slot(key)
 
 
 def run_cmd_cached(cmd, timeout=None):
@@ -521,12 +539,20 @@ def run_cmd_cached(cmd, timeout=None):
     if _INPROC_CACHE is None:
         return run_cmd(cmd, timeout=timeout)
     key = _cache_key(cmd)
-    if key in _INPROC_CACHE:
-        return _INPROC_CACHE[key]
-    target = _inproc_suite_argv(cmd) if timeout is None else None
-    res = _run_inproc_script(target[0], target[1]) if target else run_cmd(cmd, timeout=timeout)
-    _INPROC_CACHE[key] = res
-    return res
+    hit, ev = _acquire_cache_slot(key)
+    if hit is not None:
+        return hit
+    try:
+        target = _inproc_suite_argv(cmd) if timeout is None else None
+        res = _run_inproc_script(target[0], target[1]) if target else run_cmd(cmd, timeout=timeout)
+        with _CACHE_MUTEX:
+            if _INPROC_CACHE is not None:
+                _INPROC_CACHE[key] = res
+        return res
+    finally:
+        with _CACHE_MUTEX:
+            _INFLIGHT.pop(key, None)
+        ev.set()
 
 
 def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit", off_reason=None):
