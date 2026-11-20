@@ -1,0 +1,7 @@
+{
+  "description": "Example runner: verify selftest in isolated repo",
+  "steps": [
+    {"argv": ["{python}", "zreflect/examples.py", "--selftest"], "contains": ["0 FAIL"]},
+    {"argv": ["{python}", "zreflect/examples.py", "--selftest"], "not_contains": ["Traceback"]}
+  ]
+}

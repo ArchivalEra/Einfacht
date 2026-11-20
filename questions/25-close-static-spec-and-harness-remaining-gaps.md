@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含 `DICT[k]=v`/`from . import X` 跨模块快照、中间目录软链接穿透、顶层 JSON `[]` 规范报错、`secrets.json` 缺理由字段及 `examples` 覆盖核心模块）
+**Settling:** python3 zreflect/check_snapshots.py --selftest && python3 zreflect/check_secrets.py --selftest && python3 zreflect/examples.py --check && python3 zreflect/harness.py -- rc=0 => all static snapshot, spec gate, secrets reason, harness and examples coverage gaps closed; rc!=0 => gap regression
 
 ## 实测问题清单
 

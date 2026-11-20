@@ -88,8 +88,8 @@ def _has_summary(text):
 def _derive_listing(repo):
     """Derive the gate listing from `registry.gates` (in-process, discovered)."""
     import registry  # noqa: PLC0415
-    gs, _ = registry.gates(os.path.join(repo, "zreflect"))
-    return [g["file"] for g in gs]
+    gs, missing = registry.gates(os.path.join(repo, "zreflect"))
+    return [g["file"] for g in gs], missing
 
 
 def _ok_msg(path, out):
@@ -126,9 +126,14 @@ def run_gates(repo, listing=None):
     `listing` is injectable (selftest uses a fake listing, no dependence on
     the real repo); None => derived from `registry`.
     """
-    listing = _derive_listing(repo) if listing is None else listing
+    missing_decl: list[str] = []
+    if listing is None:
+        listing, missing_decl = _derive_listing(repo)
     n = bad = 0
     lines = []
+    for rel in missing_decl:
+        lines.append(str(M("registry.missing_declaration", files=rel)))
+        bad += 1
     for rel in listing:
         passed, out = _check_one_gate(repo, rel)
         lines += out
@@ -178,10 +183,23 @@ def _one_plugin(repo, p):
     return True, [_ok_msg(p, out)]
 
 
+def _run_one_module(repo, m):
+    f = os.path.join(repo, m)
+    rc, out = _run([sys.executable, f, "--selftest"], cwd=repo)
+    if rc != 0:
+        return False, [str(M("harness.selftest_failed", file=m))] + ["      " + ln for ln in _tail(out)]
+    if not _has_summary(out):
+        return False, [str(M("harness.no_machine_summary", file=m))]
+    return True, [_ok_msg(m, out)]
+
+
 def run_modules(repo):
     """Platform modules' selftests (set difference: gates' selftests already ran in `run_gates`)."""
     import registry  # noqa: PLC0415
     z = os.path.join(repo, "zreflect")
+    _, undeclared = registry.modules(z)
+    if undeclared:
+        return False, [str(M("registry.undeclared_module", file=u)) for u in undeclared]
     mods, missing = registry.selftest_modules(z)
     if missing:
         return False, [str(M("harness.no_selftest_entry", file=m)) for m in missing]
@@ -191,21 +209,12 @@ def run_modules(repo):
     n = bad = 0
     for m in mods:
         if m in gates:
-            continue                      # a gate's selftest belongs to the gates section
+            continue
         n += 1
-        f = os.path.join(repo, m)
-        rc, out = _run([sys.executable, f, "--selftest"], cwd=repo)
-        if rc != 0:
-            lines.append(str(M("harness.selftest_failed", file=m)))
-            for ln in _tail(out):
-                lines.append("      " + ln)
+        ok, mod_lines = _run_one_module(repo, m)
+        lines += mod_lines
+        if not ok:
             bad += 1
-            continue
-        if not _has_summary(out):
-            lines.append(str(M("harness.no_machine_summary", file=m)))
-            bad += 1
-            continue
-        lines.append(_ok_msg(m, out))
     if n == 0:
         lines.append(str(M("harness.no_modules_found")))
         return False, lines
@@ -271,21 +280,21 @@ def _configurable_fixture(repo, tmp, registry):
     return env, gates
 
 
-_CORE_MUST_RUN = frozenset({
-    "check_facts.py", "check_facts_replay.py", "check_questions.py",
-    "check_retractions.py", "check_history.py", "check_readme_sync.py",
-    "check_stale.py", "check_i18n.py", "check_snapshots.py", "check_explain.py",
-})
+def _core_must_run(repo):
+    import registry  # noqa: PLC0415
+    gs, _ = registry.gates(os.path.join(repo, "zreflect"))
+    return frozenset(os.path.basename(g["file"]) for g in gs if not g.get("off_reason"))
 
 
 def _renamed_all_green(repo, gates, env):
     """After renaming, every single gate must be green (and core gates not OFF). Returns `(ok_count, [(rel, detail)])`."""
     bad = []
+    core = _core_must_run(repo)
     for rel in gates:
         rc, out = _run([sys.executable, os.path.join(repo, rel)], cwd=repo, env=env)
         if rc != 0:
             bad.append((rel, " | ".join(_tail(out, 2)) or ("rc=%d" % rc)))
-        elif os.path.basename(rel) in _CORE_MUST_RUN and (out or "").lstrip().startswith("OFF:"):
+        elif os.path.basename(rel) in core and (out or "").lstrip().startswith("OFF:"):
             bad.append((rel, "unexpected OFF in configurable fixture"))
     return len(gates) - len(bad), bad
 

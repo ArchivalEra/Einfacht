@@ -177,9 +177,12 @@ def run(argv=None):
         )
         if rc is not None:
             return rc
-        methods = reg.get("methods")
-        if not isinstance(methods, list) or not methods:
+        if not isinstance(reg, dict):
+            return fatal(M("instruments.spec_broken", name=name, error="spec must be an object"))
+        raw_methods = reg.get("methods")
+        if not isinstance(raw_methods, list) or not raw_methods:
             return fatal(M("instruments.empty_registry", name=name))
+        methods = raw_methods
     probs = problems(load_or_fatal(led_path), methods=methods, days=days)
     return finish(M("instruments.title"), probs, _ok_line(name, methods, days))
 

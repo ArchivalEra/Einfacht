@@ -88,14 +88,15 @@ def _criteria_problems(path, mc, mnc):
 
 def _safe_repo_read(p):
     target = repo(p)
-    root_abs = os.path.abspath(repo())
+    root_real = os.path.realpath(repo())
+    target_real = os.path.realpath(target)
     try:
-        inside = os.path.commonpath((root_abs, os.path.abspath(target))) == root_abs
+        inside = os.path.commonpath((root_real, target_real)) == root_real
     except ValueError:
         inside = False
     if not inside or os.path.islink(target):
         raise OSError("path escapes repo or is symlink")
-    return open(target, encoding="utf-8").read()
+    return open(target_real, encoding="utf-8").read()
 
 
 def _content_problems(path, mc, mnc, read):

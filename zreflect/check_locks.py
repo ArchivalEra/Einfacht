@@ -105,8 +105,10 @@ def check(spec, hasher=gate.sha256_file, root=None):
     context. Problems and skips are concatenated in entry order.
     """
     root = repo() if root is None else root
-    locked = spec.get("locked") or spec.get("sources") or []
-    if not locked:
+    if not isinstance(spec, dict):
+        return [M("locks.spec_broken", name="locks.json", error="spec must be an object")], []
+    locked = spec.get("locked") if spec.get("locked") is not None else spec.get("sources")
+    if not isinstance(locked, list) or not locked:
         return [M("locks.empty")], []
     problems, skips = [], []
     for entry in locked:

@@ -151,20 +151,49 @@ def _module_global_mutations(tree, module):
     return out
 
 
-def _mutated_globals(trees):
-    """Index the `(module, name)` pairs that others assign at runtime.
+_MUTATING_METHODS = frozenset({
+    "append", "extend", "insert", "pop", "clear", "update",
+    "setdefault", "add", "remove", "discard", "sort", "reverse",
+})
 
-    Returns a set built from two shapes: cross-module attribute assignment
-    (`gate.GATE_REPO = ...`, including `import X as Y` aliases) and a module's
-    own `global NAME` reassignments. A name assigned once and never rewritten
-    is absent: for a data table, copy and reference are indistinguishable.
-    Lookups are O(1); the index is built once for all candidate names.
-    """
+
+def _root_target(node, module, aliases):
+    cur = node
+    while isinstance(cur, ast.Subscript):
+        cur = cur.value
+    if isinstance(cur, ast.Attribute) and isinstance(cur.value, ast.Name):
+        return (aliases.get(cur.value.id, cur.value.id), cur.attr)
+    if isinstance(cur, ast.Name):
+        return (module, cur.id)
+    return None
+
+
+def _inplace_mutations(tree, module, aliases):
+    """Shape 3: `DICT[k] = v`, `del DICT[k]`, or `LIST.append(...)` / `.update(...)`."""
+    out = set()
+    for node in ast.walk(tree):
+        targets = node.targets if isinstance(node, ast.Delete) else _assign_targets(node)
+        for t in targets:
+            if isinstance(t, ast.Subscript):
+                pair = _root_target(t, module, aliases)
+                if pair is not None:
+                    out.add(pair)
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr in _MUTATING_METHODS):
+            pair = _root_target(node.func.value, module, aliases)
+            if pair is not None:
+                out.add(pair)
+    return out
+
+
+def _mutated_globals(trees):
+    """Index the `(module, name)` pairs that others assign or mutate in-place at runtime."""
     aliases = _import_aliases(trees)
     out = set()
     for module, tree in trees.items():
         out |= _attribute_mutations(tree, aliases)
         out |= _module_global_mutations(tree, module)
+        out |= _inplace_mutations(tree, module, aliases)
     return out
 
 
@@ -211,7 +240,7 @@ def _calls_outside_lambda(node):
     is itself a Call -- walking only children misses it (measured: derived
     detection completely dead).
     """
-    out = []
+    out: list[ast.Call] = []
     def walk(n):
         if isinstance(n, ast.Call):
             out.append(n)
@@ -372,49 +401,51 @@ def _derived_hits(ix, mod, tree, src_mod, names):
 
 def _derived_copy_problems(ix):
     """2. **Derived snapshots**: the module top level stores "an expression containing a mutable global" as a constant (freezes just like an import)."""
-    out = []
+    out: list[str] = []
     for mod, tree in sorted(ix["trees"].items()):
         for src_mod, names in sorted(ix["assigned"].items()):
             out += _derived_hits(ix, mod, tree, src_mod, names)
     return out
 
 
+def _import_source_module(node):
+    if not node.module:
+        return None
+    return node.module.split(".")[-1] if node.level > 0 else node.module
+
+
 def _mutable_copy_problems(ix):
     """1. **Value snapshots**: `from <local module> import ALL_CAPS` where that global is reassigned elsewhere => the copy stays frozen at import time."""
-    out = []
+    out: list[str] = []
     for mod, tree in sorted(ix["trees"].items()):
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
                 continue
-            for name in _frozen_imports(ix, mod, node):
+            src_mod = _import_source_module(node)
+            for name in _frozen_imports(ix, mod, node, src_mod):
                 out.append(M("snapshot.mutable_copy",
                              file=mod + ".py", imported=name,
-                             source=node.module))
+                             source=src_mod))
     return out
 
 
-def _frozen_imports(ix, mod, node):
-    """Which names in this `from <src> import ...` are **value snapshots** (the copy freezes).
-
-    The five guards are all "not worth reporting" exits, each for a different
-    reason -- crammed at the call site they become 5 consecutive `continue`s
-    (complexity 11). Extracted into a named function, the call site is one line.
-    """
-    src_mod = node.module
-    if src_mod not in ix["trees"]:
-        return []                       # not in the scan surface => not a local sibling module
-    if src_mod not in ix["assigned"]:
-        return []                       # source module outside the scan surface => do not guess
+def _frozen_imports(ix, mod, node, src_mod=None):
+    """Which names in this `from <src> import ...` are **value snapshots** (the copy freezes)."""
+    src_mod = _import_source_module(node) if src_mod is None else src_mod
+    if src_mod not in ix["trees"] or src_mod not in ix["assigned"]:
+        return []
     loaded = ix["loaded"][mod]
-    out = []
+    out: list[str] = []
     for alias in node.names:
+        if alias.name == "*":
+            out.extend(n for n in sorted(ix["assigned"][src_mod])
+                       if (src_mod, n) in ix["mutable"])
+            continue
         name = alias.name
-        if name not in ix["assigned"][src_mod]:
-            continue                    # the source module has no such module-level name
-        if (src_mod, name) not in ix["mutable"]:
-            continue                    # nobody reassigns it => the copy is safe
+        if name not in ix["assigned"][src_mod] or (src_mod, name) not in ix["mutable"]:
+            continue
         if (alias.asname or name) not in loaded:
-            continue                    # dead import; not reported
+            continue
         out.append(name)
     return out
 
@@ -517,6 +548,18 @@ def _cases_value_copy(fx):
          lambda: [p.code for p in problems(sources={
              "check_zzz": CHECK_AS_SOURCE, "victim": CHECK_AS_VICTIM})
          ] == ["snapshot.mutable_copy"]),
+        ("\u2605 snapshot.inplace_dict_and_list_mutations",
+         lambda: [p.code for p in problems(sources={
+             "cfg": "CACHE = {}\nITEMS = []\ndef f():\n    CACHE['k'] = 1\n    ITEMS.append(2)\n",
+             "u1": "from cfg import CACHE\nprint(CACHE)\n",
+             "u2": "from cfg import ITEMS\nprint(ITEMS)\n",
+         })] == ["snapshot.mutable_copy", "snapshot.mutable_copy"]),
+        ("\u2605 snapshot.star_and_relative_imports",
+         lambda: [p.code for p in problems(sources={
+             "gate": fx["bad_gate"],
+             "u_star": "from gate import *\n",
+             "u_rel": "from .gate import GATE_REPO\nprint(GATE_REPO)\n",
+         })] == ["snapshot.mutable_copy", "snapshot.mutable_copy"]),
     ]
 
 

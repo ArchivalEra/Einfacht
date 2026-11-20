@@ -1,0 +1,9 @@
+{
+  "description": "Facts ledger CLI: initialize, measure, render and check in isolated repo",
+  "steps": [
+    {"argv": ["{python}", "zreflect/facts.py", "--init"], "not_contains": ["FATAL", "Traceback"]},
+    {"argv": ["{python}", "zreflect/facts.py"], "contains": ["facts.measure_written"]},
+    {"argv": ["{python}", "zreflect/facts.py", "--render-doc"], "not_contains": ["FATAL", "Traceback"]},
+    {"argv": ["{python}", "zreflect/facts.py", "--check"], "contains": ["facts.block_consistent"]}
+  ]
+}

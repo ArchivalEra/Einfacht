@@ -171,12 +171,12 @@ def _active_problems(active, lines):
 
 
 def _branch_problems(branch, active, lines, override):
-    """Branch audit: the branch is a line yet != active => red (line switch
-    without running the line-switch script -- the shape of incidents 1/2).
-    When an override is present it is CI's explicit choice; don't guess for
-    the human."""
-    if (branch and branch in lines and active
-            and branch != active and not override):
+    """Branch audit: detached HEAD, unlisted branch, or a different line without override => red."""
+    if override or not active:
+        return []
+    if not branch:
+        return [M("world.branch_mismatch", branch="DETACHED", active=active)]
+    if branch != active:
         return [M("world.branch_mismatch", branch=branch, active=active)]
     return []
 
@@ -323,6 +323,10 @@ def _cases_resolve(fx):
     ("★ world.branch_mismatch",
      lambda: [p.code for p in spec_problems(
          good, "IllegalPerformance", "")] == ["world.branch_mismatch"]),
+    ("★ world.detached_head_flagged",
+     lambda: [p.code for p in spec_problems(good, "", "")] == ["world.branch_mismatch"]),
+    ("★ world.unlisted_branch_flagged",
+     lambda: [p.code for p in spec_problems(good, "feature/x", "")] == ["world.branch_mismatch"]),
     ("world.branch_mismatch_override_present",
      lambda: spec_problems(good, "IllegalPerformance",
                             "IllegalPerformance") == []),
@@ -368,13 +372,13 @@ def _cases_shape(fx):
     ("★ world.active_unknown",
      lambda: [p.code for p in spec_problems(
          {"lines": good["lines"], "active": "ghost",
-          "stamps": {}}, "", "")] == ["world.active_unknown"]),
+          "stamps": {}}, "ghost", "")] == ["world.active_unknown"]),
     ("★ world.line_missing_field",
      lambda: [p.code for p in spec_problems(
          {"lines": {"L": {"site": "s",
                           "artifacts": "a",
                           "fork_pin_ref": "r"}},
-          "active": "L", "stamps": {}}, "", "")]
+          "active": "L", "stamps": {}}, "L", "")]
      == ["world.line_missing_field"]),
     # (3) empty input must be reported
     ("★ world.spec_not_object",

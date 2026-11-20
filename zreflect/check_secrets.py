@@ -74,24 +74,43 @@ def _is_covered(rel, prefixes):
     return False
 
 
+def _ignore_path_str(entry):
+    if isinstance(entry, dict):
+        return str(entry.get("path") or "")
+    return str(entry or "")
+
+
 def _git_tracked(root):
+    if not os.path.exists(os.path.join(root, ".git")):
+        return []
     try:
-        r = subprocess.run(["git", "-C", root, "ls-files"],
+        r = subprocess.run(["git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard"],
                            capture_output=True, text=True, timeout=15)
         if r.returncode != 0:
-            return []
+            return None
         return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
     except (OSError, subprocess.TimeoutExpired):
-        return []
+        return None
 
 
 def _uncovered_tracked_problems(root, spec, tracked=None):
     tracked_files = _git_tracked(root) if tracked is None else list(tracked)
+    if tracked_files is None:
+        return [M("secrets.uncovered_tracked", path="git:ls-files")]
     if not tracked_files:
         return []
-    covered = list(spec.get("paths") or []) + list(spec.get("ignore_paths") or [])
+    ignores = [_ignore_path_str(x) for x in (spec.get("ignore_paths") or [])]
+    covered = list(spec.get("paths") or []) + ignores
     return [M("secrets.uncovered_tracked", path=rel)
             for rel in sorted(tracked_files) if not _is_covered(rel, covered)]
+
+
+def _ignore_entry_bad(entry):
+    if not isinstance(entry, dict):
+        return True
+    path = str(entry.get("path") or "").strip()
+    why = str(entry.get("reason") or entry.get("why") or "").strip()
+    return not path or not why
 
 
 def spec_problems(spec):
@@ -104,8 +123,7 @@ def spec_problems(spec):
             or any(not isinstance(path, str) or not path.strip() for path in paths)):
         out.append(M("secrets.paths_empty"))
     ignore = spec.get("ignore_paths", [])
-    if (not isinstance(ignore, list)
-            or any(not isinstance(path, str) or not path.strip() for path in ignore)):
+    if not isinstance(ignore, list) or any(_ignore_entry_bad(item) for item in ignore):
         out.append(M("secrets.ignore_not_list"))
     allow = spec.get("allow", [])
     if not isinstance(allow, list):
@@ -121,8 +139,9 @@ def _allow_problems(entry, seen):
         return [M("secrets.allow_not_object", entry=entry)]
     path = str(entry.get("path") or "").replace(os.sep, "/").strip()
     rule = str(entry.get("rule") or "").strip()
+    why = str(entry.get("reason") or entry.get("why") or "").strip()
     out = []
-    if not path or not rule:
+    if not path or not rule or not why:
         return [M("secrets.allow_fields", entry=entry)]
     if rule not in RULE_NAMES:
         out.append(M("secrets.allow_unknown_rule", rule=rule))
@@ -195,13 +214,17 @@ def _relative(root, path):
     return os.path.relpath(path, root).replace(os.sep, "/")
 
 
+_TEXT_EXTS = frozenset({".py", ".md", ".txt", ".json", ".yml", ".yaml", ".sh", ".toml", ".env"})
+
+
 def _scan_file(root, path, stats):
     relative = _relative(root, path)
     findings: list[dict[str, object]] = []
     try:
         with open(path, "rb") as fh:
             head = fh.read(8192)
-            if head.count(b"\0") >= 4:
+            ext = os.path.splitext(path)[1].lower()
+            if b"\0" in head and ext not in _TEXT_EXTS:
                 stats["binary"] += 1
                 return findings, None
         stats["scanned"] += 1
@@ -273,7 +296,12 @@ def _cases():
         ("secrets.clean", lambda: line_findings("a.txt", 1, clean) == []),
         ("secrets.allow_shape",
          lambda: spec_problems({"paths": ["app"], "allow": [
-             {"path": "app/a.txt", "rule": "aws-access-key"}]}) == []),
+             {"path": "app/a.txt", "rule": "aws-access-key", "reason": "fixture"}]}) == []),
+        ("★ secrets.exemption_requires_reason",
+         lambda: [p.code for p in spec_problems({"paths": ["app"], "allow": [
+             {"path": "app/a.txt", "rule": "aws-access-key"}]})] == ["secrets.allow_fields"]
+         and [p.code for p in spec_problems({"paths": ["app"], "ignore_paths": ["scripts"]})]
+         == ["secrets.ignore_not_list"]),
         ("★ secrets.aws", lambda: [x["rule"] for x in line_findings("a.txt", 1, leaked)]
          == ["aws-access-key"]),
         ("★ secrets.private_key",
@@ -316,7 +344,7 @@ def _cases():
          == ["secrets.paths_empty"]),
         ("★ secrets.empty_tree", lambda: _empty_tree_case(tempfile)),
         ("★ secrets.path_escape",
-         lambda: [p.code for p in scan(tempfile.gettempdir(), {"paths": ["../"]})[0]]
+         lambda: [p.code for p in scan(tempfile.gettempdir(), {"paths": ["../"]}, tracked=[])[0]]
          == ["secrets.path_outside", "secrets.empty"]),
         # an exemption that suppresses nothing must be reported: otherwise a
         # stale allow entry silently pre-authorises a future leak
@@ -343,7 +371,7 @@ def _ignore_paths_case(tempfile):
         os.makedirs(os.path.join(root, "src"))
         open(os.path.join(root, "src", "a.py"), "w").write("x = 1\n")
         problems, _stats = scan(
-            root, {"paths": ["src"], "ignore_paths": ["scripts"]},
+            root, {"paths": ["src"], "ignore_paths": [{"path": "scripts", "reason": "fixture"}]},
             tracked=["src/a.py", "scripts/run.sh"])
         return problems == []
 
@@ -351,13 +379,13 @@ def _ignore_paths_case(tempfile):
 def _stale_allow_case(tempfile):
     with tempfile.TemporaryDirectory() as root:
         problems, _stats = scan(root, {"paths": ["."], "allow": [
-            {"path": "gone.txt", "rule": "jwt"}]})
+            {"path": "gone.txt", "rule": "jwt", "reason": "fixture"}]}, tracked=[])
         return [p.code for p in problems] == ["secrets.allow_stale", "secrets.empty"]
 
 
 def _empty_tree_case(tempfile):
     with tempfile.TemporaryDirectory() as root:
-        problems, _stats = scan(root, {"paths": ["."]})
+        problems, _stats = scan(root, {"paths": ["."]}, tracked=[])
         return [p.code for p in problems] == ["secrets.empty"]
 
 

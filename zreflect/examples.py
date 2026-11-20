@@ -116,11 +116,12 @@ def discover(root):
     return manifests, problems
 
 
-def coverage_problems(manifests, gates):
-    """Every declared gate has a same-named example; extra core examples are legal."""
+def coverage_problems(manifests, gates, modules=()):
+    """Every declared gate and core module has a same-named example."""
     if not gates:
         return [M("examples.gates_empty")]
     expected = {os.path.splitext(os.path.basename(item["file"]))[0] for item in gates}
+    expected |= {os.path.splitext(os.path.basename(item["file"]))[0] for item in modules}
     return [M("examples.coverage_missing", example=name)
             for name in sorted(expected - set(manifests))]
 
@@ -285,8 +286,9 @@ def _print_problems(problems):
 def _run_all(root):
     manifests, problems = discover(root)
     gates, missing = registry.gates()
+    mods, _ = registry.modules()
     problems += [M("examples.gate_undeclared", file=name) for name in missing]
-    problems += coverage_problems(manifests, gates)
+    problems += coverage_problems(manifests, gates, modules=mods)
     if problems:
         _print_problems(problems)
         return 2
@@ -329,7 +331,8 @@ def _list(root):
 def _check(root):
     manifests, problems = discover(root)
     gates, missing = registry.gates()
-    problems += coverage_problems(manifests, gates)
+    mods, _ = registry.modules()
+    problems += coverage_problems(manifests, gates, modules=mods)
     problems += [M("examples.gate_undeclared", file=name) for name in missing]
     _print_problems(problems)
     print(M("examples.coverage_ok", count=len(manifests)) if not problems
@@ -388,6 +391,8 @@ def _cases():
          lambda: [p.code for p in manifest_problems(empty)] == ["examples.steps_empty"]),
         ("★ examples.coverage_missing",
          lambda: [p.code for p in coverage_problems({}, gates)]
+         == ["examples.coverage_missing"]
+         and [p.code for p in coverage_problems({"check_demo": good}, gates, modules=[{"file": "zreflect/core_mod.py"}])]
          == ["examples.coverage_missing"]),
         ("★ examples.empty_gate_roster",
          lambda: [p.code for p in coverage_problems({"x": good}, [])]

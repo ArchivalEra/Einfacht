@@ -121,7 +121,9 @@ def _version_pin_problems(p, run):
         problems.append(M("pins.version_unreadable", name=p["name"]))
         return problems, skips
     expect = p.get("expect_version")
-    if expect and not re.search(r"(?<![0-9A-Za-z.])%s(?![0-9A-Za-z.])" % re.escape(expect), first):
+    if not expect:
+        problems.append(M("pins.pin_missing_field", field="expect_version", entry=p))
+    elif not re.search(r"(?<![0-9A-Za-z.])%s(?![0-9A-Za-z.])" % re.escape(expect), first):
         problems.append(M("pins.version_drift", name=p["name"],
                           declared=expect, actual=first[:48]))
     return problems, skips
@@ -159,8 +161,10 @@ def check(spec, run=_run, root=None):
     under check; the selftest passes a fixture directory).
     """
     root = repo() if root is None else root
-    pins = spec.get("pins") or []
-    if not pins:
+    if not isinstance(spec, dict):
+        return [M("pins.spec_broken", name="pins.json", error="spec must be an object")], []
+    pins = spec.get("pins")
+    if not isinstance(pins, list) or not pins:
         return [M("pins.empty")], []
     problems, skips = gate.exec_position_problems(spec, "pins.json"), []
     for p in pins:

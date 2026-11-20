@@ -639,7 +639,8 @@ def _init_skeleton(root, state):
             "paths": ["."],
             "ignore_paths": [],
             "allow": [
-                {"path": "zreflect/check_secrets.py", "rule": r}
+                {"path": "zreflect/check_secrets.py", "rule": r,
+                 "reason": "selftest fixture in suite"}
                 for r in ("aws-access-key", "generic-secret", "private-key", "jwt", "url-credentials")
             ],
         }, indent=2) + "\n",

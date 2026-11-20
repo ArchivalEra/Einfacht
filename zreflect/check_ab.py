@@ -130,8 +130,12 @@ def _pair_problems(pr, root, loader):
 
 def check(spec, root, loader=_load):
     """Pure logic (the selftest injects `loader`). Returns (problems, skips)."""
-    pairs = spec.get("pairs") or []
-    if not pairs:
+    if not isinstance(spec, dict):
+        return [M("ab.spec_broken", name="ab.json", error="spec must be an object")], []
+    pairs = spec.get("pairs")
+    if pairs is None:
+        pairs = []
+    if not isinstance(pairs, list) or not pairs:
         return [M("ab.empty")], []
     problems, skips = [], []
     for pr in pairs:
