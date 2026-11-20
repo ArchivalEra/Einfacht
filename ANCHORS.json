@@ -207,6 +207,18 @@
       "settling": "python3 zreflect/approval.py --selftest && python3 zreflect/seal.py --selftest && python3 zreflect/impact.py --selftest -- rc=0 => 3-col repo-scoped RBAC, idempotency, _auto_sync_for_probs auto-submit/deny-surface, ANCHORS integrity, worktree git-dir, seal normalization, and measure_*.py impact pass; rc!=0 => Q32 regression ## 复跑方式 ```sh python3 zreflect/approval.py --selftest && python3 zreflect/seal.py --selftest && python3 zreflect/impact.py --selftest && python3 zreflect/registry.py --run commit ```",
       "sha256": "929e1ef0890b22c1390428ea75288ce746ed49b2c973d0e5dbe8ea56b36fb44e",
       "status": "resolved"
+    },
+    "questions/33-close-env-cache-and-depth-escapes.md": {
+      "body_sha256": "803533335a6f25cda9fe6f9cb4c3d05e95e0553b66b50aaebda8d71b2e84d65a",
+      "settling": "none -- first deliverable: 第一交付物是外部预置假 `EINFACHT_RUN_CACHE`、外部 `EINFACHT_REPLAY_DEPTH=1` 与外部 `REFLECT_QUESTIONS` 偏移被拦截的会红自测用例。 ## 复跑方式 ```sh python3 zreflect/gate.py --selftest && python3 zreflect/approval.py --selftest && python3 zreflect/check_questions.py --selftest && python3 zreflect/registry.py --run commit --all ```",
+      "sha256": "4fee09b1d43abecb51982073e7805ef12272df2d3baceef8c893dc18e2b9117f",
+      "status": "ready-for-agent"
+    },
+    "questions/34-wire-seal-auto-sync-and-anchor-origin.md": {
+      "body_sha256": "86abfe723552de6f9ec9985396475626e623e534262f7014a9bdbaedef48a7c2",
+      "settling": "none -- first deliverable: 第一交付物是 `zreflect/seal.py` 触发 `seal.core` 缺回执时自动调用 `_auto_sync_for_probs` 提单并拉取回执的会红自测用例。 ## 复跑方式 ```sh python3 zreflect/seal.py --selftest && python3 zreflect/approval.py --selftest && python3 zreflect/registry.py --run commit --all ```",
+      "sha256": "ccfc4f8c39df0769a810dc98e81daec53608835277d6f614895abd49e0eb62a6",
+      "status": "ready-for-agent"
     }
   },
   "repo": "ArchivalEra/Einfacht",
