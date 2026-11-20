@@ -331,7 +331,7 @@ def _off_policy_error(off_list):
 
 
 def _select_affected(gs, argv):
-    if "--affected" not in argv:
+    if "--all" in argv:
         return gs
     plan = impact.affected_plan(impact.git_changed_files(), gs)
     print(M("registry.affected_plan", selected=len(plan["selected"]),
@@ -462,7 +462,7 @@ def _main_selftest_mods():
 
 _KNOWN_FLAGS = frozenset({
     "--red-need", "--runnable", "--all-runnable", "--plugins", "--fixture-renames",
-    "--verify-seal", "--force", "--run", "--affected", "--selftest-modules", "--gates", "--selftest",
+    "--verify-seal", "--force", "--run", "--affected", "--all", "--selftest-modules", "--gates", "--selftest",
 })
 
 

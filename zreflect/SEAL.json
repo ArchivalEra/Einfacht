@@ -85,7 +85,7 @@
    "file_sha256": "57b8bdf28864175b692f8c20ec454b04085ebea2a02e2ae972462e578bd49205"
   },
   "zreflect/impact.py": {
-   "file_sha256": "a6d273087810dc0fadfb324005ffc7b73420af800e28694d05504b171bb619df"
+   "file_sha256": "56e59d68b283b04098ae1d8578704944c6917faf82a63515e1b013b6e5dec658"
   },
   "zreflect/knobs.py": {
    "file_sha256": "c30c12fb495cba7935de5c55eb1e7c72a0881d3e7a9eccb30235e80bfea7ff8b"
@@ -103,12 +103,12 @@
    "file_sha256": "84e52347aa4767de9431e7d20579d5474ef28bb01f90f34f6cb5c66c4231f611"
   },
   "zreflect/registry.py": {
-   "file_sha256": "ece46b02dc0fee3312402156e93a9799d90bf1a1f34bd05056f0371c0903d208"
+   "file_sha256": "64b28510925c6c8569b064f1e108de20b14fec82550201cefd8f6b6f1bde87b0"
   },
   "zreflect/seal.py": {
    "file_sha256": "abd755045101dd12ba61df908d5c7fc0619693a4026c59873d8f65bb421af959"
   }
  },
  "schema": 1,
- "tree_sha256": "c9e48c56b8217fdad02300f9b541c9bd05b1be2a7f49da2fd0416d34713d805b"
+ "tree_sha256": "34e5979e7538d964e5f03391e46af610e60c7d8647d9ef35e49c78ccdc30afce"
 }

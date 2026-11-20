@@ -12,6 +12,7 @@ from gate import module_meta, selftest
 from i18n import M
 
 _GLOBAL_FALLBACK_FILES = frozenset({
+    "ANCHORS.json",
     "knobs.json",
     "SEAL.json",
     "zreflect/SEAL.json",
