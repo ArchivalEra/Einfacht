@@ -31,7 +31,8 @@ PINNED_APPROVER_PUB = (
 def pinned_approver_pub():
     if os.path.isfile(SYSTEM_PUB_PATH):
         try:
-            txt = open(SYSTEM_PUB_PATH, encoding="ascii").read().strip()
+            with open(SYSTEM_PUB_PATH, encoding="ascii") as fh:
+                txt = fh.read().strip()
             if "BEGIN PUBLIC KEY" in txt:
                 return txt + "\n"
         except OSError:
@@ -49,7 +50,8 @@ def sha256_text(text):
 
 def sha256_file(path):
     try:
-        return sha256_bytes(open(path, "rb").read())
+        with open(path, "rb") as fh:
+            return sha256_bytes(fh.read())
     except OSError:
         return None
 
@@ -59,8 +61,8 @@ def _strip_status_settling(text):
     out = []
     skip_cont = False
     for ln in lines:
-        if re.match(r"^(?:\*\*)?(Status|Settling)(?:\*\*)?:\s*(?:\*\*)?", ln.strip()):
-            skip_cont = ln.strip().lstrip("*").startswith("Settling")
+        if re.match(r"(?i)^\*{0,2}(Status|Settling)\*{0,2}\s*:\s*\*{0,2}", ln.strip()):
+            skip_cont = ln.strip().lstrip("*").lower().startswith("settling")
             continue
         if skip_cont and (ln.startswith(("  ", "\t")) or not ln.strip()):
             if not ln.strip():
@@ -93,10 +95,9 @@ def question_snapshot(text):
 
 
 def canonical_payload(receipt):
-    if isinstance(receipt.get("payload"), dict):
-        body = receipt["payload"]
-        return json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    body = {k: v for k, v in receipt.items() if k != "sig"}
+    body = receipt["payload"] if isinstance(receipt.get("payload"), dict) else {
+        k: v for k, v in receipt.items() if k != "sig"
+    }
     return json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
@@ -187,16 +188,33 @@ def verify_receipt(receipt, *, repo_name, action, target, prev_sha256, target_sh
     return []
 
 
+def _default_receipt_path(root=None):
+    import subprocess  # noqa: PLC0415
+    base = os.path.abspath(root or gate.GATE_REPO)
+    try:
+        r = subprocess.run(["git", "-C", base, "rev-parse", "--git-dir"],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            gdir = r.stdout.strip()
+            if not os.path.isabs(gdir):
+                gdir = os.path.join(base, gdir)
+            return os.path.join(gdir, "einfacht-receipt.json")
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return os.path.join(base, ".git", "einfacht-receipt.json")
+
+
 def load_receipt(path=None, root=None):
     base = root or gate.GATE_REPO
     p = path or os.environ.get(RECEIPT_ENV)
     if not p or not os.path.isfile(p):
-        fallback = os.path.join(base, ".git", "einfacht-receipt.json")
+        fallback = _default_receipt_path(base)
         p = fallback if os.path.isfile(fallback) else None
     if not p:
         return None
     try:
-        data = json.load(open(p, encoding="utf-8"))
+        with open(p, encoding="utf-8") as fh:
+            data = json.load(fh)
         return data if isinstance(data, (dict, list)) else None
     except (OSError, ValueError):
         return None
@@ -206,7 +224,8 @@ def _save_receipt_to_bundle(receipt, out_path):
     items = []
     if os.path.isfile(out_path):
         try:
-            old = json.load(open(out_path, encoding="utf-8"))
+            with open(out_path, encoding="utf-8") as fh:
+                old = json.load(fh)
             if isinstance(old, dict) and isinstance(old.get("receipts"), list):
                 items = [x for x in old["receipts"] if isinstance(x, dict)]
             elif isinstance(old, dict) and ("sig" in old or "payload" in old):
@@ -248,16 +267,19 @@ def load_anchors(root=None):
     p = os.path.join(base, ANCHORS_FILE)
     if not os.path.isfile(p):
         import subprocess  # noqa: PLC0415
-        try:
-            r = subprocess.run(["git", "-C", base, "ls-files", "--error-unmatch", ANCHORS_FILE],
-                               capture_output=True, text=True, timeout=5)
-            if r.returncode == 0:
-                return {}
-        except (OSError, subprocess.TimeoutExpired):
-            pass
+        for cmd in (
+            ["git", "-C", base, "ls-files", "--error-unmatch", ANCHORS_FILE],
+            ["git", "-C", base, "cat-file", "-e", "HEAD:" + ANCHORS_FILE],
+        ):
+            try:
+                if subprocess.run(cmd, capture_output=True, text=True, timeout=5).returncode == 0:
+                    return {}
+            except (OSError, subprocess.TimeoutExpired):
+                pass
         return None
     try:
-        data = json.load(open(p, encoding="utf-8"))
+        with open(p, encoding="utf-8") as fh:
+            data = json.load(fh)
         if not isinstance(data, dict):
             return None
         if (data.get("approver_pub") or "").strip() != pinned_approver_pub().strip():
@@ -303,12 +325,132 @@ def check_question_change(rel_path, cur_text, anchor_entry, receipt=None,
     )
 
 
-def check_questions_against_anchor(files, root=None, receipt=None, qdir=None):
-    anchors = load_anchors(root)
-    if anchors is None:
+def _head_anchors(root=None):
+    import subprocess  # noqa: PLC0415
+    base = root or gate.GATE_REPO
+    try:
+        r = subprocess.run(["git", "-C", base, "show", "HEAD:" + ANCHORS_FILE],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode != 0:
+            return None
+        data = json.loads(r.stdout)
+        return data if isinstance(data, dict) else {}
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+
+
+def _is_legal_anchor_settlement(cur_entry, head_entry):
+    if not head_entry or not cur_entry:
+        return False
+    if cur_entry.get("status") != "resolved" or cur_entry.get("body_sha256") != head_entry.get("body_sha256"):
+        return False
+    prev_set, cur_set = head_entry.get("settling", ""), cur_entry.get("settling", "")
+    return cur_set == prev_set or (_is_none_like(prev_set) and not _is_none_like(cur_set))
+
+
+def _check_anchor_questions_diff(anchors, head, rec, qdir=None):
+    head_q = head.get("questions") or {}
+    cur_q = anchors.get("questions") or {}
+    if qdir:
+        prefix = qdir.rstrip("/") + "/"
+        head_q = {k: v for k, v in head_q.items() if k.startswith(prefix)}
+        cur_q = {k: v for k, v in cur_q.items() if k.startswith(prefix)}
+    pub = head.get("approver_pub") or anchors.get("approver_pub")
+    rname = head.get("repo") or anchors.get("repo") or ""
+    revoked = head.get("revoked_ids") or ()
+    out = []
+    for k in sorted(set(head_q) | set(cur_q)):
+        ce, he = cur_q.get(k), head_q.get(k)
+        if ce == he or _is_legal_anchor_settlement(ce, he):
+            continue
+        if he is None:
+            out += verify_receipt(rec, repo_name=rname, action="question.create", target=k,
+                                  prev_sha256="NONE", target_sha256=(ce or {}).get("sha256", ""),
+                                  pub_b64=pub, revoked_ids=revoked)
+        else:
+            act = "question.wontfix" if (ce or {}).get("status") == "wontfix" else "question.modify"
+            out += verify_receipt(rec, repo_name=rname, action=act, target=k,
+                                  prev_sha256=he.get("sha256", ""),
+                                  target_sha256=ce.get("sha256", "") if ce else "DELETED",
+                                  pub_b64=pub, revoked_ids=revoked)
+    return out
+
+
+def check_anchors_integrity(anchors, root=None, receipt=None, qdir=None):
+    """Verify `ANCHORS.json` was not weakened or tampered relative to `HEAD:ANCHORS.json`."""
+    head = _head_anchors(root)
+    if head is None:
         return []
-    if not anchors:
+    if not head or anchors.get("repo") != head.get("repo"):
         return [M("approval.anchors_broken")]
+    if head.get("lock_core") and not anchors.get("lock_core"):
+        return [M("approval.anchors_broken")]
+    if set(head.get("revoked_ids") or ()) - set(anchors.get("revoked_ids") or ()):
+        return [M("approval.anchors_broken")]
+    pub = head.get("approver_pub") or anchors.get("approver_pub")
+    rname = head.get("repo") or ""
+    revoked = head.get("revoked_ids") or ()
+    out = _check_anchor_questions_diff(anchors, head, receipt, qdir=qdir)
+    hp, cp = head.get("principles") or {}, anchors.get("principles") or {}
+    if cp != hp:
+        out += check_principles_anchor(
+            head, doc_py_sha=cp.get("doc_py_sha256"),
+            principles_md_sha=cp.get("principles_md_sha256"),
+            no_principles=bool(cp.get("no_principles", False)), receipt=receipt)
+    for g in sorted(set(anchors.get("off_gates") or ()) - set(head.get("off_gates") or ())):
+        out += verify_receipt(receipt, repo_name=rname, action="gate.off", target=g,
+                              prev_sha256="on", target_sha256="off", pub_b64=pub, revoked_ids=revoked)
+    return out
+
+
+def _auto_sync_targets(base, probs):
+    codes = ("approval.receipt_required", "approval.scope_mismatch", "approval.expired")
+    targets = sorted({p.params["target"] for p in probs
+                      if getattr(p, "code", "") in codes and p.params.get("target")})
+    if not targets and any(getattr(p, "code", "") == "approval.expired" for p in probs):
+        import impact  # noqa: PLC0415
+        targets = impact.git_changed_files(base) or []
+    return targets
+
+
+def _post_auto_sync(url, payload, out_path):
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+    try:
+        req = urllib.request.Request(url + "/requests", data=json.dumps(payload).encode("utf-8"),
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=1.5) as r:
+            resp = json.loads(r.read().decode("utf-8"))
+        if resp.get("receipt"):
+            _save_receipt_to_bundle(resp["receipt"], out_path)
+            return True
+        if resp.get("status") in ("denied", "rejected_duplicate"):
+            label = resp.get("display_id") or resp.get("id", "")
+            reason = resp.get("deny_reason") or resp.get("status")
+            print(f"  · approval.denied(id={label!r}, target={payload['target_path']!r}, reason={reason!r})",
+                  file=sys.stderr)
+    except (urllib.error.URLError, OSError, ValueError):
+        pass
+    return False
+
+
+def _auto_sync_for_probs(base, anchors, probs):
+    """Mechanically submit missing-receipt targets, surface deny_reason, and pull ready receipts."""
+    if not os.path.exists(os.path.join(base, ".git")):
+        return False
+    if (anchors.get("approver_pub") or "").strip() != pinned_approver_pub().strip():
+        return False
+    targets = _auto_sync_targets(base, probs)
+    if not targets:
+        return False
+    reqs = build_requests(targets, root=base, repo_name=anchors.get("repo") or repo_id(base))
+    url = (os.environ.get(APPROVER_URL_ENV) or DEFAULT_APPROVER_URL).rstrip("/")
+    out_path = os.environ.get(RECEIPT_ENV) or _default_receipt_path(base)
+    results = [_post_auto_sync(url, p, out_path) for p in reqs]
+    return any(results)
+
+
+def _eval_questions_anchor(files, anchors, root, rec, qdir):
     q_map = anchors.get("questions") or {}
     if qdir:
         prefix = qdir.rstrip("/") + "/"
@@ -316,13 +458,26 @@ def check_questions_against_anchor(files, root=None, receipt=None, qdir=None):
     pub = anchors.get("approver_pub")
     rname = anchors.get("repo") or repo_id(root)
     revoked = anchors.get("revoked_ids") or []
-    rec = receipt if receipt is not None else load_receipt(root=root)
-    out = []
+    out = check_anchors_integrity(anchors, root=root, receipt=rec, qdir=qdir)
     for rel in sorted(set(q_map) | set(files)):
         out += check_question_change(
             rel, files.get(rel), q_map.get(rel),
             receipt=rec, pub_b64=pub, repo_name=rname, revoked_ids=revoked,
         )
+    return out
+
+
+def check_questions_against_anchor(files, root=None, receipt=None, qdir=None):
+    base = root or gate.GATE_REPO
+    anchors = load_anchors(base)
+    if anchors is None:
+        return []
+    if not anchors:
+        return [M("approval.anchors_broken")]
+    rec = receipt if receipt is not None else load_receipt(root=base)
+    out = _eval_questions_anchor(files, anchors, base, rec, qdir)
+    if receipt is None and out and _auto_sync_for_probs(base, anchors, out):
+        out = _eval_questions_anchor(files, anchors, base, load_receipt(root=base), qdir)
     return out
 
 
@@ -362,14 +517,25 @@ def check_principles_repo(root=None, receipt=None):
         return []
     if not anchors:
         return [M("approval.anchors_broken")]
+    doc_sha = sha256_file(os.path.join(gate.zdir(), "doc.py"))
+    md_sha = sha256_file(os.path.join(base, "PRINCIPLES.md"))
+    no_pr = knobs.flag("REFLECT_NO_PRINCIPLES") is True
     rec = receipt if receipt is not None else load_receipt(root=base)
-    return check_principles_anchor(
-        anchors,
-        doc_py_sha=sha256_file(os.path.join(gate.zdir(), "doc.py")),
-        principles_md_sha=sha256_file(os.path.join(base, "PRINCIPLES.md")),
-        no_principles=knobs.flag("REFLECT_NO_PRINCIPLES") is True,
-        receipt=rec,
-    )
+    out = check_principles_anchor(anchors, doc_py_sha=doc_sha, principles_md_sha=md_sha, no_principles=no_pr, receipt=rec)
+    if receipt is None and out and _auto_sync_for_probs(base, anchors, out):
+        out = check_principles_anchor(
+            anchors, doc_py_sha=doc_sha, principles_md_sha=md_sha, no_principles=no_pr, receipt=load_receipt(root=base))
+    return out
+
+
+def _eval_off_gates(extra, anchors, base, rec, now):
+    pub, rname, revoked = anchors.get("approver_pub"), anchors.get("repo") or repo_id(base), anchors.get("revoked_ids") or []
+    out = []
+    for name in extra:
+        out += verify_receipt(
+            rec, repo_name=rname, action="gate.off", target=name,
+            prev_sha256="on", target_sha256="off", pub_b64=pub, revoked_ids=revoked, now=now)
+    return out
 
 
 def check_off_gates_anchor(off_list, root=None, receipt=None, now=None):
@@ -384,15 +550,9 @@ def check_off_gates_anchor(off_list, root=None, receipt=None, now=None):
     if not extra:
         return []
     rec = receipt if receipt is not None else load_receipt(root=base)
-    pub = anchors.get("approver_pub")
-    rname = anchors.get("repo") or repo_id(base)
-    revoked = anchors.get("revoked_ids") or []
-    out = []
-    for name in extra:
-        out += verify_receipt(
-            rec, repo_name=rname, action="gate.off", target=name,
-            prev_sha256="on", target_sha256="off",
-            pub_b64=pub, revoked_ids=revoked, now=now)
+    out = _eval_off_gates(extra, anchors, base, rec, now)
+    if receipt is None and out and _auto_sync_for_probs(base, anchors, out):
+        out = _eval_off_gates(extra, anchors, base, load_receipt(root=base), now)
     return out
 
 
@@ -520,7 +680,8 @@ def build_requests(changed_paths, root=None, repo_name=None, diff_fn=None, sha_f
         text = None
         if os.path.isfile(full):
             try:
-                text = open(full, encoding="utf-8", errors="replace").read()
+                with open(full, encoding="utf-8", errors="replace") as fh:
+                    text = fh.read()
             except OSError:
                 text = None
         target_sha = sha_fn(full) if sha_fn else (sha256_file(full) or "DELETED")
@@ -547,7 +708,8 @@ def _poll_request(url, resp):
     while _time.time() < deadline:
         _time.sleep(3)
         try:
-            polled = json.loads(urllib.request.urlopen(f"{url}/requests/{resp['id']}", timeout=10).read().decode("utf-8"))
+            with urllib.request.urlopen(f"{url}/requests/{resp['id']}", timeout=10) as r:
+                polled = json.loads(r.read().decode("utf-8"))
         except (urllib.error.URLError, OSError, ValueError):
             continue
         if polled.get("status") != "pending":
@@ -562,7 +724,8 @@ def _post_one_request(url, payload, wait):
     req = urllib.request.Request(url + "/requests", data=json.dumps(payload).encode("utf-8"),
                                  headers={"Content-Type": "application/json"}, method="POST")
     try:
-        resp = json.loads(urllib.request.urlopen(req, timeout=15).read().decode("utf-8"))
+        with urllib.request.urlopen(req, timeout=15) as r:
+            resp = json.loads(r.read().decode("utf-8"))
     except (urllib.error.URLError, OSError, ValueError) as exc:
         print(M("approval.receipt_required", action=payload["action"], target=payload["target_path"]) + f" ({exc})", file=sys.stderr)
         return False
@@ -571,12 +734,12 @@ def _post_one_request(url, payload, wait):
             action=payload["action"], target=payload["target_path"], url=url))
     if wait and resp.get("status") == "pending":
         resp = _poll_request(url, resp)
-    if resp.get("status") == "denied" or (wait and resp.get("status") == "pending"):
+    if resp.get("status") in ("denied", "rejected_duplicate") or (wait and resp.get("status") == "pending"):
         extra = f" ({resp.get('deny_reason') or resp.get('status')})"
         print(M("approval.receipt_required", action=payload["action"], target=payload["target_path"]) + extra, file=sys.stderr)
         return False
     if resp.get("receipt"):
-        out_path = os.environ.get(RECEIPT_ENV) or os.path.join(gate.GATE_REPO, ".git", "einfacht-receipt.json")
+        out_path = os.environ.get(RECEIPT_ENV) or _default_receipt_path(gate.GATE_REPO)
         _save_receipt_to_bundle(resp["receipt"], out_path)
     return True
 
@@ -695,6 +858,8 @@ def _cases():
              pub_b64=pub_pem, now=now) == []
          and _bundle_fallback_case(daemon_rec)),
         ("★ approval.multi_repo_multi_approver_e2e", _multi_repo_e2e_case),
+        ("★ approval.anchors_rm_and_tamper_blocked", _anchors_rm_and_tamper_case),
+        ("★ approval.auto_sync_submits_pulls_and_surfaces_deny", _auto_sync_and_deny_case),
     ]
 
 
@@ -730,46 +895,75 @@ def _e2e_http_json(url, method, body=None, pw=None):
 def _e2e_compile(approver_lines):
     out = []
     for ln in approver_lines:
-        name, sec = ln.split(":", 1)
+        parts = ln.split(":", 2)
+        if len(parts) == 3:
+            name, repos_csv, sec = parts[0], parts[1], parts[2]
+            repos = frozenset(r.strip() for r in repos_csv.split(",") if r.strip()) or frozenset({"*"})
+        else:
+            name, repos, sec = parts[0], frozenset({"*"}), parts[1]
         salt = os.urandom(16)
-        out.append((name, salt, hashlib.pbkdf2_hmac("sha256", sec.encode("utf-8"), salt, 10_000)))
+        out.append((name, repos, salt, hashlib.pbkdf2_hmac("sha256", sec.encode("utf-8"), salt, 10_000)))
     return out
 
 
 def _e2e_who(compiled, pw):
     import hmac  # noqa: PLC0415
-    for name, salt, dig in compiled:
+    for name, repos, salt, dig in compiled:
         if hmac.compare_digest(hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, 10_000), dig):
-            return name
+            return name, repos
     return None
+
+
+def _e2e_can_access(repos, repo):
+    return "*" in repos or repo in repos
+
+
+def _e2e_submit_req(reqs, seq, body):
+    key = (body["repo"], body["action"], body["target_path"], body["prev_sha256"], body["target_sha256"])
+    for old in reversed(list(reqs.values())):
+        if (old["repo"], old["action"], old["target_path"], old["prev_sha256"], old["target_sha256"]) == key:
+            return 200, {"id": old["id"], "display_id": old["display_id"],
+                         "status": old["status"], "deny_reason": old.get("deny_reason", ""),
+                         "receipt": old.get("receipt")}
+    repo = body["repo"]
+    n = seq.get(repo, 0) + 1
+    seq[repo] = n
+    rid = f"req-{len(reqs) + 1}"
+    rec = {**body, "id": rid, "display_id": f"{repo}#{n}", "status": "pending", "receipt": None}
+    reqs[rid] = rec
+    return 200, {"id": rid, "display_id": rec["display_id"], "status": "pending", "receipt": None}
+
+
+def _e2e_decide_req(priv, reqs, body, ident):
+    who, repos = ident
+    r = reqs.get(body.get("req_id"))
+    if not r:
+        return 404, {"error": "not_found"}
+    if not _e2e_can_access(repos, r["repo"]):
+        return 403, {"error": "repo_forbidden", "approver": who, "repo": r["repo"]}
+    if body.get("mode") == "deny":
+        r["status"], r["decided_by"], r["deny_reason"] = "denied", who, str(body.get("deny_reason") or "")
+        return 200, {"ok": True, "decided_by": who, "status": "denied"}
+    ts = int(datetime.now(timezone.utc).timestamp())
+    r["status"], r["decided_by"] = "approved_single", who
+    r["receipt"] = _sign_fixture(priv, {
+        "receipt_id": f"rec-{r['id']}", "repo": r["repo"], "action": r["action"],
+        "target_path": r["target_path"], "prev_sha256": r["prev_sha256"],
+        "target_sha256": r["target_sha256"], "decided_by": who, "issued_at": ts, "expires_at": ts + 600,
+    })
+    return 200, {"ok": True, "decided_by": who}
 
 
 def _e2e_handle_post(priv, compiled, reqs, seq, lock, path, body, auth_pw):
     if path == "/requests":
         with lock:
-            repo = body["repo"]
-            n = seq.get(repo, 0) + 1
-            seq[repo] = n
-            rid = f"req-{len(reqs) + 1}"
-            rec = {**body, "id": rid, "display_id": f"{repo}#{n}", "status": "pending", "receipt": None}
-            reqs[rid] = rec
-        return 200, {"id": rid, "display_id": rec["display_id"], "status": "pending"}
+            return _e2e_submit_req(reqs, seq, body)
     if path == "/api/decide":
-        who = _e2e_who(compiled, auth_pw)
-        if not who:
+        ident = _e2e_who(compiled, auth_pw)
+        if not ident:
             return 403, {"error": "forbidden"}
         with lock:
-            r = reqs.get(body.get("req_id"))
-            if not r:
-                return 404, {"error": "not_found"}
-            ts = int(datetime.now(timezone.utc).timestamp())
-            r["status"], r["decided_by"] = "approved_single", who
-            r["receipt"] = _sign_fixture(priv, {
-                "receipt_id": f"rec-{r['id']}", "repo": r["repo"], "action": r["action"],
-                "target_path": r["target_path"], "prev_sha256": r["prev_sha256"],
-                "target_sha256": r["target_sha256"], "issued_at": ts, "expires_at": ts + 600,
-            })
-        return 200, {"ok": True, "decided_by": who}
+            return _e2e_decide_req(priv, reqs, body, ident)
     return 404, {"error": "not_found"}
 
 
@@ -794,10 +988,18 @@ def _make_e2e_server(priv, approver_lines):
             self.wfile.write(raw)
 
         def do_GET(self):
+            if self.path == "/api/pending":
+                ident = _e2e_who(compiled, self.headers.get("X-Approver-Pass") or "")
+                if not ident:
+                    return self._send(403, {"error": "forbidden"})
+                with lock:
+                    rows = [r for r in reqs.values()
+                            if r["status"] == "pending" and _e2e_can_access(ident[1], r["repo"])]
+                return self._send(200, {"approver": ident[0], "pending": rows})
             rid = self.path.rsplit("/", 1)[-1]
             with lock:
                 r = reqs.get(rid)
-            self._send(200 if r else 404, r or {"error": "not_found"})
+            return self._send(200 if r else 404, r or {"error": "not_found"})
 
         def do_POST(self):
             raw = self.rfile.read(int(self.headers.get("Content-Length", "0") or 0))
@@ -815,12 +1017,30 @@ def _e2e_init_repo(base, name, remote_url, pub_b64, q_text):
     os.makedirs(os.path.join(rt, "questions"), exist_ok=True)
     subprocess.run(["git", "init", "-q", rt], check=True)
     subprocess.run(["git", "-C", rt, "remote", "add", "origin", remote_url], check=True)
-    qpath = os.path.join(rt, "questions", "01.md")
-    open(qpath, "w", encoding="utf-8").write(q_text)
+    with open(os.path.join(rt, "questions", "01.md"), "w", encoding="utf-8") as fh:
+        fh.write(q_text)
     anc = {"schema": 1, "repo": repo_id(rt), "approver_pub": pub_b64, "revoked_ids": [],
            "questions": {"questions/01.md": question_snapshot(q_text)}}
-    open(os.path.join(rt, ANCHORS_FILE), "w", encoding="utf-8").write(json.dumps(anc))
+    with open(os.path.join(rt, ANCHORS_FILE), "w", encoding="utf-8") as fh:
+        json.dump(anc, fh)
     return rt, anc["questions"]["questions/01.md"]["sha256"]
+
+
+def _e2e_check_rbac_and_approve(url, r1, r2, r3):
+    if _e2e_http_json(url + "/api/decide", "POST", {"req_id": r1["id"]}, pw="wrong")[0] != 403:
+        return False
+    pa_code, pa = _e2e_http_json(url + "/api/pending", "GET", pw="pass-alice")
+    pb_code, pb = _e2e_http_json(url + "/api/pending", "GET", pw="pass-bob")
+    if (pa_code, pb_code) != (200, 200) or len(pa["pending"]) != 2 or len(pb["pending"]) != 1:
+        return False
+    if _e2e_http_json(url + "/api/decide", "POST", {"req_id": r3["id"]}, pw="pass-alice")[0] != 403:
+        return False
+    if _e2e_http_json(url + "/api/decide", "POST", {"req_id": r1["id"]}, pw="pass-bob")[0] != 403:
+        return False
+    c1, d1 = _e2e_http_json(url + "/api/decide", "POST", {"req_id": r1["id"]}, pw="pass-alice")
+    c2, d2 = _e2e_http_json(url + "/api/decide", "POST", {"req_id": r2["id"]}, pw="pass-owner")
+    c3, d3 = _e2e_http_json(url + "/api/decide", "POST", {"req_id": r3["id"]}, pw="pass-bob")
+    return (c1, c2, c3) == (200, 200, 200) and (d1["decided_by"], d2["decided_by"], d3["decided_by"]) == ("alice", "owner", "bob")
 
 
 def _multi_repo_e2e_case():
@@ -832,7 +1052,7 @@ def _multi_repo_e2e_case():
     global PINNED_APPROVER_PUB
     priv = Ed25519PrivateKey.generate()
     pub_b64 = base64.b64encode(priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)).decode("ascii")
-    srv = _make_e2e_server(priv, ["alice:pass-alice", "bob:pass-bob"])
+    srv = _make_e2e_server(priv, ["alice:OrgA/app:pass-alice", "bob:OrgB/app:pass-bob", "owner:*:pass-owner"])
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
     url = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -845,37 +1065,142 @@ def _multi_repo_e2e_case():
             q_mod = q_base.replace("pass", "pass;1")
             ra, prev_a = _e2e_init_repo(tmp, "RepoA", "https://github.com/OrgA/app.git", pub_b64, q_base)
             rb, prev_b = _e2e_init_repo(tmp, "RepoB", "https://github.com/OrgB/app.git", pub_b64, q_base)
-            _, r1 = _e2e_http_json(url + "/requests", "POST", {
-                "repo": repo_id(ra), "action": "question.modify", "target_path": "questions/01.md",
-                "prev_sha256": prev_a, "target_sha256": sha256_text(q_mod)})
+            req1 = {"repo": repo_id(ra), "action": "question.modify", "target_path": "questions/01.md",
+                    "prev_sha256": prev_a, "target_sha256": sha256_text(q_mod)}
+            _, r1 = _e2e_http_json(url + "/requests", "POST", req1)
+            _, r1_dup = _e2e_http_json(url + "/requests", "POST", req1)
             _, r2 = _e2e_http_json(url + "/requests", "POST", {
                 "repo": repo_id(ra), "action": "question.create", "target_path": "questions/02.md",
                 "prev_sha256": "NONE", "target_sha256": sha256_text(q_new)})
             _, r3 = _e2e_http_json(url + "/requests", "POST", {
                 "repo": repo_id(rb), "action": "question.modify", "target_path": "questions/01.md",
                 "prev_sha256": prev_b, "target_sha256": sha256_text(q_mod)})
-            if (r1["display_id"], r2["display_id"], r3["display_id"]) != ("OrgA/app#1", "OrgA/app#2", "OrgB/app#1"):
+            if r1["id"] != r1_dup["id"] or (r1["display_id"], r2["display_id"], r3["display_id"]) != ("OrgA/app#1", "OrgA/app#2", "OrgB/app#1"):
                 return False
-            c_bad, _ = _e2e_http_json(url + "/api/decide", "POST", {"req_id": r1["id"]}, pw="wrong")
-            c1, d1 = _e2e_http_json(url + "/api/decide", "POST", {"req_id": r1["id"]}, pw="pass-alice")
-            c2, d2 = _e2e_http_json(url + "/api/decide", "POST", {"req_id": r2["id"]}, pw="pass-bob")
-            c3, d3 = _e2e_http_json(url + "/api/decide", "POST", {"req_id": r3["id"]}, pw="pass-bob")
-            if c_bad != 403 or (c1, c2, c3) != (200, 200, 200):
+            if not _e2e_check_rbac_and_approve(url, r1, r2, r3):
                 return False
-            if (d1["decided_by"], d2["decided_by"], d3["decided_by"]) != ("alice", "bob", "bob"):
+            _, r1_cached = _e2e_http_json(url + "/requests", "POST", req1)
+            if r1_cached["status"] != "approved_single" or not r1_cached.get("receipt"):
                 return False
             rec1 = _e2e_http_json(url + "/requests/" + r1["id"], "GET")[1]["receipt"]
             rec2 = _e2e_http_json(url + "/requests/" + r2["id"], "GET")[1]["receipt"]
             rec3 = _e2e_http_json(url + "/requests/" + r3["id"], "GET")[1]["receipt"]
+            if _receipt_body(rec1).get("decided_by") != "alice":
+                return False
             _save_receipt_to_bundle(rec1, os.path.join(ra, ".git", "einfacht-receipt.json"))
             _save_receipt_to_bundle(rec2, os.path.join(ra, ".git", "einfacht-receipt.json"))
             _save_receipt_to_bundle(rec3, os.path.join(rb, ".git", "einfacht-receipt.json"))
             files_a = {"questions/01.md": q_mod, "questions/02.md": q_new}
-            if check_questions_against_anchor(files_a, root=ra) != []:
-                return False
-            return bool(check_questions_against_anchor(files_a, root=ra, receipt=rec3))
+            return check_questions_against_anchor(files_a, root=ra) == [] and bool(
+                check_questions_against_anchor(files_a, root=ra, receipt=rec3))
     finally:
         PINNED_APPROVER_PUB = old_pub
+        srv.shutdown()
+        srv.server_close()
+
+
+def _anchors_rm_and_tamper_case():
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    from datetime import timedelta  # noqa: PLC0415
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: PLC0415
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat  # noqa: PLC0415
+    global PINNED_APPROVER_PUB
+    priv = Ed25519PrivateKey.generate()
+    pub_b64 = base64.b64encode(priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)).decode("ascii")
+    old_pub = PINNED_APPROVER_PUB
+    PINNED_APPROVER_PUB = pub_b64
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            q_text = "# 01: t\n\n**Status:** ready-for-agent\n\n**Settling:** python3 -c 'pass'\n"
+            rt, _ = _e2e_init_repo(tmp, "Repo", "https://github.com/Org/app.git", pub_b64, q_text)
+            anc_p = os.path.join(rt, ANCHORS_FILE)
+            with open(anc_p, encoding="utf-8") as fh:
+                anc = json.load(fh)
+            anc["lock_core"] = True
+            with open(anc_p, "w", encoding="utf-8") as fh:
+                json.dump(anc, fh)
+            subprocess.run(["git", "-C", rt, "config", "user.email", "t@e.com"], check=True)
+            subprocess.run(["git", "-C", rt, "config", "user.name", "t"], check=True)
+            subprocess.run(["git", "-C", rt, "add", "."], check=True)
+            subprocess.run(["git", "-C", rt, "commit", "-q", "-m", "init"], check=True)
+            anc["lock_core"] = False
+            with open(anc_p, "w", encoding="utf-8") as fh:
+                json.dump(anc, fh)
+            if not check_anchors_integrity(load_anchors(rt), root=rt):
+                return False
+            subprocess.run(["git", "-C", rt, "rm", "-q", "-f", ANCHORS_FILE], check=True)
+            if load_anchors(rt) != {}:
+                return False
+            wt = os.path.join(tmp, "wt")
+            subprocess.run(["git", "-C", rt, "worktree", "add", "-q", "-b", "wt-b", wt], check=True)
+            rec = _sign_fixture(priv, {
+                "id": "r-wt", "repo": "Org/app", "action": "question.modify", "target": "questions/01.md",
+                "prev_sha256": "a", "target_sha256": "b",
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+            })
+            _save_receipt_to_bundle(rec, _default_receipt_path(wt))
+            loaded = load_receipt(root=wt)
+            return isinstance(loaded, dict) and len(loaded.get("receipts") or []) == 1
+    finally:
+        PINNED_APPROVER_PUB = old_pub
+
+
+def _auto_sync_and_deny_case():
+    import io  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    import threading  # noqa: PLC0415
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: PLC0415
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat  # noqa: PLC0415
+    global PINNED_APPROVER_PUB
+    priv = Ed25519PrivateKey.generate()
+    pub_b64 = base64.b64encode(priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)).decode("ascii")
+    srv = _make_e2e_server(priv, ["owner:*:po"])
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    old_pub, old_url = PINNED_APPROVER_PUB, os.environ.get(APPROVER_URL_ENV)
+    PINNED_APPROVER_PUB = pub_b64
+    os.environ[APPROVER_URL_ENV] = url
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            q1 = "# 01: t\n\n**Status:** ready-for-agent\n\n**Settling:** python3 -c 'pass'\n"
+            q2 = "# 02: new\n\n**Status:** ready-for-agent\n\n**Settling:** python3 -c 'pass'\n"
+            q3 = "# 03: deny\n\n**Status:** ready-for-agent\n\n**Settling:** python3 -c 'pass'\n"
+            rt, _ = _e2e_init_repo(tmp, "RepoA", "https://github.com/OrgA/app.git", pub_b64, q1)
+            with open(os.path.join(rt, "questions", "02.md"), "w", encoding="utf-8") as fh:
+                fh.write(q2)
+            files = {"questions/01.md": q1, "questions/02.md": q2}
+            if [p.code for p in check_questions_against_anchor(files, root=rt)] != ["approval.receipt_required"]:
+                return False
+            _, pend = _e2e_http_json(url + "/api/pending", "GET", pw="po")
+            rows = pend.get("pending") or []
+            if len(rows) != 1 or rows[0]["target_path"] != "questions/02.md":
+                return False
+            _e2e_http_json(url + "/api/decide", "POST", {"req_id": rows[0]["id"]}, pw="po")
+            if check_questions_against_anchor(files, root=rt) != []:
+                return False
+            with open(os.path.join(rt, "questions", "03.md"), "w", encoding="utf-8") as fh:
+                fh.write(q3)
+            files["questions/03.md"] = q3
+            check_questions_against_anchor(files, root=rt)
+            _, pend2 = _e2e_http_json(url + "/api/pending", "GET", pw="po")
+            _e2e_http_json(url + "/api/decide", "POST", {
+                "req_id": pend2["pending"][0]["id"], "mode": "deny", "deny_reason": "weakening_blocked"}, pw="po")
+            buf, old_err = io.StringIO(), sys.stderr
+            sys.stderr = buf
+            try:
+                probs = check_questions_against_anchor(files, root=rt)
+            finally:
+                sys.stderr = old_err
+            return bool(probs) and "approval.denied" in buf.getvalue() and "weakening_blocked" in buf.getvalue()
+    finally:
+        PINNED_APPROVER_PUB = old_pub
+        if old_url is None:
+            os.environ.pop(APPROVER_URL_ENV, None)
+        else:
+            os.environ[APPROVER_URL_ENV] = old_url
         srv.shutdown()
         srv.server_close()
 

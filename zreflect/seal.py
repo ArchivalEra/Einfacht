@@ -160,7 +160,8 @@ def _valid_entry(entry):
 def _load_seal(path):
     """Read and validate `SEAL.json`. Returns `(data, err_msg)`."""
     try:
-        data = json.loads(open(path, encoding="utf-8").read())
+        with open(path, encoding="utf-8") as fh:
+            data = json.loads(fh.read())
     except (OSError, ValueError, UnicodeError) as exc:
         return None, M("seal.corrupt", error=exc)
     if (not isinstance(data, dict) or data.get("schema") != 1
@@ -246,7 +247,7 @@ def _norm_target_names(targets, disk_targets):
 
 def _check_core_target_approval(rel, rt, prev_files, anc, rec, approval):
     prev_sha = (prev_files.get(rel) or {}).get("file_sha256", "NONE")
-    cur_sha = approval.sha256_file(os.path.join(rt, rel)) or "DELETED"
+    cur_sha = _entry_for(rt, rel)["file_sha256"] if os.path.isfile(os.path.join(rt, rel)) else "DELETED"
     if prev_sha == cur_sha:
         return None
     probs = approval.verify_receipt(
@@ -306,7 +307,7 @@ def reseal(targets, root=None, zdir=None, force_all=False):
     files_map = {}
     if os.path.isfile(sp) and list(targets) != ["ALL"]:
         untouched_probs = [p for p in verify_problems(root=rt, zdir=zd)
-                           if not any(t in str(p) for t in resolved)]
+                           if (p.params or {}).get("file") not in resolved]
         if untouched_probs:
             return None, untouched_probs[0]
         files_map = prev_files

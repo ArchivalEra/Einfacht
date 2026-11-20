@@ -56,17 +56,24 @@ def _imported_locals(path, local_mods):
     return deps
 
 
-def reverse_import_graph(zdir=None):
-    """Return `{module_rel: set_of_transitively_dependent_rels}` for `zreflect/*.py`."""
-    d = zdir if zdir is not None else gate.zdir()
-    local_mods = _local_module_names(d)
+def _direct_reverse_graph(d, local_mods):
     direct_rev: dict[str, set[str]] = {"zreflect/%s.py" % m: set() for m in local_mods}
     for m in local_mods:
         rel = "zreflect/%s.py" % m
+        if m.startswith("measure_") and "facts" in local_mods:
+            direct_rev.setdefault(rel, set()).add("zreflect/facts.py")
         for dep in _imported_locals(os.path.join(d, m + ".py"), local_mods):
             dep_rel = "zreflect/%s.py" % dep
             if dep_rel != rel:
                 direct_rev.setdefault(dep_rel, set()).add(rel)
+    return direct_rev
+
+
+def reverse_import_graph(zdir=None):
+    """Return `{module_rel: set_of_transitively_dependent_rels}` for `zreflect/*.py`."""
+    d = zdir if zdir is not None else gate.zdir()
+    local_mods = _local_module_names(d)
+    direct_rev = _direct_reverse_graph(d, local_mods)
     closure: dict[str, set[str]] = {}
     for src in direct_rev:
         seen = {src}
@@ -157,16 +164,21 @@ def _match_non_py(rel, phase_gates, kp):
     return _match_by_knobs(rel, phase_gates, kp)
 
 
+def _select_py_deps(rel, rev, gates_list, kp):
+    key = "zreflect/facts.py" if rel.startswith("zreflect/measure_") else rel
+    out = set(rev.get(key, ())) | _match_non_py(rel, gates_list, kp)[0]
+    if any(os.path.basename(f) == "check_facts_replay.py" for f in out):
+        out.add("zreflect/check_facts_replay.py")
+    return out
+
+
 def _select_for_path(rel, rev, gates_list, kp):
     if _is_global_fallback(rel):
         return None, "global:%s" % rel
     if rel in ("SEAL.json", "zreflect/SEAL.json"):
         return set(rev.get("zreflect/seal.py", ())), None
-    if rel in rev:
-        out = set(rev[rel])
-        if any(os.path.basename(f) == "check_facts_replay.py" for f in out):
-            out.add("zreflect/check_facts_replay.py")
-        return out, None
+    if rel in rev or (rel.startswith("zreflect/measure_") and rel.endswith(".py")):
+        return _select_py_deps(rel, rev, gates_list, kp), None
     matched, known = _match_non_py(rel, gates_list, kp)
     if not known:
         return None, "unmapped:%s" % rel
@@ -269,6 +281,9 @@ def _cases():
         ("impact.clean_empty_list",
          lambda: not affected_plan([], fake_gates, zdir=z)["full_fallback"]
                  and affected_plan([], fake_gates, zdir=z)["selected"] == []),
+        ("★ impact.measure_module_selects_facts_and_lint",
+         lambda: {"check_facts.py", "check_lint.py", "check_secrets.py"}.issubset(
+             set(names(affected_plan(["zreflect/measure_example.py"], fake_gates, zdir=z))))),
     ]
 
 
