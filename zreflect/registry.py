@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import ast
 import os
-import shutil
 import sys
-import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate  # noqa: E402
@@ -342,17 +340,7 @@ def _select_affected(gs, argv):
 
 
 def _run_with_cache(phase, gs):
-    cache_dir = tempfile.mkdtemp(prefix="einfacht-run-")
-    prev_cache = os.environ.get("EINFACHT_RUN_CACHE")
-    os.environ["EINFACHT_RUN_CACHE"] = cache_dir
-    try:
-        return gate.run_phase(phase, gs)
-    finally:
-        if prev_cache is None:
-            os.environ.pop("EINFACHT_RUN_CACHE", None)
-        else:
-            os.environ["EINFACHT_RUN_CACHE"] = prev_cache
-        shutil.rmtree(cache_dir, True)
+    return gate.with_run_cache(lambda: gate.run_phase(phase, gs))
 
 
 def _emit_run_result(phase, res):

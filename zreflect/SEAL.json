@@ -43,7 +43,7 @@
    "file_sha256": "2f97cddb2e8a1bcaf862926abf5f34373bd6928c8aa135ee8ef8e48879fe5105"
   },
   "zreflect/check_questions.py": {
-   "file_sha256": "32c356c6adec7b9f1dfc9742c01b2151cc1ad78130486ccb9af581ab605aa1bb"
+   "file_sha256": "830f15da30172c37ca286fab543a5744ef8197cfc146ca9ab53fd35ad4de539d"
   },
   "zreflect/check_readme_sync.py": {
    "file_sha256": "8bd2092ab170b0474667546fa272ff38a9032654dfc90db0a1eb2a6c7f3a434e"
@@ -76,7 +76,7 @@
    "file_sha256": "5148b0fae93529b88d4a5040daae6e06b99c67f2a1c53639ccdce507f39a032c"
   },
   "zreflect/gate.py": {
-   "file_sha256": "686101dd43f89cb284155c7262a1a05cfdeded494938ca970b3a0e18c4462d5b"
+   "file_sha256": "ade054de46223b5d2d7c67f6bb8d001bbb47bd73ed38edaca25062b09a3654dd"
   },
   "zreflect/harness.py": {
    "file_sha256": "6b28b3aa6a1e5fb9a2ff4d7daa7979d0ba3faa24275a3a79388797848e9fc5c2"
@@ -103,12 +103,12 @@
    "file_sha256": "84e52347aa4767de9431e7d20579d5474ef28bb01f90f34f6cb5c66c4231f611"
   },
   "zreflect/registry.py": {
-   "file_sha256": "ec26670402b0ea1880c1e3e0fafd470fd62d63725d4790b2c7339410c193f7b6"
+   "file_sha256": "b0ddccb69079e1d0d0631dff02645ba97578ff53dc9f765918ba430f9ef2eda0"
   },
   "zreflect/seal.py": {
    "file_sha256": "abd755045101dd12ba61df908d5c7fc0619693a4026c59873d8f65bb421af959"
   }
  },
  "schema": 1,
- "tree_sha256": "0d4d8d4d9175415dcdcd218104d78d2364be40cfff346bf33474cd283af37849"
+ "tree_sha256": "841b8b70d67becc8223c85c0de840f2714cebaac5bd6d8ee72f97ad4bdac6e93"
 }

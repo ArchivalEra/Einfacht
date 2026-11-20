@@ -393,11 +393,29 @@ def run_cmd(cmd, timeout=None):
     return p.returncode, p.stdout
 
 
+def with_run_cache(fn):
+    """Run `fn()` inside a single-invocation `EINFACHT_RUN_CACHE` temp dir (cleaned up on exit)."""
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    existing = os.environ.get("EINFACHT_RUN_CACHE")
+    if existing and os.path.isdir(existing):
+        return fn()
+    cache_dir = tempfile.mkdtemp(prefix="einfacht-run-")
+    os.environ["EINFACHT_RUN_CACHE"] = cache_dir
+    try:
+        return fn()
+    finally:
+        if existing is None:
+            os.environ.pop("EINFACHT_RUN_CACHE", None)
+        else:
+            os.environ["EINFACHT_RUN_CACHE"] = existing
+        shutil.rmtree(cache_dir, True)
+
+
 def run_cmd_cached(cmd, timeout=None):
     """Run `cmd`, sharing results across processes via `EINFACHT_RUN_CACHE` for a single run."""
     cdir = os.environ.get("EINFACHT_RUN_CACHE")
-    reentrant = ("check_questions.py", "check_facts_replay.py", "registry.py --run", "harness.py")
-    if not cdir or not os.path.isdir(cdir) or any(tok in cmd for tok in reentrant):
+    if not cdir or not os.path.isdir(cdir):
         return run_cmd(cmd, timeout=timeout)
     import hashlib  # noqa: PLC0415
     import json  # noqa: PLC0415
