@@ -6,9 +6,9 @@
 
 **Blocked by:** [questions/30-require-approval-for-new-questions-and-core-seal.md](30-require-approval-for-new-questions-and-core-seal.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是双仓多口令端到端测试脚本/自测（覆盖 `RepoA` 与 `RepoB` 并发提单、回执隔离、多口令鉴权与 `decided_by` 留痕）。
+**Settling:** python3 zreflect/approval.py --selftest -- rc=0 => multi-repo (<repo>#<seq>), receipt bundle, cross-repo rejection, and multi-passphrase decided_by E2E pass; rc!=0 => Q31 regression
 
 ## 复跑方式
 

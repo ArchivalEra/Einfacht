@@ -694,6 +694,7 @@ def _cases():
              prev_sha256=anc["sha256"], target_sha256=sha256_text(q_weak),
              pub_b64=pub_pem, now=now) == []
          and _bundle_fallback_case(daemon_rec)),
+        ("★ approval.multi_repo_multi_approver_e2e", _multi_repo_e2e_case),
     ]
 
 
@@ -709,6 +710,174 @@ def _bundle_fallback_case(rec):
         return isinstance(loaded, dict) and len(loaded.get("receipts") or []) == 1
     finally:
         shutil.rmtree(d, True)
+
+
+def _e2e_http_json(url, method, body=None, pw=None):
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    headers = {"Content-Type": "application/json"} if data is not None else {}
+    if pw is not None:
+        headers["X-Approver-Pass"] = pw
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status, json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read().decode("utf-8") or "{}")
+
+
+def _e2e_compile(approver_lines):
+    out = []
+    for ln in approver_lines:
+        name, sec = ln.split(":", 1)
+        salt = os.urandom(16)
+        out.append((name, salt, hashlib.pbkdf2_hmac("sha256", sec.encode("utf-8"), salt, 10_000)))
+    return out
+
+
+def _e2e_who(compiled, pw):
+    import hmac  # noqa: PLC0415
+    for name, salt, dig in compiled:
+        if hmac.compare_digest(hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, 10_000), dig):
+            return name
+    return None
+
+
+def _e2e_handle_post(priv, compiled, reqs, seq, lock, path, body, auth_pw):
+    if path == "/requests":
+        with lock:
+            repo = body["repo"]
+            n = seq.get(repo, 0) + 1
+            seq[repo] = n
+            rid = f"req-{len(reqs) + 1}"
+            rec = {**body, "id": rid, "display_id": f"{repo}#{n}", "status": "pending", "receipt": None}
+            reqs[rid] = rec
+        return 200, {"id": rid, "display_id": rec["display_id"], "status": "pending"}
+    if path == "/api/decide":
+        who = _e2e_who(compiled, auth_pw)
+        if not who:
+            return 403, {"error": "forbidden"}
+        with lock:
+            r = reqs.get(body.get("req_id"))
+            if not r:
+                return 404, {"error": "not_found"}
+            ts = int(datetime.now(timezone.utc).timestamp())
+            r["status"], r["decided_by"] = "approved_single", who
+            r["receipt"] = _sign_fixture(priv, {
+                "receipt_id": f"rec-{r['id']}", "repo": r["repo"], "action": r["action"],
+                "target_path": r["target_path"], "prev_sha256": r["prev_sha256"],
+                "target_sha256": r["target_sha256"], "issued_at": ts, "expires_at": ts + 600,
+            })
+        return 200, {"ok": True, "decided_by": who}
+    return 404, {"error": "not_found"}
+
+
+def _make_e2e_server(priv, approver_lines):
+    import http.server  # noqa: PLC0415
+    import threading  # noqa: PLC0415
+    compiled = _e2e_compile(approver_lines)
+    reqs: dict[str, dict] = {}
+    seq: dict[str, int] = {}
+    lock = threading.Lock()
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, fmt, *args):
+            return
+
+        def _send(self, code, obj):
+            raw = json.dumps(obj).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_GET(self):
+            rid = self.path.rsplit("/", 1)[-1]
+            with lock:
+                r = reqs.get(rid)
+            self._send(200 if r else 404, r or {"error": "not_found"})
+
+        def do_POST(self):
+            raw = self.rfile.read(int(self.headers.get("Content-Length", "0") or 0))
+            body = json.loads(raw.decode("utf-8") or "{}")
+            code, obj = _e2e_handle_post(
+                priv, compiled, reqs, seq, lock, self.path, body, self.headers.get("X-Approver-Pass") or "")
+            self._send(code, obj)
+
+    return http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+
+
+def _e2e_init_repo(base, name, remote_url, pub_b64, q_text):
+    import subprocess  # noqa: PLC0415
+    rt = os.path.join(base, name)
+    os.makedirs(os.path.join(rt, "questions"), exist_ok=True)
+    subprocess.run(["git", "init", "-q", rt], check=True)
+    subprocess.run(["git", "-C", rt, "remote", "add", "origin", remote_url], check=True)
+    qpath = os.path.join(rt, "questions", "01.md")
+    open(qpath, "w", encoding="utf-8").write(q_text)
+    anc = {"schema": 1, "repo": repo_id(rt), "approver_pub": pub_b64, "revoked_ids": [],
+           "questions": {"questions/01.md": question_snapshot(q_text)}}
+    open(os.path.join(rt, ANCHORS_FILE), "w", encoding="utf-8").write(json.dumps(anc))
+    return rt, anc["questions"]["questions/01.md"]["sha256"]
+
+
+def _multi_repo_e2e_case():
+    import tempfile  # noqa: PLC0415
+    import threading  # noqa: PLC0415
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: PLC0415
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat  # noqa: PLC0415
+    global PINNED_APPROVER_PUB
+    priv = Ed25519PrivateKey.generate()
+    pub_b64 = base64.b64encode(priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)).decode("ascii")
+    srv = _make_e2e_server(priv, ["alice:pass-alice", "bob:pass-bob"])
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    old_pub = PINNED_APPROVER_PUB
+    PINNED_APPROVER_PUB = pub_b64
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            q_base = "# 01: t\n\n**Status:** ready-for-agent\n\n**Settling:** python3 -c 'pass'\n"
+            q_new = "# 02: new\n\n**Status:** ready-for-agent\n\n**Settling:** python3 -c 'pass'\n"
+            q_mod = q_base.replace("pass", "pass;1")
+            ra, prev_a = _e2e_init_repo(tmp, "RepoA", "https://github.com/OrgA/app.git", pub_b64, q_base)
+            rb, prev_b = _e2e_init_repo(tmp, "RepoB", "https://github.com/OrgB/app.git", pub_b64, q_base)
+            _, r1 = _e2e_http_json(url + "/requests", "POST", {
+                "repo": repo_id(ra), "action": "question.modify", "target_path": "questions/01.md",
+                "prev_sha256": prev_a, "target_sha256": sha256_text(q_mod)})
+            _, r2 = _e2e_http_json(url + "/requests", "POST", {
+                "repo": repo_id(ra), "action": "question.create", "target_path": "questions/02.md",
+                "prev_sha256": "NONE", "target_sha256": sha256_text(q_new)})
+            _, r3 = _e2e_http_json(url + "/requests", "POST", {
+                "repo": repo_id(rb), "action": "question.modify", "target_path": "questions/01.md",
+                "prev_sha256": prev_b, "target_sha256": sha256_text(q_mod)})
+            if (r1["display_id"], r2["display_id"], r3["display_id"]) != ("OrgA/app#1", "OrgA/app#2", "OrgB/app#1"):
+                return False
+            c_bad, _ = _e2e_http_json(url + "/api/decide", "POST", {"req_id": r1["id"]}, pw="wrong")
+            c1, d1 = _e2e_http_json(url + "/api/decide", "POST", {"req_id": r1["id"]}, pw="pass-alice")
+            c2, d2 = _e2e_http_json(url + "/api/decide", "POST", {"req_id": r2["id"]}, pw="pass-bob")
+            c3, d3 = _e2e_http_json(url + "/api/decide", "POST", {"req_id": r3["id"]}, pw="pass-bob")
+            if c_bad != 403 or (c1, c2, c3) != (200, 200, 200):
+                return False
+            if (d1["decided_by"], d2["decided_by"], d3["decided_by"]) != ("alice", "bob", "bob"):
+                return False
+            rec1 = _e2e_http_json(url + "/requests/" + r1["id"], "GET")[1]["receipt"]
+            rec2 = _e2e_http_json(url + "/requests/" + r2["id"], "GET")[1]["receipt"]
+            rec3 = _e2e_http_json(url + "/requests/" + r3["id"], "GET")[1]["receipt"]
+            _save_receipt_to_bundle(rec1, os.path.join(ra, ".git", "einfacht-receipt.json"))
+            _save_receipt_to_bundle(rec2, os.path.join(ra, ".git", "einfacht-receipt.json"))
+            _save_receipt_to_bundle(rec3, os.path.join(rb, ".git", "einfacht-receipt.json"))
+            files_a = {"questions/01.md": q_mod, "questions/02.md": q_new}
+            if check_questions_against_anchor(files_a, root=ra) != []:
+                return False
+            return bool(check_questions_against_anchor(files_a, root=ra, receipt=rec3))
+    finally:
+        PINNED_APPROVER_PUB = old_pub
+        srv.shutdown()
+        srv.server_close()
 
 
 def main(argv):

@@ -197,9 +197,9 @@
     },
     "questions/31-multi-passphrase-approver-and-multi-repo-e2e.md": {
       "body_sha256": "068decb56c401b43db94b7c98f56aaf80deeb1282abe1d011f0c3b228eaaf46a",
-      "settling": "none -- first deliverable: 第一交付物是双仓多口令端到端测试脚本/自测（覆盖 `RepoA` 与 `RepoB` 并发提单、回执隔离、多口令鉴权与 `decided_by` 留痕）。 ## 复跑方式 ```sh python3 zreflect/approval.py --selftest && python3 zreflect/registry.py --run commit ```",
-      "sha256": "179d26d9f556b1911980a0dbfb55ca1e2dd42def53bdd1e9233784865bf9f484",
-      "status": "ready-for-agent"
+      "settling": "python3 zreflect/approval.py --selftest -- rc=0 => multi-repo (<repo>#<seq>), receipt bundle, cross-repo rejection, and multi-passphrase decided_by E2E pass; rc!=0 => Q31 regression ## 复跑方式 ```sh python3 zreflect/approval.py --selftest && python3 zreflect/registry.py --run commit ```",
+      "sha256": "4e1dff2e600ef28cefe9cf4bc5d91d1615dd83c4a7801f52d963d000a832c82b",
+      "status": "resolved"
     }
   },
   "repo": "ArchivalEra/Einfacht",
