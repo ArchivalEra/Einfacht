@@ -20,6 +20,23 @@ APPROVER_URL_ENV = "EINFACHT_APPROVER_URL"
 DEFAULT_APPROVER_URL = "http://127.0.0.1:18443"
 CONTROLLED_PREFIXES = ("zreflect/", "reflect-hooks/", "questions/")
 CONTROLLED_FILES = frozenset({"PRINCIPLES.md", "knobs.json", "ruff.toml"})
+SYSTEM_PUB_PATH = "/etc/einfacht-approver/signing_pub.pem"
+PINNED_APPROVER_PUB = (
+    "-----BEGIN PUBLIC KEY-----\n"
+    "MCowBQYDK2VwAyEAvf9ckQEI6CkK30ookgtqjT6I3H0PXzo6ov25212pyDQ=\n"
+    "-----END PUBLIC KEY-----\n"
+)
+
+
+def pinned_approver_pub():
+    if os.path.isfile(SYSTEM_PUB_PATH):
+        try:
+            txt = open(SYSTEM_PUB_PATH, encoding="ascii").read().strip()
+            if "BEGIN PUBLIC KEY" in txt:
+                return txt + "\n"
+        except OSError:
+            pass
+    return PINNED_APPROVER_PUB
 
 
 def sha256_bytes(data):
@@ -177,7 +194,11 @@ def load_anchors(root=None):
         return None
     try:
         data = json.load(open(p, encoding="utf-8"))
-        return data if isinstance(data, dict) else None
+        if not isinstance(data, dict):
+            return None
+        if (data.get("approver_pub") or "").strip() != pinned_approver_pub().strip():
+            return {}
+        return data
     except (OSError, ValueError):
         return {}
 
@@ -579,13 +600,9 @@ def main(argv):
         if os.path.isfile(p):
             print(M("approval.anchors_exist", path=ANCHORS_FILE), file=sys.stderr)
             return 2
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: PLC0415
-        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat  # noqa: PLC0415
-        pub = base64.b64encode(
-            Ed25519PrivateKey.generate().public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
-        ).decode("ascii")
         with open(p, "w", encoding="utf-8") as fh:
-            json.dump(_build_anchors(gate.GATE_REPO, pub_b64=pub), fh, indent=2, ensure_ascii=False, sort_keys=True)
+            json.dump(_build_anchors(gate.GATE_REPO, pub_b64=pinned_approver_pub()), fh,
+                      indent=2, ensure_ascii=False, sort_keys=True)
             fh.write("\n")
         print(M("approval.anchors_initialized", path=ANCHORS_FILE))
         return 0
