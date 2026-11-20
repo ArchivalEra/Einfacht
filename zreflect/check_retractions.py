@@ -168,10 +168,7 @@ def run(argv):
     rc = guard_nonempty("check_retractions", docs, M("retractions.scanned_docs"))
     if rc:
         return rc
-    try:
-        depth = int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0)
-    except ValueError:
-        depth = 0
+    depth = gate.trusted_replay_depth()
     if depth < 0 or depth >= 3:
         return fatal(M("replay.too_deep", depth=depth, limit=3))
     led = load_or_fatal(rp)

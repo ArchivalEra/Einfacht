@@ -393,50 +393,87 @@ def run_cmd(cmd, timeout=None):
     return p.returncode, p.stdout
 
 
+def _proc_argv(pid):
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            raw = fh.read()
+        return [a.decode("utf-8", "replace") for a in raw.split(b"\x00") if a]
+    except OSError:
+        return []
+
+
+def _proc_ppid(pid):
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8", errors="replace") as fh:
+            raw = fh.read()
+        tail = raw[raw.rfind(")") + 2:].split()
+        return int(tail[1]) if len(tail) > 1 else 0
+    except (OSError, ValueError):
+        return 0
+
+
+def _is_suite_argv(argv):
+    if len(argv) < 2:
+        return False
+    script = argv[1]
+    if not script or script.startswith("-") or not os.path.isfile(script):
+        return False
+    real_s = os.path.realpath(script)
+    roots = (os.path.realpath(zdir()) + os.sep, os.path.realpath(os.path.join(tool_repo(), "reflect-hooks")) + os.sep)
+    return real_s.startswith(roots)
+
+
+def has_suite_ancestor(only_pid=None):
+    """Return True iff an ancestor process (>0 hops above current PID) runs a real suite script."""
+    pid = os.getppid()
+    for _ in range(32):
+        if pid <= 1:
+            return False
+        if _is_suite_argv(_proc_argv(pid)) and (only_pid is None or pid == only_pid):
+            return True
+        nxt = _proc_ppid(pid)
+        if nxt <= 0 or nxt == pid:
+            return False
+        pid = nxt
+    return False
+
+
+def trusted_replay_depth():
+    """Return `EINFACHT_REPLAY_DEPTH` only when inherited from a live suite ancestor."""
+    try:
+        depth = int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0)
+    except ValueError:
+        return 0
+    if depth <= 0:
+        return 0
+    return depth if has_suite_ancestor() else 0
+
+
+_INPROC_CACHE: dict[str, tuple[int | None, str]] | None = None
+
+
 def with_run_cache(fn):
-    """Run `fn()` inside a single-invocation `EINFACHT_RUN_CACHE` temp dir (cleaned up on exit)."""
-    import shutil  # noqa: PLC0415
-    import tempfile  # noqa: PLC0415
-    existing = os.environ.get("EINFACHT_RUN_CACHE")
-    if existing and os.path.isdir(existing):
+    """Run `fn()` with an in-process single-invocation command cache (never trusts external env)."""
+    global _INPROC_CACHE
+    if _INPROC_CACHE is not None:
         return fn()
-    cache_dir = tempfile.mkdtemp(prefix="einfacht-run-")
-    os.environ["EINFACHT_RUN_CACHE"] = cache_dir
+    _INPROC_CACHE = {}
     try:
         return fn()
     finally:
-        if existing is None:
-            os.environ.pop("EINFACHT_RUN_CACHE", None)
-        else:
-            os.environ["EINFACHT_RUN_CACHE"] = existing
-        shutil.rmtree(cache_dir, True)
+        _INPROC_CACHE = None
 
 
 def run_cmd_cached(cmd, timeout=None):
-    """Run `cmd`, sharing results across processes via `EINFACHT_RUN_CACHE` for a single run."""
-    cdir = os.environ.get("EINFACHT_RUN_CACHE")
-    if not cdir or not os.path.isdir(cdir):
+    """Run `cmd`, sharing results only within the current process's `with_run_cache` scope."""
+    if _INPROC_CACHE is None:
         return run_cmd(cmd, timeout=timeout)
-    import hashlib  # noqa: PLC0415
-    import json  # noqa: PLC0415
-    import tempfile  # noqa: PLC0415
-    raw_key = "%s|%s|%s" % (os.path.abspath(GATE_REPO), os.environ.get("EINFACHT_REPLAY_DEPTH", "0"), cmd)
-    key = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
-    path = os.path.join(cdir, key + ".json")
-    try:
-        data = json.load(open(path, encoding="utf-8"))
-        return data["rc"], data["out"]
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
-    rc, out = run_cmd(cmd, timeout=timeout)
-    try:
-        fd, tmp = tempfile.mkstemp(dir=cdir, prefix=".tmp-")
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump({"rc": rc, "out": out}, fh)
-        os.replace(tmp, path)
-    except OSError:
-        pass
-    return rc, out
+    key = "%s|%s|%s" % (os.path.abspath(GATE_REPO), trusted_replay_depth(), cmd)
+    if key in _INPROC_CACHE:
+        return _INPROC_CACHE[key]
+    res = run_cmd(cmd, timeout=timeout)
+    _INPROC_CACHE[key] = res
+    return res
 
 
 def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit", off_reason=None):
@@ -577,6 +614,52 @@ def run_phase(phase, gates, runner=None, repo_root=None):
     return res
 
 
+def _restore_cache_env(old_c, old_t):
+    if old_c is None:
+        os.environ.pop("EINFACHT_RUN_CACHE", None)
+    else:
+        os.environ["EINFACHT_RUN_CACHE"] = old_c
+    if old_t is None:
+        os.environ.pop("EINFACHT_RUN_CACHE_TOKEN", None)
+    else:
+        os.environ["EINFACHT_RUN_CACHE_TOKEN"] = old_t
+
+
+def _case_forged_cache_and_depth():
+    import hashlib  # noqa: PLC0415
+    import json  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    import time as _time  # noqa: PLC0415
+    with tempfile.TemporaryDirectory() as tmp:
+        raw_key = "%s|0|echo real_ok" % os.path.abspath(GATE_REPO)
+        k = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+        with open(os.path.join(tmp, k + ".json"), "w", encoding="utf-8") as fh:
+            json.dump({"rc": 0, "out": "FORGED"}, fh)
+        old_c, old_t = os.environ.get("EINFACHT_RUN_CACHE"), os.environ.get("EINFACHT_RUN_CACHE_TOKEN")
+        os.environ["EINFACHT_RUN_CACHE"], os.environ["EINFACHT_RUN_CACHE_TOKEN"] = tmp, "forged"
+        try:
+            if with_run_cache(lambda: run_cmd_cached("echo real_ok")) != (0, "real_ok\n"):
+                return False
+            if run_cmd_cached("echo real_ok") != (0, "real_ok\n"):
+                return False
+        finally:
+            _restore_cache_env(old_c, old_t)
+        if _is_suite_argv(["zreflect/fake", "-c", "pass"]) or _is_suite_argv(["python3", "-c", "# zreflect/"]):
+            return False
+        out_f = os.path.join(tmp, "depth.txt")
+        code = (
+            f"import os, sys, time; sys.path.insert(0, {zdir()!r}); pid = os.fork()\n"
+            f"if pid == 0:\n    time.sleep(0.05); import gate\n"
+            f"    open({out_f!r}, 'w').write(str(gate.trusted_replay_depth())); os._exit(0)\nos._exit(0)\n"
+        )
+        subprocess.run([sys.executable, "-c", code], env={**os.environ, "EINFACHT_REPLAY_DEPTH": "2"}, check=True)
+        for _ in range(30):
+            if os.path.isfile(out_f):
+                return open(out_f, encoding="ascii").read().strip() == "0"
+            _time.sleep(0.02)
+        return False
+
+
 def _cases():
     return [
         ("★ gate.empty_input_fatals", lambda: raises(lambda: require_nonempty("x", []))),
@@ -612,6 +695,7 @@ def _cases():
          and not starts_with_interpreter("false\ntrue")),
         ("gate.spec_equals_syntax",
          lambda: resolve_spec(["--spec=foo.json"], "", "d.json") == ("foo.json", True)),
+        ("★ gate.forged_run_cache_and_depth_ignored", _case_forged_cache_and_depth),
     ]
 
 

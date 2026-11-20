@@ -290,16 +290,13 @@ def load_anchors(root=None):
 
 
 def is_legal_settlement(cur_text, anchor_entry):
-    """True when a question only transitions to `resolved` without altering body or weakening Settling."""
+    """True when a question only transitions to `resolved` without altering body or Settling."""
     if cur_text is None or not anchor_entry:
         return False
     cur = question_snapshot(cur_text)
     if cur["status"] != "resolved" or cur["body_sha256"] != anchor_entry.get("body_sha256"):
         return False
-    prev_set = anchor_entry.get("settling", "")
-    if cur["settling"] == prev_set:
-        return True
-    return _is_none_like(prev_set) and not _is_none_like(cur["settling"])
+    return cur["settling"] == anchor_entry.get("settling", "")
 
 
 def check_question_change(rel_path, cur_text, anchor_entry, receipt=None,
@@ -450,8 +447,16 @@ def _auto_sync_for_probs(base, anchors, probs):
     return any(results)
 
 
+def _configured_qdir(root):
+    cfg = knobs.repo_config(root) if root else {}
+    return str(cfg.get("REFLECT_QUESTIONS") or knobs.REGISTRY["REFLECT_QUESTIONS"][1]).strip().rstrip("/") or "questions"
+
+
 def _eval_questions_anchor(files, anchors, root, rec, qdir):
     q_map = anchors.get("questions") or {}
+    cfg_qdir = _configured_qdir(root)
+    if qdir and qdir.rstrip("/") != cfg_qdir and any(k.startswith(cfg_qdir + "/") for k in q_map):
+        return [M("approval.anchors_broken")]
     if qdir:
         prefix = qdir.rstrip("/") + "/"
         q_map = {k: v for k, v in q_map.items() if k.startswith(prefix)}
@@ -860,6 +865,7 @@ def _cases():
         ("★ approval.multi_repo_multi_approver_e2e", _multi_repo_e2e_case),
         ("★ approval.anchors_rm_and_tamper_blocked", _anchors_rm_and_tamper_case),
         ("★ approval.auto_sync_submits_pulls_and_surfaces_deny", _auto_sync_and_deny_case),
+        ("★ approval.qdir_env_override_and_trivial_settling_blocked", _qdir_and_trivial_case),
     ]
 
 
@@ -1205,14 +1211,39 @@ def _auto_sync_and_deny_case():
         srv.server_close()
 
 
+def _qdir_and_trivial_case():
+    import tempfile  # noqa: PLC0415
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: PLC0415
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat  # noqa: PLC0415
+    global PINNED_APPROVER_PUB
+    q_none = "# 01: t\n\n**Status:** ready-for-agent\n\n**Settling:** none\n"
+    for cmd in ("python3 -c 'pass'", 'bash -c "exit 0"', 'sh -c "true"',
+                'python3 -c " import os; os._exit(0)"', 'python3 -c "pass" #'):
+        q_triv = q_none.replace("ready-for-agent", "resolved").replace("**Settling:** none", f"**Settling:** {cmd}")
+        if [p.code for p in check_question_change("q/01.md", q_triv, question_snapshot(q_none), repo_name="R")] != ["approval.receipt_required"]:
+            return False
+    priv = Ed25519PrivateKey.generate()
+    pub_b64 = base64.b64encode(priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)).decode("ascii")
+    old_pub = PINNED_APPROVER_PUB
+    PINNED_APPROVER_PUB = pub_b64
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, _ = _e2e_init_repo(tmp, "R", "https://github.com/O/R.git", pub_b64, q_none)
+            probs = check_questions_against_anchor({"fake_q/01.md": q_none}, root=rt, receipt={}, qdir="fake_q")
+            return [p.code for p in probs] == ["approval.anchors_broken"]
+    finally:
+        PINNED_APPROVER_PUB = old_pub
+
+
 def main(argv):
+    if "--request" in argv:
+        return _submit_all(argv)
     rc = gate.activate_or_fatal()
     if rc:
         return rc
     if "--selftest" in argv:
         return selftest(M("approval.title"), _cases())
-    if "--request" in argv:
-        return _submit_all(argv)
     if "--sync-settled" in argv:
         return _sync_settled(gate.GATE_REPO)
     if "--init-anchors" in argv:

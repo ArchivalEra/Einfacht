@@ -342,10 +342,7 @@ def problems(files, exists=None, runner=None, verify_resolved=False):
 
 
 def _replay_depth():
-    try:
-        return int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0)
-    except ValueError:
-        return 0
+    return gate.trusted_replay_depth()
 
 
 def _resolved_targets_to_verify(_qdir, files, _all_resolved, depth=0):
