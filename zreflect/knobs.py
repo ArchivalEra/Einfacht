@@ -288,8 +288,6 @@ def _cases_called_names(tree):
         if fn is None:
             continue
         for node in ast.walk(fn):
-            for attr in ("func", "args"):
-                _ = attr
             if isinstance(node, ast.Name) and node.id in funcs and node.id not in seen:
                 seen.add(node.id)
                 stack.append(node.id)

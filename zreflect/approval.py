@@ -34,17 +34,25 @@ def sha256_file(path):
 
 
 def _strip_status_settling(text):
-    lines = []
-    for ln in (text or "").splitlines():
-        if re.match(r"^\*\*(Status|Settling):\*\*", ln.strip()):
+    lines = (text or "").splitlines()
+    out = []
+    skip_cont = False
+    for ln in lines:
+        if re.match(r"^(?:\*\*)?(Status|Settling)(?:\*\*)?:\s*(?:\*\*)?", ln.strip()):
+            skip_cont = ln.strip().lstrip("*").startswith("Settling")
             continue
-        lines.append(ln)
-    return "\n".join(lines).strip()
+        if skip_cont and (ln.startswith(("  ", "\t")) or not ln.strip()):
+            if not ln.strip():
+                skip_cont = False
+            continue
+        skip_cont = False
+        out.append(ln)
+    return "\n".join(out).strip()
 
 
 def _field_val(text, name):
-    m = re.search(r"(?m)^\*\*%s:\*\*\s*(.+)$" % re.escape(name), text or "")
-    return m.group(1).strip() if m else ""
+    import check_questions  # noqa: PLC0415
+    return check_questions.field(text, name) or ""
 
 
 def _is_none_like(val):
@@ -152,6 +160,14 @@ def load_anchors(root=None):
     base = root or gate.GATE_REPO
     p = os.path.join(base, ANCHORS_FILE)
     if not os.path.isfile(p):
+        import subprocess  # noqa: PLC0415
+        try:
+            r = subprocess.run(["git", "-C", base, "ls-files", "--error-unmatch", ANCHORS_FILE],
+                               capture_output=True, text=True, timeout=5)
+            if r.returncode == 0:
+                return {}
+        except (OSError, subprocess.TimeoutExpired):
+            pass
         return None
     try:
         data = json.load(open(p, encoding="utf-8"))

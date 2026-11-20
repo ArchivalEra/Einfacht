@@ -448,11 +448,27 @@ def _section(heading, runner):
     return 0 if ok else 1
 
 
+def _affected_modules(repo, changed, gs):
+    import impact  # noqa: PLC0415
+    import registry  # noqa: PLC0415
+    z = os.path.join(repo, "zreflect")
+    mods, _ = registry.selftest_modules(z)
+    gate_files = {g["file"] for g in gs}
+    rev = impact.reverse_import_graph(z)
+    hit = set()
+    for p in changed or ():
+        norm = str(p).replace("\\", "/").lstrip("./")
+        if norm in rev:
+            hit |= rev[norm]
+    return [m for m in mods if m not in gate_files and m in hit]
+
+
 def _main_affected(repo):
     import impact  # noqa: PLC0415
     import registry  # noqa: PLC0415
     gs, _ = registry.gates(os.path.join(repo, "zreflect"))
-    plan = impact.affected_plan(impact.git_changed_files(repo), gs)
+    changed = impact.git_changed_files(repo)
+    plan = impact.affected_plan(changed, gs)
     print(str(M("registry.affected_plan", selected=len(plan["selected"]),
                 total=plan["total"], reason=plan["reason"])))
     if not plan["selected"]:
@@ -461,6 +477,11 @@ def _main_affected(repo):
     listing = [g["file"] for g in plan["selected"]]
     rc = _section("harness.heading", lambda: run_gates(repo, listing=listing))
     if not plan["full_fallback"]:
+        for m in _affected_modules(repo, changed, gs):
+            ok, mod_lines = _run_one_module(repo, m)
+            for ln in mod_lines:
+                print(ln)
+            rc = rc or (0 if ok else 1)
         return rc
     rc = rc or _section("harness.plugins_heading", lambda: run_plugins(repo))
     rc = rc or _section("harness.modules_heading", lambda: run_modules(repo))

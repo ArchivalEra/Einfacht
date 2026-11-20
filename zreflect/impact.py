@@ -21,7 +21,6 @@ _GLOBAL_FALLBACK_PREFIXES = (
     "reflect-hooks/",
     ".github/",
 )
-_CORE_EXEMPT_FROM_FALLBACK = False
 
 
 def _norm(path):
@@ -142,7 +141,8 @@ def _match_by_knobs(rel, phase_gates, kp):
             known = True
         if base == "check_secrets.py" and is_secret_doc:
             matched.add(gfile)
-        if base == "check_facts_replay.py" and rel in (kp["facts"], "PRINCIPLES.md"):
+        if base == "check_facts_replay.py" and (
+                rel in (kp["facts"], "PRINCIPLES.md") or rel.startswith(kp["questions_prefix"])):
             matched.add(gfile)
             known = True
     return matched, known
@@ -219,6 +219,10 @@ def git_changed_files(repo_root=None):
         paths = _parse_porcelain(r.stdout)
         if paths:
             return paths
+        up = subprocess.run(["git", "-C", root, "diff", "--name-only", "@{upstream}..HEAD"],
+                            capture_output=True, text=True, timeout=15)
+        if up.returncode == 0:
+            return [_norm(ln) for ln in up.stdout.splitlines() if ln.strip()]
         r2 = subprocess.run(["git", "-C", root, "diff", "--name-only", "HEAD~1", "HEAD"],
                             capture_output=True, text=True, timeout=15)
         if r2.returncode != 0:

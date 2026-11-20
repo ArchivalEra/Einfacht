@@ -86,7 +86,7 @@ def _budget(branches, args):
     return BASE_BUDGET + PER_BRANCH * branches + PER_ARG * args
 
 
-def _scope_reports(path, node, label, doc, cchars_val, bud, chosen):
+def _scope_reports(path, node, label, doc, cchars_val, bud, chosen, branches=0, args=0):
     out = []
     if chosen == "strict":
         if doc.strip():
@@ -100,7 +100,7 @@ def _scope_reports(path, node, label, doc, cchars_val, bud, chosen):
     if total > bud:
         out.append(M("comments.explain_exceeds_complexity",
                      file=path, line=getattr(node, "lineno", 1), name=label,
-                     chars=total, budget=bud, branches=0, args=0))
+                     chars=total, budget=bud, branches=branches, args=args))
     return out
 
 
@@ -124,7 +124,8 @@ def function_reports(path, src, chosen):
             out += _scope_reports(path, node, node.name, doc, cchars.get(node, 0), _budget(methods, 0), chosen)
             continue
         br, n_args = _branch_count(node), _arg_count(node)
-        out += _scope_reports(path, node, node.name, doc, cchars.get(node, 0), _budget(br, n_args), chosen)
+        out += _scope_reports(path, node, node.name, doc, cchars.get(node, 0),
+                              _budget(br, n_args), chosen, branches=br, args=n_args)
     return out
 
 

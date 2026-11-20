@@ -307,14 +307,14 @@ def _emit_phase_group(files, maker, fail_out):
             print(ln)
 
 
-_PLUGGABLE_GATES = frozenset({
-    "check_ab.py", "check_instruments.py", "check_invariants.py",
-    "check_locks.py", "check_pins.py", "check_world.py", "doctor.py",
-})
+def _pluggable_gates():
+    gs, _ = gates()
+    return frozenset(os.path.basename(g["file"]) for g in gs if g.get("off_reason"))
 
 
-def _off_policy_error(off_list):
-    core_off = [f for f in off_list if os.path.basename(f) not in _PLUGGABLE_GATES]
+def _off_policy_error(off_list, pluggable=None):
+    plugs = _pluggable_gates() if pluggable is None else pluggable
+    core_off = [f for f in off_list if os.path.basename(f) not in plugs]
     if core_off:
         return M("registry.core_gate_off", files=", ".join(core_off))
     req = set(knobs.required_gates())
