@@ -111,6 +111,10 @@ nicht optional — die offensichtlich funktionierenden sind genau die, deren
 Bedingungen sich still in immer-wahre Vergleiche verwandeln, weshalb `harness.py` ein
 Gate ablehnt, dessen eigener Beweis nicht fehlschlagen kann.
 
+## Out-of-Band-Freigabe & Schlüsselwechsel
+
+`zreflect/approval.py` enthält standardmäßig einen `PINNED_APPROVER_PUB` für diesen Host. Externe Nutzer müssen ihn auf ihr eigenes Ed25519-Schlüsselpaar umstellen: den öffentlichen Schlüssel als PEM unter `/etc/einfacht-approver/signing_pub.pem` ablegen (nur lesbar für normale Agenten) oder `PINNED_APPROVER_PUB` ersetzen und `python3 zreflect/registry.py --reseal=ALL --force` ausführen. In jedem Ziel-Repo `python3 zreflect/approval.py --init-anchors` für `ANCHORS.json` sowie `python3 zreflect/approval.py --request --wait` gegen `EINFACHT_APPROVER_URL` nutzen.
+
 ## Warum Prosa eingesperrt ist
 
 Prosa verrottet: ein Satz, der als wahr geschrieben wurde, sieht weiter wahr aus,

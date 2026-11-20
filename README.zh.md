@@ -93,6 +93,10 @@ python3 reflect-hooks/hook.py --chain             # 链进你已有的 git 钩�
 第二，「明显能用」的闸门也必须自证 —— 明显能用的那些，恰恰是判据悄悄变成恒真
 比较的那些，所以 `harness.py` 不接受一道自身证明无法变红的闸门。
 
+## 带外审批与换钥匙
+
+`zreflect/approval.py` 默认内置了本机的 `PINNED_APPROVER_PUB`。外部接入方必须换成自己的 Ed25519 密钥对：把你自己的公钥 PEM 放到 `/etc/einfacht-approver/signing_pub.pem`（对普通工作账号只读），或者直接替换 `PINNED_APPROVER_PUB` 后重跑 `python3 zreflect/registry.py --reseal=ALL --force`。在每个下游仓库执行 `python3 zreflect/approval.py --init-anchors` 绑定 `ANCHORS.json`，修改受控范围时运行 `python3 zreflect/approval.py --request --wait` 向 `EINFACHT_APPROVER_URL` 提交审批。
+
 ## 为什么散文被限在一处
 
 散文会烂：一句话写下时是真的，代码动了之后它看起来还是真的，而没有任何东西拿它

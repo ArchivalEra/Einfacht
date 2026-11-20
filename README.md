@@ -109,6 +109,10 @@ the ones that obviously work are exactly the ones whose criteria quietly turn
 into always-true comparisons, which is why `harness.py` refuses a gate whose own
 proof cannot fail.
 
+## Out-of-band approval & key rotation
+
+`zreflect/approval.py` ships with a default `PINNED_APPROVER_PUB` for this host. External adopters must rotate it to their own Ed25519 keypair: place the public key PEM at `/etc/einfacht-approver/signing_pub.pem` (read-only by non-root agents) or replace `PINNED_APPROVER_PUB` and re-run `python3 zreflect/registry.py --reseal=ALL --force`. In each downstream repo, run `python3 zreflect/approval.py --init-anchors` to bind `ANCHORS.json`, and `python3 zreflect/approval.py --request --wait` to submit controlled changes to `EINFACHT_APPROVER_URL`.
+
 ## Why prose is confined
 
 Prose rots: a sentence written as true keeps looking true after the code moves,
