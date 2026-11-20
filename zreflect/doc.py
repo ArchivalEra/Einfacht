@@ -233,13 +233,15 @@ def _cmd_shape_problems(rows=None):
         cmd = r.cmd.strip()
         if not cmd:
             out.append((r.id, "empty_cmd"))
+        elif "\n" in cmd or "\r" in cmd or "$(" in cmd or "`" in cmd or "||" in cmd:
+            out.append((r.id, "chains_or_suppresses"))
         elif not re.match(r"^(python3|python|sh|bash|env)\s", cmd):
             out.append((r.id, "not_an_interpreter"))
         elif re.search(r"(^|[;&|]\s*)(export|set\s+-a)|>\s*\S", cmd.replace(">/dev/null", "")):
             out.append((r.id, "mutates_env"))
         else:
             unquoted = re.sub(r"'[^']*'|\"[^\"]*\"", "", cmd)
-            if "||" in unquoted or ";" in unquoted:
+            if ";" in unquoted or re.search(r"(?<![&>])&(?![&>])", unquoted):
                 out.append((r.id, "chains_or_suppresses"))
     return out
 

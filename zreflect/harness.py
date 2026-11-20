@@ -431,7 +431,7 @@ def run_zero_language(repo):
 
 
 def _section(heading, runner):
-    """Run one section, print it, return that section's rc (0 = pass)."""
+    """PINNED: section dispatcher receives static harness.section_* literal."""
     print(str(M(heading)))
     ok, *_, lines = runner()
     for ln in lines:

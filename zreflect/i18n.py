@@ -54,7 +54,7 @@ _KIND = {r.kind for r in ROWS}
 _BY_KIND = {r.kind: r for r in ROWS}
 _EMITTABLE = _KIND - {"machine_summary"}
 _SHARP = re.compile(r"^(?:OFF:|FATAL:|SKIP:|DOWN: |PASS \| |fail \| |note \| "
-                    r"|=== [0-9]+ PASS / [0-9]+ FAIL ===$)")
+                    r"|=== .* ===$)")
 _BROAD = re.compile(r"^[A-Z][A-Z0-9_]*:")
 
 
@@ -445,6 +445,8 @@ def _cases():
         + [("★ machine.forgery_%s" % name,
             (lambda s: lambda: reject("ctx" + s + "OFF: forged") is not None)(sep))  # noqa: B023
            for sep, name in breaks]
+        + [("★ machine.human_summary_forged_rejected",
+            lambda: reject("ctx\n=== forged header ===") is not None)]
     )
 
 

@@ -248,8 +248,23 @@ def finish(name, problems, ok):
     return 0
 
 
+def _bad_exec_shell_or_prose(s, first, parts):
+    if "\n" in s or "\r" in s or "$(" in s or "`" in s or "||" in s:
+        return True
+    if first.startswith("/") and not (os.path.exists(first) or shutil.which(first)):
+        return True
+    if first in ("echo", "make") and len(parts) > 1:
+        rest = parts[1].strip()
+        if re.fullmatch(r"[A-Za-z]+(?:\s+[A-Za-z]+)+", rest):
+            return True
+    stripped = re.sub(r"'[^']*'", "", re.sub(r'"[^"]*"', "", s))
+    if _PROSE_CHARS.search(stripped) or ";" in stripped:
+        return True
+    return bool(re.search(r"(?<![&>])&(?![&>])", stripped))
+
+
 def starts_with_interpreter(value, field_name="cmd"):
-    """Verify `value` starts with a command token and has no trailing unquoted CJK prose."""
+    """Verify `value` starts with a command token and has no trailing prose or shell escapes."""
     s = str(value or "").strip()
     if field_name == "Settling":
         s = _OUTCOME_SEP.split(s, 1)[0].strip()
@@ -263,8 +278,7 @@ def starts_with_interpreter(value, field_name="cmd"):
         return False
     if first == "test" and (len(parts) < 2 or not parts[1].lstrip().startswith(("-", "!", "("))):
         return False
-    stripped = re.sub(r"'[^']*'", "", re.sub(r'"[^"]*"', "", s))
-    if _PROSE_CHARS.search(stripped) or "||" in stripped or ";" in stripped:
+    if _bad_exec_shell_or_prose(s, first, parts):
         return False
     try:
         return bool(shlex.split(s))
@@ -546,7 +560,10 @@ def _cases():
          lambda: _windows_argv('"C:\\Py\\python.exe" a\\b') == ["C:\\Py\\python.exe", "a\\b"]),
         ("★ gate.prose_test_if_rejected",
          lambda: not starts_with_interpreter("test if this works")
-         and not starts_with_interpreter("python3 a.py || true")),
+         and not starts_with_interpreter("python3 a.py || true")
+         and not starts_with_interpreter("echo this is prose")
+         and not starts_with_interpreter("/fake/path prose")
+         and not starts_with_interpreter("false\ntrue")),
         ("gate.spec_equals_syntax",
          lambda: resolve_spec(["--spec=foo.json"], "", "d.json") == ("foo.json", True)),
     ]

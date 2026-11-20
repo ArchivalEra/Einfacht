@@ -20,6 +20,7 @@ class _Semantic(str):
         return obj
 
     def __str__(self):
+        """PINNED: _Semantic lazily resolves registered knobs.sem.* literal."""
         from i18n import M  # noqa: PLC0415
         return str(M(self.code))
 

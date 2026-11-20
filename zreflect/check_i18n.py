@@ -49,7 +49,7 @@ def _pinned_by_comment(src, node):
         line = lines[i].strip()
         if not line.startswith("#"):
             break
-        if PINNED_MARK in line:
+        if _declares_pinned(line):
             return True
         i -= 1
     return False
@@ -126,30 +126,31 @@ def _bare_text_problems(name, tree, src):
     doc_nodes, _ = _docstring_both(tree)
     msg_consts = _msg_consts(tree)
     exempt = _exempt_ids(tree, name, src)
+    fixture_lines = _fixture_scope_lines(tree)
     for node in ast.walk(tree):
         if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
             continue
         v = node.value
         if not cjk(v) or id(node) in doc_nodes or id(node) in msg_consts or id(node) in exempt:
             continue
-        if re.match(r"^\s*(?:★\s*)?[a-z_][a-z0-9_]*(?:\.[a-z0-9_.]+)+", v):
+        if (node.lineno in fixture_lines
+                and re.match(r"^\s*(?:★\s*)?[a-z_][a-z0-9_]*(?:\.[a-z0-9_.]+)+", v)):
             continue
         out.append(M("i18n_cover.bare_text", file=name, lineno=node.lineno, text=v[:40]))
     return out
 
 
 def _non_literal_code_problems(name, tree):
-    computed = (ast.IfExp, ast.BinOp, ast.JoinedStr, ast.Call, ast.Subscript)
+    exempt = _fixture_scope_lines(tree) | _pinned_lines(tree)
     out = []
     for node in ast.walk(tree):
-        if not _is_msg_call(node) or not node.args:
+        if not _is_msg_call(node) or not node.args or node.lineno in exempt:
             continue
         first = node.args[0]
         if isinstance(first, ast.Constant) and isinstance(first.value, str):
             continue
-        if isinstance(first, computed):
-            out.append(M("i18n_cover.code_not_literal", file=name,
-                         lineno=node.lineno, kind=type(first).__name__))
+        out.append(M("i18n_cover.code_not_literal", file=name,
+                     lineno=node.lineno, kind=type(first).__name__))
     return out
 
 
@@ -185,7 +186,7 @@ def _pinned_lines(tree):
     spans: set[int] = set()
     for node in ast.walk(tree):
         if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-                and PINNED_MARK in (ast.get_docstring(node) or "")):
+                and _declares_pinned(ast.get_docstring(node, clean=False))):
             spans.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
     return spans
 
@@ -305,18 +306,26 @@ def pack_coverage_problems(codes=None, loader=None, discovery=None):
     return out
 
 
+def _resolve_pack_langs(discovery):
+    langs = list((discovery or i18n.installed_langs)())
+    served = knobs.served_langs()
+    if not served:
+        return langs, None
+    missing = [l for l in served if l not in langs]
+    if missing:
+        return [], [M("knobs.pack_unreadable", lang=missing[0], error="missing")]
+    return list(served), None
+
+
 def pack_sync_problems(loader=None, discovery=None):
     """Verify installed language packs agree on key sets, percent formatting, and placeholders."""
     load = loader if loader is not None else i18n.load_pack
     try:
-        langs = list((discovery or i18n.installed_langs)())
+        langs, served_err = _resolve_pack_langs(discovery)
     except i18n.PacksUnreadable as e:
         return [M("knobs.pack_unreadable", lang="*", error=e)]
-    served = knobs.served_langs()
-    if served:
-        present = [l for l in served if l in langs]
-        if present:
-            langs = present
+    if served_err:
+        return served_err
     tables, err = _load_tables(langs, load)
     if err or not tables:
         return err or []
@@ -334,6 +343,8 @@ def pack_sync_problems(loader=None, discovery=None):
                 if isinstance(v, str) and _BRACE_RE.search(v)]
         if lang != ref_lang:
             out += _diff_packs(lang, ref_lang, ref, tables[lang])
+        if lang != "en" and "en" in tables and tables[lang] == tables["en"]:
+            out.append(M("knobs.pack_untranslated", lang=lang))
     return out
 
 
@@ -466,7 +477,16 @@ def _cases():
              loader=lambda l: {"zh": {"a": ""}, "en": {"a": "x"}}[l])]
          == ["knobs.pack_empty_value"]),
         ("★ i18n_cover.pinned_too_short",
-         lambda: not _declares_pinned("PINNED: short")),
+         lambda: not _declares_pinned("PINNED: short")
+         and not _pinned_by_comment("# PINNED: short\nX = 1\n", ast.parse("# PINNED: short\nX = 1\n").body[0])),
+        ("★ i18n_cover.var_code_and_dotted_cjk_rejected",
+         lambda: [p.code for p in _non_literal_code_problems("a.py", ast.parse("M(var)"))] == ["i18n_cover.code_not_literal"]
+         and [p.code for p in _bare_text_problems(
+             "a.py", ast.parse('X = "a.b %s"\n' % s), 'X = "a.b %s"\n' % s)] == ["i18n_cover.bare_text"]),
+        ("★ knobs.pack_untranslated_rejected",
+         lambda: [p.code for p in pack_sync_problems(
+             discovery=lambda: ("de", "en"),
+             loader=lambda _l: {"a": "english only"})] == ["knobs.pack_untranslated"]),
     ]
 
 

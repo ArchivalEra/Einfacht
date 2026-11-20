@@ -187,15 +187,16 @@ def judge_step(step, rc, output):
     expected = step.get("rc", 0)
     if rc != expected:
         out.append(M("examples.step_rc", expected=expected, actual=rc))
-    for field, code in (("contains", "examples.output_missing"),
-                        ("not_contains", "examples.output_forbidden")):
+    for field in ("contains", "not_contains"):
         wanted = step.get(field, [])
         if isinstance(wanted, str):
             wanted = [wanted]
         for fragment in wanted:
             present = fragment in output
-            if (field == "contains" and not present) or (field != "contains" and present):
-                out.append(M(code, fragment=fragment))
+            if field == "contains" and not present:
+                out.append(M("examples.output_missing", fragment=fragment))
+            elif field == "not_contains" and present:
+                out.append(M("examples.output_forbidden", fragment=fragment))
     return out + _unexpected_off_problems(step, expected, output)
 
 

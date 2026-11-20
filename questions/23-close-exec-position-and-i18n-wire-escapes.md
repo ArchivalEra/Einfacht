@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含 `"echo this is prose"`、`"/fake/path prose"`、`"false\ntrue"`、`# PINNED:` 无理由豁免、`M(var)` 与 `"a.b 中文"` 被拦截）
+**Settling:** `python3 zreflect/gate.py --selftest && python3 zreflect/i18n.py --selftest && python3 zreflect/check_i18n.py --selftest && python3 zreflect/doc.py --selftest` -- rc=0 => exec-position prose/escapes and i18n guards hold; rc!=0 => escape regression
 
 ## 实测问题清单
 

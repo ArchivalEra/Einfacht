@@ -386,6 +386,7 @@ def _run_installer(argv, say):
 
 def _run_cli(argv, quiet=False):
     def _say(code, **kw):
+        """PINNED: CLI dispatcher forwards static hookgate.* or install.* code."""
         if not quiet:
             print(str(M(code, **kw)), file=sys.stderr)
 

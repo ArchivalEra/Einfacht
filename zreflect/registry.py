@@ -297,9 +297,9 @@ def _format_gate_output(text):
     return ["      " + ln for ln in selected]
 
 
-def _emit_phase_group(files, code, fail_out):
+def _emit_phase_group(files, maker, fail_out):
     for f in files:
-        print(M(code, file=f))
+        print(maker(f))
         for ln in _format_gate_output(fail_out.get(f) or ""):
             print(ln)
 
@@ -342,9 +342,9 @@ def _main_run(argv):
     print(M("registry.phase_summary", phase=phase, ran=res["ran"], off=res["off"],
             failed=res["failed"], fatal=res.get("fatal", 0), error=res.get("error", 0)))
     fail_out = res.get("fail_out", {})
-    _emit_phase_group(res["fail_list"], "registry.phase_failed", fail_out)
-    _emit_phase_group(res.get("fatal_list", ()), "registry.phase_fatal", fail_out)
-    _emit_phase_group(res.get("error_list", ()), "registry.phase_error", fail_out)
+    _emit_phase_group(res["fail_list"], lambda f: M("registry.phase_failed", file=f), fail_out)
+    _emit_phase_group(res.get("fatal_list", ()), lambda f: M("registry.phase_fatal", file=f), fail_out)
+    _emit_phase_group(res.get("error_list", ()), lambda f: M("registry.phase_error", file=f), fail_out)
     if res.get("skip_list"):
         print(M("registry.phase_skip_list", count=len(res["skip_list"]),
                 files=", ".join(res["skip_list"])))
