@@ -20,7 +20,6 @@ APPROVER_URL_ENV = "EINFACHT_APPROVER_URL"
 DEFAULT_APPROVER_URL = "http://127.0.0.1:18443"
 CONTROLLED_PREFIXES = ("zreflect/", "reflect-hooks/", "questions/")
 CONTROLLED_FILES = frozenset({"PRINCIPLES.md", "knobs.json", "ruff.toml"})
-DUPLICATE_COOLDOWN_SECONDS = 120
 
 
 def sha256_bytes(data):
@@ -415,10 +414,11 @@ def build_requests(changed_paths, root=None, repo_name=None, diff_fn=None, sha_f
     return out
 
 
-def check_duplicate_cooldown(existing_requests, candidate, now_ts=None, cooldown_seconds=DUPLICATE_COOLDOWN_SECONDS):
-    """Enforce per-repo 2-minute duplicate/denied cooldown without blocking other repos."""
+def check_duplicate_request(existing_requests, candidate, now_ts=None, revoked_ids=()):
+    """Deduplicate by `(repo, action, target_path, prev_sha256, target_sha256)`: reuse pending or still-valid approved receipts."""
     import time as _time  # noqa: PLC0415
     now = int(_time.time()) if now_ts is None else int(now_ts)
+    rev = set(revoked_ids)
     key = (
         candidate.get("repo"), candidate.get("action"), candidate.get("target_path"),
         candidate.get("prev_sha256"), candidate.get("target_sha256"),
@@ -428,16 +428,15 @@ def check_duplicate_cooldown(existing_requests, candidate, now_ts=None, cooldown
                 req.get("prev_sha256"), req.get("target_sha256"))
         if rkey != key:
             continue
-        st = req.get("status")
+        st = str(req.get("status") or "")
         if st == "pending":
             return "duplicate_pending", req
-        if st == "denied":
-            ts = int(req.get("denied_at") or req.get("created_at") or 0)
-            if (now - ts) < cooldown_seconds:
-                return "rejected_duplicate_2m", req
-        if str(st or "").startswith("approved") and req.get("receipt"):
-            exp = _parse_iso(_receipt_body(req["receipt"]).get("expires_at"))
-            if exp and exp.timestamp() > now:
+        if st.startswith("approved") and req.get("receipt"):
+            body = _receipt_body(req["receipt"])
+            rec_id = str(body.get("id") or body.get("receipt_id") or "")
+            deleg_id = str(body.get("delegation_id") or "")
+            exp = _parse_iso(body.get("expires_at"))
+            if rec_id not in rev and deleg_id not in rev and exp and exp.timestamp() > now:
                 return "already_approved", req
     return "new", None
 
@@ -563,22 +562,22 @@ def _cases():
              "q/26.md", q_weak, anc, receipt=valid_rec, pub_b64=pub_b64, repo_name="Einfacht", now=now) == []
          and check_question_change(
              "q/26.md", q_weak, anc, receipt=daemon_rec, pub_b64=pub_pem, repo_name="Einfacht", now=now) == []),
-        ("approval.request_scope_and_2m_cooldown",
+        ("approval.request_scope_and_dedup",
          lambda: [r["target_path"] for r in build_requests(
              ["src/app.py", "zreflect/doc.py", "questions/26.md"],
              root=".", repo_name="Einfacht",
              diff_fn=lambda _r, _p: ("p1", "+diff"), sha_fn=lambda _p: "t1")]
          == ["questions/26.md", "zreflect/doc.py"]
-         and check_duplicate_cooldown(
+         and check_duplicate_request(
              [{"repo": "Einfacht", "action": "seal.doc", "target_path": "zreflect/doc.py",
-               "prev_sha256": "p1", "target_sha256": "t1", "status": "denied", "denied_at": 1000}],
+               "prev_sha256": "p1", "target_sha256": "t1", "status": "approved_single", "receipt": daemon_rec}],
              {"repo": "Einfacht", "action": "seal.doc", "target_path": "zreflect/doc.py",
-              "prev_sha256": "p1", "target_sha256": "t1"}, now_ts=1060)[0] == "rejected_duplicate_2m"
-         and check_duplicate_cooldown(
+              "prev_sha256": "p1", "target_sha256": "t1"}, now_ts=int(now.timestamp()) + 10)[0] == "already_approved"
+         and check_duplicate_request(
              [{"repo": "Einfacht", "action": "seal.doc", "target_path": "zreflect/doc.py",
-               "prev_sha256": "p1", "target_sha256": "t1", "status": "denied", "denied_at": 1000}],
+               "prev_sha256": "p1", "target_sha256": "t1", "status": "approved_single", "receipt": daemon_rec}],
              {"repo": "OtherRepo", "action": "seal.doc", "target_path": "zreflect/doc.py",
-              "prev_sha256": "p1", "target_sha256": "t1"}, now_ts=1060)[0] == "new"),
+              "prev_sha256": "p1", "target_sha256": "t1"}, now_ts=int(now.timestamp()) + 10)[0] == "new"),
     ]
 
 
