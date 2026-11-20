@@ -134,8 +134,10 @@ def run_gates(repo, listing=None):
     for rel in missing_decl:
         lines.append(str(M("registry.missing_declaration", files=rel)))
         bad += 1
-    for rel in listing:
-        passed, out = _check_one_gate(repo, rel)
+    import concurrent.futures  # noqa: PLC0415
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(12, os.cpu_count() or 4, max(1, len(listing)))) as pool:
+        results = list(pool.map(lambda r: _check_one_gate(repo, r), listing))
+    for passed, out in results:
         lines += out
         n += 1
         if not passed:
@@ -207,11 +209,12 @@ def run_modules(repo):
     gates = {g["file"] for g in gs}
     lines = []
     n = bad = 0
-    for m in mods:
-        if m in gates:
-            continue
+    import concurrent.futures  # noqa: PLC0415
+    targets = [m for m in mods if m not in gates]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(12, os.cpu_count() or 4, max(1, len(targets)))) as pool:
+        results = list(pool.map(lambda m: _run_one_module(repo, m), targets))
+    for ok, mod_lines in results:
         n += 1
-        ok, mod_lines = _run_one_module(repo, m)
         lines += mod_lines
         if not ok:
             bad += 1
@@ -288,14 +291,19 @@ def _core_must_run(repo):
 
 def _renamed_all_green(repo, gates, env):
     """After renaming, every single gate must be green (and core gates not OFF). Returns `(ok_count, [(rel, detail)])`."""
+    import concurrent.futures  # noqa: PLC0415
     bad = []
     core = _core_must_run(repo)
-    for rel in gates:
-        rc, out = _run([sys.executable, os.path.join(repo, rel)], cwd=repo, env=env)
-        if rc != 0:
-            bad.append((rel, " | ".join(_tail(out, 2)) or ("rc=%d" % rc)))
-        elif os.path.basename(rel) in core and (out or "").lstrip().startswith("OFF:"):
-            bad.append((rel, "unexpected OFF in configurable fixture"))
+
+    def _one(rel):
+        return rel, *_run([sys.executable, os.path.join(repo, rel)], cwd=repo, env=env)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(12, os.cpu_count() or 4, max(1, len(gates)))) as pool:
+        for rel, rc, out in pool.map(_one, gates):
+            if rc != 0:
+                bad.append((rel, " | ".join(_tail(out, 2)) or ("rc=%d" % rc)))
+            elif os.path.basename(rel) in core and (out or "").lstrip().startswith("OFF:"):
+                bad.append((rel, "unexpected OFF in configurable fixture"))
     return len(gates) - len(bad), bad
 
 
@@ -306,14 +314,16 @@ def _default_names_go_red(repo, gates, tmp):
     knobs -- the fixture's `env` still runs renamed, and this criterion cannot
     hold.
     """
+    import concurrent.futures  # noqa: PLC0415
     clean = {k: v for k, v in os.environ.items() if not k.startswith("REFLECT_")}
     clean["GATE_REPO"] = tmp
     red = set()
-    for rel in gates:
-        rc, _o = _run([sys.executable, os.path.join(repo, rel)], cwd=repo,
-                      env=clean)
-        if rc != 0:
-            red.add(os.path.basename(rel))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(12, os.cpu_count() or 4, max(1, len(gates)))) as pool:
+        for rel, (rc, _o) in zip(gates, pool.map(
+            lambda r: _run([sys.executable, os.path.join(repo, r)], cwd=repo, env=clean), gates
+        ), strict=True):
+            if rc != 0:
+                red.add(os.path.basename(rel))
     import registry  # noqa: PLC0415
     gs, _ = registry.gates(os.path.join(repo, "zreflect"))
     red_need = registry.red_need(gs)

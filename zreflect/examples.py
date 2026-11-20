@@ -294,7 +294,7 @@ def _run_all(root):
         _print_problems(problems)
         return 2
     names = sorted(manifests)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, max(1, len(names)))) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(12, os.cpu_count() or 4, max(1, len(names)))) as pool:
         results = dict(zip(names, pool.map(lambda n: run_example(n, root), names), strict=True))
     failed = skipped = 0
     for name in names:

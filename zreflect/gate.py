@@ -439,18 +439,22 @@ def has_suite_ancestor(only_pid=None):
     return False
 
 
+def _get_inproc_depth():
+    return getattr(_DEPTH_TLS, "depth", 0)
+
+
 def trusted_replay_depth():
-    """Return replay depth from in-process suite execution or a verified live suite ancestor."""
+    """Return replay depth from thread-local in-process execution or a verified live suite ancestor."""
     try:
         depth = int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0)
     except ValueError:
         depth = 0
     env_depth = depth if (depth > 0 and has_suite_ancestor()) else 0
-    return max(_INPROC_REPLAY_DEPTH, env_depth)
+    return max(_get_inproc_depth(), env_depth)
 
 
 _INPROC_CACHE: dict[str, tuple[int | None, str]] | None = None
-_INPROC_REPLAY_DEPTH = 0
+_DEPTH_TLS = threading.local()
 _INPROC_LOCK = threading.RLock()
 _CACHE_MUTEX = threading.Lock()
 _INFLIGHT: dict[str, threading.Event] = {}
@@ -468,6 +472,17 @@ def with_run_cache(fn):
         _INPROC_CACHE = None
 
 
+def _is_ro_suite_call(rel, extra):
+    base = os.path.basename(rel)
+    if extra == ["--selftest"]:
+        return base not in ("harness.py", "examples.py", "facts.py")
+    if not extra and base in ("check_questions.py", "check_retractions.py", "check_facts_replay.py", "check_facts.py"):
+        return True
+    if base == "facts.py" and extra == ["--check"]:
+        return True
+    return base == "registry.py" and extra in (["--run", "commit"], ["--run", "commit", "--all"], ["--verify-seal"], ["--gates"])
+
+
 def _inproc_suite_argv(cmd):
     if os.path.abspath(GATE_REPO) != os.path.abspath(tool_repo()):
         return None
@@ -482,7 +497,7 @@ def _inproc_suite_argv(cmd):
     rel = parts[1].replace("\\", "/")
     if not (rel.startswith("zreflect/") and rel.endswith(".py")):
         return None
-    if parts[2:] != ["--selftest"] or os.path.basename(rel) in ("harness.py", "examples.py", "facts.py"):
+    if not _is_ro_suite_call(rel, parts[2:]):
         return None
     full = os.path.join(GATE_REPO, rel)
     return (full, parts[2:]) if os.path.isfile(full) else None
@@ -492,24 +507,25 @@ def _run_inproc_script(script_path, extra_args, bump_depth=True):
     import contextlib  # noqa: PLC0415
     import io  # noqa: PLC0415
     import runpy  # noqa: PLC0415
-    global _INPROC_REPLAY_DEPTH
-    with _INPROC_LOCK:
-        buf = io.StringIO()
-        old_argv = sys.argv
-        sys.argv = [script_path, *extra_args]
-        if bump_depth:
-            _INPROC_REPLAY_DEPTH += 1
-        rc = 0
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-            try:
-                runpy.run_path(script_path, run_name="__main__")
-            except SystemExit as exc:
-                rc = exc.code if isinstance(exc.code, int) else (1 if exc.code else 0)
-            finally:
-                sys.argv = old_argv
-                if bump_depth:
-                    _INPROC_REPLAY_DEPTH -= 1
-        return rc, buf.getvalue()
+    prev_depth = _get_inproc_depth()
+    if bump_depth:
+        _DEPTH_TLS.depth = prev_depth + 1
+    try:
+        with _INPROC_LOCK:
+            buf = io.StringIO()
+            old_argv = sys.argv
+            sys.argv = [script_path, *extra_args]
+            rc = 0
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                try:
+                    runpy.run_path(script_path, run_name="__main__")
+                except SystemExit as exc:
+                    rc = exc.code if isinstance(exc.code, int) else (1 if exc.code else 0)
+                finally:
+                    sys.argv = old_argv
+            return rc, buf.getvalue()
+    finally:
+        _DEPTH_TLS.depth = prev_depth
 
 
 def _cache_key(cmd):

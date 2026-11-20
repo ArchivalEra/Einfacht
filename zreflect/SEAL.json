@@ -70,16 +70,16 @@
    "file_sha256": "71016a57c0bf8d15c11f388ffd0d3fe1b25bd9a8bcf90ad9f794b407229301ad"
   },
   "zreflect/examples.py": {
-   "file_sha256": "c3de06ec1d634d7335638d563f827144a1ff7c8893a3b451337c2934d9a394dd"
+   "file_sha256": "ef47b9e3b9cdaeb7e4e6421d0075123292764f3eaeb5e59fac8036793ce51ecc"
   },
   "zreflect/facts.py": {
    "file_sha256": "5d4cef314725f2b8eb646ad8fd72ee967af45653312ac48d799f76d879900d73"
   },
   "zreflect/gate.py": {
-   "file_sha256": "555bb78e6492e53f27e37685b07b83b928aa234bacb7cabec333e2029bb804be"
+   "file_sha256": "bf4455c4becfcf7eea034c797714c5f0f79f928ebc9c9aac10b3f0673db6d9b1"
   },
   "zreflect/harness.py": {
-   "file_sha256": "6b28b3aa6a1e5fb9a2ff4d7daa7979d0ba3faa24275a3a79388797848e9fc5c2"
+   "file_sha256": "d85d38e252f6abe458cdd8563d68d94a36796ad057b36952a0f170d968dbe72e"
   },
   "zreflect/i18n.py": {
    "file_sha256": "57b8bdf28864175b692f8c20ec454b04085ebea2a02e2ae972462e578bd49205"
@@ -110,5 +110,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "be5b36d9114344ffabdfc22e30a73f79297cdc63c9abd752e50cde13baba7903"
+ "tree_sha256": "d1c38363121278ffb7c11e38bd8e71facc16d52967457576dee47f9818605def"
 }
