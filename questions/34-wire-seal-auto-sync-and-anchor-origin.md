@@ -7,9 +7,9 @@
 
 **Blocked by:** [questions/33-close-env-cache-and-depth-escapes.md](33-close-env-cache-and-depth-escapes.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是 `zreflect/seal.py` 触发 `seal.core` 缺回执时自动调用 `_auto_sync_for_probs` 提单并拉取回执的会红自测用例。
+**Settling:** python3 zreflect/seal.py --selftest && python3 zreflect/approval.py --selftest -- rc=0 => seal.auto_sync_submits_and_pulls and approval.upstream_baseline_non_weakening pass and CI gates.yml passes --all; rc!=0 => Q34 regression
 
 ## 复跑方式
 

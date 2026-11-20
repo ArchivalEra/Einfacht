@@ -31,6 +31,10 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python: ["3.13"]
     runs-on: ${{ matrix.os }}
+    env:
+      EINFACHT_RUN_CACHE: ""
+      EINFACHT_REPLAY_DEPTH: ""
+      REFLECT_QUESTIONS: ""
     steps:
       - uses: actions/checkout@v4
       # 钉小版本 + check-latest（uTLS-Gone issue #4 的实战经验）：runner 镜像缓存
@@ -55,8 +59,8 @@ jobs:
           # 不给文档名 ⇒ 查全部有机器块的文档（STATE + PRINCIPLES）
           python zreflect/facts.py --check
           # 执行面唯一产地（C1）：runs_at="commit" 与 "start-of-work" 的闸门，聚合 ran/off/failed
-          python zreflect/registry.py --run commit
-          python zreflect/registry.py --run start-of-work
+          python zreflect/registry.py --run commit --all
+          python zreflect/registry.py --run start-of-work --all
 
       # ── 第二档：ruff（判据在 ruff.toml，唯一产地）──
       # 这一步是 R-004 的判据。`gitroll-dispositions.json` 的 `_summary` 曾声称

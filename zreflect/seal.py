@@ -258,6 +258,22 @@ def _check_core_target_approval(rel, rt, prev_files, anc, rec, approval):
     return probs[0] if probs else None
 
 
+def _collect_reseal_probs(resolved, rt, zd, prev_files, anc, rec, approval):
+    probs = []
+    if "zreflect/doc.py" in resolved:
+        probs.extend(approval.check_principles_anchor(
+            anc, doc_py_sha=approval.sha256_file(os.path.join(zd, "doc.py")),
+            principles_md_sha=(anc.get("principles") or {}).get("principles_md_sha256"),
+            no_principles=False, receipt=rec))
+    if anc.get("lock_core", False):
+        for rel in resolved:
+            if rel != "zreflect/doc.py":
+                p = _check_core_target_approval(rel, rt, prev_files, anc, rec, approval)
+                if p is not None:
+                    probs.append(p)
+    return probs
+
+
 def _check_reseal_approval(resolved, rt, zd, prev_files):
     import approval  # noqa: PLC0415
     anc = approval.load_anchors(rt)
@@ -266,18 +282,12 @@ def _check_reseal_approval(resolved, rt, zd, prev_files):
     if not anc:
         return M("approval.anchors_broken")
     rec = approval.load_receipt(root=rt)
-    if "zreflect/doc.py" in resolved:
-        doc_probs = approval.check_principles_anchor(
-            anc, doc_py_sha=approval.sha256_file(os.path.join(zd, "doc.py")),
-            principles_md_sha=(anc.get("principles") or {}).get("principles_md_sha256"),
-            no_principles=False, receipt=rec)
-        if doc_probs:
-            return doc_probs[0]
-    if not anc.get("lock_core", False):
-        return None
-    errs = [_check_core_target_approval(r, rt, prev_files, anc, rec, approval)
-            for r in resolved if r != "zreflect/doc.py"]
-    return next((e for e in errs if e is not None), None)
+    probs = _collect_reseal_probs(resolved, rt, zd, prev_files, anc, rec, approval)
+    sync_codes = ("approval.receipt_required", "approval.scope_mismatch", "approval.expired")
+    if probs and any(p.code in sync_codes for p in probs) and approval._auto_sync_for_probs(rt, anc, probs):
+        probs = _collect_reseal_probs(
+            resolved, rt, zd, prev_files, anc, approval.load_receipt(root=rt), approval)
+    return probs[0] if probs else None
 
 
 def _load_prev_files(sp):
@@ -470,6 +480,78 @@ def _case_core_reseal_approval():
         approval.PINNED_APPROVER_PUB = old_pub
 
 
+def _case_auto_sync_reseal():
+    """Missing seal.core receipt triggers _auto_sync_for_probs to submit and pull approved receipt."""
+    import base64  # noqa: PLC0415
+    import datetime  # noqa: PLC0415
+    import http.server  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    import threading  # noqa: PLC0415
+
+    import approval  # noqa: PLC0415
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: PLC0415
+    priv = Ed25519PrivateKey.generate()
+    pub_b64 = base64.b64encode(priv.public_key().public_bytes_raw()).decode("ascii")
+    state = {"approve": False}
+
+    class _H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))).decode("utf-8"))
+            resp = {"id": "req-1", "display_id": "Demo#1", "status": "pending"}
+            if state["approve"]:
+                rec = approval._sign_fixture(priv, {
+                    "id": "r-sync", "repo": body["repo"], "action": body["action"],
+                    "target": body["target_path"], "prev_sha256": body["prev_sha256"],
+                    "target_sha256": body["target_sha256"],
+                    "expires_at": (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)).isoformat(),
+                })
+                resp = {"id": "req-1", "display_id": "Demo#1", "status": "approved_single", "receipt": rec}
+            raw = json.dumps(resp).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), _H)
+    th = threading.Thread(target=srv.serve_forever, daemon=True)
+    th.start()
+    old_pub, old_url = approval.PINNED_APPROVER_PUB, os.environ.get(approval.APPROVER_URL_ENV)
+    approval.PINNED_APPROVER_PUB = pub_b64
+    os.environ[approval.APPROVER_URL_ENV] = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, zd = _make_seal_fixture(tmp, _base_fixture_files())
+            reseal(["ALL"], root=rt, zdir=zd)
+            open(os.path.join(rt, "ANCHORS.json"), "w", encoding="utf-8").write(json.dumps({
+                "schema": 1, "repo": "Demo", "approver_pub": pub_b64, "lock_core": True, "revoked_ids": [],
+            }))
+            for args in (["git", "init"], ["git", "config", "user.email", "t@e.com"],
+                         ["git", "config", "user.name", "T"], ["git", "add", "."],
+                         ["git", "commit", "-m", "init"]):
+                subprocess.run(args, cwd=rt, check=True, capture_output=True)
+            p = os.path.join(zd, "mod_a.py")
+            open(p, "w", encoding="utf-8").write(open(p, encoding="utf-8").read().replace("return 0", "return 1"))
+            _, err1 = reseal(["zreflect/mod_a.py"], root=rt, zdir=zd)
+            if not err1 or err1.code != "approval.receipt_required":
+                return False
+            state["approve"] = True
+            sha2, err2 = reseal(["zreflect/mod_a.py"], root=rt, zdir=zd)
+            return err2 is None and bool(sha2) and verify_problems(rt, zd) == []
+    finally:
+        approval.PINNED_APPROVER_PUB = old_pub
+        if old_url is None:
+            os.environ.pop(approval.APPROVER_URL_ENV, None)
+        else:
+            os.environ[approval.APPROVER_URL_ENV] = old_url
+        srv.shutdown()
+        srv.server_close()
+
+
 def _cases():
     return [
         ("★ seal.tamper_and_consumer_exempt", lambda: _case_tamper_and_exempt()),
@@ -477,6 +559,7 @@ def _cases():
         ("★ seal.merkle_and_missing", lambda: _case_merkle_and_missing()),
         ("★ seal.q22_builtin_gate_helper_hooks_and_reseal_guard", lambda: _case_tamper_and_q22_seal_gaps()),
         ("★ seal.core_reseal_requires_approval", lambda: _case_core_reseal_approval()),
+        ("★ seal.auto_sync_submits_and_pulls", lambda: _case_auto_sync_reseal()),
     ]
 
 

@@ -216,9 +216,9 @@
     },
     "questions/34-wire-seal-auto-sync-and-anchor-origin.md": {
       "body_sha256": "86abfe723552de6f9ec9985396475626e623e534262f7014a9bdbaedef48a7c2",
-      "settling": "none -- first deliverable: 第一交付物是 `zreflect/seal.py` 触发 `seal.core` 缺回执时自动调用 `_auto_sync_for_probs` 提单并拉取回执的会红自测用例。 ## 复跑方式 ```sh python3 zreflect/seal.py --selftest && python3 zreflect/approval.py --selftest && python3 zreflect/registry.py --run commit --all ```",
-      "sha256": "ccfc4f8c39df0769a810dc98e81daec53608835277d6f614895abd49e0eb62a6",
-      "status": "ready-for-agent"
+      "settling": "python3 zreflect/seal.py --selftest && python3 zreflect/approval.py --selftest -- rc=0 => seal.auto_sync_submits_and_pulls and approval.upstream_baseline_non_weakening pass and CI gates.yml passes --all; rc!=0 => Q34 regression ## 复跑方式 ```sh python3 zreflect/seal.py --selftest && python3 zreflect/approval.py --selftest && python3 zreflect/registry.py --run commit --all ```",
+      "sha256": "1a1eb310edfb39cddf96a6f1c9d4780cb5e7ce54f13ba1c60c5f0a57cce06db5",
+      "status": "resolved"
     }
   },
   "repo": "ArchivalEra/Einfacht",

@@ -322,11 +322,11 @@ def check_question_change(rel_path, cur_text, anchor_entry, receipt=None,
     )
 
 
-def _head_anchors(root=None):
+def _ref_anchors(ref, root=None):
     import subprocess  # noqa: PLC0415
     base = root or gate.GATE_REPO
     try:
-        r = subprocess.run(["git", "-C", base, "show", "HEAD:" + ANCHORS_FILE],
+        r = subprocess.run(["git", "-C", base, "show", ref + ":" + ANCHORS_FILE],
                            capture_output=True, text=True, timeout=5)
         if r.returncode != 0:
             return None
@@ -336,13 +336,24 @@ def _head_anchors(root=None):
         return None
 
 
+def _head_anchors(root=None):
+    return _ref_anchors("HEAD", root=root)
+
+
+def _upstream_anchors(root=None):
+    for ref in ("@{upstream}", "origin/main"):
+        data = _ref_anchors(ref, root=root)
+        if data is not None:
+            return data
+    return None
+
+
 def _is_legal_anchor_settlement(cur_entry, head_entry):
     if not head_entry or not cur_entry:
         return False
     if cur_entry.get("status") != "resolved" or cur_entry.get("body_sha256") != head_entry.get("body_sha256"):
         return False
-    prev_set, cur_set = head_entry.get("settling", ""), cur_entry.get("settling", "")
-    return cur_set == prev_set or (_is_none_like(prev_set) and not _is_none_like(cur_set))
+    return cur_entry.get("settling", "") == head_entry.get("settling", "")
 
 
 def _check_anchor_questions_diff(anchors, head, rec, qdir=None):
@@ -373,16 +384,23 @@ def _check_anchor_questions_diff(anchors, head, rec, qdir=None):
     return out
 
 
+def _check_baseline_monotone(anchors, base_anc):
+    if not base_anc or anchors.get("repo") != base_anc.get("repo"):
+        return False
+    if base_anc.get("lock_core") and not anchors.get("lock_core"):
+        return False
+    return not (set(base_anc.get("revoked_ids") or ()) - set(anchors.get("revoked_ids") or ()))
+
+
 def check_anchors_integrity(anchors, root=None, receipt=None, qdir=None):
-    """Verify `ANCHORS.json` was not weakened or tampered relative to `HEAD:ANCHORS.json`."""
+    """Verify `ANCHORS.json` was not weakened or tampered relative to `HEAD:ANCHORS.json` or upstream."""
+    up = _upstream_anchors(root)
+    if up is not None and not _check_baseline_monotone(anchors, up):
+        return [M("approval.anchors_broken")]
     head = _head_anchors(root)
     if head is None:
         return []
-    if not head or anchors.get("repo") != head.get("repo"):
-        return [M("approval.anchors_broken")]
-    if head.get("lock_core") and not anchors.get("lock_core"):
-        return [M("approval.anchors_broken")]
-    if set(head.get("revoked_ids") or ()) - set(anchors.get("revoked_ids") or ()):
+    if not _check_baseline_monotone(anchors, head):
         return [M("approval.anchors_broken")]
     pub = head.get("approver_pub") or anchors.get("approver_pub")
     rname = head.get("repo") or ""
@@ -866,6 +884,7 @@ def _cases():
         ("★ approval.anchors_rm_and_tamper_blocked", _anchors_rm_and_tamper_case),
         ("★ approval.auto_sync_submits_pulls_and_surfaces_deny", _auto_sync_and_deny_case),
         ("★ approval.qdir_env_override_and_trivial_settling_blocked", _qdir_and_trivial_case),
+        ("★ approval.upstream_baseline_non_weakening", _upstream_baseline_case),
     ]
 
 
@@ -1232,6 +1251,40 @@ def _qdir_and_trivial_case():
             rt, _ = _e2e_init_repo(tmp, "R", "https://github.com/O/R.git", pub_b64, q_none)
             probs = check_questions_against_anchor({"fake_q/01.md": q_none}, root=rt, receipt={}, qdir="fake_q")
             return [p.code for p in probs] == ["approval.anchors_broken"]
+    finally:
+        PINNED_APPROVER_PUB = old_pub
+
+
+def _upstream_baseline_case():
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: PLC0415
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat  # noqa: PLC0415
+    global PINNED_APPROVER_PUB
+    priv = Ed25519PrivateKey.generate()
+    pub_b64 = base64.b64encode(priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)).decode("ascii")
+    old_pub = PINNED_APPROVER_PUB
+    PINNED_APPROVER_PUB = pub_b64
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            q_none = "# 01: t\n\n**Status:** ready-for-agent\n\n**Settling:** none\n"
+            rt, _ = _e2e_init_repo(tmp, "R", "https://github.com/O/R.git", pub_b64, q_none)
+            anc = dict(load_anchors(rt), lock_core=True)
+            with open(os.path.join(rt, ANCHORS_FILE), "w", encoding="utf-8") as fh:
+                json.dump(anc, fh, indent=2)
+            for args in (["git", "-C", rt, "config", "user.email", "t@e.com"],
+                         ["git", "-C", rt, "config", "user.name", "T"],
+                         ["git", "-C", rt, "add", "."],
+                         ["git", "-C", rt, "commit", "-m", "init"],
+                         ["git", "-C", rt, "update-ref", "refs/remotes/origin/main", "HEAD"]):
+                subprocess.run(args, check=True, capture_output=True)
+            anc_weak = dict(anc, lock_core=False)
+            with open(os.path.join(rt, ANCHORS_FILE), "w", encoding="utf-8") as fh:
+                json.dump(anc_weak, fh, indent=2)
+            subprocess.run(["git", "-C", rt, "add", ANCHORS_FILE], check=True)
+            subprocess.run(["git", "-C", rt, "commit", "--no-verify", "-m", "weak"], check=True, capture_output=True)
+            return [p.code for p in check_anchors_integrity(anc_weak, root=rt, receipt={})] == ["approval.anchors_broken"]
     finally:
         PINNED_APPROVER_PUB = old_pub
 
