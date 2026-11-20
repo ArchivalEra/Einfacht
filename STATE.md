@@ -9,11 +9,11 @@
 
 | key | value | measured at | replay cmd |
 |---|---|---|---|
-| `core_seal` | `841b8b70d67becc8...` | 2026-11-20T17:04:52+0800 | `python3 zreflect/registry.py --verify-seal` |
-| `md_files` | **48** | 2026-11-20T17:04:52+0800 | `python3 zreflect/facts.py --count -files .md` |
-| `md_lines` | **2235** | 2026-11-20T17:04:52+0800 | `python3 zreflect/facts.py --count -md` |
-| `py_files` | **44** | 2026-11-20T17:04:52+0800 | `python3 zreflect/facts.py --count -files .py` |
-| `py_lines` | **13252** | 2026-11-20T17:04:52+0800 | `python3 zreflect/facts.py --count -lines .py` |
+| `core_seal` | `841b8b70d67becc8...` | 2026-11-20T17:14:57+0800 | `python3 zreflect/registry.py --verify-seal` |
+| `md_files` | **51** | 2026-11-20T17:14:57+0800 | `python3 zreflect/facts.py --count -files .md` |
+| `md_lines` | **2287** | 2026-11-20T17:14:57+0800 | `python3 zreflect/facts.py --count -md` |
+| `py_files` | **44** | 2026-11-20T17:14:57+0800 | `python3 zreflect/facts.py --count -files .py` |
+| `py_lines` | **13252** | 2026-11-20T17:14:57+0800 | `python3 zreflect/facts.py --count -lines .py` |
 
 5 facts.
 <!-- /AUTO:FACTS -->
