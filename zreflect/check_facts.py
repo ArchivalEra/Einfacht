@@ -19,12 +19,9 @@ _FENCE = re.compile(r"^(`{3,}|~{3,})")
 _SHAPE_PATTERNS = (
     r"\bv?\d+(?:\.\d+){1,3}(?:-[A-Za-z0-9._-]+)?\b",
     r"\b\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?)?\b",
-    r"\b\d+\s*(?:KiB|MiB|GiB|TiB|KB|MB|GB|TB|ms|us|ns|fps|Hz|kHz|MHz|GHz|[KMB])\b",
-    r"\b\d+(?:\.\d+)?%",
     r"\b(?=[0-9a-f]*[a-f])[0-9a-f]{7,64}\b",
-    r"\b(?:sha256|sha512|md5|rc|exit|pid|uid|gid|port|line|step|stage|issue|row|col|column|bytes?)\s*[=:]?\s*\d+\b",
-    r"\b(?:19|20)\d{2}\b",
-    r"(?:https?://|[A-Za-z0-9_.-]+/)[^\s)]+",
+    r"\bHTTP\s+[1-5]\d{2}\b",
+    r"https?://[^\s)]+",
 )
 
 
@@ -45,19 +42,9 @@ def _bare_min():
 
 
 def _number_lines(doc_text):
-    out, fence = [], ""
+    out = []
     for i, line in enumerate(ledger.prose_of(doc_text).splitlines(), 1):
-        s = line.lstrip()
-        if fence:
-            if s.startswith(fence):
-                fence = ""
-            continue
-        m = _FENCE.match(s)
-        if m:
-            fence = m.group(1)
-            continue
-        cleaned_line = re.sub(r"<!--.*?-->", "", line)
-        out.append((i, re.sub(r"`[^`]*`", "", cleaned_line)))
+        out.append((i, re.sub(r"<!--.*?-->", "", line)))
     return out
 
 
@@ -91,7 +78,7 @@ def _cite_problems(doc_or_nlines, f, doc_name="STATE.md"):
     nlines = _number_lines(doc_or_nlines) if isinstance(doc_or_nlines, str) else doc_or_nlines
     return [M("facts.missing_key_cite", file=doc_name, line=i, key=k)
             for i, line in nlines
-            for k in ledger.CITE_RE.findall(line) if k not in f]
+            for k in ledger.CITE_RE.findall(re.sub(r"`[^`]*`", "", line)) if k not in f]
 
 
 def _copied_fact_problems(f, nlines, bm, doc_name="STATE.md"):
@@ -108,7 +95,7 @@ def _copied_fact_problems(f, nlines, bm, doc_name="STATE.md"):
 
 def hand_written_problems(doc_text, name="STATE.md"):
     """Report non-title/non-intro prose lines in fully rendered docs (`STATE.md`/`PRINCIPLES.md`)."""
-    out, in_intro, title_seen = [], True, False
+    out, in_intro, title_seen, quote_count = [], True, False, 0
     for lineno, line in enumerate(doc_text.splitlines(), 1):
         stripped = line.strip()
         if not stripped:
@@ -116,7 +103,8 @@ def hand_written_problems(doc_text, name="STATE.md"):
         if in_intro and not title_seen and stripped.startswith("# "):
             title_seen = True
             continue
-        if in_intro and stripped.startswith(">"):
+        if in_intro and stripped.startswith(">") and quote_count < 3:
+            quote_count += 1
             continue
         in_intro = False
         out.append(M("facts.hand_written_in_state", name=name, lineno=lineno, text=stripped[:60]))
@@ -178,6 +166,7 @@ def _scan_doc_item(doc_name, argv, f, single_doc):
         nlines = _number_lines(text)
         probs += _cite_problems(nlines, f, doc_name)
         probs += _copied_fact_problems(f, nlines, _bare_min(), doc_name)
+        probs += _unaccounted_numbers(f, _bare_min(), nlines, doc_name)
     if os.path.basename(doc_name) in rendered_docs():
         probs += hand_written_problems(ledger.prose_of(text), doc_name)
     return probs, text, None
@@ -246,11 +235,15 @@ def _cases():
          lambda: [p.code for p in problems({"facts": {}}, good)] == ["facts.empty_ledger"]),
         ("★ facts.hand_written_in_state",
          lambda: [p.code for p in hand_written_problems("# T\n\n> ok\n- junk\n")]
+         == ["facts.hand_written_in_state"]
+         and [p.code for p in hand_written_problems("# T\n\n> 1\n> 2\n> 3\n> 4\n")]
          == ["facts.hand_written_in_state"]),
         ("★ facts.no_block_markers",
          lambda: [p.code for p in problems(led, "plain")] == ["facts.no_block_markers"]),
-        ("facts.fenced_and_inline_exempt",
-         lambda: problems(led, "```\n4752\n[[nope]]\n```\n`4752` `[[nope]]`\nv1.2.3\n" + ledger.render_block(led)) == []),
+        ("★ facts.inline_backtick_and_fenced_numbers_caught",
+         lambda: problems(led, "v1.2.3\n" + ledger.render_block(led)) == []
+         and [p.code for p in problems(led, "`99999`\n" + ledger.render_block(led))]
+         == ["facts.bare_number_unaccounted"]),
         ("★ facts.threshold_knob",
          lambda: [p.code for p in problems(fifty, "is 50\n" + ledger.render_block(fifty), bare_min=10)]
          == ["facts.copied_value"]),

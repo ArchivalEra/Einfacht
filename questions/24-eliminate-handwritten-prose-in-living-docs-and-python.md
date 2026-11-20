@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含超长模块 docstring/顶层 `#` 注释、`STATE.md` 塞多行 `>` 散文、`` `99999` `` 裸数、跨行撤回句与 `-20260101` 同行未溯源 SHA）
+**Settling:** `python3 zreflect/check_explain.py --selftest && python3 zreflect/check_facts.py --selftest && python3 zreflect/check_stale.py --selftest && python3 zreflect/check_retractions.py --selftest && python3 zreflect/check_explain.py && python3 zreflect/check_facts.py && python3 zreflect/check_stale.py && python3 zreflect/check_retractions.py` -- rc=0 => all living-doc and Python prose/number/SHA/retraction guards hold; rc!=0 => bypass regression
 
 ## 实测问题清单
 

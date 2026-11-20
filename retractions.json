@@ -9,7 +9,7 @@
     "id": "R-001",
     "text": "ZCODE_REFLECT_TYPO",
     "evidence": "python3 zreflect/check_retractions.py",
-    "fixed_in": "本文件（示例条目）"
+    "fixed_in": "retractions.json（R-001 示例条目）"
    },
    {
     "id": "R-002",

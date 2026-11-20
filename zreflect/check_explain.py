@@ -59,11 +59,9 @@ def _arg_count(fn):
             + (1 if a.vararg else 0) + (1 if a.kwarg else 0))
 
 
-def _comment_chars_by_fn(src, fns):
-    """Attribute stripped non-pragma `#` comments to the innermost enclosing function."""
-    counts: dict[ast.FunctionDef | ast.AsyncFunctionDef, int] = {}
-    if not fns:
-        return counts
+def _scope_comment_chars(src, scopes):
+    """Attribute stripped non-pragma `#` comments to the innermost enclosing scope or module top."""
+    counts: dict[object, int] = {"__top__": 0}
     try:
         tokens = list(tokenize.generate_tokens(io.StringIO(src).readline))
     except (tokenize.TokenError, IndentationError):
@@ -74,11 +72,12 @@ def _comment_chars_by_fn(src, fns):
         text = tok.string.lstrip("#").strip()
         if not text or text.lower().startswith(_PRAGMAS):
             continue
-        owners = [fn for fn in fns
-                  if fn.lineno <= tok.start[0] <= (fn.end_lineno or fn.lineno)]
+        owners = [s for s in scopes if s.lineno <= tok.start[0] <= (s.end_lineno or s.lineno)]
         if owners:
-            own = min(owners, key=lambda fn: (fn.end_lineno or fn.lineno) - fn.lineno)
+            own = min(owners, key=lambda s: (s.end_lineno or s.lineno) - s.lineno)
             counts[own] = counts.get(own, 0) + len(text)
+        else:
+            counts["__top__"] += len(text)
     return counts
 
 
@@ -87,32 +86,45 @@ def _budget(branches, args):
     return BASE_BUDGET + PER_BRANCH * branches + PER_ARG * args
 
 
+def _scope_reports(path, node, label, doc, cchars_val, bud, chosen):
+    out = []
+    if chosen == "strict":
+        if doc.strip():
+            out.append(M("comments.docstring_in_strict_mode",
+                         file=path, line=getattr(node, "lineno", 1), name=label))
+        if cchars_val > 0:
+            out.append(M("comments.comment_in_strict_mode",
+                         file=path, line=getattr(node, "lineno", 1), name=label))
+        return out
+    total = len(doc) + cchars_val
+    if total > bud:
+        out.append(M("comments.explain_exceeds_complexity",
+                     file=path, line=getattr(node, "lineno", 1), name=label,
+                     chars=total, budget=bud, branches=0, args=0))
+    return out
+
+
 def function_reports(path, src, chosen):
-    """Per-function violations for one source under `chosen` (`strict` | `mismatch`)."""
+    """Per-module, per-class, and per-function violations under `chosen` (`strict` | `mismatch`)."""
     try:
         tree = ast.parse(src)
     except SyntaxError:
         return []
-    fns = [n for n in ast.walk(tree)
-           if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-    cchars = _comment_chars_by_fn(src, fns)
-    out = []
-    for node in fns:
-        if node.name == "_cases" or node.name.startswith("_cases_"):
+    scopes = [n for n in ast.walk(tree)
+              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+    cchars = _scope_comment_chars(src, scopes)
+    mod_doc = ast.get_docstring(tree, clean=False) or ""
+    out = _scope_reports(path, tree, "<module>", mod_doc, cchars.get("__top__", 0), 5000, chosen)
+    for node in scopes:
+        if chosen == "mismatch" and (node.name == "_cases" or node.name.startswith("_cases_")):
             continue
         doc = ast.get_docstring(node, clean=False) or ""
-        if chosen == "strict":
-            if doc.strip():
-                out.append(M("comments.docstring_in_strict_mode",
-                             file=path, line=node.lineno, name=node.name))
+        if isinstance(node, ast.ClassDef):
+            methods = sum(1 for ch in node.body if isinstance(ch, (ast.FunctionDef, ast.AsyncFunctionDef)))
+            out += _scope_reports(path, node, node.name, doc, cchars.get(node, 0), _budget(methods, 0), chosen)
             continue
-        total = len(doc) + cchars.get(node, 0)
         br, n_args = _branch_count(node), _arg_count(node)
-        bud = _budget(br, n_args)
-        if total > bud:
-            out.append(M("comments.explain_exceeds_complexity",
-                         file=path, line=node.lineno, name=node.name,
-                         chars=total, budget=bud, branches=br, args=n_args))
+        out += _scope_reports(path, node, node.name, doc, cchars.get(node, 0), _budget(br, n_args), chosen)
     return out
 
 
@@ -226,6 +238,9 @@ def _cases():
          lambda: _suite_scope_case()),
         ("comments.cases_exempt_from_budget",
          lambda: problems([("x.py", over_cases)], "mismatch") == []),
+        ("★ comments.strict_rejects_hash_and_module_doc",
+         lambda: [p.code for p in problems([("x.py", '"""mod"""\ndef f():\n    # cmt\n    return 1\n')], "strict")]
+         == ["comments.docstring_in_strict_mode", "comments.comment_in_strict_mode"]),
     ]
 
 

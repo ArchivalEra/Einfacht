@@ -94,7 +94,7 @@ def _stale_days():
     return _stale_days_status()[0]
 
 SHA_NEAR = re.compile(r"sha|hash|commit|digest|checksum|校验|指纹", re.I)
-SHA_TOKEN = re.compile(r"(?<![0-9a-f`])([0-9a-f]{8,64})(?![0-9a-f`])")
+SHA_TOKEN = re.compile(r"(?<![0-9A-Fa-f`])([0-9A-Fa-f]{8,64})(?![0-9A-Fa-f`])")
 
 
 def _sha_facts(f):
@@ -143,18 +143,22 @@ def _sha_assertion_problems(f, docs, hist):
 
 
 def _sha_line_problems(name, lineno, line, is_living, shas, f=None):
-    """Per-line sha provenance verdict."""
-    if not is_living or not SHA_NEAR.search(line) or _is_sourced(line, f):
+    """Per-line sha provenance verdict (per-token, no whole-line exemption)."""
+    if not is_living or not SHA_NEAR.search(line):
         return []
-    toks = SHA_TOKEN.findall(line)
+    cleaned = DATED_RECORD.sub(" ", line)
+    toks = SHA_TOKEN.findall(cleaned)
     if not toks:
         return []
     if not shas:
         return [M("stale.sha_no_facts", name=name, lineno=lineno)]
+    cited = {str(value_of(f[k])).lower() for k in CITE_RE.findall(line)
+             if f and k in f and isinstance(value_of(f[k]), str)}
     return [M("stale.sha_unsourced", name=name, lineno=lineno, actual=tok[:16])
             for tok in toks
-            if not any(tok == s or s.startswith(tok) or tok.startswith(s[:len(tok)])
-                       for s in shas)]
+            if tok.lower() not in cited
+            and not any(tok.lower() == s or s.startswith(tok.lower()) or tok.lower().startswith(s[:len(tok)])
+                        for s in shas)]
 
 
 def _stale_age_problems(f, sd):
@@ -191,11 +195,12 @@ def _retired_name_problems(docs, hist, retired):
     out = []
     for name, body in sorted(docs.items()):
         for lineno, line, is_living in living_lines(body, hist):
-            if not is_living or _has_dated_record(line):
+            if not is_living:
                 continue
+            cleaned = DATED_RECORD.sub(" ", line)
             for w in retired:
                 if re.search(r"(?<![0-9A-Za-z_-])%s(?![0-9A-Za-z_.-])" % re.escape(w),
-                             line, re.I):
+                             cleaned, re.I):
                     out.append(M("stale.retired_name", name=name, lineno=lineno,
                                  entry=w))
     return out
@@ -295,8 +300,11 @@ def _cases_sha(fx):
     led_sha, led_plain, bare = fx["led_sha"], fx["led_plain"], fx["bare"]
     return [
     ("stale.sourced_history_sha",
-     lambda: problems(led_plain, {"A.md": "old sha abcdef01 (retracted, see `abc1234`)\n"})
+     lambda: problems(led_plain, {"A.md": "old sha `abc1234` (retracted)\n"})
      == []),
+    ("★ stale.dated_record_does_not_exempt_other_sha",
+     lambda: [p.code for p in problems(
+         led_sha, {"A.md": "deployed sha DEADBEEF00 -20260101\n"})] == ["stale.sha_unsourced"]),
     # (2) Reverse criterion (issue #25): a historical marker is **no longer**
     # a get-out-of-jail card
     ("★ stale.sha_no_facts·history_mark",

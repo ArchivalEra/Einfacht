@@ -205,9 +205,9 @@ def _settling_problems(name, text, chk, runner=None, verify_resolved=False, cach
     if out or st not in ("resolved", "wontfix") or not (verify_resolved or runner is not None):
         return out
     cmd = _settling_cmd(sv)
-    rc, _ = _run_cached(cmd, runner, cache)
+    rc, cmd_out = _run_cached(cmd, runner, cache)
     if rc != 0:
-        out.append(M("questions.resolved_settler_failed", name=name, rc=str(rc), cmd=cmd[:60]))
+        out.append(_settler_failed(name, cmd, rc, cmd_out))
     return out
 
 
@@ -287,6 +287,13 @@ def _verify_set(verify_resolved, files):
     return set(files) if verify_resolved else set()
 
 
+def _settler_failed(name, cmd, rc, out):
+    lines = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
+    detail = lines[-1][:120] if lines else ""
+    return M("questions.resolved_settler_failed", name=name, rc=str(rc),
+             cmd=cmd[:60], detail=detail)
+
+
 def _check_one_question(name, text, chk, runner, verify, cache, cache_lock):
     out = _status_problems(name, text) + _parallel_problems(name, text)
     if out or not verify:
@@ -297,9 +304,10 @@ def _check_one_question(name, text, chk, runner, verify, cache, cache_lock):
     pre = _check_settler_exec(name, sv, chk)
     if pre:
         return pre
-    rc, _ = _run_cached(_settling_cmd(sv), runner, cache, cache_lock)
+    cmd = _settling_cmd(sv)
+    rc, cmd_out = _run_cached(cmd, runner, cache, cache_lock)
     if rc != 0:
-        return [M("questions.resolved_settler_failed", name=name, rc=str(rc), cmd=_settling_cmd(sv)[:60])]
+        return [_settler_failed(name, cmd, rc, cmd_out)]
     return []
 
 
@@ -344,7 +352,9 @@ def _resolved_targets_to_verify(_qdir, files, _all_resolved, depth=0):
     targets = {k for k, v in files.items() if status_of(v) in ("resolved", "wontfix")}
     if depth <= 0:
         return targets
-    reentrant = ("check_questions.py", "registry.py --run", "harness.py")
+    reentrant: tuple[str, ...] = ("check_questions.py", "registry.py --run", "harness.py")
+    if depth >= 2:
+        reentrant += ("check_retractions.py",)
     return {k for k in targets if not any(tok in _settling_cmd(field(files[k], "Settling") or "") for tok in reentrant)}
 
 

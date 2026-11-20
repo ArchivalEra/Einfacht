@@ -1,46 +1,46 @@
 {
  "schema": 1,
- "generated": "2026-11-20T11:24:31+0800",
- "_why": "事实台账：每条 = 一个测出来的值 + 复跑命令 + 出处。别手改，跑 zreflect/facts.py。",
+ "generated": "2026-11-20T12:01:14+0800",
+ "_why": "facts.ledger_why",
  "facts": {
   "py_files": {
    "value": 42,
    "cmd": "python3 zreflect/facts.py --count -files .py",
    "source": "repo",
-   "measured_at": "2026-11-20T11:24:31+0800",
+   "measured_at": "2026-11-20T12:01:14+0800",
    "first_seen": "2026-11-18",
-   "note": "示例事实：换掉 measure_example()"
+   "note": "facts.note.example_fact"
   },
   "md_files": {
-   "value": 47,
+   "value": 48,
    "cmd": "python3 zreflect/facts.py --count -files .md",
    "source": "repo",
-   "measured_at": "2026-11-20T11:24:31+0800",
+   "measured_at": "2026-11-20T12:01:14+0800",
    "first_seen": "2026-11-20"
   },
   "py_lines": {
-   "value": 12037,
+   "value": 12095,
    "cmd": "python3 zreflect/facts.py --count -lines .py",
    "source": "repo",
-   "measured_at": "2026-11-20T11:24:31+0800",
+   "measured_at": "2026-11-20T12:01:14+0800",
    "first_seen": "2026-11-20",
-   "note": "刻意 ≥100，用来示范裸数字判据"
+   "note": "facts.note.bare_number_demo"
   },
   "md_lines": {
-   "value": 2194,
+   "value": 2223,
    "cmd": "python3 zreflect/facts.py --count -md",
    "source": "repo",
-   "measured_at": "2026-11-20T11:24:31+0800",
+   "measured_at": "2026-11-20T12:01:14+0800",
    "first_seen": "2026-11-20",
-   "note": "不含机器块：块就渲染在文档里，数进去会让渲染一遍值就过期"
+   "note": "facts.note.excludes_machine_block"
   },
   "core_seal": {
-   "value": "95627ceb012a6abdf06771c912e6f415ee2fbb02741e7523580352398d8b4caa",
+   "value": "f2f3f9e723f4b2428b81580871ab6a8669cad18efa0446530a6e82ad474b0ee2",
    "cmd": "python3 zreflect/registry.py --verify-seal",
    "source": "seal",
-   "measured_at": "2026-11-20T11:24:31+0800",
+   "measured_at": "2026-11-20T12:01:14+0800",
    "first_seen": "2026-11-20",
-   "note": "共享核心双层 SHA-256 Merkle 根（由 registry.py --verify-seal 复跑验证）"
+   "note": "facts.note.core_seal"
   }
  }
 }

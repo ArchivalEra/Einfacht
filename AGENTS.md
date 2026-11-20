@@ -195,7 +195,7 @@ Delivery while disabled (no fourth step):
    final output, and put the same into the commit message — then stop. The
    owner patrols sessions, reads final outputs, and replies with approval.
 3. After approval, push over the SSH alias — never the default `github.com`
-   form (both gh tokens are read-only; HTTPS push returns 403):
+   form (both gh tokens are read-only; HTTPS push returns HTTP 403):
 
    ```bash
    git push git@github-ArchivalEra:ArchivalEra/Einfacht.git HEAD:main
@@ -205,7 +205,7 @@ Delivery while disabled (no fourth step):
 
    - **Query/reconcile**: `gh api` on refs, `gh repo view`, `gh pr list` --
      the gh CLI covers the whole account-visible surface. `gh repo sync`
-     needs write access under a read-only PAT (measured: 403) -- leave it to
+     needs write access under a read-only PAT (measured: HTTP 403) -- leave it to
      write-enabled contexts.
    - **Fetch/pull**: the remote is **split** — fetch URL is HTTPS
      (`https://github.com/ArchivalEra/Einfacht.git`, read-only PAT via gh

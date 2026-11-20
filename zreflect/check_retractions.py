@@ -40,6 +40,12 @@ HIST_SECS = knobs.history_secs()
 _PLACEHOLDER_FIXED = frozenset({"tbd", "todo", "none", "n/a", "-", "?"})
 
 
+_FIXED_ANCHOR = re.compile(
+    r"(?:[0-9a-f]{7,}|#\d+|R-\d+|\.[a-z]{2,4}\b|[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*\(\))",
+    re.I,
+)
+
+
 def _entry_field_problems(retractions):
     """Required fields of every retraction entry (one missing => the ledger
     entry cannot be trusted)."""
@@ -49,6 +55,8 @@ def _entry_field_problems(retractions):
             val = str(r.get(fld) or "").strip()
             if not val or (fld == "fixed_in" and val.lower() in _PLACEHOLDER_FIXED):
                 out.append(M("retractions.entry_missing_field", field=fld, entry=r.get("id")))
+            elif fld == "fixed_in" and not _FIXED_ANCHOR.search(val):
+                out.append(M("retractions.fixed_in_needs_anchor", entry=r.get("id"), value=val[:40]))
     return out
 
 
@@ -87,20 +95,34 @@ def _norm_ws(s):
     return re.sub(r"\s+", " ", s or "").strip().lower()
 
 
+def _living_chunks(body, hist):
+    chunks, buf, start = [], [], None
+    for i, line, is_living in living_lines(body or "", hist):
+        if is_living and line.strip():
+            if start is None:
+                start = i
+            buf.append(line)
+        elif buf:
+            chunks.append((start, _norm_ws(" ".join(buf))))
+            buf, start = [], None
+    if buf:
+        chunks.append((start, _norm_ws(" ".join(buf))))
+    return chunks
+
+
 def _resurfaced_problems(retractions, docs, hist):
-    """Resurfacing: living-state lines may **not** contain retracted `text`
-    (normalized for case and whitespace; prose belongs in `HISTORY.md`).
-    """
+    """Resurfacing: living-state lines (even split across lines) may **not** contain retracted `text`."""
     out = []
+    doc_chunks = {name: _living_chunks(body, hist) for name, body in sorted(docs.items())}
     for r in retractions:
         text = r.get("text") or ""
         ntext = _norm_ws(text)
         if not ntext:
             continue
-        for name, body in sorted(docs.items()):
-            for i, line, is_living in living_lines(body or "", hist):
-                if is_living and ntext in _norm_ws(line):
-                    out.append(M("retractions.resurfaced", name=name, line=i,
+        for name, chunks in doc_chunks.items():
+            for start, norm_chunk in chunks:
+                if ntext in norm_chunk:
+                    out.append(M("retractions.resurfaced", name=name, line=start,
                                  text=text, entry=r.get("id", "?")))
     return out
 
@@ -170,7 +192,7 @@ def run(argv):
 def _cases():
     ok_r = {"retractions": [{"id": "R-1", "text": "this thing is green",
                              "evidence": "python3 zreflect/facts.py --check",
-                             "fixed_in": "doc y"}]}
+                             "fixed_in": "a.py"}]}
     doc_marked = "(record) this thing is green -- retracted, see R-1\n"
     return [
         ("\u2605 retractions.hist_mark_does_not_exempt",
@@ -192,15 +214,25 @@ def _cases():
          == ["retractions.resurfaced"]),
         ("\u2605 retractions.entry_missing_field",
          lambda: [p.code for p in problems(
-             {"retractions": [{"id": "R-2", "text": "t", "fixed_in": "f"}]},
+             {"retractions": [{"id": "R-2", "text": "t", "fixed_in": "a.py"}]},
              {"A.md": "x\n"})]
          == ["retractions.entry_missing_field", "retractions.evidence_not_runnable"]),
         ("\u2605 retractions.evidence_not_runnable",
          lambda: [p.code for p in problems(
              {"retractions": [{"id": "R-3", "text": "t",
                                "evidence": "a subagent report",
-                               "fixed_in": "f"}]}, {"A.md": "x\n"})]
+                               "fixed_in": "a.py"}]}, {"A.md": "x\n"})]
          == ["retractions.evidence_not_runnable"]),
+        ("★ retractions.fixed_in_prose_rejected",
+         lambda: [p.code for p in problems(
+             {"retractions": [{"id": "R-4", "text": "t", "evidence": "python3 a.py",
+                               "fixed_in": "somewhere later"}]},
+             {"A.md": "x\n"}, runner=lambda _c: (0, "ok"))]
+         == ["retractions.fixed_in_needs_anchor"]),
+        ("★ retractions.multiline_resurfaced",
+         lambda: [p.code for p in problems(
+             ok_r, {"A.md": "this thing\nis green.\n"}, runner=lambda _c: (0, "ok"))]
+         == ["retractions.resurfaced"]),
         ("★ retractions.no_docs",
          lambda: [p.code for p in problems(ok_r, {})] == ["retractions.no_docs"]),
         ("★ retractions.missing_key",
