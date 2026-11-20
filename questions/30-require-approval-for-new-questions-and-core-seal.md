@@ -6,9 +6,9 @@
 
 **Blocked by:** [questions/29-fix-receipt-bundle-gitignore-and-repo-id.md](29-fix-receipt-bundle-gitignore-and-repo-id.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是未锚定新悬案被 `approval.receipt_required(action='question.create')` 拦截、以及未授权 `--reseal` 非 `doc.py` 核心文件被 `seal.core` 拦截的会红自测用例。
+**Settling:** python3 zreflect/approval.py --selftest && python3 zreflect/seal.py --selftest -- rc=0 => new unanchored questions require question.create receipt and lock_core reseal requires seal.core receipt; rc!=0 => Q30 regression
 
 ## 复跑方式
 

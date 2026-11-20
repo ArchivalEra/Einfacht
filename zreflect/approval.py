@@ -282,10 +282,14 @@ def is_legal_settlement(cur_text, anchor_entry):
 
 def check_question_change(rel_path, cur_text, anchor_entry, receipt=None,
                           pub_b64=None, repo_name="", revoked_ids=(), now=None):
-    """Check one question against its anchor. Settling needs NO receipt; tampering DOES."""
-    if not anchor_entry:
-        return []
+    """Check one question against its anchor. Settling needs NO receipt; creation/tampering DOES."""
     cur_sha = sha256_text(cur_text) if cur_text is not None else "DELETED"
+    if not anchor_entry:
+        return verify_receipt(
+            receipt, repo_name=repo_name, action="question.create", target=rel_path,
+            prev_sha256="NONE", target_sha256=cur_sha,
+            pub_b64=pub_b64, revoked_ids=revoked_ids, now=now,
+        )
     if cur_sha == anchor_entry.get("sha256"):
         return []
     if is_legal_settlement(cur_text, anchor_entry):
@@ -401,6 +405,7 @@ def _build_anchors(root, pub_b64=None):
         "schema": 1,
         "repo": repo_id(root),
         "approver_pub": pub_b64,
+        "lock_core": True,
         "revoked_ids": [],
         "off_gates": off_list,
         "principles": {
@@ -420,8 +425,20 @@ def _sync_settled(root):
         return 2
     files = check_questions.collect(root=root)
     q_map = anchors.setdefault("questions", {})
+    pub = anchors.get("approver_pub")
+    rname = anchors.get("repo") or repo_id(root)
+    revoked = anchors.get("revoked_ids") or []
+    rec = load_receipt(root=root)
     for rel, text in sorted(files.items()):
         if rel not in q_map:
+            probs = verify_receipt(
+                rec, repo_name=rname, action="question.create", target=rel,
+                prev_sha256="NONE", target_sha256=sha256_text(text),
+                pub_b64=pub, revoked_ids=revoked,
+            )
+            if probs:
+                print(probs[0], file=sys.stderr)
+                return 1
             q_map[rel] = question_snapshot(text)
             continue
         if q_map[rel].get("sha256") == sha256_text(text):
@@ -446,7 +463,7 @@ def _is_controlled_path(rel):
     return norm in CONTROLLED_FILES or any(norm.startswith(p) for p in CONTROLLED_PREFIXES)
 
 
-def _classify_action(rel, text=None):
+def _classify_action(rel, text=None, prev_sha="NONE"):
     if rel == "zreflect/doc.py":
         return "seal.doc"
     if rel.startswith(("zreflect/", "reflect-hooks/")) or rel == "ruff.toml":
@@ -454,6 +471,8 @@ def _classify_action(rel, text=None):
     if rel == "PRINCIPLES.md":
         return "principles.edit"
     if rel.startswith("questions/"):
+        if prev_sha == "NONE":
+            return "question.create"
         return "question.wontfix" if _field_val(text, "Status").lower() == "wontfix" else "question.modify"
     return "gate.off"
 
@@ -509,7 +528,7 @@ def build_requests(changed_paths, root=None, repo_name=None, diff_fn=None, sha_f
         out.append({
             "repo": rname,
             "agent_id": os.environ.get("USER", "agent"),
-            "action": _classify_action(rel, text),
+            "action": _classify_action(rel, text, prev_sha=prev_sha),
             "target_path": rel,
             "prev_sha256": prev_sha,
             "target_sha256": target_sha,
@@ -609,6 +628,10 @@ def _cases():
         "id": "r-rev", "repo": "Einfacht", "action": "question.modify", "target": "q/26.md",
         "prev_sha256": anc["sha256"], "target_sha256": sha256_text(q_weak), "expires_at": future,
     })
+    create_rec = _sign_fixture(priv, {
+        "id": "r-create", "repo": "Einfacht", "action": "question.create", "target": "q/99.md",
+        "prev_sha256": "NONE", "target_sha256": sha256_text(q_open), "expires_at": future,
+    })
     pub_pem = priv.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode("ascii")
     daemon_payload = {
         "receipt_id": "rec-daemon-1", "repo": "Einfacht", "agent_id": "worker",
@@ -631,6 +654,11 @@ def _cases():
         ("★ approval.wontfix_blocked_without_receipt",
          lambda: [p.code for p in check_question_change(
              "q/26.md", q_wontfix, anc, pub_b64=pub_b64, repo_name="Einfacht", now=now)] == ["approval.receipt_required"]),
+        ("★ approval.new_question_blocked_without_receipt",
+         lambda: [p.code for p in check_question_change(
+             "q/99.md", q_open, None, pub_b64=pub_b64, repo_name="Einfacht", now=now)] == ["approval.receipt_required"]
+         and check_question_change(
+             "q/99.md", q_open, None, receipt=create_rec, pub_b64=pub_b64, repo_name="Einfacht", now=now) == []),
         ("★ approval.principles_tamper_and_disable_blocked",
          lambda: [p.code for p in check_principles_anchor(
              pr_anc, doc_py_sha="d2", principles_md_sha="p2", no_principles=True, now=now)]

@@ -1,5 +1,6 @@
 {
   "description": "Require every open question to carry a runnable two-outcome settler",
+  "init": false,
   "steps": [
     {"argv": ["{python}", "zreflect/check_questions.py"], "env": {"REFLECT_QUESTIONS": "good"}},
     {"argv": ["{python}", "zreflect/check_questions.py"], "env": {"REFLECT_QUESTIONS": "bad"}, "rc": 1, "contains": ["questions.missing_settling"]}

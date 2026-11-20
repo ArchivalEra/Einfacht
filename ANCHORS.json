@@ -191,9 +191,9 @@
     },
     "questions/30-require-approval-for-new-questions-and-core-seal.md": {
       "body_sha256": "6f1aefa9ebb9bb429c571e9a793601727a826eb3e644fe65147796f966ced29e",
-      "settling": "none -- first deliverable: 第一交付物是未锚定新悬案被 `approval.receipt_required(action='question.create')` 拦截、以及未授权 `--reseal` 非 `doc.py` 核心文件被 `seal.core` 拦截的会红自测用例。 ## 复跑方式 ```sh python3 zreflect/approval.py --selftest && python3 zreflect/seal.py --selftest && python3 zreflect/registry.py --run commit ```",
-      "sha256": "6c534163c023dccb6b01ab977ad5138353a9cd7a3ab2a75584dd42318c652968",
-      "status": "ready-for-agent"
+      "settling": "python3 zreflect/approval.py --selftest && python3 zreflect/seal.py --selftest -- rc=0 => new unanchored questions require question.create receipt and lock_core reseal requires seal.core receipt; rc!=0 => Q30 regression ## 复跑方式 ```sh python3 zreflect/approval.py --selftest && python3 zreflect/seal.py --selftest && python3 zreflect/registry.py --run commit ```",
+      "sha256": "2a14ebfa771391e4785249fbcbf414dc38fb8faf3cfdea1179d4668a50ad50c7",
+      "status": "resolved"
     },
     "questions/31-multi-passphrase-approver-and-multi-repo-e2e.md": {
       "body_sha256": "068decb56c401b43db94b7c98f56aaf80deeb1282abe1d011f0c3b228eaaf46a",

@@ -244,18 +244,46 @@ def _norm_target_names(targets, disk_targets):
     return resolved, unknown
 
 
-def _check_doc_reseal_approval(resolved, rt, zd):
-    if "zreflect/doc.py" not in resolved:
+def _check_core_target_approval(rel, rt, prev_files, anc, rec, approval):
+    prev_sha = (prev_files.get(rel) or {}).get("file_sha256", "NONE")
+    cur_sha = approval.sha256_file(os.path.join(rt, rel)) or "DELETED"
+    if prev_sha == cur_sha:
         return None
+    probs = approval.verify_receipt(
+        rec, repo_name=anc.get("repo") or approval.repo_id(rt),
+        action="seal.core", target=rel, prev_sha256=prev_sha, target_sha256=cur_sha,
+        pub_b64=anc.get("approver_pub"), revoked_ids=anc.get("revoked_ids") or [],
+    )
+    return probs[0] if probs else None
+
+
+def _check_reseal_approval(resolved, rt, zd, prev_files):
     import approval  # noqa: PLC0415
     anc = approval.load_anchors(rt)
-    if not anc:
+    if anc is None:
         return None
-    doc_probs = approval.check_principles_anchor(
-        anc, doc_py_sha=approval.sha256_file(os.path.join(zd, "doc.py")),
-        principles_md_sha=(anc.get("principles") or {}).get("principles_md_sha256"),
-        no_principles=False, receipt=approval.load_receipt())
-    return doc_probs[0] if doc_probs else None
+    if not anc:
+        return M("approval.anchors_broken")
+    rec = approval.load_receipt(root=rt)
+    if "zreflect/doc.py" in resolved:
+        doc_probs = approval.check_principles_anchor(
+            anc, doc_py_sha=approval.sha256_file(os.path.join(zd, "doc.py")),
+            principles_md_sha=(anc.get("principles") or {}).get("principles_md_sha256"),
+            no_principles=False, receipt=rec)
+        if doc_probs:
+            return doc_probs[0]
+    if not anc.get("lock_core", False):
+        return None
+    errs = [_check_core_target_approval(r, rt, prev_files, anc, rec, approval)
+            for r in resolved if r != "zreflect/doc.py"]
+    return next((e for e in errs if e is not None), None)
+
+
+def _load_prev_files(sp):
+    if not os.path.isfile(sp):
+        return {}, None
+    data, err = _load_seal(sp)
+    return ({}, err) if err else (dict(data["files"]), None)
 
 
 def reseal(targets, root=None, zdir=None, force_all=False):
@@ -266,22 +294,22 @@ def reseal(targets, root=None, zdir=None, force_all=False):
     resolved, unknown = _norm_target_names(list(targets), disk_targets)
     if unknown:
         return None, M("seal.reseal_unknown_target", file=", ".join(unknown))
-    doc_err = _check_doc_reseal_approval(resolved, rt, zd)
+    sp = seal_path(zd)
+    prev_files, err = _load_prev_files(sp)
+    if err:
+        return None, err
+    doc_err = _check_reseal_approval(resolved, rt, zd, prev_files)
     if doc_err is not None:
         return None, doc_err
-    sp = seal_path(zd)
     if os.path.isfile(sp) and list(targets) == ["ALL"] and not force_all:
         return None, M("seal.reseal_all_needs_force")
     files_map = {}
     if os.path.isfile(sp) and list(targets) != ["ALL"]:
-        data, err = _load_seal(sp)
-        if err:
-            return None, err
         untouched_probs = [p for p in verify_problems(root=rt, zdir=zd)
                            if not any(t in str(p) for t in resolved)]
         if untouched_probs:
             return None, untouched_probs[0]
-        files_map = dict(data["files"])
+        files_map = prev_files
     for rel in resolved:
         files_map[rel] = _entry_for(rt, rel)
     tree = _merkle_root(files_map)
@@ -403,12 +431,51 @@ def _case_tamper_and_q22_seal_gaps():
         return "seal.unsealed_core_file" in [x.code for x in verify_problems(rt, zd)]
 
 
+def _case_core_reseal_approval():
+    """Core reseal requires Ed25519 `seal.core` receipt when ANCHORS.json sets lock_core."""
+    import base64  # noqa: PLC0415
+    import datetime  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+
+    import approval  # noqa: PLC0415
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: PLC0415
+    priv = Ed25519PrivateKey.generate()
+    pub_b64 = base64.b64encode(priv.public_key().public_bytes_raw()).decode("ascii")
+    old_pub = approval.PINNED_APPROVER_PUB
+    approval.PINNED_APPROVER_PUB = pub_b64
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, zd = _make_seal_fixture(tmp, _base_fixture_files())
+            reseal(["ALL"], root=rt, zdir=zd)
+            prev_sha = json.loads(open(seal_path(zd), encoding="utf-8").read())["files"]["zreflect/mod_a.py"]["file_sha256"]
+            open(os.path.join(rt, "ANCHORS.json"), "w", encoding="utf-8").write(json.dumps({
+                "schema": 1, "repo": "Demo", "approver_pub": pub_b64, "lock_core": True, "revoked_ids": [],
+            }))
+            p = os.path.join(zd, "mod_a.py")
+            open(p, "w", encoding="utf-8").write(open(p, encoding="utf-8").read().replace("return 0", "return 1"))
+            _, err = reseal(["zreflect/mod_a.py"], root=rt, zdir=zd)
+            if not err or err.code != "approval.receipt_required" or err.params.get("action") != "seal.core":
+                return False
+            rec = approval._sign_fixture(priv, {
+                "id": "r-core", "repo": "Demo", "action": "seal.core", "target": "zreflect/mod_a.py",
+                "prev_sha256": prev_sha, "target_sha256": approval.sha256_file(p),
+                "expires_at": (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)).isoformat(),
+            })
+            os.makedirs(os.path.join(rt, ".git"), exist_ok=True)
+            approval._save_receipt_to_bundle(rec, os.path.join(rt, ".git", "einfacht-receipt.json"))
+            sha2, err2 = reseal(["zreflect/mod_a.py"], root=rt, zdir=zd)
+            return err2 is None and bool(sha2) and verify_problems(rt, zd) == []
+    finally:
+        approval.PINNED_APPROVER_PUB = old_pub
+
+
 def _cases():
     return [
         ("★ seal.tamper_and_consumer_exempt", lambda: _case_tamper_and_exempt()),
         ("★ seal.reseal_and_unsealed_module", lambda: _case_reseal_and_unsealed()),
         ("★ seal.merkle_and_missing", lambda: _case_merkle_and_missing()),
         ("★ seal.q22_builtin_gate_helper_hooks_and_reseal_guard", lambda: _case_tamper_and_q22_seal_gaps()),
+        ("★ seal.core_reseal_requires_approval", lambda: _case_core_reseal_approval()),
     ]
 
 
