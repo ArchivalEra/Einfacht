@@ -299,13 +299,16 @@ def check_question_change(rel_path, cur_text, anchor_entry, receipt=None,
     )
 
 
-def check_questions_against_anchor(files, root=None, receipt=None):
+def check_questions_against_anchor(files, root=None, receipt=None, qdir=None):
     anchors = load_anchors(root)
     if anchors is None:
         return []
     if not anchors:
         return [M("approval.anchors_broken")]
     q_map = anchors.get("questions") or {}
+    if qdir:
+        prefix = qdir.rstrip("/") + "/"
+        q_map = {k: v for k, v in q_map.items() if k.startswith(prefix)}
     pub = anchors.get("approver_pub")
     rname = anchors.get("repo") or repo_id(root)
     revoked = anchors.get("revoked_ids") or []

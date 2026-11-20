@@ -157,7 +157,7 @@ def _copy_payload(example_dir, target):
 
 def _environment(target, manifest, step):
     env = {key: value for key, value in os.environ.items()
-           if not key.startswith("REFLECT_")}
+           if not key.startswith(("REFLECT_", "EINFACHT_"))}
     env["GATE_REPO"] = target
     env["PYTHONPATH"] = os.path.join(target, "zreflect")
     env["PYTHONDONTWRITEBYTECODE"] = "1"

@@ -391,7 +391,7 @@ def run(argv):
     import approval  # noqa: PLC0415
     targets = _resolved_targets_to_verify(qdir, files, all_res, depth=depth)
     probs = gate.with_run_cache(lambda: problems(files, verify_resolved=targets))
-    probs += approval.check_questions_against_anchor(files)
+    probs += approval.check_questions_against_anchor(files, qdir=qdir)
     n_open = sum(1 for t in files.values() if not is_resolved(t))
     return finish(M("questions.title"), probs,
                   M("questions.ok", count=len(files), open=n_open))
