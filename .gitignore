@@ -8,6 +8,7 @@
 # ---- tracked top-level files ----
 !/.gitignore
 !/AGENTS.md
+!/ANCHORS.json
 !/FACTS.json
 !/LICENSE
 !/PRINCIPLES.md

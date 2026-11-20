@@ -7,9 +7,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是 `zreflect/approval.py --selftest`、`zreflect/facts.py --selftest` 中覆盖多文件回执包不覆盖、`.git/einfacht-receipt.json` 自动回退读取、`--init` 生成 `ANCHORS.json` 与 remote 仓库名消歧的会红验收用例。
+**Settling:** python3 zreflect/approval.py --selftest && python3 zreflect/facts.py --selftest && python3 zreflect/examples.py quickstart -- rc=0 => receipt bundle/fallback, ANCHORS.json init/whitelist, and remote repo_id hold; rc!=0 => Q29 regression
 
 ## 复跑方式
 

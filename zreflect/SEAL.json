@@ -7,7 +7,7 @@
    "file_sha256": "803da73ceae59051f76b4f14a89b76962af42f799ab3c8feee95cfb7b8262cdc"
   },
   "zreflect/approval.py": {
-   "file_sha256": "ebbb0f06d169eba012ede2f6d0f5d301327b948e88c2c115a36a959293a0662e"
+   "file_sha256": "f9237cd13098277ec640c3680d7bb116669a1f98214cc4622d840faeb51cd04b"
   },
   "zreflect/check_ab.py": {
    "file_sha256": "d7b43177f5621d7697fc649233d2083aafae26841ecc7ce6858c4762b8578fd9"
@@ -73,7 +73,7 @@
    "file_sha256": "e2604b9debfae487a0d497f703f70daa76ea7a116df67c3ed4bf9dc1ce21c611"
   },
   "zreflect/facts.py": {
-   "file_sha256": "5148b0fae93529b88d4a5040daae6e06b99c67f2a1c53639ccdce507f39a032c"
+   "file_sha256": "5d4cef314725f2b8eb646ad8fd72ee967af45653312ac48d799f76d879900d73"
   },
   "zreflect/gate.py": {
    "file_sha256": "ade054de46223b5d2d7c67f6bb8d001bbb47bd73ed38edaca25062b09a3654dd"
@@ -110,5 +110,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "841b8b70d67becc8223c85c0de840f2714cebaac5bd6d8ee72f97ad4bdac6e93"
+ "tree_sha256": "d5adeec9f5365fc9d84d6bd955fb6a510fb2c1bb75b559b1d1e755591dd7e351"
 }

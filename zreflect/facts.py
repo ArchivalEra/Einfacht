@@ -695,6 +695,9 @@ def cmd_init(argv):
             and write_doc(doc.PRINCIPLES, {"schema": 1, "facts": {}}) != 0):
         return 2
     _init_questions_dir(root)
+    import approval  # noqa: PLC0415
+    if approval.init_anchors(root) == 0:
+        print(str(M("facts.init_created", name=approval.ANCHORS_FILE)))
     if created:
         print(str(M("facts.init_next")))
     return 0

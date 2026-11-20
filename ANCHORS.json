@@ -182,9 +182,27 @@
       "settling": "python3 zreflect/impact.py --selftest && python3 zreflect/registry.py --selftest && python3 zreflect/harness.py --selftest -- rc=0 => pure mechanical affected-gate planner, registry --affected, harness --affected and cross-gate run cache pass; rc!=0 => impact regression ## 设计约束（`codebase-design`） 1. **单一深模块与小接口（Deep Module / Small Interface）**： - **Module**：`zreflect/impact.py`（需要同时在 `zreflect/registry.py` 的 `MODULE = ...` 登记），把 AST 反向依赖构图、knob→路径映射、保守退化判定全藏在实现内部。 - **Interface**：只暴露极简纯函数入口（如 `affected_plan(changed_paths, phase_gates, zdir=..., knobs=...) -> dict`），**接收依赖、返回结果、不产生副作用**；CLI/hook 适配器在 `registry._main_run` 与 `harness.py` 的接缝（seam）处把 `git status`/`git diff` 注入进去，测试可直接注入 `changed_paths` 列表实现零 IO 单测。 2. **非自愿式、纯机械筛选（无人工白/黑名单逃逸口）**： - 不提供“手动指定跳过某闸门”或“手动声明某文件安全”的开关；筛选结果完全由以下三项机械推导： - **静态 AST import 图**：扫描 `zreflect/*.py` 的 `import` / `from ... import ...`（含传递依赖），计算每个 `.py` 文件的反向波及闸门集；改 `gate.py`/`i18n.py`/`knobs.py`/`doc.py`/`seal.py`/`registry.py` 等公共底座时自动扇出到全部依赖闸门。 - **闸门声明与 `knobs` 路径映射**：从 `GATE = meta(knobs=...)` 与 `knobs.REGISTRY` / `knobs.json` 推导每个闸门读取的输入面（`REFLECT_DOCS`、`REFLECT_QUESTIONS`、`REFLECT_RETRACTIONS`、`REFLECT_READMES`、`REFLECT_LANGS`、`ruff.toml`、`secrets.json`、`examples/*` 等）。 - **保守闭环退化（Fail-closed）**：修改 `knobs.json`、`SEAL.json`、`reflect-hooks/*`、`.github/*`、未知根目录文件或 `git` 不可用时，机械标记 `full_fallback=True` 并选中全部可运行闸门，绝不静默漏跑。 3. **接入接缝与可观测输出**： - `zreflect/registry.py` `--run <phase>` 默认启用机械 `--affected` 筛选（`--all` 才跑全量，取代初版显式 `--affected` 开关），`zreflect/harness.py --affected` 在同一个接缝调用 `impact`，并在输出中明确打印选中原因（命中闸门数 / 总闸门数，或 `full_fallback` 原因），杜绝把局部验证伪装成全量通过。 - `zreflect/check_facts_replay.py` 与 `zreflect/check_questions.py` 在单次 `registry --run` 生命周期内可共享纯只读子进程命令结果缓存，避免同一检查命令在原则与悬案之间重复冷启动。 ## 复跑方式 ```sh python3 zreflect/impact.py --selftest && python3 zreflect/registry.py --selftest && python3 zreflect/harness.py ```",
       "sha256": "86fb81148b5e9f560d770269ac2261b2574cf55351fff052991eb7bc18645614",
       "status": "resolved"
+    },
+    "questions/29-fix-receipt-bundle-gitignore-and-repo-id.md": {
+      "body_sha256": "c35af580ec5f78211f0655a18cf4eb29e507f068285f6c1b14b18fdba7b83b47",
+      "settling": "python3 zreflect/approval.py --selftest && python3 zreflect/facts.py --selftest && python3 zreflect/examples.py quickstart -- rc=0 => receipt bundle/fallback, ANCHORS.json init/whitelist, and remote repo_id hold; rc!=0 => Q29 regression ## 复跑方式 ```sh python3 zreflect/approval.py --selftest && python3 zreflect/facts.py --selftest && python3 zreflect/registry.py --run commit ```",
+      "sha256": "ea879a5d9ec984b2b1889e816612c929df2970d4336509ec5905ead8f5a9a6ad",
+      "status": "resolved"
+    },
+    "questions/30-require-approval-for-new-questions-and-core-seal.md": {
+      "body_sha256": "6f1aefa9ebb9bb429c571e9a793601727a826eb3e644fe65147796f966ced29e",
+      "settling": "none -- first deliverable: 第一交付物是未锚定新悬案被 `approval.receipt_required(action='question.create')` 拦截、以及未授权 `--reseal` 非 `doc.py` 核心文件被 `seal.core` 拦截的会红自测用例。 ## 复跑方式 ```sh python3 zreflect/approval.py --selftest && python3 zreflect/seal.py --selftest && python3 zreflect/registry.py --run commit ```",
+      "sha256": "6c534163c023dccb6b01ab977ad5138353a9cd7a3ab2a75584dd42318c652968",
+      "status": "ready-for-agent"
+    },
+    "questions/31-multi-passphrase-approver-and-multi-repo-e2e.md": {
+      "body_sha256": "068decb56c401b43db94b7c98f56aaf80deeb1282abe1d011f0c3b228eaaf46a",
+      "settling": "none -- first deliverable: 第一交付物是双仓多口令端到端测试脚本/自测（覆盖 `RepoA` 与 `RepoB` 并发提单、回执隔离、多口令鉴权与 `decided_by` 留痕）。 ## 复跑方式 ```sh python3 zreflect/approval.py --selftest && python3 zreflect/registry.py --run commit ```",
+      "sha256": "179d26d9f556b1911980a0dbfb55ca1e2dd42def53bdd1e9233784865bf9f484",
+      "status": "ready-for-agent"
     }
   },
-  "repo": "Einfacht",
+  "repo": "ArchivalEra/Einfacht",
   "revoked_ids": [],
   "schema": 1
 }

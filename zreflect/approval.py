@@ -138,12 +138,31 @@ def _verify_sig(payload, sig_b64, pub_key):
         return False, "signature_invalid"
 
 
+def _select_receipt(receipt, *, action, target, target_sha256):
+    if isinstance(receipt, dict) and isinstance(receipt.get("receipts"), list):
+        items = receipt["receipts"]
+    elif isinstance(receipt, list):
+        items = receipt
+    else:
+        return receipt
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        body = _receipt_body(item)
+        if (body.get("action") == action
+                and (body.get("target") or body.get("target_path")) == target
+                and body.get("target_sha256") == target_sha256):
+            return item
+    return items[0] if len(items) == 1 else None
+
+
 def verify_receipt(receipt, *, repo_name, action, target, prev_sha256, target_sha256,
                    pub_b64, revoked_ids=(), now=None):
     """Verify an Ed25519 approval receipt offline. Returns list of `Message` (empty = valid)."""
-    if not isinstance(receipt, dict) or not pub_b64:
+    picked = _select_receipt(receipt, action=action, target=target, target_sha256=target_sha256)
+    if not isinstance(picked, dict) or not pub_b64:
         return [M("approval.receipt_required", action=action, target=target)]
-    body = _receipt_body(receipt)
+    body = _receipt_body(picked)
     rec_id = str(body.get("id") or body.get("receipt_id") or "")
     deleg_id = str(body.get("delegation_id") or "")
     rev = set(revoked_ids)
@@ -160,7 +179,7 @@ def verify_receipt(receipt, *, repo_name, action, target, prev_sha256, target_sh
     if (body.get("prev_sha256") != prev_sha256
             or body.get("target_sha256") != target_sha256):
         return [M("approval.hash_mismatch", target=target)]
-    ok, err = _verify_sig(canonical_payload(receipt), str(receipt.get("sig") or ""), pub_b64)
+    ok, err = _verify_sig(canonical_payload(picked), str(picked.get("sig") or ""), pub_b64)
     if not ok:
         if err == "crypto_unavailable":
             return [M("approval.crypto_unavailable", target=target)]
@@ -168,15 +187,60 @@ def verify_receipt(receipt, *, repo_name, action, target, prev_sha256, target_sh
     return []
 
 
-def load_receipt(path=None):
+def load_receipt(path=None, root=None):
+    base = root or gate.GATE_REPO
     p = path or os.environ.get(RECEIPT_ENV)
     if not p or not os.path.isfile(p):
+        fallback = os.path.join(base, ".git", "einfacht-receipt.json")
+        p = fallback if os.path.isfile(fallback) else None
+    if not p:
         return None
     try:
         data = json.load(open(p, encoding="utf-8"))
-        return data if isinstance(data, dict) else None
+        return data if isinstance(data, (dict, list)) else None
     except (OSError, ValueError):
         return None
+
+
+def _save_receipt_to_bundle(receipt, out_path):
+    items = []
+    if os.path.isfile(out_path):
+        try:
+            old = json.load(open(out_path, encoding="utf-8"))
+            if isinstance(old, dict) and isinstance(old.get("receipts"), list):
+                items = [x for x in old["receipts"] if isinstance(x, dict)]
+            elif isinstance(old, dict) and ("sig" in old or "payload" in old):
+                items = [old]
+        except (OSError, ValueError):
+            items = []
+    nb = _receipt_body(receipt)
+    nkey = (nb.get("repo"), nb.get("action"), nb.get("target") or nb.get("target_path"))
+    kept = [x for x in items if (
+        _receipt_body(x).get("repo"), _receipt_body(x).get("action"),
+        _receipt_body(x).get("target") or _receipt_body(x).get("target_path"),
+    ) != nkey]
+    kept.append(receipt)
+    with open(out_path, "w", encoding="utf-8") as fh:
+        json.dump({"receipts": kept}, fh, indent=2)
+
+
+def repo_id(root=None):
+    """Canonical repo identifier: `owner/repo` from git remote `origin` when available, else dir basename."""
+    import subprocess  # noqa: PLC0415
+    base = os.path.abspath(root or gate.GATE_REPO)
+    try:
+        r = subprocess.run(["git", "-C", base, "remote", "get-url", "origin"],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            url = r.stdout.strip().rstrip("/")
+            if url.endswith(".git"):
+                url = url[:-4]
+            parts = [p for p in re.split(r"[:/]", url) if p]
+            if len(parts) >= 2:
+                return f"{parts[-2]}/{parts[-1]}"
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return os.path.basename(base)
 
 
 def load_anchors(root=None):
@@ -243,9 +307,9 @@ def check_questions_against_anchor(files, root=None, receipt=None):
         return [M("approval.anchors_broken")]
     q_map = anchors.get("questions") or {}
     pub = anchors.get("approver_pub")
-    rname = anchors.get("repo") or os.path.basename(os.path.abspath(root or gate.GATE_REPO))
+    rname = anchors.get("repo") or repo_id(root)
     revoked = anchors.get("revoked_ids") or []
-    rec = receipt if receipt is not None else load_receipt()
+    rec = receipt if receipt is not None else load_receipt(root=root)
     out = []
     for rel in sorted(set(q_map) | set(files)):
         out += check_question_change(
@@ -291,7 +355,7 @@ def check_principles_repo(root=None, receipt=None):
         return []
     if not anchors:
         return [M("approval.anchors_broken")]
-    rec = receipt if receipt is not None else load_receipt()
+    rec = receipt if receipt is not None else load_receipt(root=base)
     return check_principles_anchor(
         anchors,
         doc_py_sha=sha256_file(os.path.join(gate.zdir(), "doc.py")),
@@ -312,9 +376,9 @@ def check_off_gates_anchor(off_list, root=None, receipt=None, now=None):
     extra = sorted(os.path.basename(f) for f in off_list if os.path.basename(f) not in allowed)
     if not extra:
         return []
-    rec = receipt if receipt is not None else load_receipt()
+    rec = receipt if receipt is not None else load_receipt(root=base)
     pub = anchors.get("approver_pub")
-    rname = anchors.get("repo") or os.path.basename(os.path.abspath(base))
+    rname = anchors.get("repo") or repo_id(base)
     revoked = anchors.get("revoked_ids") or []
     out = []
     for name in extra:
@@ -332,7 +396,7 @@ def _build_anchors(root, pub_b64=None):
     off_list = sorted(x.strip() for x in (knobs.get("REFLECT_OFF_GATES") or "").split(",") if x.strip())
     return {
         "schema": 1,
-        "repo": os.path.basename(os.path.abspath(root)),
+        "repo": repo_id(root),
         "approver_pub": pub_b64,
         "revoked_ids": [],
         "off_gates": off_list,
@@ -409,10 +473,22 @@ def _git_prev_sha_and_diff(root, rel):
     return prev_sha, diff_txt
 
 
+def init_anchors(root=None):
+    base = root or gate.GATE_REPO
+    p = os.path.join(base, ANCHORS_FILE)
+    if os.path.isfile(p):
+        return 1
+    with open(p, "w", encoding="utf-8") as fh:
+        json.dump(_build_anchors(base, pub_b64=pinned_approver_pub()), fh,
+                  indent=2, ensure_ascii=False, sort_keys=True)
+        fh.write("\n")
+    return 0
+
+
 def build_requests(changed_paths, root=None, repo_name=None, diff_fn=None, sha_fn=None):
     """Build purely mechanical controlled-scope approval request payloads (zero agent-authored prose)."""
     base = root or gate.GATE_REPO
-    rname = repo_name or os.path.basename(os.path.abspath(base))
+    rname = repo_name or repo_id(base)
     out = []
     for raw in sorted(set(changed_paths or ())):
         rel = _norm_rel(raw)
@@ -479,8 +555,7 @@ def _post_one_request(url, payload, wait):
         return False
     if resp.get("receipt"):
         out_path = os.environ.get(RECEIPT_ENV) or os.path.join(gate.GATE_REPO, ".git", "einfacht-receipt.json")
-        with open(out_path, "w", encoding="utf-8") as fh:
-            json.dump(resp["receipt"], fh, indent=2)
+        _save_receipt_to_bundle(resp["receipt"], out_path)
     return True
 
 
@@ -581,8 +656,28 @@ def _cases():
          == ["questions/26.md", "zreflect/doc.py"]
          and "reason" not in build_requests(
              ["zreflect/doc.py"], root=".", repo_name="Einfacht",
-             diff_fn=lambda _r, _p: ("p1", "+diff"), sha_fn=lambda _p: "t1")[0]),
+             diff_fn=lambda _r, _p: ("p1", "+diff"), sha_fn=lambda _p: "t1")[0]
+         and verify_receipt(
+             {"receipts": [daemon_rec, valid_rec]},
+             repo_name="Einfacht", action="question.modify", target="q/26.md",
+             prev_sha256=anc["sha256"], target_sha256=sha256_text(q_weak),
+             pub_b64=pub_pem, now=now) == []
+         and _bundle_fallback_case(daemon_rec)),
     ]
+
+
+def _bundle_fallback_case(rec):
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    d = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(d, ".git"))
+        p = os.path.join(d, ".git", "einfacht-receipt.json")
+        _save_receipt_to_bundle(rec, p)
+        loaded = load_receipt(root=d)
+        return isinstance(loaded, dict) and len(loaded.get("receipts") or []) == 1
+    finally:
+        shutil.rmtree(d, True)
 
 
 def main(argv):
@@ -596,14 +691,9 @@ def main(argv):
     if "--sync-settled" in argv:
         return _sync_settled(gate.GATE_REPO)
     if "--init-anchors" in argv:
-        p = os.path.join(gate.GATE_REPO, ANCHORS_FILE)
-        if os.path.isfile(p):
+        if init_anchors(gate.GATE_REPO) != 0:
             print(M("approval.anchors_exist", path=ANCHORS_FILE), file=sys.stderr)
             return 2
-        with open(p, "w", encoding="utf-8") as fh:
-            json.dump(_build_anchors(gate.GATE_REPO, pub_b64=pinned_approver_pub()), fh,
-                      indent=2, ensure_ascii=False, sort_keys=True)
-            fh.write("\n")
         print(M("approval.anchors_initialized", path=ANCHORS_FILE))
         return 0
     return 0
