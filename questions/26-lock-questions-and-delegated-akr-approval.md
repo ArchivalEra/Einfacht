@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含干活 Agent 私改既有悬案 `Settling:` / 问题正文或标 `wontfix` 且无有效审批回执被拦截、私改/删除 `PRINCIPLES.md` 或 `zreflect/doc.py` `RULES` 或设 `REFLECT_NO_PRINCIPLES=1` 且无审批回执被拒、无审批对 `zreflect/doc.py` 执行 `--reseal` 被拒、可插拔闸门无审批回执 `OFF:` 被拒、篡改已批文件内容导致 `target_sha256` 不符被拒、合法 Ed25519 回执验签通过且锚定更新后 CI 重跑稳定通过）
+**Settling:** python3 zreflect/approval.py --selftest && python3 zreflect/check_questions.py && python3 zreflect/check_facts.py && python3 zreflect/check_facts_replay.py && python3 zreflect/registry.py --verify-seal -- rc=0 => offline Ed25519 approval verifier, question/PRINCIPLES tamper anchors, and receipt-free forced-execution settling hold; rc!=0 => approval/anchor regression
 
 ## 实测问题清单
 

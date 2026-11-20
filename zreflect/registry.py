@@ -325,7 +325,9 @@ def _off_policy_error(off_list):
     undeclared_off = [f for f in off_list if os.path.basename(f) not in declared_off]
     if undeclared_off:
         return M("registry.pluggable_off_undeclared", files=", ".join(undeclared_off))
-    return None
+    import approval  # noqa: PLC0415
+    anc_probs = approval.check_off_gates_anchor(off_list)
+    return anc_probs[0] if anc_probs else None
 
 
 def _select_affected(gs, argv):

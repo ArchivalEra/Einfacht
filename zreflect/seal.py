@@ -244,6 +244,20 @@ def _norm_target_names(targets, disk_targets):
     return resolved, unknown
 
 
+def _check_doc_reseal_approval(resolved, rt, zd):
+    if "zreflect/doc.py" not in resolved:
+        return None
+    import approval  # noqa: PLC0415
+    anc = approval.load_anchors(rt)
+    if not anc:
+        return None
+    doc_probs = approval.check_principles_anchor(
+        anc, doc_py_sha=approval.sha256_file(os.path.join(zd, "doc.py")),
+        principles_md_sha=(anc.get("principles") or {}).get("principles_md_sha256"),
+        no_principles=False, receipt=approval.load_receipt())
+    return doc_probs[0] if doc_probs else None
+
+
 def reseal(targets, root=None, zdir=None, force_all=False):
     """Update `SEAL.json` for nominated files. Returns `(tree_sha256, error_msg)`."""
     zd = zdir or gate.zdir()
@@ -252,6 +266,9 @@ def reseal(targets, root=None, zdir=None, force_all=False):
     resolved, unknown = _norm_target_names(list(targets), disk_targets)
     if unknown:
         return None, M("seal.reseal_unknown_target", file=", ".join(unknown))
+    doc_err = _check_doc_reseal_approval(resolved, rt, zd)
+    if doc_err is not None:
+        return None, doc_err
     sp = seal_path(zd)
     if os.path.isfile(sp) and list(targets) == ["ALL"] and not force_all:
         return None, M("seal.reseal_all_needs_force")
