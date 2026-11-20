@@ -7,7 +7,7 @@
    "file_sha256": "803da73ceae59051f76b4f14a89b76962af42f799ab3c8feee95cfb7b8262cdc"
   },
   "zreflect/approval.py": {
-   "file_sha256": "3fd8e3dc729e786bfe0dbb1c120212b08129ee5f3db82117e953836d0ccc0dc8"
+   "file_sha256": "5e1b8f292b40e63559df805c9edebf207825ad43f6d18fed2fd398010a66a366"
   },
   "zreflect/check_ab.py": {
    "file_sha256": "d7b43177f5621d7697fc649233d2083aafae26841ecc7ce6858c4762b8578fd9"
@@ -110,5 +110,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "8063e245dd6845e930404ca8fd9aea21ce80e04a29672d28f756a0c5808c8409"
+ "tree_sha256": "4def292c83a692d648dde8fe50e7569c336b2c43f6416d91885601628dac6331"
 }

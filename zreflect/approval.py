@@ -349,8 +349,12 @@ def _sync_settled(root):
     return 0
 
 
+def _norm_rel(raw):
+    return str(raw or "").replace("\\", "/").lstrip("./")
+
+
 def _is_controlled_path(rel):
-    norm = str(rel or "").replace("\\", "/").lstrip("./")
+    norm = _norm_rel(rel)
     return norm in CONTROLLED_FILES or any(norm.startswith(p) for p in CONTROLLED_PREFIXES)
 
 
@@ -390,7 +394,7 @@ def build_requests(changed_paths, root=None, repo_name=None, diff_fn=None, sha_f
     rname = repo_name or os.path.basename(os.path.abspath(base))
     out = []
     for raw in sorted(set(changed_paths or ())):
-        rel = str(raw or "").replace("\\", "/").lstrip("./")
+        rel = _norm_rel(raw)
         if not _is_controlled_path(rel):
             continue
         full = os.path.join(base, rel)
@@ -415,26 +419,24 @@ def build_requests(changed_paths, root=None, repo_name=None, diff_fn=None, sha_f
     return out
 
 
-def _next_ticket_id(base, repo_name):
-    state_path = os.path.join(base, ".git", "einfacht-ticket-seq.json")
-    seq = 0
-    if os.path.isfile(state_path):
+def _poll_request(url, resp):
+    import time as _time  # noqa: PLC0415
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    deadline = _time.time() + 300
+    while _time.time() < deadline:
+        _time.sleep(3)
         try:
-            seq = int(json.load(open(state_path, encoding="utf-8")).get("seq", 0))
-        except (OSError, ValueError, TypeError):
-            seq = 0
-    seq += 1
-    if os.path.isdir(os.path.join(base, ".git")):
-        try:
-            with open(state_path, "w", encoding="utf-8") as fh:
-                json.dump({"repo": repo_name, "seq": seq}, fh)
-        except OSError:
-            pass
-    return f"{repo_name}#{seq}"
+            polled = json.loads(urllib.request.urlopen(f"{url}/requests/{resp['id']}", timeout=10).read().decode("utf-8"))
+        except (urllib.error.URLError, OSError, ValueError):
+            continue
+        if polled.get("status") != "pending":
+            return polled
+    return resp
 
 
 def _post_one_request(url, payload, wait):
-    import time as _time  # noqa: PLC0415
     import urllib.error  # noqa: PLC0415
     import urllib.request  # noqa: PLC0415
 
@@ -445,23 +447,14 @@ def _post_one_request(url, payload, wait):
     except (urllib.error.URLError, OSError, ValueError) as exc:
         print(M("approval.receipt_required", action=payload["action"], target=payload["target_path"]) + f" ({exc})", file=sys.stderr)
         return False
-    if resp.get("status") == "rejected_duplicate_2m":
-        print(M("approval.request_rejected_duplicate", target=payload["target_path"]), file=sys.stderr)
-        return False
     label = resp.get("display_id") or resp.get("id", "")
     print(M("approval.request_submitted", id=label, status=resp.get("status", ""),
             action=payload["action"], target=payload["target_path"], url=url))
     if wait and resp.get("status") == "pending":
-        deadline = _time.time() + 300
-        while _time.time() < deadline:
-            _time.sleep(3)
-            polled = json.loads(urllib.request.urlopen(f"{url}/requests/{resp['id']}", timeout=10).read().decode("utf-8"))
-            if polled.get("status") != "pending":
-                resp = polled
-                break
-    if resp.get("status") == "denied":
-        print(M("approval.receipt_required", action=payload["action"], target=payload["target_path"])
-              + (f" ({resp.get('deny_reason')})" if resp.get("deny_reason") else ""), file=sys.stderr)
+        resp = _poll_request(url, resp)
+    if resp.get("status") == "denied" or (wait and resp.get("status") == "pending"):
+        extra = f" ({resp.get('deny_reason') or resp.get('status')})"
+        print(M("approval.receipt_required", action=payload["action"], target=payload["target_path"]) + extra, file=sys.stderr)
         return False
     if resp.get("receipt"):
         out_path = os.environ.get(RECEIPT_ENV) or os.path.join(gate.GATE_REPO, ".git", "einfacht-receipt.json")
@@ -476,8 +469,6 @@ def _submit_all(argv):
     if not reqs:
         print(M("approval.no_controlled_changes"))
         return 0
-    for p in reqs:
-        p["display_id"] = _next_ticket_id(gate.GATE_REPO, p["repo"])
     url = (os.environ.get(APPROVER_URL_ENV) or DEFAULT_APPROVER_URL).rstrip("/")
     wait = "--wait" in argv
     return 0 if all(_post_one_request(url, p, wait) for p in reqs) else 2
