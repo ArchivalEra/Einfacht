@@ -1,4 +1,6 @@
 {
   "REFLECT_DOCS": "STATE.md,AGENTS.md,PRINCIPLES.md,README.md,README.zh.md,README.de.md",
+  "REFLECT_MEASURE_MODULE": "measure_example",
+  "REFLECT_OFF_GATES": "check_ab.py,check_instruments.py,check_invariants.py,check_locks.py,check_pins.py,check_world.py,doctor.py",
   "REFLECT_READMES": "README.md,README.zh.md,README.de.md"
 }

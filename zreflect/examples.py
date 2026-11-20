@@ -302,7 +302,7 @@ def _run_all(root):
         else:
             print(M("examples.pass", example=name))
     print(M("examples.summary", count=len(manifests), failed=failed, skipped=skipped))
-    return 1 if failed else 0
+    return 1 if (failed or skipped) else 0
 
 
 def _take_root(argv):

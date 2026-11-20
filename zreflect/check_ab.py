@@ -111,12 +111,13 @@ def _pair_problems(pr, root, loader):
         # raise KeyError -- the missing field is itself what this round
         # reports; do not let it become a crash).
         return problems, skips
+    if pr.get("optional"):
+        problems.append(M("gate.optional_forbidden", name=pr["name"]))
     key = pr.get("key") or ""
     ra, ea = loader(gate.repo_path(pr["a"], root))
     rb, eb = loader(gate.repo_path(pr["b"], root))
     if ra is None or rb is None:
-        target = skips if pr.get("optional") else problems
-        target.append(M("ab.artifact_unreadable", name=pr["name"],
+        problems.append(M("ab.artifact_unreadable", name=pr["name"],
                         error_a=ea or "", error_b=eb or ""))
         return problems, skips
     da, db = _declared(ra, key), _declared(rb, key)
@@ -191,10 +192,10 @@ def _cases():
          lambda: [p.code for p in check(
              {"pairs": [{"name": "x", "a": "nope-a.json", "b": "nope-b.json",
                          }]}, d)[0]] == ["ab.artifact_unreadable"]),
-        ("★ ab.artifact_unreadable_optional_skips",
-         lambda: [p.code for p in check(
+        ("★ ab.optional_forbidden",
+         lambda: "gate.optional_forbidden" in [p.code for p in check(
              {"pairs": [{"name": "x", "a": "nope-a.json", "b": "nope-b.json",
-                         "optional": True}]}, d)[1]] == ["ab.artifact_unreadable"]),
+                         "optional": True}]}, d)[0]]),
         ("★ ab.not_a_dict",
          lambda: [p.code for p in check(
              {"pairs": [{"name": "x", "a": "nokey.json", "b": "nokey.json",

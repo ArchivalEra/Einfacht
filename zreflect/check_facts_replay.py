@@ -146,7 +146,7 @@ def run(argv):
         return off(M("replay.off"))
     seconds, bad_timeout = timeout_with_status()
     if bad_timeout is not None:
-        print("WARN: %s" % M("replay.bad_timeout", value=bad_timeout, default=seconds), file=sys.stderr)
+        return fatal(M("replay.bad_timeout", value=bad_timeout, default=seconds))
     name = knobs.get("REFLECT_FACTS")
     p = repo(name)
     if not os.path.exists(p):
@@ -209,7 +209,23 @@ def _cases():
         ("★ replay.calibrate_mismatch",
          lambda: [p.code for p in replay_all(cal, runner=lambda c: (0, "ok") if c == "c1" else (0, "bad"))["problems"]]
          == ["replay.calibrate_mismatch"]),
+        ("★ replay.bad_timeout_fatals", lambda: _bad_timeout_fatals_ok()),
     ]
+
+
+def _bad_timeout_fatals_ok():
+    import contextlib  # noqa: PLC0415
+    import io  # noqa: PLC0415
+    saved = os.environ.get("REFLECT_REPLAY_TIMEOUT")
+    os.environ["REFLECT_REPLAY_TIMEOUT"] = "abc"
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            return run([]) == 2
+    finally:
+        if saved is None:
+            os.environ.pop("REFLECT_REPLAY_TIMEOUT", None)
+        else:
+            os.environ["REFLECT_REPLAY_TIMEOUT"] = saved
 
 
 GATE = meta("Replay gate", "ledger cmds re-run verbatim (bare-value contract: stdout must equal the value)",

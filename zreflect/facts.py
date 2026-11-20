@@ -467,22 +467,20 @@ def _age_human(entry):
 
 def _measure():
     mod_name = (knobs.raw("REFLECT_MEASURE_MODULE") or "").strip()
-    if mod_name:
-        rz = os.path.join(gate.GATE_REPO, "zreflect")
-        if os.path.isdir(rz) and rz not in sys.path:
-            sys.path.insert(0, rz)
-        try:
-            _m = __import__(mod_name)
-            fn = getattr(_m, "measure")   # noqa: B009
-        except Exception as e:                            # noqa: BLE001
-            fatal_exit(M("facts.measure_module_unusable", module=mod_name,
-                         error=repr(e), hint=M("facts.measure_module_where")))
-        return fn()
-    print("WARN: %s" % M("facts.measure_placeholder_used"), file=sys.stderr)
-    found = [d for d in _OWN_CODE_DIRS if os.path.isdir(os.path.join(gate.GATE_REPO, d))]
-    if found:
-        print("  %s" % M("facts.measure_own_code_hint", dirs=", ".join(found)), file=sys.stderr)
-    return measure_example()
+    if not mod_name:
+        fatal_exit(M("facts.measure_module_missing"))
+    if mod_name == "measure_example":
+        return measure_example()
+    rz = os.path.join(gate.GATE_REPO, "zreflect")
+    if os.path.isdir(rz) and rz not in sys.path:
+        sys.path.insert(0, rz)
+    try:
+        _m = __import__(mod_name)
+        fn = getattr(_m, "measure")   # noqa: B009
+    except Exception as e:                            # noqa: BLE001
+        fatal_exit(M("facts.measure_module_unusable", module=mod_name,
+                     error=repr(e), hint=M("facts.measure_module_where")))
+    return fn()
 
 
 def _attach_core_seal(facts):
@@ -637,11 +635,17 @@ def _init_skeleton(root, state):
                        "> Append-only provenance narrative (kept off every scan surface).\n\n"
                        "## Entries\n"),
         retract_name: '{"schema": 1, "retractions": []}\n',
+        knobs.get("REFLECT_SECRETS"): '{"paths": ["."], "allow": [], "ignore_paths": []}\n',
         readme_name: ("# " + os.path.basename(root) + "\n\n"
                       "> Project documentation.\n"),
         "AGENTS.md": ("# AGENTS.md\n\nRouting only. Rules live in `PRINCIPLES.md`; "
                       "measured state lives in `" + state + "`.\n\n```bash\n"
                       "python3 zreflect/registry.py --run commit\npython3 zreflect/harness.py\n```\n"),
+        knobs.CONFIG_NAME: json.dumps({
+            "REFLECT_MEASURE_MODULE": "measure_example",
+            "REFLECT_OFF_GATES": ("check_ab.py,check_instruments.py,check_invariants.py,"
+                                  "check_locks.py,check_pins.py,check_world.py,doctor.py"),
+        }, indent=2) + "\n",
     }
 
 

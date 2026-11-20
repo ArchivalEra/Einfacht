@@ -270,13 +270,10 @@ def run(argv):
             print(M("stale.retired_rule_off"), file=sys.stderr)
         if days is None:
             print(M("stale.age_rule_off"), file=sys.stderr)
-    rc = finish(M("stale.title"), probs,
-                M("stale.ok", count=len(docs),
-                  declared=M("stale.retired_none") if not retired
-                  else M("stale.retired_count", count=len(retired))))
-    if rc == 1 and "--list" in argv:
-        return 0                      # --list lists only, never changes, always 0 (manual patrol mode)
-    return rc
+    return finish(M("stale.title"), probs,
+                  M("stale.ok", count=len(docs),
+                    declared=M("stale.retired_none") if not retired
+                    else M("stale.retired_count", count=len(retired))))
 
 
 def _cases_fixture():

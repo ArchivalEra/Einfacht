@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含核心闸门禁 `OFF:`、未核准可插拔 `OFF:` 被拒、stderr `SKIP:` 不得计入 `ran`、`optional: true` 被拒、`REFLECT_MEASURE_MODULE` 缺配即红）
+**Settling:** `python3 zreflect/registry.py --run commit && python3 zreflect/registry.py --run start-of-work && python3 zreflect/gate.py --selftest && python3 zreflect/check_ab.py --selftest && python3 zreflect/check_pins.py --selftest && python3 zreflect/check_locks.py --selftest && python3 zreflect/check_facts.py --selftest && python3 zreflect/check_facts_replay.py --selftest` -- rc=0 => core OFF/SKIP/WARN/optional guards hold; rc!=0 => bypass regression
 
 ## 实测问题清单
 

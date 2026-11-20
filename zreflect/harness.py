@@ -255,7 +255,8 @@ def _configurable_fixture(repo, tmp, registry):
 
     env = dict(os.environ)
     env["GATE_REPO"] = tmp
-    env.update({"REFLECT_FACTS": fx_facts, "REFLECT_DOC": fx_doc})
+    env.update({"REFLECT_FACTS": fx_facts, "REFLECT_DOC": fx_doc,
+                "REFLECT_MEASURE_MODULE": "measure_example"})
     _run([sys.executable, os.path.join(repo, "zreflect", "facts.py")], cwd=repo, env=env)
     _run([sys.executable, os.path.join(repo, "zreflect", "facts.py"),
           "--render-doc", fx_doc], cwd=repo, env=env)

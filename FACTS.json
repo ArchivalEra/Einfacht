@@ -1,13 +1,13 @@
 {
  "schema": 1,
- "generated": "2026-11-20T09:37:14+0800",
+ "generated": "2026-11-20T10:06:31+0800",
  "_why": "事实台账：每条 = 一个测出来的值 + 复跑命令 + 出处。别手改，跑 zreflect/facts.py。",
  "facts": {
   "py_files": {
    "value": 42,
    "cmd": "python3 zreflect/facts.py --count -files .py",
    "source": "repo",
-   "measured_at": "2026-11-20T09:37:14+0800",
+   "measured_at": "2026-11-20T10:06:31+0800",
    "first_seen": "2026-11-18",
    "note": "示例事实：换掉 measure_example()"
   },
@@ -15,31 +15,31 @@
    "value": 46,
    "cmd": "python3 zreflect/facts.py --count -files .md",
    "source": "repo",
-   "measured_at": "2026-11-20T09:37:14+0800",
+   "measured_at": "2026-11-20T10:06:31+0800",
    "first_seen": "2026-11-19"
   },
   "py_lines": {
-   "value": 11612,
+   "value": 11698,
    "cmd": "python3 zreflect/facts.py --count -lines .py",
    "source": "repo",
-   "measured_at": "2026-11-20T09:37:14+0800",
-   "first_seen": "2026-11-19",
+   "measured_at": "2026-11-20T10:06:31+0800",
+   "first_seen": "2026-11-20",
    "note": "刻意 ≥100，用来示范裸数字判据"
   },
   "md_lines": {
    "value": 2173,
    "cmd": "python3 zreflect/facts.py --count -md",
    "source": "repo",
-   "measured_at": "2026-11-20T09:37:14+0800",
+   "measured_at": "2026-11-20T10:06:31+0800",
    "first_seen": "2026-11-20",
    "note": "不含机器块：块就渲染在文档里，数进去会让渲染一遍值就过期"
   },
   "core_seal": {
-   "value": "35f6868206e1c2c7a068eb94807ad6a5b0d9784cb3705e6c02a8315f35b8d3ae",
+   "value": "5f6b342ea2b1b534cbcc91c14eb193c645b1f90c640d7df24ffafe165f875aa4",
    "cmd": "python3 zreflect/registry.py --verify-seal",
    "source": "seal",
-   "measured_at": "2026-11-20T09:37:14+0800",
-   "first_seen": "2026-11-19",
+   "measured_at": "2026-11-20T10:06:31+0800",
+   "first_seen": "2026-11-20",
    "note": "共享核心双层 SHA-256 Merkle 根（由 registry.py --verify-seal 复跑验证）"
   }
  }

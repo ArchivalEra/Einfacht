@@ -89,10 +89,11 @@ def _tree_pin_problems(p, head, run):
     """
     problems: list[Message] = []
     skips: list[Message] = []
+    if p.get("optional"):
+        problems.append(M("gate.optional_forbidden", name=p["name"]))
     rc, out = run(p["stamp_read"])
     if rc != 0 or not out:
-        target = skips if p.get("optional") else problems
-        target.append(M("pins.stamp_unreadable", name=p["name"]))
+        problems.append(M("pins.stamp_unreadable", name=p["name"]))
         return problems, skips
     parts = out.split()
     if len(parts) < 4:
@@ -112,11 +113,12 @@ def _version_pin_problems(p, run):
     import re  # noqa: PLC0415
     problems: list[Message] = []
     skips: list[Message] = []
+    if p.get("optional"):
+        problems.append(M("gate.optional_forbidden", name=p["name"]))
     rc, out = run(p.get("version_read", ""))
     first = out.splitlines()[0] if out else ""
     if rc != 0 or not first:
-        target = skips if p.get("optional") else problems
-        target.append(M("pins.version_unreadable", name=p["name"]))
+        problems.append(M("pins.version_unreadable", name=p["name"]))
         return problems, skips
     expect = p.get("expect_version")
     if expect and not re.search(r"(?<![0-9A-Za-z.])%s(?![0-9A-Za-z.])" % re.escape(expect), first):
@@ -245,10 +247,9 @@ def _cases():
         ("\u2605 pins.stamp_unreadable",
          lambda: [p.code for p in check(fx["skip"], run=_run, root=d)[0]]
          == ["pins.stamp_unreadable"]),
-        ("\u2605 pins.stamp_unreadable_optional_skips",
-         lambda: [p.code for p in check(
-             {"pins": [{**fx["skip"]["pins"][0], "optional": True}]}, run=_run, root=d)[1]]
-         == ["pins.stamp_unreadable"]),
+        ("\u2605 pins.optional_forbidden",
+         lambda: "gate.optional_forbidden" in [p.code for p in check(
+             {"pins": [{**fx["skip"]["pins"][0], "optional": True}]}, run=_run, root=d)[0]]),
         ("\u2605 pins.worktree_missing",
          lambda: [p.code for p in check(
              {"pins": [{"name": "x", "kind": "tree", "worktree": "nope",

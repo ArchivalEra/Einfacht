@@ -229,9 +229,8 @@ def run_spec_gate(argv, knob_name, *, off_msg, missing_msg, broken_msg=None,
     if rc is not None:
         return rc
     problems, skips = judge(spec)
-    for x in skips:
-        print(i18n.emit("skip", str(x)), file=sys.stderr)
-    return finish(title, problems, ok_msg(spec))
+    all_problems = list(problems) + list(skips)
+    return finish(title, all_problems, ok_msg(spec))
 
 
 def finish(name, problems, ok):
@@ -501,15 +500,18 @@ def run_phase(phase, gates, runner=None, repo_root=None):
             res["fail_list"].append(f)
             res["fail_out"][f] = out or ""
         else:
+            scanned_all = i18n.scan(out or "")
+            if any(k == "skip" for _i, k, _ln in scanned_all):
+                res["skipped"] += 1
+                res["skip_list"].append(f)
+                res["fail_out"][f] = out or ""
+                continue
             first_ln = next((ln for ln in (out or "").splitlines() if ln.strip()), "")
             scanned = i18n.scan(first_ln)
             kind = scanned[0][1] if scanned else None
             if kind == "off":
                 res["off"] += 1
                 res["off_list"].append(f)
-            elif kind == "skip":
-                res["skipped"] += 1
-                res["skip_list"].append(f)
             else:
                 res["ran"] += 1
     return res
@@ -526,6 +528,10 @@ def _cases():
                        runner=lambda f: {"a.py": (0, ""), "b.py": (0, "OFF: x"),
                                          "c.py": (1, "bad"), "d.py": (2, "FATAL: cfg"),
                                          "e.py": (0, "SKIP: opt")}[f]))),
+        ("★ gate.phase_catches_stderr_skip_after_ok",
+         lambda: (lambda ph: ph["skipped"] == 1 and ph["ran"] == 0 and ph["skip_list"] == ["s.py"])(
+             run_phase("commit", ["s.py"],
+                       runner=lambda _f: (0, "ok line\nSKIP: hidden on stderr\n")))),
         ("★ gate.prose_in_exec_rejected",
          lambda: [p.code for p in prose_in_exec_problems("w", "cmd", "not a command")]
          == ["criteria.exec_position_is_prose"]),

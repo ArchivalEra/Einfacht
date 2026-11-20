@@ -82,10 +82,10 @@ def _check_one(entry, hasher, root):
     missing = _entry_missing_fields(entry)
     if missing:
         return missing, []
+    if entry.get("optional"):
+        return [M("gate.optional_forbidden", name=entry["name"])], []
     path = gate.repo_path(entry["file"], root)
     if not os.path.exists(path):
-        if entry.get("optional"):
-            return [], [M("locks.absent_optional", name=entry["name"])]
         return [M("locks.file_missing", name=entry["name"], path=path)], []
     form = entry.get("form") or "file"
     if form not in ("file", "dir"):
@@ -146,8 +146,8 @@ def _cases():
     spec = {"locked": [
         {"name": "glpk", "url": "u", "file": g, "sha256": good},
         {"name": "lapack", "url": "u", "file": lp, "form": "dir"},
-        {"name": "mesa", "url": "u", "file": "nope.tar.xz", "optional": True},
     ]}
+    opt_bad = {"locked": [{"name": "mesa", "url": "u", "file": "nope.tar.xz", "optional": True}]}
     bad_hash = {"locked": [{"name": "glpk", "url": "u",
                             "file": g, "sha256": "0" * 64}]}
     missing = {"locked": [{"name": "glpk", "url": "u", "file": "nope.tar.gz",
@@ -162,7 +162,9 @@ def _cases():
          and gate.resolve_spec([], "", "upstream-lock.json") == ("upstream-lock.json", False)),
         # (1) compliant input: nothing reported
         ("locks.ok",
-         lambda: check(spec, root=d)[0] == [] and check(spec, root=d)[1] != []),
+         lambda: check(spec, root=d)[0] == [] and check(spec, root=d)[1] == []),
+        ("★ locks.optional_forbidden",
+         lambda: [p.code for p in check(opt_bad, root=d)[0]] == ["gate.optional_forbidden"]),
         # (2) what must be reported is reported
         ("★ locks.sha_mismatch",
          lambda: [p.code for p in check(bad_hash, root=d)[0]] == ["locks.sha_mismatch"]),

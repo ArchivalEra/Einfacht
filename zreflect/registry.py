@@ -302,6 +302,27 @@ def _emit_phase_group(files, code, fail_out):
             print(ln)
 
 
+_PLUGGABLE_GATES = frozenset({
+    "check_ab.py", "check_instruments.py", "check_invariants.py",
+    "check_locks.py", "check_pins.py", "check_world.py", "doctor.py",
+})
+
+
+def _off_policy_error(off_list):
+    core_off = [f for f in off_list if os.path.basename(f) not in _PLUGGABLE_GATES]
+    if core_off:
+        return M("registry.core_gate_off", files=", ".join(core_off))
+    req = set(knobs.required_gates())
+    bad_off = [f for f in off_list if f in req or os.path.basename(f) in req]
+    if bad_off:
+        return M("registry.required_gate_off", files=", ".join(bad_off))
+    declared_off = {os.path.basename(s) for s in knobs.off_gates()}
+    undeclared_off = [f for f in off_list if os.path.basename(f) not in declared_off]
+    if undeclared_off:
+        return M("registry.pluggable_off_undeclared", files=", ".join(undeclared_off))
+    return None
+
+
 def _main_run(argv):
     phase = _arg_after(argv, "--run")
     if phase not in phases():
@@ -325,13 +346,14 @@ def _main_run(argv):
     if res.get("skip_list"):
         print(M("registry.phase_skip_list", count=len(res["skip_list"]),
                 files=", ".join(res["skip_list"])))
+        return fatal(M("registry.phase_skipped_fail", count=len(res["skip_list"]),
+                       files=", ".join(res["skip_list"])))
     if res["off_list"]:
         print(M("registry.phase_off_list", count=len(res["off_list"]),
                 files=", ".join(res["off_list"])))
-    req = set(knobs.required_gates())
-    bad_off = [f for f in res["off_list"] if f in req or os.path.basename(f) in req]
-    if bad_off:
-        return fatal(M("registry.required_gate_off", files=", ".join(bad_off)))
+        off_err = _off_policy_error(res["off_list"])
+        if off_err is not None:
+            return fatal(off_err)
     return 1 if (res["failed"] or res.get("fatal") or res.get("error")) else 0
 
 
@@ -451,7 +473,15 @@ def _cases():
          lambda: "reflect-hooks/hook.py" in plugins()
          and any(g["file"] == "zreflect/doctor.py" for g in gs)),
         ("registry.emit_multi_bullets_bounded", lambda: _emit_bullets_ok()),
+        ("★ registry.off_policy_rejects_core_and_undeclared", lambda: _off_policy_ok()),
     ]
+
+
+def _off_policy_ok():
+    core = _off_policy_error(["zreflect/check_facts.py"])
+    undecl = _off_policy_error(["zreflect/check_ab.py"]) if not knobs.off_gates() else None
+    return (core is not None and core.code == "registry.core_gate_off"
+            and (undecl is None or undecl.code == "registry.pluggable_off_undeclared"))
 
 
 def _emit_bullets_ok():

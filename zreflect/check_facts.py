@@ -41,8 +41,7 @@ def _bare_min():
     try:
         return int(val)
     except ValueError:
-        print(M("facts.bad_bare_min", value=val, default=_DEFAULT_NAKED_MIN), file=sys.stderr)
-        return _DEFAULT_NAKED_MIN
+        raise SystemExit(fatal(M("facts.bad_bare_min", value=val, default=_DEFAULT_NAKED_MIN))) from None
 
 
 def _number_lines(doc_text):
@@ -264,7 +263,27 @@ def _cases():
         ("facts.pack_entry_wired",
          lambda: not i18n.a_pack_lang()
          or "line" in i18n.load_pack(i18n.a_pack_lang()).get("facts.bare_number_unaccounted", "")),
+        ("★ facts.bad_naked_min_fatals", lambda: _bad_naked_min_fatals_ok()),
     ]
+
+
+def _bad_naked_min_fatals_ok():
+    import contextlib  # noqa: PLC0415
+    import io  # noqa: PLC0415
+    saved = os.environ.get("REFLECT_NAKED_MIN")
+    os.environ["REFLECT_NAKED_MIN"] = "abc"
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                _bare_min()
+            except SystemExit as exc:
+                return exc.code == 2
+            return False
+    finally:
+        if saved is None:
+            os.environ.pop("REFLECT_NAKED_MIN", None)
+        else:
+            os.environ["REFLECT_NAKED_MIN"] = saved
 
 
 GATE = meta("Facts gate", "block agreement / bare numbers / bad citations",
