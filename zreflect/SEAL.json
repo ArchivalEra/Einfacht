@@ -82,27 +82,27 @@
    "file_sha256": "9308f755a259e05cdd7e10ede9495d4bf0e8a665e8585d668f0dab63f425b2cd"
   },
   "zreflect/knobs.py": {
-   "file_sha256": "a2bebd28d99ecff436dae7a9a4bff6437bc43e96abc41fd4dee5d0d748d7751d"
+   "file_sha256": "ec670e50c609a3b6be766e98f0cce36d2d1c60c8ea7df34f92a23157d9dad169"
   },
   "zreflect/lang/de.json": {
-   "file_sha256": "3b1009c1998aa0d8c51bd0d2e4b10e18640e3161e1dfd5842ea099c221c660a1"
+   "file_sha256": "8f7c6e43ac46746d5cacc184eddfd7ba4e1bae44115e323e580f7fe21dd2181d"
   },
   "zreflect/lang/en.json": {
-   "file_sha256": "d8a74b0ee480dd66c4bf99cdd9460d54b4756686ea21e7a30d36296ccbee9eb8"
+   "file_sha256": "9bfc4a4cf1c8c194ba62458104271b045b2428c57d5bac626c128b281aac6e39"
   },
   "zreflect/lang/zh.json": {
-   "file_sha256": "511547314f9be1744355f2dc76aac240672b1941fb20ad6ba12e9a58e5d364ee"
+   "file_sha256": "575fa006796d2ebe6b91cb4665c331931afd710bcd5bf45e1a435e09dd6c209a"
   },
   "zreflect/next.py": {
    "file_sha256": "84e52347aa4767de9431e7d20579d5474ef28bb01f90f34f6cb5c66c4231f611"
   },
   "zreflect/registry.py": {
-   "file_sha256": "a9518efaf8ead2bdb1772d5d3301468a127000b93dfe67803b8cb68d317d915a"
+   "file_sha256": "55165931a76738cee295fc8ff8e87d77734a9ae5832148aeb2fa6e539045cb6e"
   },
   "zreflect/seal.py": {
-   "file_sha256": "a8c5ad10313b1275bc6bdb9e5771e856da526f43e1fa94665257c52a6918c09c"
+   "file_sha256": "1b12a7402e012c57f4f99d4d30a5bf3666e48edb8e7bfe7275294b814faeb9aa"
   }
  },
  "schema": 1,
- "tree_sha256": "8360f768e2806553e50761ba29ec40690296366de03f34e36ae066262d4f8a25"
+ "tree_sha256": "59b1160279cddbe7e893977d2485bce181269f7b5544d7c16c4f313497a2c0b2"
 }

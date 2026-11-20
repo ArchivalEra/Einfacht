@@ -267,7 +267,9 @@ def render_gates(gs):
 
 def _arg_after(argv, flag):
     i = argv.index(flag)
-    return argv[i + 1] if len(argv) > i + 1 else "commit"
+    if len(argv) <= i + 1 or argv[i + 1].startswith("-"):
+        return None
+    return argv[i + 1]
 
 
 _MAX_GATE_BULLETS = 5
@@ -371,7 +373,7 @@ def _main_seal(argv):
     hit = [a for a in argv if a.startswith("--reseal=")]
     if hit:
         targets = [t.strip() for t in hit[0][len("--reseal="):].split(",") if t.strip()]
-        tree, err = seal.reseal(targets)
+        tree, err = seal.reseal(targets, force_all="--force" in argv)
         if err:
             return fatal(err)
         print(M("seal.resealed", tree=tree, count=len(targets)))
@@ -422,7 +424,23 @@ def _main_selftest_mods():
     return 0
 
 
+_KNOWN_FLAGS = frozenset({
+    "--red-need", "--runnable", "--all-runnable", "--plugins", "--fixture-renames",
+    "--verify-seal", "--force", "--run", "--selftest-modules", "--gates", "--selftest",
+})
+
+
+def _unknown_flag(argv):
+    for a in argv:
+        if a.startswith("-") and not a.startswith("--reseal=") and a not in _KNOWN_FLAGS:
+            return a
+    return None
+
+
 def main(argv):
+    bad = _unknown_flag(argv)
+    if bad is not None:
+        return fatal(M("registry.unknown_flag", flag=bad))
     for rc in (_main_lists(argv), _main_seal(argv)):
         if rc is not None:
             return rc
@@ -474,6 +492,8 @@ def _cases():
          and any(g["file"] == "zreflect/doctor.py" for g in gs)),
         ("registry.emit_multi_bullets_bounded", lambda: _emit_bullets_ok()),
         ("★ registry.off_policy_rejects_core_and_undeclared", lambda: _off_policy_ok()),
+        ("★ registry.bad_flags_and_missing_run_phase_fail",
+         lambda: main(["--run"]) == 2 and main(["--runnable", "--badflag"]) == 2),
     ]
 
 

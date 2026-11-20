@@ -237,32 +237,70 @@ def config_problems(root=None):
             for p in _config_entry_problems(base, k, v, M)]
 
 
-def _environ_read_key(node):
-    """Return `REFLECT_*` key if AST node reads `os.environ` or `os.getenv('REFLECT_...')`."""
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("get", "getenv"):
-        tgt = node.func.value
+def _env_imports(tree):
+    env_names, getenv_names = set(), set()
+    for stmt in tree.body:
+        if isinstance(stmt, ast.ImportFrom) and stmt.module == "os":
+            for alias in stmt.names:
+                asname = alias.asname or alias.name
+                if alias.name == "environ":
+                    env_names.add(asname)
+                elif alias.name == "getenv":
+                    getenv_names.add(asname)
+    return env_names, getenv_names
+
+
+def _is_env_target(tgt, env_names):
+    return ((isinstance(tgt, ast.Attribute) and tgt.attr == "environ"
+             and isinstance(tgt.value, ast.Name) and tgt.value.id == "os")
+            or (isinstance(tgt, ast.Name) and tgt.id in env_names))
+
+
+def _environ_read_key(node, env_names=(), getenv_names=()):
+    """Return `REFLECT_*` key if AST node reads `os.environ` / `getenv` / `.pop()`."""
+    key_node, is_env = None, False
+    if isinstance(node, ast.Call):
+        fn = node.func
         key_node = node.args[0] if node.args else None
-        is_env = ((node.func.attr == "getenv" and isinstance(tgt, ast.Name) and tgt.id == "os")
-                  or (node.func.attr == "get" and isinstance(tgt, ast.Attribute)
-                      and tgt.attr == "environ" and isinstance(tgt.value, ast.Name) and tgt.value.id == "os"))
+        if isinstance(fn, ast.Name) and fn.id in getenv_names:
+            is_env = True
+        elif isinstance(fn, ast.Attribute) and fn.attr == "getenv":
+            is_env = isinstance(fn.value, ast.Name) and fn.value.id == "os"
+        elif isinstance(fn, ast.Attribute) and fn.attr in ("get", "pop"):
+            is_env = _is_env_target(fn.value, env_names)
     elif isinstance(node, ast.Subscript):
-        tgt, key_node = node.value, node.slice
-        is_env = (isinstance(tgt, ast.Attribute) and tgt.attr == "environ"
-                  and isinstance(tgt.value, ast.Name) and tgt.value.id == "os")
-    else:
-        return None
+        key_node = node.slice
+        is_env = _is_env_target(node.value, env_names)
     if (is_env and isinstance(key_node, ast.Constant)
             and isinstance(key_node.value, str) and key_node.value.startswith("REFLECT_")):
         return key_node.value
     return None
 
 
-def _is_test_node(stmt):
-    """Exempt test/selftest functions and `__main__` blocks from direct-env check."""
+def _cases_called_names(tree):
+    funcs = {s.name: s for s in tree.body if isinstance(s, ast.FunctionDef)}
+    seeds = [n for n in funcs if n == "_cases" or n.startswith(("_cases_", "_case_", "test_"))]
+    seen = set(seeds)
+    stack = list(seeds)
+    while stack:
+        fn = funcs.get(stack.pop())
+        if fn is None:
+            continue
+        for node in ast.walk(fn):
+            for attr in ("func", "args"):
+                _ = attr
+            if isinstance(node, ast.Name) and node.id in funcs and node.id not in seen:
+                seen.add(node.id)
+                stack.append(node.id)
+    return seen
+
+
+def _is_test_node(stmt, called_in_cases=()):
+    """Exempt test/selftest functions referenced by `_cases` and `__main__` blocks."""
     if isinstance(stmt, ast.FunctionDef):
         return (stmt.name == "_cases"
                 or stmt.name.startswith(("_cases_", "_case_", "test_"))
-                or stmt.name.endswith(("_case", "_ok")))
+                or stmt.name in called_in_cases)
     return (isinstance(stmt, ast.If) and isinstance(stmt.test, ast.Compare)
             and isinstance(stmt.test.left, ast.Name) and stmt.test.left.id == "__name__")
 
@@ -290,11 +328,13 @@ def direct_environ_problems(sources=None):
             tree = ast.parse(text)
         except SyntaxError:
             continue
+        env_names, getenv_names = _env_imports(tree)
+        called_in_cases = _cases_called_names(tree)
         for stmt in tree.body:
-            if _is_test_node(stmt):
+            if _is_test_node(stmt, called_in_cases):
                 continue
             for node in ast.walk(stmt):
-                key = _environ_read_key(node)
+                key = _environ_read_key(node, env_names, getenv_names)
                 if key:
                     out.append(M("knobs.inline_default_literal", file=rel,
                                  lineno=getattr(node, "lineno", 0),
@@ -377,7 +417,10 @@ def _cases():
         ("★ knobs.direct_environ_bypass_caught",
          lambda: [p.code for p in direct_environ_problems(
              [("zreflect/bad.py", 'import os\nX = os.environ.get("REFLECT_FACTS")\n')])]
-         == ["knobs.inline_default_literal"]),
+         == ["knobs.inline_default_literal"]
+         and [p.code for p in direct_environ_problems(
+             [("zreflect/bad2.py", 'from os import environ, getenv\ndef sneaky_ok():\n    return environ.pop("REFLECT_FACTS", None) or getenv("REFLECT_DOC")\n')])]
+         == ["knobs.inline_default_literal", "knobs.inline_default_literal"]),
         ("knobs.get_and_helpers",
          lambda: get("REFLECT_FACTS") == REGISTRY["REFLECT_FACTS"][1]
          and questions_dir() == REGISTRY["REFLECT_QUESTIONS"][1]

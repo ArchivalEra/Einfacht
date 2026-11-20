@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含从 `SEAL.json` 删除内置核心闸门并重算 `tree_sha256` 被拦截、无 `.git` 删 `reflect-hooks/` 被拦截、`registry --runnable --badflag` 报错）
+**Settling:** `python3 zreflect/registry.py --verify-seal && python3 zreflect/seal.py --selftest && python3 zreflect/knobs.py --selftest && python3 zreflect/registry.py --selftest` -- rc=0 => seal, registry flag, and knobs AST guards hold; rc!=0 => tampering or AST bypass regression
 
 ## 实测问题清单
 

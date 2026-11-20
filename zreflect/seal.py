@@ -90,18 +90,33 @@ def _collect_lang_packs(root, zdir, out):
                     out.append(os.path.relpath(p, root).replace(os.sep, "/"))
 
 
+def _is_consumer_custom_gate(path, builtin):
+    try:
+        tree = ast.parse(_read_norm(path))
+    except (OSError, SyntaxError, UnicodeError):
+        return False
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign):
+            names = {t.id for t in stmt.targets if isinstance(t, ast.Name)}
+            if "GATE" in names and isinstance(stmt.value, ast.Call):
+                return _runs_at_from_call(stmt.value) not in builtin
+    return False
+
+
 def _sealed_zreflect(root, zdir, builtin, include_gates=True):
     """Collect sorted repo-relative paths of sealed files inside `zreflect/`."""
     out = []
-    init_p = os.path.join(zdir, "__init__.py")
-    if os.path.isfile(init_p):
-        out.append(os.path.relpath(init_p, root).replace(os.sep, "/"))
-    for name in sorted(os.listdir(zdir)):
-        if name.endswith(".py") and not name.startswith("measure_") and name != "__init__.py":
-            full = os.path.join(zdir, name)
-            kind = _decl_kind(full, builtin)
-            if kind == "module" or (include_gates and kind == "builtin_gate"):
-                out.append(os.path.relpath(full, root).replace(os.sep, "/"))
+    for dirpath, dirnames, filenames in os.walk(zdir):
+        dirnames[:] = sorted(d for d in dirnames if d not in ("__pycache__", "lang"))
+        in_root = os.path.abspath(dirpath) == os.path.abspath(zdir)
+        for name in sorted(filenames):
+            if not name.endswith(".py"):
+                continue
+            if in_root and (name.startswith("measure_")
+                            or (name != "__init__.py" and _is_consumer_custom_gate(os.path.join(dirpath, name), builtin))
+                            or (not include_gates and _decl_kind(os.path.join(dirpath, name), builtin) == "builtin_gate")):
+                continue
+            out.append(os.path.relpath(os.path.join(dirpath, name), root).replace(os.sep, "/"))
     _collect_lang_packs(root, zdir, out)
     return out
 
@@ -167,19 +182,11 @@ def current_tree_sha(root=None, zdir=None, verified=False):
     return data["tree_sha256"]
 
 
-def _skip_optional(root, rel):
-    """Allow hooks to be absent only in non-git minimal unit-test fixtures."""
-    return (rel.startswith("reflect-hooks/")
-            and not os.path.isdir(os.path.join(root, "reflect-hooks"))
-            and not os.path.isdir(os.path.join(root, ".git")))
-
-
 def _verify_entry(root, rel, expected, out):
     """Verify one sealed file path on disk against its `expected` SHA-256."""
     full = os.path.join(root, rel)
     if not os.path.isfile(full):
-        if not _skip_optional(root, rel):
-            out.append(M("seal.file_missing", file=rel))
+        out.append(M("seal.file_missing", file=rel))
         return
     try:
         actual = _entry_for(root, rel)
@@ -188,6 +195,16 @@ def _verify_entry(root, rel, expected, out):
         return
     if expected.get("file_sha256") != actual.get("file_sha256"):
         out.append(M("seal.file_tampered", file=rel))
+
+
+def _ruff_toml_problems(rt, sealed_files):
+    if "zreflect/check_lint.py" not in sealed_files:
+        return []
+    if "ruff.toml" not in sealed_files:
+        return [M("seal.unsealed_core_file", file="ruff.toml")]
+    if not os.path.isfile(os.path.join(rt, "ruff.toml")):
+        return [M("seal.file_missing", file="ruff.toml")]
+    return []
 
 
 def verify_problems(root=None, zdir=None):
@@ -206,12 +223,10 @@ def verify_problems(root=None, zdir=None):
         out.append(M("seal.tree_mismatch"))
     for rel, expected in sorted(sealed_files.items()):
         _verify_entry(rt, rel, expected, out)
-    for rel in _sealed_targets(rt, zd, include_gates=False):
+    for rel in _sealed_targets(rt, zd, include_gates=True):
         if rel not in sealed_files:
             out.append(M("seal.unsealed_core_file", file=rel))
-    if os.path.isfile(os.path.join(rt, "ruff.toml")) and "ruff.toml" not in sealed_files:
-        out.append(M("seal.unsealed_core_file", file="ruff.toml"))
-    return out
+    return out + _ruff_toml_problems(rt, sealed_files)
 
 
 def _norm_target_names(targets, disk_targets):
@@ -229,7 +244,7 @@ def _norm_target_names(targets, disk_targets):
     return resolved, unknown
 
 
-def reseal(targets, root=None, zdir=None):
+def reseal(targets, root=None, zdir=None, force_all=False):
     """Update `SEAL.json` for nominated files. Returns `(tree_sha256, error_msg)`."""
     zd = zdir or gate.zdir()
     rt = root or gate.tool_repo()
@@ -238,6 +253,8 @@ def reseal(targets, root=None, zdir=None):
     if unknown:
         return None, M("seal.reseal_unknown_target", file=", ".join(unknown))
     sp = seal_path(zd)
+    if os.path.isfile(sp) and list(targets) == ["ALL"] and not force_all:
+        return None, M("seal.reseal_all_needs_force")
     files_map = {}
     if os.path.isfile(sp) and list(targets) != ["ALL"]:
         data, err = _load_seal(sp)
@@ -294,7 +311,7 @@ def _case_tamper_and_exempt():
         with open(os.path.join(zd, "measure_custom.py"), "w", encoding="utf-8") as fh:
             fh.write("def measure():\n    return {}\n")
         with open(os.path.join(zd, "check_custom.py"), "w", encoding="utf-8") as fh:
-            fh.write("GATE = meta('x', 'y', runs_at='commit')\n")
+            fh.write("GATE = meta('x', 'y', runs_at='custom')\n")
         if verify_problems(rt, zd) != []:
             return False
         p = os.path.join(zd, "mod_a.py")
@@ -343,11 +360,38 @@ def _case_merkle_and_missing():
         return [x.code for x in verify_problems(rt, zd)] == ["seal.corrupt"]
 
 
+def _case_tamper_and_q22_seal_gaps():
+    """Verify unsealed builtin gate, undeclared helper .py, missing hooks without .git, and reseal ALL guard."""
+    import tempfile  # noqa: PLC0415
+    with tempfile.TemporaryDirectory() as tmp:
+        files = dict(_base_fixture_files())
+        files["zreflect/check_core.py"] = "GATE = {'name': 'c', 'desc': 'd', 'runs_at': 'commit'}\n"
+        files["reflect-hooks/hook.py"] = "def run():\n    return 0\n"
+        rt, zd = _make_seal_fixture(tmp, files)
+        reseal(["ALL"], root=rt, zdir=zd)
+        if reseal(["ALL"], root=rt, zdir=zd)[1].code != "seal.reseal_all_needs_force":
+            return False
+        sp = seal_path(zd)
+        data = json.loads(open(sp, encoding="utf-8").read())
+        data["files"].pop("zreflect/check_core.py")
+        data["tree_sha256"] = _merkle_root(data["files"])
+        open(sp, "w", encoding="utf-8").write(json.dumps(data))
+        if "seal.unsealed_core_file" not in [x.code for x in verify_problems(rt, zd)]:
+            return False
+        reseal(["ALL"], root=rt, zdir=zd, force_all=True)
+        os.remove(os.path.join(rt, "reflect-hooks", "hook.py"))
+        if "seal.file_missing" not in [x.code for x in verify_problems(rt, zd)]:
+            return False
+        open(os.path.join(zd, "helper.py"), "w", encoding="utf-8").write("x = 1\n")
+        return "seal.unsealed_core_file" in [x.code for x in verify_problems(rt, zd)]
+
+
 def _cases():
     return [
         ("★ seal.tamper_and_consumer_exempt", lambda: _case_tamper_and_exempt()),
         ("★ seal.reseal_and_unsealed_module", lambda: _case_reseal_and_unsealed()),
         ("★ seal.merkle_and_missing", lambda: _case_merkle_and_missing()),
+        ("★ seal.q22_builtin_gate_helper_hooks_and_reseal_guard", lambda: _case_tamper_and_q22_seal_gaps()),
     ]
 
 
