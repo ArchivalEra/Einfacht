@@ -35,7 +35,7 @@ def _judge_ok(k, entry, cmd, stdout, out, stats, rule_keys=()):
         if not got:
             out.append(M("replay.principle_said_nothing", key=k, command=cmd))
             return
-        if any(kind == "off" for _i, kind, _ln in i18n.scan(got)):
+        if any(kind in ("off", "skip") for _i, kind, _ln in i18n.scan(got)):
             out.append(M("replay.principle_is_off", key=k, command=cmd, detail=quote(got[:120])))
             return
         stats["ok"] += 1
@@ -210,6 +210,10 @@ def _cases():
          lambda: [p.code for p in replay_all(cal, runner=lambda c: (0, "ok") if c == "c1" else (0, "bad"))["problems"]]
          == ["replay.calibrate_mismatch"]),
         ("★ replay.bad_timeout_fatals", lambda: _bad_timeout_fatals_ok()),
+        ("★ replay.principle_skip_rejected", lambda: (
+            [p.code for p in replay_all(
+                {"facts": {"principle.x": {"value": "ok", "cmd": "c", "kind": "principle"}}},
+                runner=lambda _c: (0, "SKIP: nope\n"))["problems"]] == ["replay.principle_is_off"])),
     ]
 
 

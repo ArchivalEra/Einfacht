@@ -1,7 +1,7 @@
 {
  "files": {
   "reflect-hooks/hook.py": {
-   "file_sha256": "d0672004f43e731346620cd63b1ad40c84ebbd86daf11735a13c18a5f86eabd8"
+   "file_sha256": "c6971d69e7ad43fce0185171606ef7658091abc5f5a241bc939c42ae0e75d3d3"
   },
   "ruff.toml": {
    "file_sha256": "803da73ceae59051f76b4f14a89b76962af42f799ab3c8feee95cfb7b8262cdc"
@@ -16,7 +16,7 @@
    "file_sha256": "001e0ad2390dd2c58413ef9b83adefb2b88030637c5f4a29bc754cfd16305b18"
   },
   "zreflect/check_facts_replay.py": {
-   "file_sha256": "76aac1df8890fa8eb93288f51c1f82ac3ac9d545cdb502a41828cc1a9e657bcf"
+   "file_sha256": "bff67cb5164d20403f2aa0b0c173917e2e0f7a01bbc06f0be7aa2ab779e1bf01"
   },
   "zreflect/check_history.py": {
    "file_sha256": "af6c2d45c818d9667794dd0dbbc813dbe9068804b20d6651b80782ca6b3c806f"
@@ -40,13 +40,13 @@
    "file_sha256": "b628ce73bffc63799d1b5f17480002e4d09a7031eee42fc0c6f07fa9404718db"
   },
   "zreflect/check_questions.py": {
-   "file_sha256": "6a6c69fcea2f28630d1dec658da27afe9c88e86dd97cc2e1095dded694328881"
+   "file_sha256": "14a72c4a351e77b882fa8706bdc12e418726c54ea1c3328d81affaa306bdfe16"
   },
   "zreflect/check_readme_sync.py": {
    "file_sha256": "8bd2092ab170b0474667546fa272ff38a9032654dfc90db0a1eb2a6c7f3a434e"
   },
   "zreflect/check_retractions.py": {
-   "file_sha256": "dd4ef27a7fdd90e3af68befd9d7bd712da381a5f0d4e82ddc20a754c92bf678d"
+   "file_sha256": "1845abb4aafdb6db83fff3c014669739c35d652ef84da006973f92a17d756fa0"
   },
   "zreflect/check_secrets.py": {
    "file_sha256": "5e2746492bb8f067cf0214eb9a310c9fc97c4f68901f002930eb47f12757b1b5"
@@ -85,13 +85,13 @@
    "file_sha256": "2dcf87f053e906061f3f5e707e1bc2f1858de030799e309d85c004ec7a05929e"
   },
   "zreflect/lang/de.json": {
-   "file_sha256": "9379f8100bbc09a94bdbdc596833729e862962bd1b08099a6a93ac4b8749c124"
+   "file_sha256": "3b1009c1998aa0d8c51bd0d2e4b10e18640e3161e1dfd5842ea099c221c660a1"
   },
   "zreflect/lang/en.json": {
-   "file_sha256": "abc7a73e4ec08f88527a90595a203d86b59aa737898e7ad7906458b45eb160a0"
+   "file_sha256": "d8a74b0ee480dd66c4bf99cdd9460d54b4756686ea21e7a30d36296ccbee9eb8"
   },
   "zreflect/lang/zh.json": {
-   "file_sha256": "11256dc33f5f8bee80ab5a3c9b2646f2c3333aa668edb044678c35b62fa65b9e"
+   "file_sha256": "511547314f9be1744355f2dc76aac240672b1941fb20ad6ba12e9a58e5d364ee"
   },
   "zreflect/next.py": {
    "file_sha256": "84e52347aa4767de9431e7d20579d5474ef28bb01f90f34f6cb5c66c4231f611"
@@ -104,5 +104,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "b03674a3ef83094ffdb1f4844de0ac81d6ff1bc0766fca5546c105a4eb1dbc86"
+ "tree_sha256": "f0c4e4682adb6d72140b1ca9b4bf820c4cfb4947149a1f6fabc1334d39e21f14"
 }

@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是一组会红的验收用例（含已提交坏 settler 的 `resolved` 悬案、`EINFACHT_REPLAY_DEPTH=1` 下 `check_questions`/`check_retractions` 不得静默跳过、`hook.py push` 校验待推提交而非脏工作区）
+**Settling:** `python3 zreflect/check_questions.py --selftest && python3 zreflect/check_retractions.py --selftest && python3 zreflect/check_facts_replay.py --selftest && python3 reflect-hooks/hook.py --selftest && python3 zreflect/check_questions.py` -- rc=0 => full replay and hook checks hold; rc!=0 => replay or hook regression
 
 ## 实测问题清单
 

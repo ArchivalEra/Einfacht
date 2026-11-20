@@ -146,9 +146,21 @@ def run(argv):
     rc = guard_nonempty("check_retractions", docs, M("retractions.scanned_docs"))
     if rc:
         return rc
+    try:
+        depth = int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0)
+    except ValueError:
+        depth = 0
+    if depth < 0 or depth >= 2:
+        return fatal(M("replay.too_deep", depth=depth, limit=2))
     led = load_or_fatal(rp)
-    verify_ev = int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0) == 0
-    probs = missing_docs + problems(led, docs, verify_evidence=verify_ev)
+    if depth >= 1:
+        led = {
+            "retractions": [
+                r for r in (led.get("retractions") or [])
+                if not (isinstance(r, dict) and "check_retractions.py" in str(r.get("evidence") or ""))
+            ]
+        }
+    probs = missing_docs + problems(led, docs, verify_evidence=True)
     n = len(led.get("retractions") or [])
     return finish(M("retractions.title"), probs,
                   M("retractions.ok", count=n, documents=len(docs)))

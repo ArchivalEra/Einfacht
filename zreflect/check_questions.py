@@ -186,8 +186,11 @@ def _settling_problems(name, text, chk, runner=None, verify_resolved=False, cach
         return [M("questions.missing_settling", name=name)]
     st = status_of(text)
     if _is_none_like(sv):
-        return ([M("questions.resolved_cannot_be_none", name=name)]
-                if st == "resolved" else _none_like_problems(name, sv))
+        if st == "resolved":
+            return [M("questions.resolved_cannot_be_none", name=name)]
+        if st == "wontfix":
+            return [M("questions.wontfix_needs_reason", name=name)]
+        return _none_like_problems(name, sv)
     out = []
     if not any(t in sv for t in ("rc=", "\u21d2", "=>")):
         out.append(M("questions.no_distinct_outcomes", name=name))
@@ -196,7 +199,7 @@ def _settling_problems(name, text, chk, runner=None, verify_resolved=False, cach
     if bad_tok:
         out.append(M("questions.settler_missing", name=name, target=bad_tok))
     out += gate.prose_in_exec_problems(name, "Settling", sv)
-    if out or st != "resolved" or not (verify_resolved or runner is not None):
+    if out or st not in ("resolved", "wontfix") or not (verify_resolved or runner is not None):
         return out
     cmd = _settling_cmd(sv)
     rc, _ = _run_cached(cmd, runner, cache)
@@ -237,25 +240,18 @@ def problems(files, exists=None, runner=None, verify_resolved=False):
     return out
 
 
-def _resolved_targets_to_verify(qdir, files, all_resolved):
-    if int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0) >= 1:
-        return set()
-    resolved = {k for k, v in files.items() if status_of(v) == "resolved"}
-    if all_resolved or not resolved:
-        return resolved
-    wt = subprocess.run(["git", "-C", gate.GATE_REPO, "rev-parse", "--is-inside-work-tree"],
-                        capture_output=True, text=True, check=False)
-    if wt.returncode != 0:
-        return resolved
-    st = subprocess.run(["git", "-C", gate.GATE_REPO, "status", "--porcelain", "--", qdir],
-                        capture_output=True, text=True, check=False)
-    if st.returncode != 0:
-        return resolved
-    dirty = set()
-    for ln in st.stdout.splitlines():
-        rel = ln[3:].strip().strip('"').split(" -> ")[-1]
-        dirty.add(os.path.normpath(rel))
-    return {k for k in resolved if os.path.normpath(k) in dirty}
+def _replay_depth():
+    try:
+        return int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0)
+    except ValueError:
+        return 0
+
+
+def _resolved_targets_to_verify(_qdir, files, _all_resolved, depth=0):
+    targets = {k for k, v in files.items() if status_of(v) in ("resolved", "wontfix")}
+    if depth <= 0:
+        return targets
+    return {k for k in targets if "check_questions.py" not in _settling_cmd(field(files[k], "Settling") or "")}
 
 
 def sort_key(name):
@@ -279,13 +275,16 @@ def collect(d=None, root=None):
 
 
 def run(argv):
+    depth = _replay_depth()
+    if depth < 0 or depth >= 2:
+        return fatal(M("replay.too_deep", depth=depth, limit=2))
     all_res = "--all-resolved" in argv
     pos = [a for a in argv if a != "--all-resolved"]
     qdir = pos[0] if pos else knobs.questions_dir()
     files = collect(pos[0] if pos else None)
     if not files:
         return fatal(M("questions.guard_empty", count=0))
-    targets = _resolved_targets_to_verify(qdir, files, all_res)
+    targets = _resolved_targets_to_verify(qdir, files, all_res, depth=depth)
     probs = problems(files, verify_resolved=targets)
     n_open = sum(1 for t in files.values() if not is_resolved(t))
     return finish(M("questions.title"), probs,
@@ -320,6 +319,15 @@ def _cases():
             runner=lambda _c: (1, "fail"))] == ["questions.resolved_settler_failed"]),
         ("questions.wontfix_also_compliant", lambda: problems(
             {"questions/09.md": _q(status="wontfix")}, exists=lambda p: True) == []),
+        ("★ questions.wontfix_needs_reason", lambda: [p.code for p in problems(
+            {"questions/12.md": _q(status="wontfix", settling=_NOT_EXISTS + " -- " + _FIRST_DELIVERABLE)},
+            exists=lambda p: False)] == ["questions.wontfix_needs_reason"]),
+        ("★ questions.depth_one_still_verifies_non_self", lambda: (
+            "questions/03.md" in _resolved_targets_to_verify("questions", {"questions/03.md": _q(status="resolved")}, False, depth=1)
+            and "questions/04.md" not in _resolved_targets_to_verify(
+                "questions",
+                {"questions/04.md": _q(status="resolved", settling="python3 zreflect/check_questions.py -- rc=0 => ok; rc=1 => bad")},
+                False, depth=1))),
         ("★ questions.closed_status_table", lambda:
             is_resolved(_q(status="resolved")) is True
             and is_resolved(_q(status="wontfix")) is True

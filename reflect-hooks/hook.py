@@ -168,6 +168,52 @@ def _prepare(phase, repo, doc):
     return True
 
 
+def _resolve_push_refs(repo, stdin_rows):
+    if stdin_rows:
+        return stdin_rows, None
+    rc_h, lsha = _git(repo, "rev-parse", "HEAD")
+    rc_u, rsha = _git(repo, "rev-parse", "@{u}")
+    if rc_h == 0 and rc_u == 0 and lsha.strip() and rsha.strip():
+        return [("refs/heads/HEAD", lsha.strip(), "refs/remotes/upstream", rsha.strip())], None
+    return [], M("hookgate.push_empty_stdin")
+
+
+def _run_repo_gates(target_repo):
+    for ph_name in ("commit", "start-of-work"):
+        rc, out = _sh([sys.executable, os.path.join(target_repo, "zreflect", "registry.py"),
+                       "--run", ph_name], cwd=target_repo)
+        if rc != 0:
+            print(out, file=sys.stderr)
+            return 1
+    return 0
+
+
+def _verify_push_commit(repo, lsha):
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    rc_h, head = _git(repo, "rev-parse", "HEAD")
+    rc_s, st = _git(repo, "status", "--porcelain")
+    if rc_h == 0 and head.strip() == lsha and rc_s == 0 and not st.strip():
+        return 1 if _prepare("push", repo, knobs.get("REFLECT_DOC", root=repo)) else _run_repo_gates(repo)
+    tmp = tempfile.mkdtemp(prefix="einfacht-push-")
+    try:
+        rc_wt, out_wt = _git(repo, "worktree", "add", "--detach", tmp, lsha)
+        if rc_wt != 0:
+            print(out_wt, file=sys.stderr)
+            return 1
+        os.environ["GATE_REPO"] = tmp
+        try:
+            doc = knobs.get("REFLECT_DOC", root=tmp)
+            if _prepare("push", tmp, doc):
+                return 1
+            return _run_repo_gates(tmp)
+        finally:
+            os.environ["GATE_REPO"] = repo
+            _git(repo, "worktree", "remove", "--force", tmp)
+    finally:
+        shutil.rmtree(tmp, True)
+
+
 def run(phase, repo, stdin_rows=None):
     """Run one hook phase. Returns 0, 1, or 2."""
     if phase not in PHASES:
@@ -178,20 +224,23 @@ def run(phase, repo, stdin_rows=None):
         return 2
     os.environ["GATE_REPO"] = repo
     doc = knobs.get("REFLECT_DOC", root=repo)
-    if _prepare(phase, repo, doc):
-        return 1
-    rc, out = _sh([sys.executable, os.path.join(repo, "zreflect", "registry.py"),
-                   "--run", "commit"], cwd=repo)
-    if rc != 0:
-        print(out, file=sys.stderr)
-        return 1
-    if phase == "push":
-        ok, lines = _push_readmes_together(repo, stdin_rows or [])
-        for ln in lines:
-            print(ln, file=sys.stderr)
-        if not ok:
+    if phase == "commit":
+        if _prepare(phase, repo, doc):
             return 1
-    return 0
+        return _run_repo_gates(repo)
+    refs, err = _resolve_push_refs(repo, stdin_rows or [])
+    if err is not None:
+        print(str(err), file=sys.stderr)
+        return 1
+    shas = [lsha for lref, lsha, _rref, _rsha in refs
+            if not lref.startswith("refs/tags/") and lsha != ZERO_SHA]
+    for sha in dict.fromkeys(shas):
+        if _verify_push_commit(repo, sha) != 0:
+            return 1
+    ok, lines = _push_readmes_together(repo, refs)
+    for ln in lines:
+        print(ln, file=sys.stderr)
+    return 0 if ok else 1
 
 
 def _chmod_x(path):
@@ -434,6 +483,8 @@ def _cases():
         ("★ hookgate.refs_skip_deletions",
          lambda: _new_content_refs(".", [("refs/heads/main", ZERO_SHA, "refs/heads/main", ZERO_SHA)])
          == []),
+        ("★ hookgate.push_empty_stdin_rejected",
+         lambda: with_repo(lambda d: _resolve_push_refs(d, [])[1] is not None)),
         ("install.no_args_prints_only", lambda: with_repo(_t_instructions)),
         ("★ install.unknown_mode_is_2", lambda: _run_cli(["--bogus"], quiet=True) == 2),
         ("★ install.not_a_repo_is_2",
