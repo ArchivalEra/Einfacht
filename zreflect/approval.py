@@ -384,8 +384,8 @@ def _git_prev_sha_and_diff(root, rel):
     return prev_sha, diff_txt
 
 
-def build_requests(changed_paths, root=None, repo_name=None, diff_fn=None, sha_fn=None, reason=""):
-    """Build controlled-scope approval request payloads from changed paths (purely mechanical)."""
+def build_requests(changed_paths, root=None, repo_name=None, diff_fn=None, sha_fn=None):
+    """Build purely mechanical controlled-scope approval request payloads (zero agent-authored prose)."""
     base = root or gate.GATE_REPO
     rname = repo_name or os.path.basename(os.path.abspath(base))
     out = []
@@ -409,38 +409,28 @@ def build_requests(changed_paths, root=None, repo_name=None, diff_fn=None, sha_f
             "target_path": rel,
             "prev_sha256": prev_sha,
             "target_sha256": target_sha,
-            "reason": reason or "",
             "target_content": (text or "")[:32000],
             "diff_summary": diff_sum or ("(new or binary file %s)" % rel),
         })
     return out
 
 
-def check_duplicate_request(existing_requests, candidate, now_ts=None, revoked_ids=()):
-    """Deduplicate by `(repo, action, target_path, prev_sha256, target_sha256)`: reuse pending or still-valid approved receipts."""
-    import time as _time  # noqa: PLC0415
-    now = int(_time.time()) if now_ts is None else int(now_ts)
-    rev = set(revoked_ids)
-    key = (
-        candidate.get("repo"), candidate.get("action"), candidate.get("target_path"),
-        candidate.get("prev_sha256"), candidate.get("target_sha256"),
-    )
-    for req in reversed(list(existing_requests or ())):
-        rkey = (req.get("repo"), req.get("action"), req.get("target_path"),
-                req.get("prev_sha256"), req.get("target_sha256"))
-        if rkey != key:
-            continue
-        st = str(req.get("status") or "")
-        if st == "pending":
-            return "duplicate_pending", req
-        if st.startswith("approved") and req.get("receipt"):
-            body = _receipt_body(req["receipt"])
-            rec_id = str(body.get("id") or body.get("receipt_id") or "")
-            deleg_id = str(body.get("delegation_id") or "")
-            exp = _parse_iso(body.get("expires_at"))
-            if rec_id not in rev and deleg_id not in rev and exp and exp.timestamp() > now:
-                return "already_approved", req
-    return "new", None
+def _next_ticket_id(base, repo_name):
+    state_path = os.path.join(base, ".git", "einfacht-ticket-seq.json")
+    seq = 0
+    if os.path.isfile(state_path):
+        try:
+            seq = int(json.load(open(state_path, encoding="utf-8")).get("seq", 0))
+        except (OSError, ValueError, TypeError):
+            seq = 0
+    seq += 1
+    if os.path.isdir(os.path.join(base, ".git")):
+        try:
+            with open(state_path, "w", encoding="utf-8") as fh:
+                json.dump({"repo": repo_name, "seq": seq}, fh)
+        except OSError:
+            pass
+    return f"{repo_name}#{seq}"
 
 
 def _post_one_request(url, payload, wait):
@@ -469,6 +459,10 @@ def _post_one_request(url, payload, wait):
             if polled.get("status") != "pending":
                 resp = polled
                 break
+    if resp.get("status") == "denied":
+        print(M("approval.receipt_required", action=payload["action"], target=payload["target_path"])
+              + (f" ({resp.get('deny_reason')})" if resp.get("deny_reason") else ""), file=sys.stderr)
+        return False
     if resp.get("receipt"):
         out_path = os.environ.get(RECEIPT_ENV) or os.path.join(gate.GATE_REPO, ".git", "einfacht-receipt.json")
         with open(out_path, "w", encoding="utf-8") as fh:
@@ -478,15 +472,12 @@ def _post_one_request(url, payload, wait):
 
 def _submit_all(argv):
     import impact  # noqa: PLC0415
-    reason = ""
-    if "--reason" in argv:
-        idx = argv.index("--reason")
-        if idx + 1 < len(argv):
-            reason = argv[idx + 1]
-    reqs = build_requests(impact.git_changed_files(gate.GATE_REPO), root=gate.GATE_REPO, reason=reason)
+    reqs = build_requests(impact.git_changed_files(gate.GATE_REPO), root=gate.GATE_REPO)
     if not reqs:
         print(M("approval.no_controlled_changes"))
         return 0
+    for p in reqs:
+        p["display_id"] = _next_ticket_id(gate.GATE_REPO, p["repo"])
     url = (os.environ.get(APPROVER_URL_ENV) or DEFAULT_APPROVER_URL).rstrip("/")
     wait = "--wait" in argv
     return 0 if all(_post_one_request(url, p, wait) for p in reqs) else 2
@@ -570,22 +561,15 @@ def _cases():
              "q/26.md", q_weak, anc, receipt=valid_rec, pub_b64=pub_b64, repo_name="Einfacht", now=now) == []
          and check_question_change(
              "q/26.md", q_weak, anc, receipt=daemon_rec, pub_b64=pub_pem, repo_name="Einfacht", now=now) == []),
-        ("approval.request_scope_and_dedup",
+        ("approval.mechanical_request_scope_and_ticket",
          lambda: [r["target_path"] for r in build_requests(
              ["src/app.py", "zreflect/doc.py", "questions/26.md"],
              root=".", repo_name="Einfacht",
              diff_fn=lambda _r, _p: ("p1", "+diff"), sha_fn=lambda _p: "t1")]
          == ["questions/26.md", "zreflect/doc.py"]
-         and check_duplicate_request(
-             [{"repo": "Einfacht", "action": "seal.doc", "target_path": "zreflect/doc.py",
-               "prev_sha256": "p1", "target_sha256": "t1", "status": "approved_single", "receipt": daemon_rec}],
-             {"repo": "Einfacht", "action": "seal.doc", "target_path": "zreflect/doc.py",
-              "prev_sha256": "p1", "target_sha256": "t1"}, now_ts=int(now.timestamp()) + 10)[0] == "already_approved"
-         and check_duplicate_request(
-             [{"repo": "Einfacht", "action": "seal.doc", "target_path": "zreflect/doc.py",
-               "prev_sha256": "p1", "target_sha256": "t1", "status": "approved_single", "receipt": daemon_rec}],
-             {"repo": "OtherRepo", "action": "seal.doc", "target_path": "zreflect/doc.py",
-              "prev_sha256": "p1", "target_sha256": "t1"}, now_ts=int(now.timestamp()) + 10)[0] == "new"),
+         and "reason" not in build_requests(
+             ["zreflect/doc.py"], root=".", repo_name="Einfacht",
+             diff_fn=lambda _r, _p: ("p1", "+diff"), sha_fn=lambda _p: "t1")[0]),
     ]
 
 
