@@ -222,9 +222,9 @@
     },
     "questions/35-inprocess-selftest-and-perf.md": {
       "body_sha256": "627abd1446b9fbdbc49018a77c09d7d994b610ea6a9a13850c1ebefe93a74da6",
-      "settling": "none -- first deliverable: 第一交付物是在 `zreflect/gate.py` 实现受封签 `--selftest` 进程内直调与捕获输出/返回码的原型及会红自测用例（证明失败红例在进程内直调下仍返回 `rc!=0`）。 ## 复跑方式 ```sh python3 zreflect/gate.py --selftest && python3 zreflect/registry.py --run commit --all ```",
-      "sha256": "2f3b839e537ecb0592b489b9d89b062ae048ffe43e1f28e5038c4e536f5ef588",
-      "status": "ready-for-agent"
+      "settling": "python3 zreflect/gate.py --selftest -- rc=0 => pure in-process script/selftest execution, _INPROC_CACHE dedup, forged env/cache rejection, and red selftest rc!=0 pass; rc!=0 => Q35 regression ## 复跑方式 ```sh python3 zreflect/gate.py --selftest && python3 zreflect/registry.py --run commit --all ```",
+      "sha256": "7266c492aebcad1c5bb42d27956e9d4a9812ea3bbed78b7522206c918a1c648c",
+      "status": "resolved"
     }
   },
   "repo": "ArchivalEra/Einfacht",

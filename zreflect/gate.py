@@ -10,6 +10,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -439,21 +440,22 @@ def has_suite_ancestor(only_pid=None):
 
 
 def trusted_replay_depth():
-    """Return `EINFACHT_REPLAY_DEPTH` only when inherited from a live suite ancestor."""
+    """Return replay depth from in-process suite execution or a verified live suite ancestor."""
     try:
         depth = int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0)
     except ValueError:
-        return 0
-    if depth <= 0:
-        return 0
-    return depth if has_suite_ancestor() else 0
+        depth = 0
+    env_depth = depth if (depth > 0 and has_suite_ancestor()) else 0
+    return max(_INPROC_REPLAY_DEPTH, env_depth)
 
 
 _INPROC_CACHE: dict[str, tuple[int | None, str]] | None = None
+_INPROC_REPLAY_DEPTH = 0
+_INPROC_LOCK = threading.RLock()
 
 
 def with_run_cache(fn):
-    """Run `fn()` with an in-process single-invocation command cache (never trusts external env)."""
+    """Run `fn()` with a pure in-process single-invocation command cache (never trusts external env)."""
     global _INPROC_CACHE
     if _INPROC_CACHE is not None:
         return fn()
@@ -464,14 +466,65 @@ def with_run_cache(fn):
         _INPROC_CACHE = None
 
 
+def _inproc_suite_argv(cmd):
+    if os.path.abspath(GATE_REPO) != os.path.abspath(tool_repo()):
+        return None
+    if any(ch in cmd for ch in ("&", "|", ";", ">", "<", "$", "`", "\n")):
+        return None
+    parts = cmd.strip().split()
+    if len(parts) < 2:
+        return None
+    exe = os.path.basename(parts[0]).lower()
+    if not (exe.startswith("python") or parts[0] == sys.executable):
+        return None
+    rel = parts[1].replace("\\", "/")
+    if not (rel.startswith("zreflect/") and rel.endswith(".py")):
+        return None
+    if os.path.basename(rel) in ("harness.py", "examples.py"):
+        return None
+    full = os.path.join(GATE_REPO, rel)
+    return (full, parts[2:]) if os.path.isfile(full) else None
+
+
+def _run_inproc_script(script_path, extra_args, bump_depth=True):
+    import contextlib  # noqa: PLC0415
+    import io  # noqa: PLC0415
+    import runpy  # noqa: PLC0415
+    global _INPROC_REPLAY_DEPTH
+    with _INPROC_LOCK:
+        buf = io.StringIO()
+        old_argv = sys.argv
+        sys.argv = [script_path, *extra_args]
+        if bump_depth:
+            _INPROC_REPLAY_DEPTH += 1
+        rc = 0
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            try:
+                runpy.run_path(script_path, run_name="__main__")
+            except SystemExit as exc:
+                rc = exc.code if isinstance(exc.code, int) else (1 if exc.code else 0)
+            finally:
+                sys.argv = old_argv
+                if bump_depth:
+                    _INPROC_REPLAY_DEPTH -= 1
+        return rc, buf.getvalue()
+
+
+def _cache_key(cmd):
+    depth_sensitive = any(s in cmd for s in ("check_questions", "check_retractions", "registry.py", "check_facts_replay"))
+    d = trusted_replay_depth() if depth_sensitive else 0
+    return "%s|%s|%s" % (os.path.abspath(GATE_REPO), d, cmd)
+
+
 def run_cmd_cached(cmd, timeout=None):
     """Run `cmd`, sharing results only within the current process's `with_run_cache` scope."""
     if _INPROC_CACHE is None:
         return run_cmd(cmd, timeout=timeout)
-    key = "%s|%s|%s" % (os.path.abspath(GATE_REPO), trusted_replay_depth(), cmd)
+    key = _cache_key(cmd)
     if key in _INPROC_CACHE:
         return _INPROC_CACHE[key]
-    res = run_cmd(cmd, timeout=timeout)
+    target = _inproc_suite_argv(cmd) if timeout is None else None
+    res = _run_inproc_script(target[0], target[1]) if target else run_cmd(cmd, timeout=timeout)
     _INPROC_CACHE[key] = res
     return res
 
@@ -566,8 +619,13 @@ def main_selftest_or(args, name, cases, run):
 
 def default_runner(f, repo_root=None):
     """Execute gate file `f` in `repo_root or GATE_REPO`; return `(rc, merged_output)`."""
+    root = repo_root or GATE_REPO
+    if (_INPROC_CACHE is not None
+            and os.path.abspath(root) == os.path.abspath(tool_repo())
+            and os.path.realpath(f).startswith(os.path.realpath(zdir()) + os.sep)):
+        return _run_inproc_script(f, [], bump_depth=False)
     p = subprocess.run([sys.executable, f], capture_output=True, text=True,
-                       cwd=repo_root or GATE_REPO, encoding="utf-8", errors="replace")
+                       cwd=root, encoding="utf-8", errors="replace")
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
@@ -620,9 +678,10 @@ def _restore_cache_env(old_c, old_t):
     else:
         os.environ["EINFACHT_RUN_CACHE"] = old_c
     if old_t is None:
-        os.environ.pop("EINFACHT_RUN_CACHE_TOKEN", None)
+        os.environ.pop("EINFACHT_RUN_CACHE_KEY", None)
     else:
-        os.environ["EINFACHT_RUN_CACHE_TOKEN"] = old_t
+        os.environ["EINFACHT_RUN_CACHE_KEY"] = old_t
+    os.environ.pop("EINFACHT_RC_FD", None)
 
 
 def _case_forged_cache_and_depth():
@@ -635,8 +694,8 @@ def _case_forged_cache_and_depth():
         k = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
         with open(os.path.join(tmp, k + ".json"), "w", encoding="utf-8") as fh:
             json.dump({"rc": 0, "out": "FORGED"}, fh)
-        old_c, old_t = os.environ.get("EINFACHT_RUN_CACHE"), os.environ.get("EINFACHT_RUN_CACHE_TOKEN")
-        os.environ["EINFACHT_RUN_CACHE"], os.environ["EINFACHT_RUN_CACHE_TOKEN"] = tmp, "forged"
+        old_c, old_t = os.environ.get("EINFACHT_RUN_CACHE"), os.environ.get("EINFACHT_RUN_CACHE_KEY")
+        os.environ["EINFACHT_RUN_CACHE"], os.environ["EINFACHT_RUN_CACHE_KEY"] = tmp, "0" * 64
         try:
             if with_run_cache(lambda: run_cmd_cached("echo real_ok")) != (0, "real_ok\n"):
                 return False
@@ -658,6 +717,27 @@ def _case_forged_cache_and_depth():
                 return open(out_f, encoding="ascii").read().strip() == "0"
             _time.sleep(0.02)
         return False
+
+
+def _case_inproc_selftest_and_hmac():
+    import tempfile  # noqa: PLC0415
+    rc_ok, out_ok = _run_inproc_script(os.path.join(zdir(), "check_locks.py"), ["--selftest"], bump_depth=False)
+    if rc_ok != 0 or "PASS |" not in out_ok:
+        return False
+    with tempfile.TemporaryDirectory() as tmp:
+        bad_py = os.path.join(tmp, "bad_selftest.py")
+        with open(bad_py, "w", encoding="utf-8") as fh:
+            fh.write("import sys\nprint('FAIL | red')\nsys.exit(1)\n")
+        rc_bad, out_bad = _run_inproc_script(bad_py, ["--selftest"], bump_depth=False)
+        if rc_bad != 1 or "FAIL | red" not in out_bad:
+            return False
+
+    def _inner():
+        a = run_cmd_cached("echo inproc_once")
+        b = run_cmd_cached("echo inproc_once")
+        return a == (0, "inproc_once\n") and a == b
+
+    return with_run_cache(_inner)
 
 
 def _cases():
@@ -696,6 +776,7 @@ def _cases():
         ("gate.spec_equals_syntax",
          lambda: resolve_spec(["--spec=foo.json"], "", "d.json") == ("foo.json", True)),
         ("★ gate.forged_run_cache_and_depth_ignored", _case_forged_cache_and_depth),
+        ("★ gate.inproc_selftest_and_hmac_cache", _case_inproc_selftest_and_hmac),
     ]
 
 

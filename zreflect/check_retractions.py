@@ -65,7 +65,7 @@ def _run_evidence(ev, runner, cache):
         return runner(ev)
     if cache is not None and ev in cache:
         return cache[ev]
-    res = gate.run_cmd(ev)
+    res = gate.run_cmd_cached(ev)
     if cache is not None:
         cache[ev] = res
     return res
@@ -180,7 +180,7 @@ def run(argv):
                 if not (isinstance(r, dict) and any(tok in str(r.get("evidence") or "") for tok in reentrant))
             ]
         }
-    probs = missing_docs + problems(led, docs, verify_evidence=True)
+    probs = missing_docs + gate.with_run_cache(lambda: problems(led, docs, verify_evidence=True))
     n = len(led.get("retractions") or [])
     return finish(M("retractions.title"), probs,
                   M("retractions.ok", count=n, documents=len(docs)))

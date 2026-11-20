@@ -7,9 +7,9 @@
 
 **Blocked by:** [questions/34-wire-seal-auto-sync-and-anchor-origin.md](34-wire-seal-auto-sync-and-anchor-origin.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Settling:** none -- first deliverable: 第一交付物是在 `zreflect/gate.py` 实现受封签 `--selftest` 进程内直调与捕获输出/返回码的原型及会红自测用例（证明失败红例在进程内直调下仍返回 `rc!=0`）。
+**Settling:** python3 zreflect/gate.py --selftest -- rc=0 => pure in-process script/selftest execution, _INPROC_CACHE dedup, forged env/cache rejection, and red selftest rc!=0 pass; rc!=0 => Q35 regression
 
 ## 复跑方式
 
