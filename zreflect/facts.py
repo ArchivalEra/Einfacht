@@ -635,7 +635,14 @@ def _init_skeleton(root, state):
                        "> Append-only provenance narrative (kept off every scan surface).\n\n"
                        "## Entries\n"),
         retract_name: '{"schema": 1, "retractions": []}\n',
-        knobs.get("REFLECT_SECRETS"): '{"paths": ["."], "allow": [], "ignore_paths": []}\n',
+        knobs.get("REFLECT_SECRETS"): json.dumps({
+            "paths": ["."],
+            "ignore_paths": [],
+            "allow": [
+                {"path": "zreflect/check_secrets.py", "rule": r}
+                for r in ("aws-access-key", "generic-secret", "private-key", "jwt", "url-credentials")
+            ],
+        }, indent=2) + "\n",
         readme_name: ("# " + os.path.basename(root) + "\n\n"
                       "> Project documentation.\n"),
         "AGENTS.md": ("# AGENTS.md\n\nRouting only. Rules live in `PRINCIPLES.md`; "

@@ -70,7 +70,7 @@
    "file_sha256": "795c0d9d81362edfe03e0f8b80eba808138f6578c87195ab43947db0e22e3869"
   },
   "zreflect/facts.py": {
-   "file_sha256": "39c778439ab0353637738deac574d0a46655835defc6a67a5c0698f9f39b742c"
+   "file_sha256": "5a0c8e1dd308a6d4ecb1b5c84ba578539bcc980f9e23e4e6f5576ced97996562"
   },
   "zreflect/gate.py": {
    "file_sha256": "00b50862ddc693c37af827856a7a37dfd249ccb9bc594dfa51281de3496620d9"
@@ -104,5 +104,5 @@
   }
  },
  "schema": 1,
- "tree_sha256": "5f6b342ea2b1b534cbcc91c14eb193c645b1f90c640d7df24ffafe165f875aa4"
+ "tree_sha256": "b03674a3ef83094ffdb1f4844de0ac81d6ff1bc0766fca5546c105a4eb1dbc86"
 }
