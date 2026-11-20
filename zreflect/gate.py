@@ -482,7 +482,7 @@ def _inproc_suite_argv(cmd):
     rel = parts[1].replace("\\", "/")
     if not (rel.startswith("zreflect/") and rel.endswith(".py")):
         return None
-    if os.path.basename(rel) in ("harness.py", "examples.py"):
+    if parts[2:] != ["--selftest"] or os.path.basename(rel) in ("harness.py", "examples.py", "facts.py"):
         return None
     full = os.path.join(GATE_REPO, rel)
     return (full, parts[2:]) if os.path.isfile(full) else None
