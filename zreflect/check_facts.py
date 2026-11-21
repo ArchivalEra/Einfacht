@@ -204,6 +204,7 @@ def run(argv):
     import approval  # noqa: PLC0415
     probs += extra_block_problems(loaded, homes)
     probs += approval.check_principles_repo(repo())
+    probs += approval.check_knobs_anchor(repo())
     return finish(M("facts.title"), probs, M("facts.ok", count=len(f), docs=scanned))
 
 

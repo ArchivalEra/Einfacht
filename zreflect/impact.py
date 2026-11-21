@@ -237,15 +237,12 @@ def git_changed_files(repo_root=None):
         paths = _parse_porcelain(r.stdout)
         if paths:
             return paths
-        up = subprocess.run(["git", "-C", root, "diff", "--name-only", "@{upstream}..HEAD"],
-                            capture_output=True, text=True, timeout=15)
-        if up.returncode == 0:
-            return [_norm(ln) for ln in up.stdout.splitlines() if ln.strip()]
-        r2 = subprocess.run(["git", "-C", root, "diff", "--name-only", "HEAD~1", "HEAD"],
-                            capture_output=True, text=True, timeout=15)
-        if r2.returncode != 0:
-            return None
-        return [_norm(ln) for ln in r2.stdout.splitlines() if ln.strip()]
+        for ref in ("@{upstream}", "origin/main", "origin/master"):
+            up = subprocess.run(["git", "-C", root, "diff", "--name-only", f"{ref}..HEAD"],
+                                capture_output=True, text=True, timeout=15)
+            if up.returncode == 0:
+                return [_norm(ln) for ln in up.stdout.splitlines() if ln.strip()]
+        return None
     except (OSError, subprocess.TimeoutExpired):
         return None
 

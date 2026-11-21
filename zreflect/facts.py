@@ -465,6 +465,19 @@ def _age_human(entry):
     return M("facts.age.today") if d < 1 else M("facts.age.days_ago", days=int(d))
 
 
+def _run_external_measure(mod_name, rz):
+    import subprocess  # noqa: PLC0415
+    code = (
+        f"import json, sys; sys.path.insert(0, {rz!r}); "
+        f"import {mod_name} as m; print(json.dumps(m.measure()))"
+    )
+    proc = subprocess.run([sys.executable, "-c", code], cwd=gate.GATE_REPO,
+                          capture_output=True, text=True, timeout=60, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError((proc.stderr or proc.stdout or f"rc={proc.returncode}").strip())
+    return json.loads(proc.stdout)
+
+
 def _measure():
     mod_name = (knobs.raw("REFLECT_MEASURE_MODULE") or "").strip()
     if not mod_name:
@@ -472,9 +485,13 @@ def _measure():
     if mod_name == "measure_example":
         return measure_example()
     rz = os.path.join(gate.GATE_REPO, "zreflect")
-    if os.path.isdir(rz) and rz not in sys.path:
-        sys.path.insert(0, rz)
     try:
+        import seal  # noqa: PLC0415
+        mod_path = os.path.join(rz, mod_name + ".py")
+        if os.path.isfile(mod_path) and not seal.is_sealed_target(mod_path, root=gate.GATE_REPO, zdir=rz):
+            return _run_external_measure(mod_name, rz)
+        if os.path.isdir(rz) and rz not in sys.path:
+            sys.path.insert(0, rz)
         _m = __import__(mod_name)
         fn = getattr(_m, "measure")   # noqa: B009
     except Exception as e:                            # noqa: BLE001
@@ -485,7 +502,7 @@ def _measure():
 
 def _attach_core_seal(facts):
     import seal  # noqa: PLC0415
-    if not seal.seal_exists():
+    if not seal.seal_exists() and not os.path.isfile(os.path.join(gate.zdir(), "seal.py")):
         return 0
     probs = seal.verify_problems()
     if probs:

@@ -1,5 +1,6 @@
 {
   "approver_pub": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAvf9ckQEI6CkK30ookgtqjT6I3H0PXzo6ov25212pyDQ=\n-----END PUBLIC KEY-----\n",
+  "knobs_sha256": "0be1ace3133f8c2500383bddf6c4b3aae1c93b606157f8fac3f8e7ca31fddb1a",
   "lock_core": true,
   "off_gates": [
     "check_ab.py",
@@ -225,8 +226,15 @@
       "settling": "python3 zreflect/gate.py --selftest -- rc=0 => pure in-process script/selftest execution, _INPROC_CACHE dedup, forged env/cache rejection, and red selftest rc!=0 pass; rc!=0 => Q35 regression ## 复跑方式 ```sh python3 zreflect/gate.py --selftest && python3 zreflect/registry.py --run commit --all ```",
       "sha256": "7266c492aebcad1c5bb42d27956e9d4a9812ea3bbed78b7522206c918a1c648c",
       "status": "resolved"
+    },
+    "questions/36-close-knobs-seal-and-inproc-audit-gaps.md": {
+      "body_sha256": "4569d8d14f47de8d8176337e7d417ff1ec6076a6da38c8c58b1fb372d7b6f4ab",
+      "settling": "python3 zreflect/approval.py --selftest && python3 zreflect/seal.py --selftest && python3 zreflect/gate.py --selftest && python3 zreflect/check_retractions.py --selftest && python3 zreflect/impact.py --selftest -- rc=0 => knobs.json anchor, unsealed subprocess isolation, missing SEAL fatal, depth>=1 resurfacing scan, and multi-commit impact fallback hold; rc!=0 => Q36 regression ## 复跑方式 ```sh python3 zreflect/approval.py --selftest && python3 zreflect/seal.py --selftest && python3 zreflect/gate.py --selftest && python3 zreflect/check_retractions.py --selftest && python3 zreflect/impact.py --selftest ```",
+      "sha256": "f41a761315ac0e9baba17819482c6cebb87264c223753e8bb54277119eb46916",
+      "status": "resolved"
     }
   },
+  "questions_dir": "questions",
   "repo": "ArchivalEra/Einfacht",
   "revoked_ids": [],
   "schema": 1

@@ -215,7 +215,7 @@ def problems(gs, missing, mods=None, mods_missing=None, knob_problems=None, unde
     out += list(knobs.config_problems() if knob_problems is None else knob_problems)
     if auto:
         out += knobs.direct_environ_problems()
-    if auto and seal.seal_exists():
+    if auto and (seal.seal_exists() or os.path.isfile(os.path.join(gate.zdir(), "seal.py"))):
         out += seal.verify_problems()
     return out
 
@@ -369,7 +369,8 @@ def _main_run(argv):
     if phase not in phases():
         return fatal(M("registry.empty_phase", phase=phase))
     gs, missing = gates()
-    reg_probs = problems(gs, missing)
+    import approval  # noqa: PLC0415
+    reg_probs = problems(gs, missing) + approval.check_knobs_anchor()
     if reg_probs:
         for p in reg_probs:
             print("  · %s" % p, file=sys.stderr)

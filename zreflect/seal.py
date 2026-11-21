@@ -30,6 +30,17 @@ def seal_exists(zdir=None):
     return os.path.isfile(seal_path(zdir))
 
 
+def is_sealed_target(path, root=None, zdir=None):
+    """True iff `path` is explicitly listed in a valid `SEAL.json`."""
+    zd = zdir or gate.zdir()
+    rt = root or gate.tool_repo()
+    data, err = _load_seal(seal_path(zd))
+    if err or not data:
+        return False
+    rel = os.path.relpath(os.path.realpath(path), os.path.realpath(rt)).replace(os.sep, "/")
+    return rel in (data.get("files") or {})
+
+
 def _read_norm(path):
     """Read UTF-8 text with CRLF normalized to LF for deterministic hashing."""
     with open(path, encoding="utf-8") as fh:

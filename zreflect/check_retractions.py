@@ -71,7 +71,10 @@ def _run_evidence(ev, runner, cache):
     return res
 
 
-def _evidence_problems(retractions, runner=None, verify_evidence=False):
+_REENTRANT_TOKS = ("check_retractions.py", "check_questions.py", "registry.py --run", "harness.py")
+
+
+def _evidence_problems(retractions, runner=None, verify_evidence=False, skip_reentrant=False):
     """`evidence` must be **replayable** and pass when `verify_evidence` is enabled."""
     out = []
     cache: dict[str, tuple[int | None, str]] = {}
@@ -82,6 +85,8 @@ def _evidence_problems(retractions, runner=None, verify_evidence=False):
                     "retractions/%s" % r.get("id", "?"), "evidence", ev)):
             out.append(M("retractions.evidence_not_runnable",
                          entry=r.get("id"), evidence=str(ev)[:60]))
+            continue
+        if skip_reentrant and any(tok in str(ev) for tok in _REENTRANT_TOKS):
             continue
         if verify_evidence or runner is not None:
             rc, _ = _run_evidence(str(ev), runner, cache)
@@ -127,7 +132,7 @@ def _resurfaced_problems(retractions, docs, hist):
     return out
 
 
-def problems(retractions, docs, hist_secs=None, runner=None, verify_evidence=False):
+def problems(retractions, docs, hist_secs=None, runner=None, verify_evidence=False, skip_reentrant=False):
     """Return the problem list (pure function: the selftest needs that)."""
     hist = HIST_SECS if hist_secs is None else hist_secs
     if retractions is None or "retractions" not in (retractions or {}):
@@ -136,13 +141,14 @@ def problems(retractions, docs, hist_secs=None, runner=None, verify_evidence=Fal
         return [M("retractions.no_docs")]
     entries = [r for r in (retractions.get("retractions") or [])
                if isinstance(r, dict)]
-    return _entry_problems(entries, docs, hist, runner=runner, verify_evidence=verify_evidence)
+    return _entry_problems(entries, docs, hist, runner=runner,
+                           verify_evidence=verify_evidence, skip_reentrant=skip_reentrant)
 
 
-def _entry_problems(entries, docs, hist, runner=None, verify_evidence=False):
+def _entry_problems(entries, docs, hist, runner=None, verify_evidence=False, skip_reentrant=False):
     """Concatenate field completeness, evidence checks, and document resurfacing."""
     return (_entry_field_problems(entries)
-            + _evidence_problems(entries, runner=runner, verify_evidence=verify_evidence)
+            + _evidence_problems(entries, runner=runner, verify_evidence=verify_evidence, skip_reentrant=skip_reentrant)
             + _resurfaced_problems(entries, docs, hist))
 
 
@@ -172,15 +178,8 @@ def run(argv):
     if depth < 0 or depth >= 3:
         return fatal(M("replay.too_deep", depth=depth, limit=3))
     led = load_or_fatal(rp)
-    if depth >= 1:
-        reentrant = ("check_retractions.py", "check_questions.py", "registry.py --run", "harness.py")
-        led = {
-            "retractions": [
-                r for r in (led.get("retractions") or [])
-                if not (isinstance(r, dict) and any(tok in str(r.get("evidence") or "") for tok in reentrant))
-            ]
-        }
-    probs = missing_docs + gate.with_run_cache(lambda: problems(led, docs, verify_evidence=True))
+    probs = missing_docs + gate.with_run_cache(
+        lambda: problems(led, docs, verify_evidence=True, skip_reentrant=(depth >= 1)))
     n = len(led.get("retractions") or [])
     return finish(M("retractions.title"), probs,
                   M("retractions.ok", count=n, documents=len(docs)))
@@ -242,6 +241,13 @@ def _cases():
          lambda: [p.code for p in problems(
              ok_r, {"A.md": "clean\n"}, runner=lambda _c: (1, "fail"))]
          == ["retractions.evidence_failed"]),
+        ("★ retractions.depth_one_still_scans_resurfaced",
+         lambda: [p.code for p in problems(
+             {"retractions": [{"id": "R-2", "text": "this thing is green",
+                               "evidence": "python3 zreflect/check_questions.py",
+                               "fixed_in": "a.py"}]},
+             {"A.md": "this thing is green\n"}, verify_evidence=True, skip_reentrant=True)]
+         == ["retractions.resurfaced"]),
     ]
 
 

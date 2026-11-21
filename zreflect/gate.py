@@ -473,6 +473,10 @@ def with_run_cache(fn):
 
 
 def _is_ro_suite_call(rel, extra):
+    import seal  # noqa: PLC0415
+    full = os.path.join(GATE_REPO, rel)
+    if not seal.is_sealed_target(full, root=GATE_REPO, zdir=zdir()):
+        return False
     base = os.path.basename(rel)
     if extra == ["--selftest"]:
         return base not in ("harness.py", "examples.py", "facts.py")
@@ -600,7 +604,7 @@ def selftest(name, cases):
     if not cases:
         fatal_exit(i18n.M("gate.selftest_empty_cases", name=name))
     import seal  # noqa: PLC0415
-    if seal.seal_exists():
+    if seal.seal_exists() or os.path.isfile(os.path.join(zdir(), "seal.py")):
         probs = seal.verify_problems()
         if probs:
             fatal_exit(probs[0])
@@ -661,10 +665,12 @@ def main_selftest_or(args, name, cases, run):
 
 def default_runner(f, repo_root=None):
     """Execute gate file `f` in `repo_root or GATE_REPO`; return `(rc, merged_output)`."""
+    import seal  # noqa: PLC0415
     root = repo_root or GATE_REPO
     if (_INPROC_CACHE is not None
             and os.path.abspath(root) == os.path.abspath(tool_repo())
-            and os.path.realpath(f).startswith(os.path.realpath(zdir()) + os.sep)):
+            and os.path.realpath(f).startswith(os.path.realpath(zdir()) + os.sep)
+            and seal.is_sealed_target(f, root=root, zdir=zdir())):
         return _run_inproc_script(f, [], bump_depth=False)
     p = subprocess.run([sys.executable, f], capture_output=True, text=True,
                        cwd=root, encoding="utf-8", errors="replace")

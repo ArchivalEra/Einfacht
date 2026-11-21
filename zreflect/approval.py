@@ -415,6 +415,10 @@ def check_anchors_integrity(anchors, root=None, receipt=None, qdir=None):
     for g in sorted(set(anchors.get("off_gates") or ()) - set(head.get("off_gates") or ())):
         out += verify_receipt(receipt, repo_name=rname, action="gate.off", target=g,
                               prev_sha256="on", target_sha256="off", pub_b64=pub, revoked_ids=revoked)
+    if "knobs_sha256" in head and anchors.get("knobs_sha256") != head.get("knobs_sha256"):
+        out += verify_receipt(receipt, repo_name=rname, action="gate.off", target="knobs.json",
+                              prev_sha256=head["knobs_sha256"], target_sha256=anchors.get("knobs_sha256", "NONE"),
+                              pub_b64=pub, revoked_ids=revoked)
     return out
 
 
@@ -473,7 +477,9 @@ def _configured_qdir(root):
 def _eval_questions_anchor(files, anchors, root, rec, qdir):
     q_map = anchors.get("questions") or {}
     cfg_qdir = _configured_qdir(root)
-    if qdir and qdir.rstrip("/") != cfg_qdir and any(k.startswith(cfg_qdir + "/") for k in q_map):
+    anc_qdir = (anchors.get("questions_dir") or cfg_qdir).rstrip("/")
+    if (qdir and (qdir.rstrip("/") != cfg_qdir or qdir.rstrip("/") != anc_qdir)
+            and any(k.startswith((anc_qdir + "/", cfg_qdir + "/")) for k in q_map)):
         return [M("approval.anchors_broken")]
     if qdir:
         prefix = qdir.rstrip("/") + "/"
@@ -533,6 +539,34 @@ def check_principles_anchor(anchors, *, doc_py_sha, principles_md_sha, no_princi
     return out
 
 
+def _knobs_sha(root=None):
+    base = root or gate.GATE_REPO
+    return sha256_file(os.path.join(base, "knobs.json")) or "NONE"
+
+
+def check_knobs_anchor(root=None, receipt=None, now=None):
+    base = root or gate.GATE_REPO
+    anchors = load_anchors(base)
+    if anchors is None:
+        return []
+    if not anchors:
+        return [M("approval.anchors_broken")]
+    rec = receipt if receipt is not None else load_receipt(root=base)
+    out = check_anchors_integrity(anchors, root=base, receipt=rec)
+    if "knobs_sha256" not in anchors and not os.path.isfile(os.path.join(base, "knobs.json")):
+        return out
+    cur_sha = _knobs_sha(base)
+    prev_sha = anchors.get("knobs_sha256", "NONE")
+    if cur_sha != prev_sha:
+        out += verify_receipt(
+            rec, repo_name=anchors.get("repo") or repo_id(base), action="gate.off", target="knobs.json",
+            prev_sha256=prev_sha, target_sha256=cur_sha, pub_b64=anchors.get("approver_pub"),
+            revoked_ids=anchors.get("revoked_ids") or [], now=now)
+    if receipt is None and out and _auto_sync_for_probs(base, anchors, out):
+        return check_knobs_anchor(root=base, receipt=load_receipt(root=base), now=now)
+    return out
+
+
 def check_principles_repo(root=None, receipt=None):
     base = root or gate.GATE_REPO
     anchors = load_anchors(base)
@@ -544,10 +578,13 @@ def check_principles_repo(root=None, receipt=None):
     md_sha = sha256_file(os.path.join(base, "PRINCIPLES.md"))
     no_pr = knobs.flag("REFLECT_NO_PRINCIPLES") is True
     rec = receipt if receipt is not None else load_receipt(root=base)
-    out = check_principles_anchor(anchors, doc_py_sha=doc_sha, principles_md_sha=md_sha, no_principles=no_pr, receipt=rec)
+    out = check_anchors_integrity(anchors, root=base, receipt=rec)
+    out += check_principles_anchor(anchors, doc_py_sha=doc_sha, principles_md_sha=md_sha, no_principles=no_pr, receipt=rec)
     if receipt is None and out and _auto_sync_for_probs(base, anchors, out):
-        out = check_principles_anchor(
-            anchors, doc_py_sha=doc_sha, principles_md_sha=md_sha, no_principles=no_pr, receipt=load_receipt(root=base))
+        rec2 = load_receipt(root=base)
+        out = check_anchors_integrity(anchors, root=base, receipt=rec2)
+        out += check_principles_anchor(
+            anchors, doc_py_sha=doc_sha, principles_md_sha=md_sha, no_principles=no_pr, receipt=rec2)
     return out
 
 
@@ -568,14 +605,17 @@ def check_off_gates_anchor(off_list, root=None, receipt=None, now=None):
         return []
     if not anchors:
         return [M("approval.anchors_broken")]
+    rec = receipt if receipt is not None else load_receipt(root=base)
+    out = check_anchors_integrity(anchors, root=base, receipt=rec)
     allowed = set(anchors.get("off_gates") or ())
     extra = sorted(os.path.basename(f) for f in off_list if os.path.basename(f) not in allowed)
     if not extra:
-        return []
-    rec = receipt if receipt is not None else load_receipt(root=base)
-    out = _eval_off_gates(extra, anchors, base, rec, now)
+        return out
+    out += _eval_off_gates(extra, anchors, base, rec, now)
     if receipt is None and out and _auto_sync_for_probs(base, anchors, out):
-        out = _eval_off_gates(extra, anchors, base, load_receipt(root=base), now)
+        rec2 = load_receipt(root=base)
+        out = check_anchors_integrity(anchors, root=base, receipt=rec2)
+        out += _eval_off_gates(extra, anchors, base, rec2, now)
     return out
 
 
@@ -590,6 +630,8 @@ def _build_anchors(root, pub_b64=None):
         "approver_pub": pub_b64,
         "lock_core": True,
         "revoked_ids": [],
+        "knobs_sha256": _knobs_sha(root),
+        "questions_dir": _configured_qdir(root),
         "off_gates": off_list,
         "principles": {
             "doc_py_sha256": sha256_file(os.path.join(gate.zdir(), "doc.py")),
@@ -885,6 +927,7 @@ def _cases():
         ("★ approval.auto_sync_submits_pulls_and_surfaces_deny", _auto_sync_and_deny_case),
         ("★ approval.qdir_env_override_and_trivial_settling_blocked", _qdir_and_trivial_case),
         ("★ approval.upstream_baseline_non_weakening", _upstream_baseline_case),
+        ("★ approval.knobs_tamper_and_standalone_integrity", _knobs_and_standalone_case),
     ]
 
 
@@ -1285,6 +1328,45 @@ def _upstream_baseline_case():
             subprocess.run(["git", "-C", rt, "add", ANCHORS_FILE], check=True)
             subprocess.run(["git", "-C", rt, "commit", "--no-verify", "-m", "weak"], check=True, capture_output=True)
             return [p.code for p in check_anchors_integrity(anc_weak, root=rt, receipt={})] == ["approval.anchors_broken"]
+    finally:
+        PINNED_APPROVER_PUB = old_pub
+
+
+def _knobs_and_standalone_case():
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: PLC0415
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat  # noqa: PLC0415
+    global PINNED_APPROVER_PUB
+    priv = Ed25519PrivateKey.generate()
+    pub_b64 = base64.b64encode(priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)).decode("ascii")
+    old_pub = PINNED_APPROVER_PUB
+    PINNED_APPROVER_PUB = pub_b64
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            q_none = "# 01: t\n\n**Status:** ready-for-agent\n\n**Settling:** none\n"
+            rt, _ = _e2e_init_repo(tmp, "R", "https://github.com/O/R.git", pub_b64, q_none)
+            with open(os.path.join(rt, "knobs.json"), "w", encoding="utf-8") as fh:
+                json.dump({"REFLECT_NAKED_MIN": "99999999"}, fh)
+            probs = check_knobs_anchor(root=rt, receipt={"receipts": []})
+            if [p.code for p in probs] != ["approval.receipt_required"]:
+                return False
+            os.remove(os.path.join(rt, "knobs.json"))
+            anc_p = os.path.join(rt, ANCHORS_FILE)
+            anc = dict(json.load(open(anc_p, encoding="utf-8")), lock_core=True)
+            with open(anc_p, "w", encoding="utf-8") as fh:
+                json.dump(anc, fh, indent=2)
+            for args in (["git", "-C", rt, "config", "user.email", "t@e.com"],
+                         ["git", "-C", rt, "config", "user.name", "T"],
+                         ["git", "-C", rt, "add", "."],
+                         ["git", "-C", rt, "commit", "-m", "init"]):
+                subprocess.run(args, check=True, capture_output=True)
+            with open(anc_p, "w", encoding="utf-8") as fh:
+                json.dump(dict(anc, lock_core=False), fh, indent=2)
+            pr_codes = [p.code for p in check_principles_repo(root=rt, receipt={"receipts": []})]
+            og_codes = [p.code for p in check_off_gates_anchor([], root=rt, receipt={"receipts": []})]
+            return "approval.anchors_broken" in pr_codes and "approval.anchors_broken" in og_codes
     finally:
         PINNED_APPROVER_PUB = old_pub
 
