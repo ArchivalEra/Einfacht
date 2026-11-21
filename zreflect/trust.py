@@ -27,6 +27,7 @@ SUITE_SIG_NAME = "SUITE.sig"
 ANCHORS_FILE = trust_core.ANCHORS_FILE
 RECEIPT_ENV = "EINFACHT_APPROVAL_RECEIPT"
 APPROVER_URL_ENV = "EINFACHT_APPROVER_URL"
+APPROVER_PUB_ENV = "EINFACHT_APPROVER_PUB"
 DEFAULT_APPROVER_URL = "http://127.0.0.1:18443"
 SYSTEM_PUB_PATH = "/etc/einfacht-approver/signing_pub.pem"
 PINNED_APPROVER_PUB = (
@@ -40,16 +41,30 @@ PINNED_APPROVER_PUB = (
 # Port 1: Crypto (Ed25519)
 # ---------------------------------------------------------------------------
 
+def _read_pub_text(path):
+    try:
+        with open(path, encoding="ascii") as fh:
+            txt = fh.read().strip()
+        if "BEGIN PUBLIC KEY" in txt:
+            return txt + "\n"
+        return txt or None
+    except OSError:
+        return None
+
+
 def pinned_approver_pub():
-    """Return system-installed approver public key PEM if present, else pinned key."""
+    """Return `EINFACHT_APPROVER_PUB`, system-installed approver public key PEM, or pinned key."""
+    env_pub = (os.environ.get(APPROVER_PUB_ENV) or "").strip()
+    if env_pub:
+        if os.path.isfile(env_pub):
+            loaded = _read_pub_text(env_pub)
+            if loaded:
+                return loaded
+        return env_pub + ("\n" if "BEGIN PUBLIC KEY" in env_pub else "")
     if os.path.isfile(SYSTEM_PUB_PATH):
-        try:
-            with open(SYSTEM_PUB_PATH, encoding="ascii") as fh:
-                txt = fh.read().strip()
-            if "BEGIN PUBLIC KEY" in txt:
-                return txt + "\n"
-        except OSError:
-            pass
+        loaded = _read_pub_text(SYSTEM_PUB_PATH)
+        if loaded and "BEGIN PUBLIC KEY" in loaded:
+            return loaded
     return PINNED_APPROVER_PUB
 
 
@@ -250,13 +265,11 @@ def _default_receipt_path(root=None):
 
 
 def load_receipt(path=None, root=None):
-    """Load receipt or bundle from `EINFACHT_APPROVAL_RECEIPT` or `.git/einfacht-receipt.json`."""
+    """Load receipt or bundle from explicit `path` / `EINFACHT_APPROVAL_RECEIPT`, else `.git/einfacht-receipt.json`."""
     base = root or gate.GATE_REPO
-    p = path or os.environ.get(RECEIPT_ENV)
+    explicit = path or os.environ.get(RECEIPT_ENV)
+    p = explicit if explicit else _default_receipt_path(base)
     if not p or not os.path.isfile(p):
-        fallback = _default_receipt_path(base)
-        p = fallback if os.path.isfile(fallback) else None
-    if not p:
         return None
     try:
         with open(p, encoding="utf-8") as fh:
@@ -784,7 +797,9 @@ def _validate_upgrade_source(src, dst_anc):
         if new_seq < old_seq:
             return None, M("trust.suite_downgrade", old_seq=old_seq, new_seq=new_seq)
         sig = load_suite_sig(src_z)
-        if dst_anc.get("lock_core") and new_seq > old_seq and sig is not None:
+        if dst_anc.get("lock_core") and new_seq > old_seq:
+            if sig is None:
+                return None, M("approval.receipt_required", action="suite.release", target="zreflect/SEAL.json")
             sig_probs = trust_core.verify_suite_sig(
                 seal_d, sig, pub_b64=dst_anc.get("approver_pub"), verify_sig_fn=ed25519_verify)
             if sig_probs:
@@ -840,30 +855,27 @@ def _sync_settled(root):
     if not anchors:
         return 2
     files = check_questions.collect(root=root)
-    q_map = anchors.setdefault("questions", {})
-    pub = anchors.get("approver_pub")
-    rname = anchors.get("repo") or repo_id(root)
-    revoked = anchors.get("revoked_ids") or []
-    rec = load_receipt(root=root)
-    for rel, text in sorted(files.items()):
-        if rel not in q_map:
-            probs = trust_core.verify_receipt(
-                rec, repo_name=rname, action="question.create", target=rel,
-                prev_sha256="NONE", target_sha256=trust_core.sha256_text(text),
-                pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
-            if probs:
-                print(probs[0], file=sys.stderr)
-                return 1
-            q_map[rel] = trust_core.question_snapshot(text, _q_field(text, "Status"), _q_field(text, "Settling"))
-            continue
-        if q_map[rel].get("sha256") == trust_core.sha256_text(text):
-            continue
-        if not trust_core.is_legal_settlement(_q_field(text, "Status"), _q_field(text, "Settling"), text, q_map[rel]):
-            print(M("approval.receipt_required", action="question.modify", target=rel), file=sys.stderr)
-            return 2
-        q_map[rel] = trust_core.question_snapshot(text, _q_field(text, "Status"), _q_field(text, "Settling"))
-    write_anchors(root, anchors)
-    print(M("approval.anchors_synced", count=len(q_map)))
+    off_list = sorted(x.strip() for x in (knobs.get("REFLECT_OFF_GATES") or "").split(",") if x.strip())
+    probs = (
+        verify_problems(root=root, zdir=os.path.join(root, "zreflect"))
+        + check_knobs_anchor(root=root)
+        + check_off_gates_anchor(off_list, root=root)
+        + check_principles_repo(root=root)
+        + check_questions_against_anchor(files, root=root)
+    )
+    if probs:
+        for p in probs:
+            print(p, file=sys.stderr)
+        return 2
+    head, _err = _baseline_anchors(root)
+    synced = _build_anchors(root, pub_b64=anchors.get("approver_pub"))
+    synced["repo"] = anchors.get("repo") or synced["repo"]
+    synced["lock_core"] = bool(anchors.get("lock_core", True))
+    synced["revoked_ids"] = sorted(
+        set(anchors.get("revoked_ids") or ()) | set((head or {}).get("revoked_ids") or ())
+    )
+    write_anchors(root, synced)
+    print(M("approval.anchors_synced", count=len(synced.get("questions") or {})))
     return 0
 
 

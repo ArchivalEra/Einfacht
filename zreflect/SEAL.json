@@ -37,7 +37,7 @@
    "file_sha256": "2f97cddb2e8a1bcaf862926abf5f34373bd6928c8aa135ee8ef8e48879fe5105"
   },
   "zreflect/check_questions.py": {
-   "file_sha256": "016c04c2feb4dad9c456f6abcc2695590629bf31ca4189a91c2bc6142f75a130"
+   "file_sha256": "59db3632fe9d004c6f8b7dcc7ad653c7dcd469ff14f09689a34e1d818553c99f"
   },
   "zreflect/check_readme_sync.py": {
    "file_sha256": "8bd2092ab170b0474667546fa272ff38a9032654dfc90db0a1eb2a6c7f3a434e"
@@ -73,7 +73,7 @@
    "file_sha256": "0ebc10b22beec126a25ef8c59a915fe437908824f24f7bafd857b71db4e02d3a"
   },
   "zreflect/harness.py": {
-   "file_sha256": "fd444b23bc7c2aa62d5241967afbd9ff7c6044bfd1334717b12fc98fce281341"
+   "file_sha256": "2e20f5f33ba4a23d9edc9ee2627518f0335752abeac8c692985511e53a329359"
   },
   "zreflect/i18n.py": {
    "file_sha256": "57b8bdf28864175b692f8c20ec454b04085ebea2a02e2ae972462e578bd49205"
@@ -85,13 +85,13 @@
    "file_sha256": "4ea4f634077cd8931e022f17f60663d92aa074fbec5208365eb188eab6f03be9"
   },
   "zreflect/lang/de.json": {
-   "file_sha256": "fec1025f3edd04c8498b34ef583cc10328e9c5409a0da76bf02a908ee0ab0709"
+   "file_sha256": "78e37681d9d9a0df69f2fd720f40ca83d55b54d80b7a6a7352e4c67fff9ecae9"
   },
   "zreflect/lang/en.json": {
-   "file_sha256": "682bf810388a63b7003b476d86edf75de32d4bfc674bff7548a0ce1a535c9f0d"
+   "file_sha256": "66c8e487de320e1ac142fe4aa10e2fc11590b42bcd34f3d7b39e4db243c0667b"
   },
   "zreflect/lang/zh.json": {
-   "file_sha256": "2474fb6dd55d63346f0d54234bbf41afff2936348c0dcd7e5ee5759d645a8b83"
+   "file_sha256": "8a3c586e6be3827f0425d3725d565255e4478ca4495a90d05394f0a2d76e0114"
   },
   "zreflect/next.py": {
    "file_sha256": "5baad73b3e2e65ad16b65c1351f5e35a27ce7b7c762a511be6f68d22bf605d83"
@@ -100,14 +100,14 @@
    "file_sha256": "06d7c2e53504bbee3a7de93245d96872e466dc560d263fb745c4d972b7849ae4"
   },
   "zreflect/trust.py": {
-   "file_sha256": "2b67eda8af32608a547c69ce0517c79f593022004d116731ff8cf726f5bdd6e6"
+   "file_sha256": "c5306ec5df4ef83e7d6426943ed8681b490249fe539d4d70734b6fb20f8830dc"
   },
   "zreflect/trust_core.py": {
-   "file_sha256": "e76ab21a18204848ff7a3c04cf2b7a66ff9bcdcc0c18c6bf180d4598f54d1c49"
+   "file_sha256": "27f00d6043136a931f3567ee240d6aedfe4ed60b13ae13bf0a16987728134326"
   }
  },
  "schema": 2,
  "suite_seq": 1,
- "tree_sha256": "e1af89b75b70d6d54a1e20572fdd7534f1d9f937c1ee29bc93fee83787429271",
+ "tree_sha256": "9cf74cba08e7f125e9f150f34bac6c10d1f3c3bddad9ebf77d40e7eebfeb07ad",
  "upstream_repo": "ArchivalEra/Einfacht"
 }

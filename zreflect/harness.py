@@ -16,7 +16,7 @@ is the other way around: **registration is discovered**, not remembered
 ## Four sections of duty
 
     gates        discover and run every gate → must be able to red + must emit a machine summary line
-    plugins      pluggable plugins (those in reflect-hooks/*.sh carrying the selftest marker + named specials)
+    plugins      pluggable plugins (those in reflect-local/*.sh carrying the selftest marker + named specials)
     modules      platform modules' selftests (set difference: gates' selftests already ran in the gates section)
     configurable cross-repo configurability (renamed fixture all green + gates named under default names must red)
 
@@ -45,8 +45,7 @@ from i18n import M  # noqa: E402
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Machine summary line: the criterion lives in `machine.is_summary()` (single
-# source of truth). A byte-identical regex used to live here too -- three
-# copies would drift (there is another one in reflect-hooks/gate.py).
+# source of truth).
 
 # Selftest advertisement marker: present = this file claims it can be proven
 # via `--selftest`.

@@ -21,7 +21,7 @@ zreflect/examples.py     runnable examples: every gate + every core entry, in a 
 zreflect/lang/<lang>.json language packs; none installed is a legal state (output: code+args)
 examples/<name>/         one example per gate plus the core entry points
 ruff.toml                static checks' criteria (read by check_lint; CI reads the same file)
-reflect-hooks/           hook entry & installer (`hook.py`; never grabs a hook seat)
+reflect-local/           local hook entry, installer (`hook.py`), & consumer extensions (`measure_*.py`, custom gates)
 zreflect/harness.py      discovery-based selftest harness
 secrets.json             this repo's credential-scan declaration (exemptions carry reasons)
 ```
@@ -159,7 +159,7 @@ This is the **tool repo**: other agents' findings go through issues (with
 reproduction and root cause file:line), the owner session rules on them and
 lands patches. **Never write directly.**
 
-Each repo wires its own git hooks (`reflect-hooks/hook.py --chain`); for
+Each repo wires its own git hooks (`reflect-local/hook.py --chain`); for
 "pick up from the last turn" run `python3 zreflect/next.py <repo>` in that
 repo. The host does not manage this (`host_agnostic` stands) -- never register
 session hooks in user-level config.

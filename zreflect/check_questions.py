@@ -109,12 +109,10 @@ def status_of(text):
 
 
 def is_resolved(text):
-    """Terminal-state check. **All closed states, not just "resolved"**.
+    """Terminal-state check (`CLOSED_STATUS` single origin).
 
-    wontfix is a legal terminal state (`VALID_STATUS` member): a question closed
-    as "we decided not to do this" is as closed as one closed with an answer.
-    The closed set lives in `CLOSED_STATUS` (single origin); callers ask via
-    `is_resolved`, never by re-listing states.
+    `resolved` is the sole legal terminal state (`CLOSED_STATUS` member); callers
+    ask via `is_resolved`, never by re-listing states.
     """
     return status_of(text) in CLOSED_STATUS
 

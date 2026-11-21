@@ -268,18 +268,94 @@ def _local_map(anc):
     return None
 
 
-def eval_anchors_integrity(head_anchors, cur_anchors, *, receipt, repo_name, verify_sig_fn=None):
-    """Verify `ANCHORS.json` was not weakened relative to `HEAD:ANCHORS.json`."""
-    if head_anchors is None:
+def _eval_principles_anchor(head_anc, cur_anc, *, receipt, repo_name, pub, revoked, verify_sig_fn):
+    h_pr = head_anc.get("principles") or {}
+    c_pr = cur_anc.get("principles") or {}
+    if not h_pr:
         return []
+    probs = []
+    if c_pr.get("no_principles") and not h_pr.get("no_principles"):
+        probs += verify_receipt(
+            receipt, repo_name=repo_name, action="principles.disable", target="REFLECT_NO_PRINCIPLES",
+            prev_sha256="false", target_sha256="true", pub_b64=pub, revoked_ids=revoked,
+            verify_sig_fn=verify_sig_fn)
+    if c_pr.get("principles_md_sha256") != h_pr.get("principles_md_sha256"):
+        probs += verify_receipt(
+            receipt, repo_name=repo_name, action="principles.edit", target="PRINCIPLES.md",
+            prev_sha256=h_pr.get("principles_md_sha256") or "",
+            target_sha256=c_pr.get("principles_md_sha256") or "DELETED",
+            pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
+    if c_pr.get("doc_py_sha256") != h_pr.get("doc_py_sha256"):
+        probs += verify_receipt(
+            receipt, repo_name=repo_name, action="seal.doc", target="zreflect/doc.py",
+            prev_sha256=h_pr.get("doc_py_sha256") or "",
+            target_sha256=c_pr.get("doc_py_sha256") or "DELETED",
+            pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
+    return probs
+
+
+def _is_legal_snapshot_settlement(head_entry, cur_entry):
+    if not isinstance(head_entry, dict) or not isinstance(cur_entry, dict):
+        return False
+    if (cur_entry.get("status") or "").lower() != "resolved":
+        return False
+    if is_none_like(head_entry.get("settling")) or is_none_like(cur_entry.get("settling")):
+        return False
+    if not head_entry.get("body_sha256") or cur_entry.get("body_sha256") != head_entry.get("body_sha256"):
+        return False
+    return (cur_entry.get("settling") or "").strip() == (head_entry.get("settling") or "").strip()
+
+
+def _eval_questions_anchor(head_anc, cur_anc, *, receipt, repo_name, pub, revoked, verify_sig_fn):
+    h_q = head_anc.get("questions") or {}
+    c_q = cur_anc.get("questions") or {}
+    probs = []
+    for rel in sorted(set(h_q) | set(c_q)):
+        prev, cur = h_q.get(rel), c_q.get(rel)
+        if prev is not None and cur is None:
+            probs += verify_receipt(
+                receipt, repo_name=repo_name, action="question.delete", target=rel,
+                prev_sha256=prev.get("sha256", ""), target_sha256="DELETED",
+                pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
+        elif prev is None and cur is not None:
+            probs += verify_receipt(
+                receipt, repo_name=repo_name, action="question.create", target=rel,
+                prev_sha256="NONE", target_sha256=cur.get("sha256", ""),
+                pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
+        elif (isinstance(prev, dict) and isinstance(cur, dict)
+              and cur.get("sha256") != prev.get("sha256")
+              and not _is_legal_snapshot_settlement(prev, cur)):
+            probs += verify_receipt(
+                receipt, repo_name=repo_name, action="question.modify", target=rel,
+                prev_sha256=prev.get("sha256", ""), target_sha256=cur.get("sha256", ""),
+                pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
+    return probs
+
+
+def _anchors_header_probs(head_anchors, cur_anchors):
     if not isinstance(head_anchors, dict) or not isinstance(cur_anchors, dict):
         return [M("approval.anchors_broken")]
     pub = head_anchors.get("approver_pub")
     if cur_anchors.get("approver_pub") != pub or (head_anchors.get("lock_core") and not cur_anchors.get("lock_core")):
         return [M("approval.anchors_broken")]
+    if set(head_anchors.get("revoked_ids") or ()) - set(cur_anchors.get("revoked_ids") or ()):
+        return [M("approval.anchors_broken")]
+    if (cur_anchors.get("questions_dir") or "questions") != (head_anchors.get("questions_dir") or "questions"):
+        return [M("approval.anchors_broken")]
     old_seq, new_seq = int(head_anchors.get("suite_seq") or 0), int(cur_anchors.get("suite_seq") or 0)
     if new_seq < old_seq:
         return [M("trust.suite_downgrade", old_seq=old_seq, new_seq=new_seq)]
+    return []
+
+
+def eval_anchors_integrity(head_anchors, cur_anchors, *, receipt, repo_name, verify_sig_fn=None):
+    """Verify `ANCHORS.json` was not weakened relative to `HEAD:ANCHORS.json`."""
+    if head_anchors is None:
+        return []
+    header_probs = _anchors_header_probs(head_anchors, cur_anchors)
+    if header_probs:
+        return header_probs
+    pub = head_anchors.get("approver_pub")
     revoked = head_anchors.get("revoked_ids") or []
     out = []
     for g in sorted(set(cur_anchors.get("off_gates") or ()) - set(head_anchors.get("off_gates") or ())):
@@ -295,6 +371,10 @@ def eval_anchors_integrity(head_anchors, cur_anchors, *, receipt, repo_name, ver
     if hl is not None:
         out += eval_local_scripts(hl, cl or {}, lock_core=True, receipt=receipt, repo_name=repo_name,
                                   pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
+    out += _eval_principles_anchor(head_anchors, cur_anchors, receipt=receipt, repo_name=repo_name,
+                                   pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn)
+    out += _eval_questions_anchor(head_anchors, cur_anchors, receipt=receipt, repo_name=repo_name,
+                                  pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn)
     return out
 
 
@@ -345,10 +425,34 @@ def _selftest_seal_and_receipt():
     return [p.code for p in verify_suite_sig(seal_d, bad_sig, pub_b64="PUB", verify_sig_fn=ok_sig)] == ["approval.hash_mismatch"]
 
 
+def _selftest_anchors_integrity():
+    base = {
+        "schema": 2, "repo": "org/r", "approver_pub": "PUB", "lock_core": True,
+        "revoked_ids": ["r1"], "suite_seq": 1, "knobs_sha256": "k1", "questions_dir": "questions",
+        "local_scripts": {}, "off_gates": [],
+        "principles": {"doc_py_sha256": "d1", "principles_md_sha256": "p1", "no_principles": False},
+        "questions": {"questions/01.md": {"sha256": "q1", "status": "ready-for-agent", "settling": "python3 x", "body_sha256": "b1"}},
+    }
+    if eval_anchors_integrity(base, dict(base), receipt={"receipts": []}, repo_name="org/r") != []:
+        return False
+    co_pr = dict(base, principles={"doc_py_sha256": "d1", "principles_md_sha256": "tampered", "no_principles": False})
+    if [p.code for p in eval_anchors_integrity(base, co_pr, receipt={"receipts": []}, repo_name="org/r")] != ["approval.receipt_required"]:
+        return False
+    co_q = dict(base, questions={"questions/01.md": {"sha256": "tampered", "status": "resolved", "settling": "python3 x", "body_sha256": "b2"}})
+    if [p.code for p in eval_anchors_integrity(base, co_q, receipt={"receipts": []}, repo_name="org/r")] != ["approval.receipt_required"]:
+        return False
+    legal_q = dict(base, questions={"questions/01.md": {"sha256": "q2", "status": "resolved", "settling": "python3 x", "body_sha256": "b1"}})
+    if eval_anchors_integrity(base, legal_q, receipt={"receipts": []}, repo_name="org/r") != []:
+        return False
+    shrunk_rev = dict(base, revoked_ids=[])
+    return [p.code for p in eval_anchors_integrity(base, shrunk_rev, receipt={"receipts": []}, repo_name="org/r")] == ["approval.anchors_broken"]
+
+
 def _cases():
     return [
         ("★ trust_core.migrate_4_laws", _selftest_migration),
         ("★ trust_core.seal_and_suite_sig", _selftest_seal_and_receipt),
+        ("★ trust_core.anchors_head_integrity", _selftest_anchors_integrity),
         ("★ trust_core.legal_settlement",
          lambda: is_legal_settlement("resolved", "python3 x", "Body\n**Status:** resolved\n**Settling:** python3 x\n",
                                      {"body_sha256": sha256_text("Body"), "settling": "python3 x"})
