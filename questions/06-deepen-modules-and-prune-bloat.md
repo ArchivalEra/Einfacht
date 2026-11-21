@@ -10,7 +10,7 @@
 
 **Status:** resolved
 
-**Settling:** python3 -c "import os,sys; gone=('zreflect/criteria.py','zreflect/ledger.py','zreflect/living.py','zreflect/runner.py','zreflect/machine.py','zreflect/echoes.py','reflect-hooks/install.py','reflect-hooks/quality-record.sh','.shellcheckrc','gitroll-dispositions.json','examples/echoes','examples/quality_record','zreflect/lang/en','zreflect/lang/zh','zreflect/lang/de'); packs=('zreflect/lang/en.json','zreflect/lang/zh.json','zreflect/lang/de.json'); sys.exit(0 if (not any(os.path.exists(p) for p in gone) and all(os.path.isfile(p) for p in packs)) else 1)" && python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/harness.py —— rc=0 ⇒ 碎模块、自指元警察、99 语言包目录与残余 shell 已收敛完毕，三份单文件语言包就位，且封签与全量闸门/自证全绿；rc≠0 ⇒ 仍有待删模块/目录残留或校验未通过
+**Settling:** python3 -c "import os,sys; gone=('zreflect/criteria.py','zreflect/ledger.py','zreflect/living.py','zreflect/runner.py','zreflect/machine.py','zreflect/echoes.py','reflect-local/install.py','reflect-local/quality-record.sh','.shellcheckrc','gitroll-dispositions.json','examples/echoes','examples/quality_record','zreflect/lang/en','zreflect/lang/zh','zreflect/lang/de'); packs=('zreflect/lang/en.json','zreflect/lang/zh.json','zreflect/lang/de.json'); sys.exit(0 if (not any(os.path.exists(p) for p in gone) and all(os.path.isfile(p) for p in packs)) else 1)" && python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/harness.py —— rc=0 ⇒ 碎模块、自指元警察、99 语言包目录与残余 shell 已收敛完毕，三份单文件语言包就位，且封签与全量闸门/自证全绿；rc≠0 ⇒ 仍有待删模块/目录残留或校验未通过
 
 ## 锁定边界（不可改动）
 

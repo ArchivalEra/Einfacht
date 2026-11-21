@@ -1,7 +1,9 @@
 {
   "description": "Replace the placeholder collector through REFLECT_MEASURE_MODULE",
   "env": {"REFLECT_MEASURE_MODULE": "measure_demo"},
+  "init": false,
   "steps": [
+    {"argv": ["{python}", "zreflect/facts.py", "--init"]},
     {"argv": ["{python}", "zreflect/facts.py", "--allow-drop", "--accept-changes"]},
     {"argv": ["{python}", "zreflect/facts.py", "--render-doc"]},
     {"argv": ["{python}", "zreflect/facts.py", "--get", "answer"], "contains": ["42"]},

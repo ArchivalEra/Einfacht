@@ -44,14 +44,11 @@ import knobs  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta  # noqa: E402
 from i18n import M  # noqa: E402
 
-VALID_STATUS = ("needs-triage", "needs-info", "ready-for-agent",
-                "ready-for-human", "wontfix", "resolved")
+VALID_STATUS = ("ready-for-agent", "ready-for-human", "resolved")
 # Terminal states: once a question carries one of these, consumers stop listing
-# it as pending. **Single origin** (issue #38): next.py used to keep its own
-# closed-set ("!= resolved"), so wontfix -- a legal terminal state -- was
-# re-raised every turn. Consumers import CLOSED_STATUS / is_resolved; nobody
-# re-lists the states.
-CLOSED_STATUS = ("wontfix", "resolved")
+# it as pending. **Single origin** (issue #38): consumers import
+# CLOSED_STATUS / is_resolved; nobody re-lists the states.
+CLOSED_STATUS = ("resolved",)
 # Domain words that must appear in a question body (vocabulary of the convention
 # docs -- data, not user-visible messages, hence **not** in the language pack).
 # Assembled from code points: this file sits inside check_i18n's scan surface, so
@@ -198,11 +195,9 @@ def _settling_problems(name, text, chk, runner=None, verify_resolved=False, cach
     if _is_none_like(sv):
         if st == "resolved":
             return [M("questions.resolved_cannot_be_none", name=name)]
-        if st == "wontfix":
-            return [M("questions.wontfix_needs_reason", name=name)]
         return _none_like_problems(name, sv)
     out = _check_settler_exec(name, sv, chk)
-    if out or st not in ("resolved", "wontfix") or not (verify_resolved or runner is not None):
+    if out or st != "resolved" or not (verify_resolved or runner is not None):
         return out
     cmd = _settling_cmd(sv)
     rc, cmd_out = _run_cached(cmd, runner, cache)
@@ -299,7 +294,7 @@ def _check_one_question(name, text, chk, runner, verify, cache, cache_lock):
     if out or not verify:
         return out + _settling_problems(name, text, chk, runner=runner, verify_resolved=False, cache=cache)
     sv = field(text, "Settling")
-    if not sv or _is_none_like(sv) or status_of(text) not in ("resolved", "wontfix"):
+    if not sv or _is_none_like(sv) or status_of(text) != "resolved":
         return _settling_problems(name, text, chk, runner=runner, verify_resolved=False, cache=cache)
     pre = _check_settler_exec(name, sv, chk)
     if pre:
@@ -346,7 +341,7 @@ def _replay_depth():
 
 
 def _resolved_targets_to_verify(_qdir, files, _all_resolved, depth=0):
-    targets = {k for k, v in files.items() if status_of(v) in ("resolved", "wontfix")}
+    targets = {k for k, v in files.items() if status_of(v) == "resolved"}
     if depth <= 0:
         return targets
     reentrant: tuple[str, ...] = ("check_questions.py", "registry.py --run", "harness.py")
@@ -385,10 +380,10 @@ def run(argv):
     files = collect(pos[0] if pos else None)
     if not files:
         return fatal(M("questions.guard_empty", count=0))
-    import approval  # noqa: PLC0415
+    import trust  # noqa: PLC0415
     targets = _resolved_targets_to_verify(qdir, files, all_res, depth=depth)
     probs = gate.with_run_cache(lambda: problems(files, verify_resolved=targets))
-    probs += approval.check_questions_against_anchor(files, qdir=qdir)
+    probs += trust.check_questions_against_anchor(files, qdir=qdir)
     n_open = sum(1 for t in files.values() if not is_resolved(t))
     return finish(M("questions.title"), probs,
                   M("questions.ok", count=len(files), open=n_open))
@@ -420,11 +415,9 @@ def _cases():
         ("★ questions.resolved_settler_failed", lambda: [p.code for p in problems(
             {"questions/11.md": _q(status="resolved")}, exists=lambda p: True,
             runner=lambda _c: (1, "fail"))] == ["questions.resolved_settler_failed"]),
-        ("questions.wontfix_also_compliant", lambda: problems(
-            {"questions/09.md": _q(status="wontfix")}, exists=lambda p: True) == []),
-        ("★ questions.wontfix_needs_reason", lambda: [p.code for p in problems(
-            {"questions/12.md": _q(status="wontfix", settling=_NOT_EXISTS + " -- " + _FIRST_DELIVERABLE)},
-            exists=lambda p: False)] == ["questions.wontfix_needs_reason"]),
+        ("★ questions.wontfix_and_needs_triage_rejected", lambda:
+            [p.code for p in problems({"questions/09.md": _q(status="wontfix")}, exists=lambda p: True)] == ["questions.bad_status"]
+            and [p.code for p in problems({"questions/12.md": _q(status="needs-triage")}, exists=lambda p: True)] == ["questions.bad_status"]),
         ("★ questions.depth_one_still_verifies_non_self", lambda: (
             "questions/03.md" in _resolved_targets_to_verify("questions", {"questions/03.md": _q(status="resolved")}, False, depth=1)
             and "questions/04.md" not in _resolved_targets_to_verify(
@@ -433,10 +426,8 @@ def _cases():
                 False, depth=1))),
         ("★ questions.closed_status_table", lambda:
             is_resolved(_q(status="resolved")) is True
-            and is_resolved(_q(status="wontfix")) is True
-            and is_resolved(_q(status="needs-info")) is False
-            and is_resolved(_q(status="ready-for-agent")) is False
-            and is_resolved(_q(status="wontfix")) is True),
+            and is_resolved(_q(status="ready-for-human")) is False
+            and is_resolved(_q(status="ready-for-agent")) is False),
         ("★ questions.missing_settling",
          lambda: [p.code for p in problems(
              {"questions/04.md": _q(settling="")}, exists=lambda p: True)]

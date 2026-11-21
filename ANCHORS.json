@@ -1,6 +1,9 @@
 {
   "approver_pub": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAvf9ckQEI6CkK30ookgtqjT6I3H0PXzo6ov25212pyDQ=\n-----END PUBLIC KEY-----\n",
   "knobs_sha256": "0be1ace3133f8c2500383bddf6c4b3aae1c93b606157f8fac3f8e7ca31fddb1a",
+  "local_scripts": {
+    "reflect-local/hook.py": "4683eb326688373569f8a45b229b18be3cc19675f2d0ed44f88c27ee018505fa"
+  },
   "lock_core": true,
   "off_gates": [
     "check_ab.py",
@@ -237,5 +240,7 @@
   "questions_dir": "questions",
   "repo": "ArchivalEra/Einfacht",
   "revoked_ids": [],
-  "schema": 1
+  "schema": 2,
+  "suite_seq": 1,
+  "suite_tree_sha256": "9fd87f7586817054228f144792c435dfb84a93510d4cc93263d7fbfcc20d1f4f"
 }

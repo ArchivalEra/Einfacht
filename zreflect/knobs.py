@@ -49,6 +49,7 @@ REGISTRY = {
     "REFLECT_AB": ("file", "ab.json", _Semantic("knobs.sem.reflect_ab")),
     "REFLECT_PINS": ("file", "pins.json", _Semantic("knobs.sem.reflect_pins")),
     "REFLECT_LOCKS": ("file", "upstream-lock.json", _Semantic("knobs.sem.reflect_locks")),
+    "REFLECT_LOCAL_DIR": ("dir", "reflect-local", _Semantic("knobs.sem.reflect_local_dir")),
     "REFLECT_MEASURE_MODULE": ("value", "", _Semantic("knobs.sem.reflect_measure_module")),
     "REFLECT_PHASES": ("value", "", _Semantic("knobs.sem.reflect_phases")),
     "REFLECT_COMMENTS": ("value", "mismatch", _Semantic("knobs.sem.reflect_comments")),
@@ -307,7 +308,7 @@ def _is_test_node(stmt, called_in_cases=()):
 def _suite_py_sources():
     sources = []
     root = _tool_root()
-    for sub in ("zreflect", "reflect-hooks"):
+    for sub in ("zreflect", "reflect-local"):
         d = os.path.join(root, sub)
         if not os.path.isdir(d):
             continue

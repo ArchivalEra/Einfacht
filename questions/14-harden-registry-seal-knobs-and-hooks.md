@@ -6,7 +6,7 @@
 
 **Status:** resolved
 
-**Settling:** python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --selftest && python3 zreflect/seal.py --selftest && python3 zreflect/knobs.py --selftest && python3 reflect-hooks/hook.py --selftest —— rc=0 ⇒ registry/seal/knobs/hook 漏洞全部收口；rc≠0 ⇒ 仍有执行入口或 hook 绕过
+**Settling:** python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --selftest && python3 zreflect/trust_core.py --selftest && python3 zreflect/knobs.py --selftest && python3 reflect-local/hook.py --selftest —— rc=0 ⇒ registry/seal/knobs/hook 漏洞全部收口；rc≠0 ⇒ 仍有执行入口或 hook 绕过
 
 ## 实测问题清单
 

@@ -155,8 +155,9 @@ def run_gates(repo, listing=None):
 
 def run_plugins(repo):
     """Pluggable plugins + named specials (roster derived from registry). Returns `(ok, lines)`."""
+    import knobs  # noqa: PLC0415
     import registry  # noqa: PLC0415
-    names = registry.plugins(os.path.join(repo, "reflect-hooks"))
+    names = registry.plugins(os.path.join(repo, knobs.get("REFLECT_LOCAL_DIR") or "reflect-local"))
     lines = []
     bad = 0
     for p in names:

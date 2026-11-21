@@ -39,12 +39,12 @@ Einfacht 让那部分**可验证**，并把每一类陈述的居所钉死：
 ## 用它
 
 ```bash
-cp -r <suite>/zreflect <suite>/reflect-hooks <suite>/ruff.toml <你的仓>/
+cp -r <suite>/zreflect <suite>/reflect-local <suite>/ruff.toml <你的仓>/
 cd <你的仓>
 python3 zreflect/facts.py --init                  # 生成骨架文档，不覆盖已有文件
 python3 zreflect/facts.py                         # 量一遍
 python3 zreflect/facts.py --render-doc            # 渲染状态文档
-python3 reflect-hooks/hook.py --chain             # 链进你已有的 git 钩子
+python3 reflect-local/hook.py --chain             # 链进你已有的 git 钩子
 ```
 
 `--init` 会写出骨架文档（`STATE.md`、`PRINCIPLES.md`、`AGENTS.md`、`README.md`）、

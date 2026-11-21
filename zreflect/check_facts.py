@@ -201,10 +201,10 @@ def run(argv):
     homes, err = ledger.block_homes(led)
     if err:
         return fatal(err)
-    import approval  # noqa: PLC0415
+    import trust  # noqa: PLC0415
     probs += extra_block_problems(loaded, homes)
-    probs += approval.check_principles_repo(repo())
-    probs += approval.check_knobs_anchor(repo())
+    probs += trust.check_principles_repo(repo())
+    probs += trust.check_knobs_anchor(repo())
     return finish(M("facts.title"), probs, M("facts.ok", count=len(f), docs=scanned))
 
 

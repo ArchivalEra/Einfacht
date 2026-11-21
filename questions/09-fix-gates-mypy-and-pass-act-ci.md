@@ -16,7 +16,7 @@
 
 **Status:** resolved
 
-**Settling:** python3 -c "import glob,os,subprocess,sys; env=dict(os.environ, MYPYPATH='zreflect'); files=sorted(glob.glob('zreflect/*.py'))+sorted(glob.glob('reflect-hooks/*.py')); sys.exit(subprocess.run([sys.executable,'-m','mypy']+files+['--check-untyped-defs','--ignore-missing-imports','--no-error-summary'], env=env).returncode)" && python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/examples.py --all && python3 zreflect/harness.py —— rc=0 ⇒ 全仓 zreflect/ + reflect-hooks/ mypy 1.13.0 零报错且全部闸门/示范/自证全绿；rc≠0 ⇒ mypy 报错或任一门禁/示范/自证失败
+**Settling:** python3 -c "import glob,os,subprocess,sys; env=dict(os.environ, MYPYPATH='zreflect'); files=sorted(glob.glob('zreflect/*.py'))+sorted(glob.glob('reflect-local/*.py')); sys.exit(subprocess.run([sys.executable,'-m','mypy']+files+['--check-untyped-defs','--ignore-missing-imports','--no-error-summary'], env=env).returncode)" && python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/examples.py --all && python3 zreflect/harness.py —— rc=0 ⇒ 全仓 zreflect/ + reflect-local/ mypy 1.13.0 零报错且全部闸门/示范/自证全绿；rc≠0 ⇒ mypy 报错或任一门禁/示范/自证失败
 
 ## 锁定边界（不可改动）
 

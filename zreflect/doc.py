@@ -150,7 +150,7 @@ RULES = (
          "python3 -c \"import os,sys;"
          "w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR',"
          "'hook'+'SpecificOutput'];"
-         "bad=[(d,f) for d in ('zreflect','reflect-hooks') "
+         "bad=[(d,f) for d in ('zreflect','reflect-local') "
          "for r,_,fs in os.walk(d) for f in fs if f.endswith('.py') "
          "and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];"
          "print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)\""),

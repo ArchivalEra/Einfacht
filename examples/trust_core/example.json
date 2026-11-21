@@ -1,0 +1,7 @@
+{
+  "description": "Pure Trust v2 core algebra: verify 4-law migration and receipt/seal evaluation",
+  "steps": [
+    {"argv": ["{python}", "zreflect/trust_core.py", "--selftest"], "contains": ["PASS"]},
+    {"argv": ["{python}", "zreflect/registry.py", "--verify-seal"], "not_contains": ["FATAL", "Traceback"]}
+  ]
+}

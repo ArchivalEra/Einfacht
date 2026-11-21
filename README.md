@@ -43,12 +43,12 @@ was then" line judged as current state would go red forever.
 ## Use it
 
 ```bash
-cp -r <suite>/zreflect <suite>/reflect-hooks <suite>/ruff.toml <your-repo>/
+cp -r <suite>/zreflect <suite>/reflect-local <suite>/ruff.toml <your-repo>/
 cd <your-repo>
 python3 zreflect/facts.py --init                  # skeleton docs, never overwrites
 python3 zreflect/facts.py                         # first measurement
 python3 zreflect/facts.py --render-doc            # render the state document
-python3 reflect-hooks/hook.py --chain             # chain into your git hooks
+python3 reflect-local/hook.py --chain             # chain into your git hooks
 ```
 
 `--init` writes the skeleton documents (`STATE.md`, `PRINCIPLES.md`, `AGENTS.md`,

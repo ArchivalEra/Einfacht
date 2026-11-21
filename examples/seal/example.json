@@ -1,7 +1,0 @@
-{
-  "description": "Core seal verifier: verify SEAL.json and seal.py selftest",
-  "steps": [
-    {"argv": ["{python}", "zreflect/seal.py", "--selftest"], "contains": ["PASS"]},
-    {"argv": ["{python}", "zreflect/registry.py", "--verify-seal"], "not_contains": ["FATAL", "Traceback"]}
-  ]
-}

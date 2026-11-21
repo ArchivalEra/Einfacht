@@ -44,12 +44,12 @@ beurteilt, für immer rot wäre.
 ## Benutzung
 
 ```bash
-cp -r <suite>/zreflect <suite>/reflect-hooks <suite>/ruff.toml <dein-repo>/
+cp -r <suite>/zreflect <suite>/reflect-local <suite>/ruff.toml <dein-repo>/
 cd <dein-repo>
 python3 zreflect/facts.py --init                  # Skelett-Dokumente, überschreibt nie
 python3 zreflect/facts.py                         # erste Messung
 python3 zreflect/facts.py --render-doc            # Statusdokument rendern
-python3 reflect-hooks/hook.py --chain             # in vorhandene Git-Hooks einketten
+python3 reflect-local/hook.py --chain             # in vorhandene Git-Hooks einketten
 ```
 
 `--init` schreibt die Skelett-Dokumente (`STATE.md`, `PRINCIPLES.md`, `AGENTS.md`,

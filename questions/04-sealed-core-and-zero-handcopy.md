@@ -6,7 +6,7 @@
 
 **Status:** resolved
 
-**Settling:** python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/harness.py —— rc=0 ⇒ 已全部完成：新增 `zreflect/seal.py` 与 `zreflect/SEAL.json`（双层 SHA-256 封条，放开 `measure_*.py` / `Einfacht.env` / 自定义相位闸门）；加深 `never_falsifiable` 辅助函数穿透、多 lambda 检查与 `dependency_coverage`/`dead_interface` AST 范围；守卫 `cmd`/`calibrate` 并合并三块渲染与校对；统一执行位、`knobs.get()` 与动态引用发现；将 `check_explain.py` 改为 `300 + 120*branches + 60*args` 复杂度预算并默认开启。
+**Settling:** python3 zreflect/registry.py --verify-seal && python3 zreflect/registry.py --run commit && python3 zreflect/harness.py —— rc=0 ⇒ 已全部完成：新增 `zreflect/trust_core.py` 与 `zreflect/SEAL.json`（双层 SHA-256 封条，放开 `measure_*.py` / `Einfacht.env` / 自定义相位闸门）；加深 `never_falsifiable` 辅助函数穿透、多 lambda 检查与 `dependency_coverage`/`dead_interface` AST 范围；守卫 `cmd`/`calibrate` 并合并三块渲染与校对；统一执行位、`knobs.get()` 与动态引用发现；将 `check_explain.py` 改为 `300 + 120*branches + 60*args` 复杂度预算并默认开启。
 
 ## Problem Statement
 

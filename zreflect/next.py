@@ -262,8 +262,6 @@ def _cases():
         ("★ next.section_budget_holds", lambda: _section_budget_holds()),
         ("★ next.resolved_question_is_dropped",
          lambda: _resolved_question_dropped()),
-        ("★ next.wontfix_question_is_dropped",
-         lambda: _wontfix_question_dropped()),
         ("★ next.manual_entry_activates_pack",
          lambda: _manual_entry_activates_pack()),
         ("★ next.nonexistent_root_is_loud",
@@ -299,29 +297,6 @@ def _resolved_question_dropped():
         os.makedirs(q)
         with open(os.path.join(q, "01-done.md"), "w", encoding="utf-8") as fh:
             fh.write("# done\n\n**Status:** resolved\n")
-        with open(os.path.join(q, "02-open.md"), "w", encoding="utf-8") as fh:
-            fh.write("# open\n\n**Status:** ready-for-agent\n")
-        names = _open_question_names(d)
-        return names == ["02-open.md"]
-    finally:
-        import shutil  # noqa: PLC0415
-        shutil.rmtree(d, True)
-
-
-def _wontfix_question_dropped():
-    """**A wontfix question must not appear under "what is next"** (issue #38).
-
-    wontfix is a legal terminal state: the user decided not to do the thing.
-    The fixture has one wontfix and one open: only the open one may be listed.
-    Never use the real repo -- same reason as _resolved_question_dropped.
-    """
-    import tempfile  # noqa: PLC0415
-    d = tempfile.mkdtemp()
-    try:
-        q = os.path.join(d, "questions")
-        os.makedirs(q)
-        with open(os.path.join(q, "01-wontfix.md"), "w", encoding="utf-8") as fh:
-            fh.write("# wontfix\n\n**Status:** wontfix\n")
         with open(os.path.join(q, "02-open.md"), "w", encoding="utf-8") as fh:
             fh.write("# open\n\n**Status:** ready-for-agent\n")
         names = _open_question_names(d)

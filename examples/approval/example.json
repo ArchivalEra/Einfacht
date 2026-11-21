@@ -1,7 +1,0 @@
-{
-  "description": "Approval & anchor verifier: run Ed25519 offline receipt verification selftest",
-  "steps": [
-    {"argv": ["{python}", "zreflect/approval.py", "--selftest"], "contains": ["0 FAIL"]},
-    {"argv": ["{python}", "zreflect/approval.py", "--selftest"], "not_contains": ["Traceback"]}
-  ]
-}

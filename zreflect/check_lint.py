@@ -61,11 +61,11 @@ def suite_files():
 
     The criterion for "suite code" is a **declaration** (`MODULE = ...` /
     `GATE = ...`), not a directory name -- discovery-based, the same yardstick as
-    `registry.modules()` / `gates()`. Only `zreflect/` and `reflect-hooks/` under
+    `registry.modules()` / `gates()`. Only `zreflect/` and `reflect-local/` under
     `GATE_REPO` are walked.
     """
     out = []
-    for sub in ("zreflect", "reflect-hooks"):
+    for sub in ("zreflect", "reflect-local"):
         base = os.path.join(gate.GATE_REPO, sub)
         if not os.path.isdir(base):
             continue
@@ -107,7 +107,7 @@ def problems(out, rc):
     lines = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
     if rc == 0:
         return []
-    real = [ln for ln in lines if ln.startswith(("zreflect/", "reflect-hooks/"))
+    real = [ln for ln in lines if ln.startswith(("zreflect/", "reflect-local/"))
             or ":" in ln and ".py:" in ln]
     if not real:
         return [M("lint.no_output", return_code=rc,

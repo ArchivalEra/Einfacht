@@ -15,7 +15,7 @@ import knobs  # noqa: E402
 from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
 from i18n import CJK_LO, LINE_BREAKS, M, han  # noqa: E402
 
-DEFAULT_ROOTS = ("zreflect", "reflect-hooks")
+DEFAULT_ROOTS = ("zreflect", "reflect-local")
 KNOB = "REFLECT_I18N_ROOT"
 PINNED_MARK = "PINNED:"
 cjk = han
@@ -248,7 +248,7 @@ def used_codes(paths=None):
     """Collect literal `M(...)` and `_Semantic(...)` codes emitted by suite sources."""
     if paths is None:
         paths = list(gate.py_sources(gate.zdir()))
-        hooks_dir = os.path.join(gate.tool_repo(), "reflect-hooks")
+        hooks_dir = os.path.join(gate.tool_repo(), "reflect-local")
         if os.path.isdir(hooks_dir):
             paths += list(gate.py_sources(hooks_dir))
     out = set()

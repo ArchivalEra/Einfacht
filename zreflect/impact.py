@@ -16,7 +16,7 @@ _GLOBAL_FALLBACK_FILES = frozenset({
     "knobs.json",
 })
 _GLOBAL_FALLBACK_PREFIXES = (
-    "reflect-hooks/",
+    "reflect-local/",
     ".github/",
 )
 
@@ -165,7 +165,7 @@ def _match_non_py(rel, phase_gates, kp):
 
 
 def _select_py_deps(rel, rev, gates_list, kp):
-    key = "zreflect/facts.py" if rel.startswith("zreflect/measure_") else rel
+    key = "zreflect/facts.py" if (rel.startswith(("zreflect/measure_", "reflect-local/measure_"))) else rel
     out = set(rev.get(key, ())) | _match_non_py(rel, gates_list, kp)[0]
     if any(os.path.basename(f) == "check_facts_replay.py" for f in out):
         out.add("zreflect/check_facts_replay.py")
@@ -176,8 +176,8 @@ def _select_for_path(rel, rev, gates_list, kp):
     if _is_global_fallback(rel):
         return None, "global:%s" % rel
     if rel in ("SEAL.json", "zreflect/SEAL.json"):
-        return set(rev.get("zreflect/seal.py", ())), None
-    if rel in rev or (rel.startswith("zreflect/measure_") and rel.endswith(".py")):
+        return set(rev.get("zreflect/trust.py", ())), None
+    if rel in rev or (rel.startswith(("zreflect/measure_", "reflect-local/measure_")) and rel.endswith(".py")):
         return _select_py_deps(rel, rev, gates_list, kp), None
     matched, known = _match_non_py(rel, gates_list, kp)
     if not known:

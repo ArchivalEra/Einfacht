@@ -134,7 +134,7 @@ def _copy_suite(suite_root, target):
     repo without one makes that gate red for a reason the example never asked
     about. Copying it keeps each example about its own subject.
     """
-    for name in ("zreflect", "reflect-hooks"):
+    for name in ("zreflect", "reflect-local"):
         shutil.copytree(os.path.join(suite_root, name), os.path.join(target, name),
                         ignore=IGNORE)
     for name in ("ruff.toml", "HISTORY.md"):

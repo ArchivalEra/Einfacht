@@ -6,7 +6,7 @@
 
 **Status:** resolved
 
-**Settling:** `python3 zreflect/registry.py --verify-seal && python3 zreflect/seal.py --selftest && python3 zreflect/knobs.py --selftest && python3 zreflect/registry.py --selftest` -- rc=0 => seal, registry flag, and knobs AST guards hold; rc!=0 => tampering or AST bypass regression
+**Settling:** `python3 zreflect/registry.py --verify-seal && python3 zreflect/trust_core.py --selftest && python3 zreflect/knobs.py --selftest && python3 zreflect/registry.py --selftest` -- rc=0 => seal, registry flag, and knobs AST guards hold; rc!=0 => tampering or AST bypass regression
 
 ## 实测问题清单
 

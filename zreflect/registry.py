@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate  # noqa: E402
 import impact  # noqa: E402
 import knobs  # noqa: E402
-import seal  # noqa: E402
+import trust  # noqa: E402
 from gate import fatal, main_selftest_or, module_meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
 
@@ -148,23 +148,36 @@ def selftest_modules(zdir=None):
     return mods, missing
 
 
-def gates(zdir=None):
-    """Discover `GATE = meta(...)` declarations; return `(gates, missing_check_decls)`."""
-    d = zdir if zdir is not None else gate.zdir()
-    out, missing = [], []
+def _scan_gates_dir(dir_path, prefix):
+    out: list[dict] = []
+    missing: list[str] = []
     try:
-        names = sorted(os.listdir(d))
+        names = sorted(os.listdir(dir_path))
     except OSError:
-        return [], []
+        return out, missing
     for n in names:
         if not n.endswith(".py") or n == "__init__.py":
             continue
-        rel = "zreflect/" + n
-        meta = _declaration(os.path.join(d, n), rel)
+        rel = prefix + "/" + n
+        meta = _declaration(os.path.join(dir_path, n), rel)
         if meta:
             out.append(meta)
         elif n.startswith("check_"):
             missing.append(rel)
+    return out, missing
+
+
+def gates(zdir=None):
+    """Discover `GATE = meta(...)` declarations in `zreflect/` and `reflect-local/`; return `(gates, missing)`."""
+    d = zdir if zdir is not None else gate.zdir()
+    out, missing = _scan_gates_dir(d, "zreflect")
+    if zdir is None:
+        ldir_name = knobs.get("REFLECT_LOCAL_DIR") or "reflect-local"
+        ldir = repo(ldir_name)
+        if os.path.isdir(ldir):
+            l_out, l_miss = _scan_gates_dir(ldir, ldir_name)
+            out.extend(l_out)
+            missing.extend(l_miss)
     return out, missing
 
 
@@ -215,8 +228,8 @@ def problems(gs, missing, mods=None, mods_missing=None, knob_problems=None, unde
     out += list(knobs.config_problems() if knob_problems is None else knob_problems)
     if auto:
         out += knobs.direct_environ_problems()
-    if auto and (seal.seal_exists() or os.path.isfile(os.path.join(gate.zdir(), "seal.py"))):
-        out += seal.verify_problems()
+    if auto and (trust.seal_exists() or os.path.isfile(os.path.join(gate.zdir(), "trust.py"))):
+        out += trust.verify_problems()
     return out
 
 
@@ -229,8 +242,9 @@ def red_need(gs=None):
 
 
 def plugins(hooks_dir=None):
-    """Discover hook scripts under `reflect-hooks/` exposing `--selftest`."""
-    d = hooks_dir if hooks_dir is not None else repo("reflect-hooks")
+    """Discover hook scripts under `reflect-local/` exposing `--selftest`."""
+    ldir_name = knobs.get("REFLECT_LOCAL_DIR") or "reflect-local"
+    d = hooks_dir if hooks_dir is not None else repo(ldir_name)
     out: list[str] = []
     if not os.path.isdir(d):
         return out
@@ -242,7 +256,7 @@ def plugins(hooks_dir=None):
         except OSError:
             continue
         if _has_selftest_code(text):
-            out.append("reflect-hooks/" + n)
+            out.append(ldir_name + "/" + n)
     return out
 
 
@@ -323,8 +337,7 @@ def _off_policy_error(off_list, pluggable=None):
     undeclared_off = [f for f in off_list if os.path.basename(f) not in declared_off]
     if undeclared_off:
         return M("registry.pluggable_off_undeclared", files=", ".join(undeclared_off))
-    import approval  # noqa: PLC0415
-    anc_probs = approval.check_off_gates_anchor(off_list)
+    anc_probs = trust.check_off_gates_anchor(off_list)
     return anc_probs[0] if anc_probs else None
 
 
@@ -369,8 +382,7 @@ def _main_run(argv):
     if phase not in phases():
         return fatal(M("registry.empty_phase", phase=phase))
     gs, missing = gates()
-    import approval  # noqa: PLC0415
-    reg_probs = problems(gs, missing) + approval.check_knobs_anchor()
+    reg_probs = problems(gs, missing) + trust.check_knobs_anchor()
     if reg_probs:
         for p in reg_probs:
             print("  · %s" % p, file=sys.stderr)
@@ -386,19 +398,19 @@ def _main_run(argv):
 
 def _main_seal(argv):
     if "--verify-seal" in argv:
-        if not seal.seal_exists():
-            return fatal(M("seal.missing", path=seal.seal_path()))
-        probs = seal.verify_problems()
+        if not trust.seal_exists():
+            return fatal(M("seal.missing", path=trust.seal_path()))
+        probs = trust.verify_problems()
         if probs:
             for p in probs:
                 print("  · %s" % p, file=sys.stderr)
             return 1
-        print(seal.current_tree_sha(verified=True) or "")
+        print(trust.current_tree_sha(verified=True) or "")
         return 0
     hit = [a for a in argv if a.startswith("--reseal=")]
     if hit:
         targets = [t.strip() for t in hit[0][len("--reseal="):].split(",") if t.strip()]
-        tree, err = seal.reseal(targets, force_all="--force" in argv)
+        tree, err = trust.reseal(targets, force_all="--force" in argv)
         if err:
             return fatal(err)
         print(M("seal.resealed", tree=tree, count=len(targets)))
@@ -513,7 +525,7 @@ def _cases():
         ("registry.render_gates_markers",
          lambda: GATES_BEGIN in render_gates(gs) and GATES_END in render_gates(gs)),
         ("registry.plugins_discovered",
-         lambda: "reflect-hooks/hook.py" in plugins()
+         lambda: "reflect-local/hook.py" in plugins()
          and any(g["file"] == "zreflect/doctor.py" for g in gs)),
         ("registry.emit_multi_bullets_bounded", lambda: _emit_bullets_ok()),
         ("★ registry.off_policy_rejects_core_and_undeclared", lambda: _off_policy_ok()),

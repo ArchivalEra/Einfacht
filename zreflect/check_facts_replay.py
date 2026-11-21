@@ -152,9 +152,9 @@ def run(argv):
     p = repo(name)
     if not os.path.exists(p):
         return fatal(M("replay.ledger_missing", name=name))
-    import approval  # noqa: PLC0415
+    import trust  # noqa: PLC0415
     r = replay_all(_with_principles(load_or_fatal(p)))
-    r["problems"] = approval.check_principles_repo(repo()) + r["problems"]
+    r["problems"] = trust.check_principles_repo(repo()) + r["problems"]
     ctail = str(M("replay.ok_calibrated", count=r["calibrated"]) if r["calibrated"] else "")
     return finish(M("replay.title"), r["problems"], M("replay.ok", count=r["ok"], calibrated=ctail))
 

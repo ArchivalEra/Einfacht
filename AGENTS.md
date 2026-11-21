@@ -95,13 +95,13 @@ hook, the consumer adds its own thin shell reading stdout -- that is part of
 
 ## Using it in another repo
 
-Copy `zreflect/` + `reflect-hooks/` over, then in that repo:
+Copy `zreflect/` + `reflect-local/` over, then in that repo:
 
 ```bash
 python3 zreflect/facts.py --init     # generate a qualified skeleton (never overwrites)
 python3 zreflect/facts.py            # measure once
 python3 zreflect/facts.py --render-doc            # render machine blocks
-python3 reflect-hooks/hook.py --chain             # wire git hooks
+python3 reflect-local/hook.py --chain             # wire git hooks
 ```
 
 `--init` creates `STATE.md` / `PRINCIPLES.md` / `AGENTS.md` / `README.md` /
@@ -121,7 +121,7 @@ fatal=0**. If not, check `--init` output for `already exists, left alone`
 
 ⚠️ The measured target defaults to **the suite itself**
 (`facts.measure_example()`, the placeholder in `zreflect/facts.py`). To measure
-your project, add an unsealed `zreflect/measure_<name>.py` and set
+your project, add an unsealed `reflect-local/measure_<name>.py` and set
 `REFLECT_MEASURE_MODULE=measure_<name>` in `knobs.json`. Unset = the suite is
 measured -- then the numbers in `STATE.md` are **about Einfacht**, not about
 your project.

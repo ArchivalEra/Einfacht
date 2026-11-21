@@ -25,7 +25,7 @@
 
 # ---- tracked directories (their own rules below) ----
 !/zreflect/
-!/reflect-hooks/
+!/reflect-local/
 !/questions/
 !/skills/
 !/docs/

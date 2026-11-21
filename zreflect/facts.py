@@ -484,11 +484,15 @@ def _measure():
         fatal_exit(M("facts.measure_module_missing"))
     if mod_name == "measure_example":
         return measure_example()
+    local_dir = os.path.join(gate.GATE_REPO, knobs.get("REFLECT_LOCAL_DIR") or "reflect-local")
     rz = os.path.join(gate.GATE_REPO, "zreflect")
     try:
-        import seal  # noqa: PLC0415
+        local_path = os.path.join(local_dir, mod_name + ".py")
+        if os.path.isfile(local_path):
+            return _run_external_measure(mod_name, local_dir)
+        import trust  # noqa: PLC0415
         mod_path = os.path.join(rz, mod_name + ".py")
-        if os.path.isfile(mod_path) and not seal.is_sealed_target(mod_path, root=gate.GATE_REPO, zdir=rz):
+        if os.path.isfile(mod_path) and not trust.is_sealed_target(mod_path, root=gate.GATE_REPO, zdir=rz):
             return _run_external_measure(mod_name, rz)
         if os.path.isdir(rz) and rz not in sys.path:
             sys.path.insert(0, rz)
@@ -501,13 +505,13 @@ def _measure():
 
 
 def _attach_core_seal(facts):
-    import seal  # noqa: PLC0415
-    if not seal.seal_exists() and not os.path.isfile(os.path.join(gate.zdir(), "seal.py")):
+    import trust  # noqa: PLC0415
+    if not trust.seal_exists() and not os.path.isfile(os.path.join(gate.zdir(), "trust.py")):
         return 0
-    probs = seal.verify_problems()
+    probs = trust.verify_problems()
     if probs:
         return fatal(probs[0])
-    sha = seal.current_tree_sha(verified=True)
+    sha = trust.current_tree_sha(verified=True)
     if sha:
         facts["core_seal"] = fact(sha, "python3 zreflect/registry.py --verify-seal",
                                   "seal", M("facts.note.core_seal"))
@@ -712,9 +716,18 @@ def cmd_init(argv):
             and write_doc(doc.PRINCIPLES, {"schema": 1, "facts": {}}) != 0):
         return 2
     _init_questions_dir(root)
-    import approval  # noqa: PLC0415
-    if approval.init_anchors(root) == 0:
-        print(str(M("facts.init_created", name=approval.ANCHORS_FILE)))
+    import shutil  # noqa: PLC0415
+
+    import trust  # noqa: PLC0415
+    ldir_name = trust.local_dir_name(root)
+    dst_hook = os.path.join(root, ldir_name, "hook.py")
+    src_hook = os.path.join(gate.tool_repo(), "reflect-local", "hook.py")
+    if not os.path.isfile(dst_hook) and os.path.isfile(src_hook):
+        os.makedirs(os.path.dirname(dst_hook), exist_ok=True)
+        shutil.copy2(src_hook, dst_hook)
+        print(str(M("facts.init_created", name=ldir_name + "/hook.py")))
+    if trust.init_anchors(root) == 0:
+        print(str(M("facts.init_created", name=trust.ANCHORS_FILE)))
     if created:
         print(str(M("facts.init_next")))
     return 0

@@ -137,10 +137,10 @@ def problems(paths, chosen):
 
 
 def _suite_sources():
-    """Collect `[(relpath, src)]` across `zreflect/` and `reflect-hooks/`."""
+    """Collect `[(relpath, src)]` across `zreflect/` and `reflect-local/`."""
     out = []
     root = gate.tool_repo()
-    for sub in ("zreflect", "reflect-hooks"):
+    for sub in ("zreflect", "reflect-local"):
         base = os.path.join(root, sub)
         if not os.path.isdir(base):
             continue
@@ -183,10 +183,10 @@ def _mode_resolution_case():
 
 
 def _suite_scope_case():
-    """`_suite_sources` covers `zreflect/` and `reflect-hooks/`, skipping `measure_*`."""
+    """`_suite_sources` covers `zreflect/` and `reflect-local/`, skipping `measure_*`."""
     import tempfile  # noqa: PLC0415
     with tempfile.TemporaryDirectory() as root:
-        for half in ("zreflect", "reflect-hooks"):
+        for half in ("zreflect", "reflect-local"):
             os.makedirs(os.path.join(root, half))
             with open(os.path.join(root, half, "x.py"), "w", encoding="utf-8") as fh:
                 fh.write("def f():\n    return 1\n")
@@ -198,7 +198,7 @@ def _suite_scope_case():
             rels = [r for r, _s in _suite_sources()]
         finally:
             gate.tool_repo = saved_tool
-        return sorted(rels) == ["reflect-hooks/x.py", "zreflect/x.py"]
+        return sorted(rels) == ["reflect-local/x.py", "zreflect/x.py"]
 
 
 def _cases():

@@ -112,3 +112,11 @@ falls back to one `NAME=VALUE` per line -- so a host without the extension gets 
 working carrier instead of a silent one. The self-test drives that fallback
 directly: it feeds `_plugin_exports` a fake `_sh` that refuses `-0` and requires
 both paths to agree.
+
+
+### Overturned & Superseded Questions (moved out of `questions/` when `wontfix` was abolished)
+
+The following questions were overturned or superseded by newer architecture (`check_explain` complexity budget and Trust v2 `trust_core.py`/`trust.py` + `reflect-local/`), and are preserved here as historical context rather than live-verified criteria:
+
+- `03-strict-docstrings.md`: superseded by `04` (`check_explain.py` complexity budget `300 + 120*branches + 60*args`).
+- `26-lock-questions-and-delegated-akr-approval.md`, `29-fix-receipt-bundle-gitignore-and-repo-id.md`, `30-require-approval-for-new-questions-and-core-seal.md`, `31-multi-passphrase-approver-and-multi-repo-e2e.md`, `32-close-review-security-and-impact-gaps.md`, `33-close-env-cache-and-depth-escapes.md`, `34-wire-seal-auto-sync-and-anchor-origin.md`, `36-close-knobs-seal-and-inproc-audit-gaps.md`: Trust v1 (`seal.py` + `approval.py` + `reflect-hooks/`) milestones, superseded by Trust v2 (`trust_core.py` + `trust.py` + `reflect-local/`).
