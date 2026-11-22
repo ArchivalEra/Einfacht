@@ -1,5 +1,6 @@
 {
   "description": "Reject a retired component name presented as current state",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "zreflect/facts.py"]},
     {"argv": ["{python}", "zreflect/check_stale.py"]},

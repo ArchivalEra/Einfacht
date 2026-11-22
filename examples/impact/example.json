@@ -1,5 +1,6 @@
 {
   "description": "Affected gate selector: run impact.py selftest and dry-run plan",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "zreflect/impact.py", "--selftest"], "contains": ["PASS"]},
     {"argv": ["{python}", "zreflect/impact.py"], "contains": ["registry.affected_plan"]}

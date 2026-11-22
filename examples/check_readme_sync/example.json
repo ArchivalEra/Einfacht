@@ -1,5 +1,6 @@
 {
   "description": "Check README cross-links and same-batch changes",
+  "platforms": ["posix", "windows"],
   "env": {"REFLECT_READMES": "R1.md,R2.md,R3.md"},
   "steps": [
     {"argv": ["{python}", "zreflect/check_readme_sync.py"]},

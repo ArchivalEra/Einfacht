@@ -1,5 +1,6 @@
 {
   "description": "Compute the next-turn brief from git state: counts must match the real repo, not just print keys",
+  "platforms": ["posix", "windows"],
   "steps": [
     {
       "argv": [

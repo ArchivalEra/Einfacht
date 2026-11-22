@@ -1,5 +1,6 @@
 {
   "description": "Read the knob registry instead of grepping source: names, kinds, defaults, meanings",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "zreflect/knobs.py", "--list"], "contains": ["REFLECT_DOCS", "list"]},
     {"argv": ["{python}", "zreflect/knobs.py", "--list"], "not_contains": ["Traceback"]}

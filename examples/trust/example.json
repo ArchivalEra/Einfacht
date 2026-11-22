@@ -1,5 +1,6 @@
 {
   "description": "Trust v2 adapters: verify local_scripts anchor, upgrade, and Ed25519 receipt selftest",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "zreflect/trust.py", "--selftest"], "contains": ["0 FAIL"]},
     {"argv": ["{python}", "zreflect/trust.py", "--selftest"], "not_contains": ["Traceback"]}

@@ -1,5 +1,6 @@
 {
   "description": "Reject a falsified measurement method still present in the ledger",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "zreflect/facts.py"]},
     {"argv": ["{python}", "zreflect/check_instruments.py"], "env": {"REFLECT_INSTRUMENTS": "instruments.json"}, "contains": ["instruments.ok"]},

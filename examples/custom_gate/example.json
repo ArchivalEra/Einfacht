@@ -1,5 +1,6 @@
 {
   "description": "Add a self-proving gate and run it only in a declared custom phase",
+  "platforms": ["posix", "windows"],
   "env": {"REFLECT_PHASES": "lab"},
   "init": false,
   "steps": [

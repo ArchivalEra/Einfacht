@@ -1,5 +1,6 @@
 {
   "description": "Resolve a product line and replay its environment stamps",
+  "platforms": ["posix", "windows"],
   "steps": [
     {
       "argv": [

@@ -1,5 +1,6 @@
 {
   "description": "Zero-language core: every user-visible string goes through a code, packs are optional",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "zreflect/check_i18n.py"], "contains": ["i18n_cover.ok"]},
     {"argv": ["{python}", "-c", "import sys; sys.path.insert(0,'zreflect'); from i18n import M; print(M('examples.pass', example='x'))"], "contains": ["x"]}

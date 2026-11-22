@@ -1,6 +1,8 @@
 {
   "description": "Pin an upstream artifact by URL and SHA-256",
+  "platforms": ["posix", "windows"],
   "steps": [
+    {"argv": ["{python}", "-c", "from pathlib import Path; Path('vendor/demo.txt').write_bytes(b'example upstream bytes\\n')"]},
     {"argv": ["{python}", "zreflect/check_locks.py"], "contains": ["locks.ok"], "not_contains": ["SKIP:"]},
     {"argv": ["{python}", "zreflect/check_locks.py", "--spec", "bad-lock.json"], "rc": 1, "contains": ["locks.sha_mismatch"]}
   ]

@@ -1,5 +1,6 @@
 {
   "description": "Install chained git hooks, verify them, and uninstall reversibly",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["git", "init", "-q"]},
     {"argv": ["{python}", "reflect-local/hook.py", "--chain", "{repo}"]},

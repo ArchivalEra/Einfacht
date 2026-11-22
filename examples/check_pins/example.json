@@ -1,5 +1,6 @@
 {
   "description": "Cross-check a derived tree stamp with a real upstream git HEAD",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "prepare.py"]},
     {"argv": ["{python}", "zreflect/check_pins.py"], "contains": ["pins.ok"], "not_contains": ["SKIP:"]},

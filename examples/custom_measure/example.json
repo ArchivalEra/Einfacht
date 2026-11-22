@@ -1,5 +1,6 @@
 {
   "description": "Replace the placeholder collector through REFLECT_MEASURE_MODULE",
+  "platforms": ["posix", "windows"],
   "env": {"REFLECT_MEASURE_MODULE": "measure_demo"},
   "init": false,
   "steps": [

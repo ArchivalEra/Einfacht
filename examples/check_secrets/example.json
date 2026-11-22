@@ -1,5 +1,6 @@
 {
   "description": "Scan explicit paths, redact findings, and retire stale exemptions",
+  "platforms": ["posix", "windows"],
   "steps": [
     {
       "argv": [

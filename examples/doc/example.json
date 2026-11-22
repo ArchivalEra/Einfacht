@@ -1,5 +1,6 @@
 {
   "description": "Principles registry: verify doc.py selftest and principle rules",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "zreflect/doc.py", "--selftest"], "contains": ["0 FAIL"]},
     {"argv": ["{python}", "zreflect/doc.py", "--selftest"], "not_contains": ["Traceback"]}

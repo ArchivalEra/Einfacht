@@ -1,5 +1,6 @@
 {
   "description": "The prose carrier must exist and stay off every scan surface",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "zreflect/check_history.py"], "contains": ["history.ok"]},
     {"argv": ["{python}", "zreflect/check_history.py"], "env": {"REFLECT_DOCS": "STATE.md,AGENTS.md,PRINCIPLES.md,HISTORY.md"}, "rc": 1, "contains": ["history.on_scan_surface"]},

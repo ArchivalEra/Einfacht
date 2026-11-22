@@ -1,5 +1,6 @@
 {
   "description": "Comment explanation volume proportional to AST complexity",
+  "platforms": ["posix", "windows"],
   "steps": [
     {
       "argv": [

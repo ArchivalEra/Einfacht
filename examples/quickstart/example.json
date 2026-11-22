@@ -1,5 +1,6 @@
 {
   "description": "Bootstrap, measure, render, verify, and run the commit phase",
+  "platforms": ["posix", "windows"],
   "init": false,
   "steps": [
     {"argv": ["{python}", "zreflect/facts.py", "--init"]},

@@ -1,5 +1,6 @@
 {
   "description": "Declare required and forbidden source fragments",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "zreflect/check_invariants.py"], "env": {"REFLECT_INVARIANTS": "good.json"}, "contains": ["invariants.ok"]},
     {"argv": ["{python}", "zreflect/check_invariants.py"], "env": {"REFLECT_INVARIANTS": "bad.json"}, "rc": 1, "contains": ["invariants.drift_forbidden"]},

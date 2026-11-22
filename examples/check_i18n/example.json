@@ -1,5 +1,6 @@
 {
   "description": "Audit an opted-in source tree for language-independent core output",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "zreflect/check_i18n.py"], "env": {"REFLECT_I18N_ROOT": "app"}},
     {"argv": ["{python}", "zreflect/check_i18n.py"], "env": {"REFLECT_I18N_ROOT": "broken"}, "rc": 1, "contains": ["i18n_cover"]}

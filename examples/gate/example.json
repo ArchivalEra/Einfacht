@@ -1,5 +1,6 @@
 {
   "description": "Gate platform: run gate.py selftest",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "zreflect/gate.py", "--selftest"], "contains": ["0 FAIL"]},
     {"argv": ["{python}", "zreflect/gate.py", "--selftest"], "not_contains": ["Traceback"]}

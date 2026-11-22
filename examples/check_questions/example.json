@@ -1,5 +1,6 @@
 {
   "description": "Require every open question to carry a runnable two-outcome settler",
+  "platforms": ["posix", "windows"],
   "init": false,
   "steps": [
     {"argv": ["{python}", "zreflect/check_questions.py"], "env": {"REFLECT_QUESTIONS": "good"}},

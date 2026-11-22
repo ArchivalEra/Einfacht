@@ -1,5 +1,6 @@
 {
   "description": "Replay every fact command and detect a changed value",
+  "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "zreflect/facts.py"]},
     {"argv": ["{python}", "zreflect/facts.py", "--render-doc"]},
