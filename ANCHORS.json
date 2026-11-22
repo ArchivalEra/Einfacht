@@ -2,7 +2,7 @@
   "approver_pub": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAvf9ckQEI6CkK30ookgtqjT6I3H0PXzo6ov25212pyDQ=\n-----END PUBLIC KEY-----\n",
   "knobs_sha256": "0be1ace3133f8c2500383bddf6c4b3aae1c93b606157f8fac3f8e7ca31fddb1a",
   "local_scripts": {
-    "reflect-local/hook.py": "4683eb326688373569f8a45b229b18be3cc19675f2d0ed44f88c27ee018505fa"
+    "reflect-local/hook.py": "a6a465bcebdec4a60bbcf0f8f37fb3029d8954fa60620f7a72500de3cafddbd2"
   },
   "lock_core": true,
   "off_gates": [
@@ -15,9 +15,9 @@
     "doctor.py"
   ],
   "principles": {
-    "doc_py_sha256": "14a7168e0a474387fcf4bb0e44a882980ead5119c2638e3343e97c812b56d948",
+    "doc_py_sha256": "688513c088d62eaede5a1d3b42d87f836511b49fdf2df172218b073077d5bde2",
     "no_principles": false,
-    "principles_md_sha256": "184fa007eec59876c0c59763f4dc3ab68b2986beeaa1d88c18fe2ed39130fdc8"
+    "principles_md_sha256": "840ec2463179c7584f157e6bf73f61e8f25db1f9bde5aee85601d5e1d09bacaf"
   },
   "questions": {
     "questions/01-example.md": {
@@ -188,5 +188,5 @@
   "revoked_ids": [],
   "schema": 2,
   "suite_seq": 1,
-  "suite_tree_sha256": "9cf74cba08e7f125e9f150f34bac6c10d1f3c3bddad9ebf77d40e7eebfeb07ad"
+  "suite_tree_sha256": "126b5690b0458c08082d23b557113fd205660c0166a44a67d73e78e95ddd679c"
 }

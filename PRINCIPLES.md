@@ -4,7 +4,7 @@
 > *What* is true now: [`STATE.md`](STATE.md). Knob semantics: `python3 zreflect/knobs.py --list`.
 
 <!-- AUTO:RULES -->
-> This block is rendered by `zreflect/facts.py --render-doc` from the `RULES` table in `zreflect/doc.py`; **do not hand-edit**.
+> This block is rendered by `zreflect/facts.py --render-doc` from the `RULES` table in `zreflect/doc.py` (plus optional `reflect-local/principles.json`); **do not hand-edit**.
 > Every row's judging command is executed verbatim at every commit (`check_facts_replay`).
 
 | id | principle | judging command |
@@ -24,7 +24,7 @@
 | `open_questions_settle` | every unresolved open question must carry a runnable settler | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_questions.py'))"` |
 | `selfcert_harness` | every declared module must have a --selftest entry | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;u=registry.selftest_modules()[1];print('missing_selftest=%d' % len(u));sys.exit(1 if u else 0)"` |
 | `snapshot_hygiene` | a mutable global imported across modules is a value copy: read via the module attribute instead | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_snapshots.py'))"` |
-| `style_is_not_a_rule` | style preferences do not enter the rule table | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;style=('style','naming','comment','layout','format');bad=[r.id for r in doc.RULES if r.id in style];print('style_ids=%d' % len(bad));sys.exit(1 if bad else 0)"` |
+| `style_is_not_a_rule` | style preferences do not enter the rule table | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;style=('style','naming','comment','layout','format');bad=[r.id for r in doc.all_rules() if r.id in style];print('style_ids=%d' % len(bad));sys.exit(1 if bad else 0)"` |
 | `three_readmes` | the README group is checked structurally and kept in the same push batch | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_readme_sync.py'))"` |
 | `zero_language` | zero language in the core: user-visible messages go through M(code); machine contracts are untranslatable by construction | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_i18n.py'))"` |
 
