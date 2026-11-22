@@ -754,16 +754,20 @@ def _case_forged_cache_and_depth():
         if _is_suite_argv(["zreflect/fake", "-c", "pass"]) or _is_suite_argv(["python3", "-c", "# zreflect/"]):
             return False
         out_f = os.path.join(tmp, "depth.txt")
-        code = (
-            f"import os, sys, time; sys.path.insert(0, {zdir()!r}); pid = os.fork()\n"
-            f"if pid == 0:\n    time.sleep(0.05); import gate\n"
-            f"    open({out_f!r}, 'w').write(str(gate.trusted_replay_depth())); os._exit(0)\nos._exit(0)\n"
+        child = (
+            f"import sys, time; time.sleep(0.05); sys.path.insert(0, {zdir()!r}); import gate\n"
+            f"open({out_f!r}, 'w', encoding='ascii').write(str(gate.trusted_replay_depth()))\n"
         )
-        subprocess.run([sys.executable, "-c", code], env={**os.environ, "EINFACHT_REPLAY_DEPTH": "2"}, check=True)
-        for _ in range(30):
+        launcher = (
+            f"import subprocess, sys\n"
+            f"subprocess.Popen([sys.executable, '-c', {child!r}], "
+            f"stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        )
+        subprocess.run([sys.executable, "-c", launcher], env={**os.environ, "EINFACHT_REPLAY_DEPTH": "2"}, check=True)
+        for _ in range(100):
             if os.path.isfile(out_f):
                 return open(out_f, encoding="ascii").read().strip() == "0"
-            _time.sleep(0.02)
+            _time.sleep(0.03)
         return False
 
 
