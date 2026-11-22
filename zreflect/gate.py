@@ -754,13 +754,20 @@ def _case_forged_cache_and_depth():
         if _is_suite_argv(["zreflect/fake", "-c", "pass"]) or _is_suite_argv(["python3", "-c", "# zreflect/"]):
             return False
         out_f = os.path.join(tmp, "depth.txt")
+        tmp_f = os.path.join(tmp, "depth.tmp")
         child = (
-            f"import sys, time; time.sleep(0.05); sys.path.insert(0, {zdir()!r}); import gate\n"
-            f"open({out_f!r}, 'w', encoding='ascii').write(str(gate.trusted_replay_depth()))\n"
+            "import os, sys, time; lpid = int(sys.argv[1])\n"
+            "for _ in range(100):\n"
+            "    if os.name == 'nt' or os.getppid() != lpid:\n        break\n"
+            "    time.sleep(0.01)\n"
+            f"sys.path.insert(0, {zdir()!r}); import gate\n"
+            f"with open({tmp_f!r}, 'w', encoding='ascii') as fh:\n"
+            "    fh.write(str(gate.trusted_replay_depth()))\n"
+            f"os.replace({tmp_f!r}, {out_f!r})\n"
         )
         launcher = (
-            f"import subprocess, sys\n"
-            f"subprocess.Popen([sys.executable, '-c', {child!r}], "
+            f"import os, subprocess, sys\n"
+            f"subprocess.Popen([sys.executable, '-c', {child!r}, str(os.getpid())], "
             f"stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
         )
         subprocess.run([sys.executable, "-c", launcher], env={**os.environ, "EINFACHT_REPLAY_DEPTH": "2"}, check=True)
