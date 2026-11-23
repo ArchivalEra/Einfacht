@@ -2,7 +2,9 @@
   "approver_pub": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAvf9ckQEI6CkK30ookgtqjT6I3H0PXzo6ov25212pyDQ=\n-----END PUBLIC KEY-----\n",
   "knobs_sha256": "0be1ace3133f8c2500383bddf6c4b3aae1c93b606157f8fac3f8e7ca31fddb1a",
   "local_scripts": {
-    "reflect-local/hook.py": "7b743f4ca7cd3afeede891839e4df69f93f9f8c2289cd4c7253d0582b54de421"
+    "reflect-local/authors.py": "d97a80d10435b7d15ce2f3a08216063be4d9c4eb491212a7db4f34e2a71cf1fa",
+    "reflect-local/hook.py": "7b743f4ca7cd3afeede891839e4df69f93f9f8c2289cd4c7253d0582b54de421",
+    "reflect-local/principles.json": "85716f475139889cdb7eabfb879bf1b127b43a15e6f31b3bcb65c816dc83a0a7"
   },
   "lock_core": true,
   "off_gates": [
@@ -17,7 +19,7 @@
   "principles": {
     "doc_py_sha256": "688513c088d62eaede5a1d3b42d87f836511b49fdf2df172218b073077d5bde2",
     "no_principles": false,
-    "principles_md_sha256": "840ec2463179c7584f157e6bf73f61e8f25db1f9bde5aee85601d5e1d09bacaf"
+    "principles_md_sha256": "8593a4ca2f18a5540bd963434ba1801c51885d6fb2c87a2270fd067404228b0d"
   },
   "questions": {
     "questions/01-example.md": {

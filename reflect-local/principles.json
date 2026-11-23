@@ -1,0 +1,7 @@
+[
+  {
+    "id": "authors_are_known",
+    "text": "HEAD carries no author, committer, or `Co-authored-by` identity outside the children roster.",
+    "cmd": "python3 reflect-local/authors.py ."
+  }
+]

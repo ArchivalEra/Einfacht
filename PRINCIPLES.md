@@ -10,6 +10,7 @@
 | id | principle | judging command |
 |---|---|---|
 | `assertion_lifecycle` | a retracted claim must not quietly return as current state | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_retractions.py'))"` |
+| `authors_are_known` | HEAD carries no author, committer, or `Co-authored-by` identity outside the children roster. | `python3 reflect-local/authors.py .` |
 | `comments_earn_their_place` | explanation volume must fit AST complexity under `mismatch`, or carry no docstrings under `strict` | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_explain.py'))"` |
 | `core_sealed` | shared suite core modules, gates, hooks, and language packs match `zreflect/SEAL.json` | `python3 zreflect/registry.py --verify-seal` |
 | `declared_not_globbed` | predicates are declarations, not filenames: the execution surface reads registry --run <phase> | `python3 zreflect/registry.py --gates` |
@@ -28,5 +29,5 @@
 | `three_readmes` | the README group is checked structurally and kept in the same push batch | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_readme_sync.py'))"` |
 | `zero_language` | zero language in the core: user-visible messages go through M(code); machine contracts are untranslatable by construction | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_i18n.py'))"` |
 
-18 principles -- each with a judging command that **really runs**.
+19 principles -- each with a judging command that **really runs**.
 <!-- /AUTO:RULES -->
