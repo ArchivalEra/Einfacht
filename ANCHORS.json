@@ -2,7 +2,7 @@
   "approver_pub": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAvf9ckQEI6CkK30ookgtqjT6I3H0PXzo6ov25212pyDQ=\n-----END PUBLIC KEY-----\n",
   "knobs_sha256": "0be1ace3133f8c2500383bddf6c4b3aae1c93b606157f8fac3f8e7ca31fddb1a",
   "local_scripts": {
-    "reflect-local/hook.py": "a6a465bcebdec4a60bbcf0f8f37fb3029d8954fa60620f7a72500de3cafddbd2"
+    "reflect-local/hook.py": "7b743f4ca7cd3afeede891839e4df69f93f9f8c2289cd4c7253d0582b54de421"
   },
   "lock_core": true,
   "off_gates": [
@@ -188,5 +188,5 @@
   "revoked_ids": [],
   "schema": 2,
   "suite_seq": 1,
-  "suite_tree_sha256": "ce9d20efd672397e098a0f2aa8873d1068141ffe80b0b241c360470597fbe581"
+  "suite_tree_sha256": "3722f6b9f4a95715513082a6d86b95018de19507b71c52ef55317adadc8f014a"
 }

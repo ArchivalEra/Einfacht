@@ -443,7 +443,8 @@ def _auto_sync_for_probs(base, anchors, probs):
     reqs = build_requests(targets, root=base, repo_name=anchors.get("repo") or repo_id(base))
     url = (os.environ.get(APPROVER_URL_ENV) or DEFAULT_APPROVER_URL).rstrip("/")
     out_path = os.environ.get(RECEIPT_ENV) or _default_receipt_path(base)
-    return any(_post_auto_sync(url, p, out_path) for p in reqs)
+    results = [_post_auto_sync(url, p, out_path) for p in reqs]
+    return any(results)
 
 
 # ---------------------------------------------------------------------------
@@ -997,6 +998,7 @@ def _selftest_reseal_approval():
 
 def _selftest_crlf_and_verify():
     with tempfile.TemporaryDirectory() as rt:
+        os.makedirs(os.path.join(rt, ".git"))
         lf_p = os.path.join(rt, "lf.json")
         crlf_p = os.path.join(rt, "crlf.json")
         with open(lf_p, "wb") as fh:
@@ -1006,6 +1008,16 @@ def _selftest_crlf_and_verify():
         h_lf, h_crlf = _sha256_norm_file(lf_p), _sha256_norm_file(crlf_p)
         if not h_lf or h_lf != h_crlf or _sha256_bytes_norm(b'{\n  "k": "v"\n}\n') != h_crlf:
             return False
+        seen: dict[str, bool] = {}
+        orig = globals()["_post_auto_sync"]
+        globals()["_post_auto_sync"] = lambda _u, p, _o: seen.setdefault(p["target_path"], True)
+        try:
+            probs = [M("approval.receipt_required", action="gate.off", target="knobs.json"),
+                     M("approval.receipt_required", action="gate.off", target="ruff.toml")]
+            if not _auto_sync_for_probs(rt, {"approver_pub": "x"}, probs) or len(seen) != 2:
+                return False
+        finally:
+            globals()["_post_auto_sync"] = orig
     ok, err = ed25519_verify(b"msg", "AA==", base64.b64encode(b"0" * 32).decode("ascii"))
     return (not ok) and err in ("signature_invalid", "crypto_unavailable")
 

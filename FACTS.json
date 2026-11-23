@@ -1,13 +1,13 @@
 {
  "schema": 1,
- "generated": "2026-11-22T17:19:28+0800",
+ "generated": "2026-11-23T13:16:32+0800",
  "_why": "facts.ledger_why",
  "facts": {
   "py_files": {
    "value": 44,
    "cmd": "python3 zreflect/facts.py --count -files .py",
    "source": "repo",
-   "measured_at": "2026-11-22T17:19:28+0800",
+   "measured_at": "2026-11-23T13:16:32+0800",
    "first_seen": "2026-11-20",
    "note": "facts.note.example_fact"
   },
@@ -15,31 +15,31 @@
    "value": 47,
    "cmd": "python3 zreflect/facts.py --count -files .md",
    "source": "repo",
-   "measured_at": "2026-11-22T17:19:28+0800",
+   "measured_at": "2026-11-23T13:16:32+0800",
    "first_seen": "2026-11-21"
   },
   "py_lines": {
-   "value": 14140,
+   "value": 14188,
    "cmd": "python3 zreflect/facts.py --count -lines .py",
    "source": "repo",
-   "measured_at": "2026-11-22T17:19:28+0800",
-   "first_seen": "2026-11-22",
+   "measured_at": "2026-11-23T13:16:32+0800",
+   "first_seen": "2026-11-23",
    "note": "facts.note.bare_number_demo"
   },
   "md_lines": {
    "value": 2146,
    "cmd": "python3 zreflect/facts.py --count -md",
    "source": "repo",
-   "measured_at": "2026-11-22T17:19:28+0800",
+   "measured_at": "2026-11-23T13:16:32+0800",
    "first_seen": "2026-11-22",
    "note": "facts.note.excludes_machine_block"
   },
   "core_seal": {
-   "value": "ce9d20efd672397e098a0f2aa8873d1068141ffe80b0b241c360470597fbe581",
+   "value": "3722f6b9f4a95715513082a6d86b95018de19507b71c52ef55317adadc8f014a",
    "cmd": "python3 zreflect/registry.py --verify-seal",
    "source": "seal",
-   "measured_at": "2026-11-22T17:19:28+0800",
-   "first_seen": "2026-11-22",
+   "measured_at": "2026-11-23T13:16:32+0800",
+   "first_seen": "2026-11-23",
    "note": "facts.note.core_seal"
   }
  }
