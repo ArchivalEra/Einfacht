@@ -1,11 +1,16 @@
 {
-  "description": "The prose carrier must exist and stay off every scan surface",
+  "description": "The prose carrier (single file or fold folder) must exist, match format, and stay off every scan surface",
   "platforms": ["posix", "windows"],
   "steps": [
     {"argv": ["{python}", "zreflect/check_history.py"], "contains": ["history.ok"]},
     {"argv": ["{python}", "zreflect/check_history.py"], "env": {"REFLECT_DOCS": "STATE.md,AGENTS.md,PRINCIPLES.md,HISTORY.md"}, "rc": 1, "contains": ["history.on_scan_surface"]},
     {"argv": ["{python}", "zreflect/check_history.py"], "env": {"REFLECT_HISTORY": "no-such-history.md"}, "rc": 1, "contains": ["history.missing"]},
     {"argv": ["{python}", "zreflect/check_history.py"], "env": {"REFLECT_HISTORY": ""}, "contains": ["OFF: history.off"]},
+    {"argv": ["{python}", "zreflect/check_history.py"], "env": {"REFLECT_HISTORY_MODE": "fold"}, "contains": ["history.ok"]},
+    {"argv": ["{python}", "-c", "open('HISTORY/bad.md','w',encoding='utf-8').write('# Title only\\n')"]},
+    {"argv": ["{python}", "zreflect/check_history.py"], "env": {"REFLECT_HISTORY_MODE": "fold"}, "rc": 1, "contains": ["history.empty_or_malformed"]},
+    {"argv": ["{python}", "-c", "import os; os.remove('HISTORY/bad.md')"]},
+    {"argv": ["{python}", "zreflect/check_history.py"], "env": {"REFLECT_HISTORY_MODE": "fold", "REFLECT_DOCS": "STATE.md,AGENTS.md,PRINCIPLES.md,HISTORY/01-note.md"}, "rc": 1, "contains": ["history.on_scan_surface"]},
     {"argv": ["{python}", "zreflect/check_history.py", "--selftest"], "contains": ["0 FAIL"]}
   ]
 }

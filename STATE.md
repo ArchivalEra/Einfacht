@@ -9,11 +9,11 @@
 
 | key | value | measured at | replay cmd |
 |---|---|---|---|
-| `core_seal` | `141b6dabaa12f53b...` | 2026-11-23T16:19:30+0800 | `python3 zreflect/registry.py --verify-seal` |
-| `md_files` | **47** | 2026-11-23T16:19:30+0800 | `python3 zreflect/facts.py --count -files .md` |
-| `md_lines` | **2146** | 2026-11-23T16:19:30+0800 | `python3 zreflect/facts.py --count -md` |
-| `py_files` | **45** | 2026-11-23T16:19:30+0800 | `python3 zreflect/facts.py --count -files .py` |
-| `py_lines` | **14265** | 2026-11-23T16:19:30+0800 | `python3 zreflect/facts.py --count -lines .py` |
+| `core_seal` | `aa2e25ce183d3ede...` | 2026-11-24T09:09:49+0800 | `python3 zreflect/registry.py --verify-seal` |
+| `md_files` | **49** | 2026-11-24T09:09:49+0800 | `python3 zreflect/facts.py --count -files .md` |
+| `md_lines` | **2152** | 2026-11-24T09:09:49+0800 | `python3 zreflect/facts.py --count -md` |
+| `py_files` | **45** | 2026-11-24T09:09:49+0800 | `python3 zreflect/facts.py --count -files .py` |
+| `py_lines` | **14394** | 2026-11-24T09:09:49+0800 | `python3 zreflect/facts.py --count -lines .py` |
 
 5 facts.
 <!-- /AUTO:FACTS -->
@@ -42,7 +42,7 @@
 | `check_world.py`（world gate） | commit | declarative validation target: world reconciliation of a multi-line repo's shared validation environment | `REFLECT_WORLD`, `REFLECT_WORLD_LINE` | a single-line repo does not need it: spec not configured => state it is off |
 | `hook.py`（Hook entry） | start-of-work | the single mouth called by other hook systems: commit re-renders + runs gates; push verifies only + trilingual READMEs; --chain/--uninstall | `REFLECT_DOC` | the hook entry is invoked by git, not attached to the pre-commit phase |
 | `check_explain.py`（Comment discipline） | start-of-work | strict: no docstrings; mismatch: explanation chars within AST complexity budget | `REFLECT_COMMENTS` | only disabled when REFLECT_COMMENTS=off is explicitly set |
-| `check_history.py`（History document） | start-of-work | the one carrier where prose is allowed: it must exist and must stay off every scan surface | `REFLECT_HISTORY`, `REFLECT_DOCS`, `REFLECT_READMES`, `REFLECT_QUESTIONS`, `REFLECT_FACTS` | a repo that keeps no history document states so by pointing REFLECT_HISTORY at nothing; the exemption then has no subject |
+| `check_history.py`（History document） | start-of-work | the one carrier where prose is allowed: single file or fold directory must exist and stay off every scan surface | `REFLECT_HISTORY`, `REFLECT_HISTORY_MODE`, `REFLECT_DOCS`, `REFLECT_READMES`, `REFLECT_QUESTIONS`, `REFLECT_FACTS` | a repo that keeps no history document states so by pointing REFLECT_HISTORY at nothing; the exemption then has no subject |
 | `doctor.py`（start-of-work doctor） | start-of-work | process / port liveness (probes things that can die => runs_at=start-of-work, not in pre-commit) | `REFLECT_DOCTOR`, `REFLECT_DOCTOR_TIMEOUT` | this repo has no doctor.json spec: no process/port liveness is checked => state it is off |
 
 20 gates; 14 may be disabled.
