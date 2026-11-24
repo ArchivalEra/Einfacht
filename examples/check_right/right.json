@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "default_equals": "AGPL-3.0-only",
+  "declarations": [
+    {"path": "Cargo.toml", "format": "toml", "field": "package.license", "spdx": true},
+    {"path": "package.json", "format": "json", "field": "license", "spdx": true}
+  ],
+  "copies": [
+    {"src": "LICENSE", "dst": "dist/LICENSE"}
+  ]
+}

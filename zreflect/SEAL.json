@@ -45,6 +45,9 @@
   "zreflect/check_retractions.py": {
    "file_sha256": "2e6aeea21f1eb288b17cd1d3cbc992f56340adbb97fd9229008784d450d0b28a"
   },
+  "zreflect/check_right.py": {
+   "file_sha256": "e0a55682e312d725189492d13562099fbd8e89f3cf26aaeadb9a92ba9c378f92"
+  },
   "zreflect/check_secrets.py": {
    "file_sha256": "9b81e5d608234f59d03264d71728868b591ba49a43e2fd7006584a9bebdaa25a"
   },
@@ -67,7 +70,7 @@
    "file_sha256": "44123f40ef3c29c54589afc323341b65fe343f02841424d21c71eb302076084c"
   },
   "zreflect/facts.py": {
-   "file_sha256": "3eaf102b5807a6962a79d42f7783a7d57de1e152c02e0966e8b894eb34a8f7a0"
+   "file_sha256": "b0488b69542fec94ca0d2a9d8ccd28b6fe53759a7e0d29b98c1f3f31bf8a6e19"
   },
   "zreflect/gate.py": {
    "file_sha256": "01201f76e5f30fb52369daab8047147c28558022db8a4e6608b4c6e1670bbb70"
@@ -82,16 +85,16 @@
    "file_sha256": "3ea34fe19324cd9e3e160bd2f38bde0a0e8ce7fd2a3aa2b7e65bf835cdd7fd6f"
   },
   "zreflect/knobs.py": {
-   "file_sha256": "97113f9841c9ad16258156040b3f79401b70bb64374ebdf93b63cefbb9331c13"
+   "file_sha256": "ba860f7e7e85184a487a8c57776b73086d7c66772f197d103877c4e7ed39f4ae"
   },
   "zreflect/lang/de.json": {
-   "file_sha256": "e596d1d71897ac070cc61767274b682def2163fa75351c8e0303dcd023c680bb"
+   "file_sha256": "9929d2cc2fb7f1ca46507a90c9faf79d8ab2a80a83f0bc9455b45ef21d4a519f"
   },
   "zreflect/lang/en.json": {
-   "file_sha256": "9f9a51ea9c0d7163b445d7e022c2d5542fc94400d217b2874e663dc77b05d293"
+   "file_sha256": "24c2c5edb841c983309b612a33439ddfbf5cdb8a56e7f37da5b0a3b0682b3f1f"
   },
   "zreflect/lang/zh.json": {
-   "file_sha256": "b5e27a893485b158e73e259b4936f9ed7fd896c8a10a39926f08ee8211cc1fd3"
+   "file_sha256": "7295cffbfd500b195557b08f5e177850be18d08a5238ef441e468db5659332b8"
   },
   "zreflect/next.py": {
    "file_sha256": "5baad73b3e2e65ad16b65c1351f5e35a27ce7b7c762a511be6f68d22bf605d83"
@@ -108,6 +111,6 @@
  },
  "schema": 2,
  "suite_seq": 1,
- "tree_sha256": "7fc281ea061561ad1f913ec811e70b6370ee4c44455692e8ab0c3318215871f0",
+ "tree_sha256": "2d189b27caac6196a2a2598e2f2d0e68e64482b7709ef8b41c55c715b567d2f5",
  "upstream_repo": "ArchivalEra/Einfacht"
 }

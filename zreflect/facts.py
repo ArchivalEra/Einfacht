@@ -670,7 +670,7 @@ def _init_skeleton(root, state):
         knobs.CONFIG_NAME: json.dumps({
             "REFLECT_MEASURE_MODULE": "measure_example",
             "REFLECT_OFF_GATES": ("check_ab.py,check_instruments.py,check_invariants.py,"
-                                  "check_locks.py,check_pins.py,check_world.py,doctor.py"),
+                                  "check_locks.py,check_pins.py,check_right.py,check_world.py,doctor.py"),
             **({"REFLECT_HISTORY_MODE": "fold"} if knobs.history_mode(root) == "folder" else {}),
         }, indent=2) + "\n",
     }

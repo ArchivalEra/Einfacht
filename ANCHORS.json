@@ -1,6 +1,6 @@
 {
   "approver_pub": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAvf9ckQEI6CkK30ookgtqjT6I3H0PXzo6ov25212pyDQ=\n-----END PUBLIC KEY-----\n",
-  "knobs_sha256": "0be1ace3133f8c2500383bddf6c4b3aae1c93b606157f8fac3f8e7ca31fddb1a",
+  "knobs_sha256": "119e965608f59977ac092efe080ed4f5b0b538d00cfdc643882d9b6a5eca3468",
   "local_scripts": {
     "reflect-local/authors.py": "d97a80d10435b7d15ce2f3a08216063be4d9c4eb491212a7db4f34e2a71cf1fa",
     "reflect-local/hook.py": "7b743f4ca7cd3afeede891839e4df69f93f9f8c2289cd4c7253d0582b54de421",
@@ -13,6 +13,7 @@
     "check_invariants.py",
     "check_locks.py",
     "check_pins.py",
+    "check_right.py",
     "check_world.py",
     "doctor.py"
   ],
@@ -190,5 +191,5 @@
   "revoked_ids": [],
   "schema": 2,
   "suite_seq": 1,
-  "suite_tree_sha256": "aa2e25ce183d3ede1501bb63193b9bd7871b04f633d156f229f41ff3bafe8dd7"
+  "suite_tree_sha256": "2d189b27caac6196a2a2598e2f2d0e68e64482b7709ef8b41c55c715b567d2f5"
 }

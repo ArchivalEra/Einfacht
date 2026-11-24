@@ -1,0 +1,9 @@
+{
+  "description": "Cross-check JSON/TOML declarations and distributed byte copies",
+  "platforms": ["posix", "windows"],
+  "steps": [
+    {"argv": ["{python}", "zreflect/check_right.py"], "contains": ["right.ok"]},
+    {"argv": ["{python}", "zreflect/check_right.py", "--spec", "bad-right.json"], "rc": 1, "contains": ["right.field_mismatch", "right.copy_mismatch"]},
+    {"argv": ["{python}", "zreflect/check_right.py", "--spec", "missing-right.json"], "rc": 2, "contains": ["right.explicit_spec_missing"]}
+  ]
+}

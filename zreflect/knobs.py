@@ -50,6 +50,7 @@ REGISTRY = {
     "REFLECT_AB": ("file", "ab.json", _Semantic("knobs.sem.reflect_ab")),
     "REFLECT_PINS": ("file", "pins.json", _Semantic("knobs.sem.reflect_pins")),
     "REFLECT_LOCKS": ("file", "upstream-lock.json", _Semantic("knobs.sem.reflect_locks")),
+    "REFLECT_RIGHTS": ("file", "right.json", _Semantic("knobs.sem.reflect_rights")),
     "REFLECT_LOCAL_DIR": ("dir", "reflect-local", _Semantic("knobs.sem.reflect_local_dir")),
     "REFLECT_MEASURE_MODULE": ("value", "", _Semantic("knobs.sem.reflect_measure_module")),
     "REFLECT_PHASES": ("value", "", _Semantic("knobs.sem.reflect_phases")),

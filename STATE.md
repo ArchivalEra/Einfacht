@@ -9,11 +9,11 @@
 
 | key | value | measured at | replay cmd |
 |---|---|---|---|
-| `core_seal` | `7fc281ea061561ad...` | 2026-11-24T10:22:54+0800 | `python3 zreflect/registry.py --verify-seal` |
-| `md_files` | **49** | 2026-11-24T10:22:54+0800 | `python3 zreflect/facts.py --count -files .md` |
-| `md_lines` | **2152** | 2026-11-24T10:22:54+0800 | `python3 zreflect/facts.py --count -md` |
-| `py_files` | **45** | 2026-11-24T10:22:54+0800 | `python3 zreflect/facts.py --count -files .py` |
-| `py_lines` | **14415** | 2026-11-24T10:22:54+0800 | `python3 zreflect/facts.py --count -lines .py` |
+| `core_seal` | `2d189b27caac6196...` | 2026-11-24T18:58:24+0800 | `python3 zreflect/registry.py --verify-seal` |
+| `md_files` | **49** | 2026-11-24T18:58:24+0800 | `python3 zreflect/facts.py --count -files .md` |
+| `md_lines` | **2152** | 2026-11-24T18:58:24+0800 | `python3 zreflect/facts.py --count -md` |
+| `py_files` | **46** | 2026-11-24T18:58:24+0800 | `python3 zreflect/facts.py --count -files .py` |
+| `py_lines` | **14808** | 2026-11-24T18:58:24+0800 | `python3 zreflect/facts.py --count -lines .py` |
 
 5 facts.
 <!-- /AUTO:FACTS -->
@@ -36,6 +36,7 @@
 | `check_questions.py`（Question ledger gate） | commit | an unresolved question must carry a runnable settler | `REFLECT_QUESTIONS` | -- |
 | `check_readme_sync.py`（Trilingual README gate） | commit | language versions are three copies of one assertion: structural cross-links + same-batch on every push | `REFLECT_READMES` | a repo that sets REFLECT_READMES to an empty list states it has no README group; unset is different and uses the registry default |
 | `check_retractions.py`（Retraction-resurfacing check） | commit | a retracted assertion may not quietly return as the current state | `REFLECT_RETRACTIONS`, `REFLECT_DOCS`, `REFLECT_HISTORY_SECS` | -- |
+| `check_right.py`（Rights consistency gate） | commit | structured declarations (JSON/TOML) and distributed copy consistency | `REFLECT_RIGHTS` | repos without a rights spec do not need it: spec unset => explicitly not enabled |
 | `check_secrets.py`（Secrets gate） | commit | plain-text credential detection with explicit paths and justified exact exemptions | `REFLECT_SECRETS` | a repo that declares no credential-scanning spec keeps this gate off; a spec named explicitly but absent is a configuration error, never a disable |
 | `check_snapshots.py`（module-level snapshot gate） | commit | a mutable global imported across modules is a value copy (stale snapshot): switch to importing the module and reading the attribute | `REFLECT_SNAPSHOT_ROOT` | -- |
 | `check_stale.py`（Stale-assertion gate） | commit | sha provenance / retired names / age check | `REFLECT_DOCS`, `REFLECT_FACTS`, `REFLECT_HISTORY_SECS`, `REFLECT_RETIRED`, `REFLECT_STALE_DAYS` | -- |
@@ -45,5 +46,5 @@
 | `check_history.py`（History document） | start-of-work | the one carrier where prose is allowed: single file or fold directory must exist and stay off every scan surface | `REFLECT_HISTORY`, `REFLECT_HISTORY_MODE`, `REFLECT_DOCS`, `REFLECT_READMES`, `REFLECT_QUESTIONS`, `REFLECT_FACTS` | a repo that keeps no history document states so by pointing REFLECT_HISTORY at nothing; the exemption then has no subject |
 | `doctor.py`（start-of-work doctor） | start-of-work | process / port liveness (probes things that can die => runs_at=start-of-work, not in pre-commit) | `REFLECT_DOCTOR`, `REFLECT_DOCTOR_TIMEOUT` | this repo has no doctor.json spec: no process/port liveness is checked => state it is off |
 
-20 gates; 14 may be disabled.
+21 gates; 15 may be disabled.
 <!-- /AUTO:GATES -->
