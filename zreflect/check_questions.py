@@ -342,9 +342,7 @@ def _resolved_targets_to_verify(_qdir, files, _all_resolved, depth=0):
     targets = {k for k, v in files.items() if status_of(v) == "resolved"}
     if depth <= 0:
         return targets
-    reentrant: tuple[str, ...] = ("check_questions.py", "registry.py --run", "harness.py")
-    if depth >= 2:
-        reentrant += ("check_retractions.py",)
+    reentrant = ("check_questions.py", "registry.py --run", "harness.py", "check_retractions.py")
     return {k for k in targets if not any(tok in _settling_cmd(field(files[k], "Settling") or "") for tok in reentrant)}
 
 
@@ -421,6 +419,10 @@ def _cases():
             and "questions/04.md" not in _resolved_targets_to_verify(
                 "questions",
                 {"questions/04.md": _q(status="resolved", settling="python3 zreflect/check_questions.py -- rc=0 => ok; rc=1 => bad")},
+                False, depth=1)
+            and "questions/05.md" not in _resolved_targets_to_verify(
+                "questions",
+                {"questions/05.md": _q(status="resolved", settling="python3 zreflect/check_retractions.py -- rc=0 => ok; rc=1 => bad")},
                 False, depth=1))),
         ("★ questions.closed_status_table", lambda:
             is_resolved(_q(status="resolved")) is True
