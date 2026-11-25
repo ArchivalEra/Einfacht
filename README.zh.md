@@ -68,10 +68,11 @@ python3 reflect-local/hook.py --chain             # 链进你已有的 git 钩�
 ```
 开工前      facts.py --check           文档与台账一致
             doctor.py                  活性：那些服务还活着吗
-提交时      registry.py --run commit   全部 commit 相位闸门，聚合上报
+提交时      registry.py --run commit   全部 commit + start-of-work 闸门与
+                                       已暂存的三语 README 同批校验
                                        （ran / off / failed / fatal 分列；
-                                        off 不算通过）
-推送时      同一判据，外加三语 README 同批更新
+                                        本地校验全在提交时跑，无 pre-push 阻塞）
+推送时(CI)  GitHub Actions 工作流      同一判据与三语 README 同批更新
 ```
 
 每道闸门在自己的 `GATE = meta(...)` 声明行里写相位；名录从声明发现，从不 glob。

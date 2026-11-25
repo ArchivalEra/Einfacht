@@ -77,10 +77,11 @@ Die Nutzung danach — Knöpfe, Ausgabe, was jeder Exit-Code bedeutet — steht 
 ```
 vor der Arbeit   facts.py --check           Dokumente stimmen mit dem Register
                  doctor.py                  Lebendigkeit: laufen die Dienste noch
-beim Commit      registry.py --run commit   alle Commit-Gates, aggregiert
+beim Commit      registry.py --run commit   alle Commit- und start-of-work-Gates sowie
+                                            gestagte dreisprachige READMEs im selben Zug
                                             (ran / off / failed / fatal getrennt;
-                                             off ist kein Bestehen)
-beim Push        dieselbe Vorschrift, dazu die dreisprachigen READMEs im selben Zug
+                                             alle lokalen Prüfungen beim Commit, kein pre-push)
+beim Push (CI)   GitHub Actions Workflows   dieselbe Vorschrift samt dreisprachigen READMEs
 ```
 
 Jedes Gate deklariert seine Phase in einer `GATE = meta(...)`-Zeile; die Liste wird

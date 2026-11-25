@@ -74,10 +74,11 @@ Usage after that — knobs, output, what each exit code means — lives in
 ```
 start-of-work   facts.py --check           documents agree with the ledger
                 doctor.py                  liveness: are the services still up
-commit          registry.py --run commit   every commit-phase gate, aggregated
-                (ran / off / failed / fatal are reported separately -- off is
-                 not a pass)
-push            the same criterion, plus the trilingual READMEs in one batch
+commit          registry.py --run commit   every commit + start-of-work gate and
+                (ran / off / failed / fatal    staged trilingual README batch
+                 are reported separately --    (all local checks run on commit;
+                 off is not a pass)            no local pre-push hook waits)
+push (CI)       GitHub Actions workflows   same gates & trilingual README batch
 ```
 
 Every gate declares its own phase in a `GATE = meta(...)` line; the roster is

@@ -88,13 +88,13 @@
    "file_sha256": "ba860f7e7e85184a487a8c57776b73086d7c66772f197d103877c4e7ed39f4ae"
   },
   "zreflect/lang/de.json": {
-   "file_sha256": "26d6edfb49204c478e25c3841a82e76d64e47561fee6f3a36dec4bbe686d0fc3"
+   "file_sha256": "da0a3c97391c01a186bfd36586200ab778032d76b5830c1201bcdd8ae3824bcf"
   },
   "zreflect/lang/en.json": {
-   "file_sha256": "7227fe0f6f1f8bc5548a624afe8291b67d12fd8ab35537715836863bde522bd1"
+   "file_sha256": "a04c7419e91635b871614bfab38f90b33cc575bd4b34d4fc77b921b1fc5163f1"
   },
   "zreflect/lang/zh.json": {
-   "file_sha256": "22623413565e16c434e5f9424b30b2a5f89a03844a138708e87eff9a2c765749"
+   "file_sha256": "9ae8ce91bc097b0c23bc01a5e66df3ed16783fbc04eb2e093fe9e98db062530e"
   },
   "zreflect/next.py": {
    "file_sha256": "5baad73b3e2e65ad16b65c1351f5e35a27ce7b7c762a511be6f68d22bf605d83"
@@ -110,7 +110,7 @@
   }
  },
  "schema": 2,
- "suite_seq": 6,
- "tree_sha256": "3da7dac0a333d06a09b6d518e4bcc0d11d50863d9c66e2667628067bd57a1042",
+ "suite_seq": 7,
+ "tree_sha256": "063a87118b2e294b6e70185370a0617784694a26dd35e0c4793654caf4e2d104",
  "upstream_repo": "ArchivalEra/Einfacht"
 }

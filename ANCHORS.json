@@ -3,7 +3,7 @@
   "knobs_sha256": "119e965608f59977ac092efe080ed4f5b0b538d00cfdc643882d9b6a5eca3468",
   "local_scripts": {
     "reflect-local/authors.py": "d97a80d10435b7d15ce2f3a08216063be4d9c4eb491212a7db4f34e2a71cf1fa",
-    "reflect-local/hook.py": "7b743f4ca7cd3afeede891839e4df69f93f9f8c2289cd4c7253d0582b54de421",
+    "reflect-local/hook.py": "e37dc7910569dbb9d717498ee11d4623cb37c923a892b941b0480258da33056c",
     "reflect-local/principles.json": "85716f475139889cdb7eabfb879bf1b127b43a15e6f31b3bcb65c816dc83a0a7"
   },
   "lock_core": true,
@@ -190,6 +190,6 @@
   "repo": "ArchivalEra/Einfacht",
   "revoked_ids": [],
   "schema": 2,
-  "suite_seq": 6,
-  "suite_tree_sha256": "3da7dac0a333d06a09b6d518e4bcc0d11d50863d9c66e2667628067bd57a1042"
+  "suite_seq": 7,
+  "suite_tree_sha256": "063a87118b2e294b6e70185370a0617784694a26dd35e0c4793654caf4e2d104"
 }
