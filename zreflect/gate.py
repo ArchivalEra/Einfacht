@@ -831,9 +831,10 @@ def _case_python_of_quoted():
     globals()["tool_repo"] = lambda: "/tmp/dir with space"
     try:
         out = _python_of("python3 -c \"print('zreflect/gate.py')\" && python3 zreflect/facts.py")
+        expected = "'%s'" % os.path.join("/tmp/dir with space", "zreflect/facts.py")
         return (
             "\"print('zreflect/gate.py')\"" in out
-            and "'/tmp/dir with space/zreflect/facts.py'" in out
+            and expected in out
             and _python_of('python3 -c \'open("zreflect/gate.py")\'').endswith('\'open("zreflect/gate.py")\'')
         )
     finally:
