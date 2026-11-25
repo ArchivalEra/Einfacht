@@ -113,7 +113,7 @@ Gate ablehnt, dessen eigener Beweis nicht fehlschlagen kann.
 
 ## Out-of-Band-Freigabe & Schlüsselwechsel
 
-`zreflect/trust.py` enthält standardmäßig einen `PINNED_APPROVER_PUB` für diesen Host. Externe Nutzer oder weitere Geräte müssen ihn auf ihr eigenes Ed25519-Schlüsselpaar umstellen: den öffentlichen Schlüssel als PEM unter `/etc/einfacht-approver/signing_pub.pem` ablegen (nur lesbar für normale Agenten), `EINFACHT_APPROVER_PUB` (PEM oder Pfad) setzen oder `PINNED_APPROVER_PUB` ersetzen und `python3 zreflect/registry.py --reseal=ALL --force` ausführen. In jedem Ziel-Repo `python3 zreflect/trust.py --init` für `ANCHORS.json` nutzen; Gates synchronisieren Anträge automatisch gegen `EINFACHT_APPROVER_URL`, und `python3 zreflect/trust.py --sync` schreibt freigegebene Änderungen vor dem Commit in `ANCHORS.json`.
+`zreflect/trust.py` enthält standardmäßig einen `PINNED_APPROVER_PUB` für diesen Host. Externe Nutzer oder weitere Geräte müssen ihn auf ihr eigenes Ed25519-Schlüsselpaar umstellen: den öffentlichen Schlüssel als PEM unter `/etc/einfacht-approver/signing_pub.pem` ablegen (nur lesbar für normale Agenten), `EINFACHT_APPROVER_PUB` (PEM oder Pfad) setzen oder `PINNED_APPROVER_PUB` ersetzen und `python3 zreflect/registry.py --reseal=ALL --force` ausführen. In jedem Ziel-Repo `python3 zreflect/trust.py --init` für `ANCHORS.json` nutzen; Gates prüfen lokal nur lesend, `python3 zreflect/trust.py --submit`, `--pull` (Belege nach `.git/einfacht-receipt.json` holen) und `--release` (`SUITE.sig`) sprechen `EINFACHT_APPROVER_URL` an, und `python3 zreflect/trust.py --sync` schreibt freigegebene Änderungen lokal in `ANCHORS.json`.
 
 ## Warum Prosa eingesperrt ist
 

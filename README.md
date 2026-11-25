@@ -111,7 +111,7 @@ proof cannot fail.
 
 ## Out-of-band approval & key rotation
 
-`zreflect/trust.py` ships with a default `PINNED_APPROVER_PUB` for this host. External adopters or other devices must rotate it to their own Ed25519 keypair: place the public key PEM at `/etc/einfacht-approver/signing_pub.pem` (read-only by non-root agents), export `EINFACHT_APPROVER_PUB` (PEM or file path), or replace `PINNED_APPROVER_PUB` and re-run `python3 zreflect/registry.py --reseal=ALL --force`. In each downstream repo, run `python3 zreflect/trust.py --init` to bind `ANCHORS.json`; gates automatically sync pending requests against `EINFACHT_APPROVER_URL`, and `python3 zreflect/trust.py --sync` syncs approved changes into `ANCHORS.json` before commit.
+`zreflect/trust.py` ships with a default `PINNED_APPROVER_PUB` for this host. External adopters or other devices must rotate it to their own Ed25519 keypair: place the public key PEM at `/etc/einfacht-approver/signing_pub.pem` (read-only by non-root agents), export `EINFACHT_APPROVER_PUB` (PEM or file path), or replace `PINNED_APPROVER_PUB` and re-run `python3 zreflect/registry.py --reseal=ALL --force`. In each downstream repo, run `python3 zreflect/trust.py --init` to bind `ANCHORS.json`; gates verify read-only locally, `python3 zreflect/trust.py --submit` / `--pull` / `--release` interact with `EINFACHT_APPROVER_URL`, and `python3 zreflect/trust.py --sync` updates `ANCHORS.json` locally once receipts pass.
 
 ## Why prose is confined
 

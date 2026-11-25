@@ -95,7 +95,7 @@ python3 reflect-local/hook.py --chain             # 链进你已有的 git 钩�
 
 ## 带外审批与换钥匙
 
-`zreflect/trust.py` 默认内置了本机的 `PINNED_APPROVER_PUB`。外部接入方或跨设备使用必须换成自己的 Ed25519 密钥对：把你自己的公钥 PEM 放到 `/etc/einfacht-approver/signing_pub.pem`（对普通工作账号只读），通过 `EINFACHT_APPROVER_PUB`（PEM 或文件路径）传入，或者直接替换 `PINNED_APPROVER_PUB` 后重跑 `python3 zreflect/registry.py --reseal=ALL --force`。在每个下游仓库执行 `python3 zreflect/trust.py --init` 绑定 `ANCHORS.json`；门禁会自动向 `EINFACHT_APPROVER_URL` 发起并拉取审批回执，提交前跑 `python3 zreflect/trust.py --sync` 把已批准状态写回 `ANCHORS.json`。
+`zreflect/trust.py` 默认内置了本机的 `PINNED_APPROVER_PUB`。外部接入方或跨设备使用必须换成自己的 Ed25519 密钥对：把你自己的公钥 PEM 放到 `/etc/einfacht-approver/signing_pub.pem`（对普通工作账号只读），通过 `EINFACHT_APPROVER_PUB`（PEM 或文件路径）传入，或者直接替换 `PINNED_APPROVER_PUB` 后重跑 `python3 zreflect/registry.py --reseal=ALL --force`。在每个下游仓库执行 `python3 zreflect/trust.py --init` 绑定 `ANCHORS.json`；门禁仅做只读本地校验，显式执行 `python3 zreflect/trust.py --submit`（提交待审单）、`--pull`（拉取回执到 `.git/einfacht-receipt.json`）与 `--release`（签写 `SUITE.sig`）对接 `EINFACHT_APPROVER_URL`，随后执行 `--sync` 在本地将已过审状态写回 `ANCHORS.json`。
 
 ## 为什么散文被限在一处
 
