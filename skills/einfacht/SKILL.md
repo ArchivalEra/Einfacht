@@ -26,11 +26,11 @@ Deterministic gate & fact-ledger suite (`rc=0` pass or `OFF:`, `rc=1` criterion 
   python3 zreflect/facts.py --init && python3 zreflect/facts.py && python3 zreflect/facts.py --render-doc
   python3 zreflect/trust.py --init && python3 reflect-local/hook.py --chain
   ```
-- **Upgrade an existing consumer repo** (**never hand-copy `zreflect/` or manually file `seal.core`/`seal.doc`/`principles.edit` requests**):
+- **Upgrade an existing consumer repo** (**never hand-copy `zreflect/` or manually file `seal.core`/`principles.edit` requests**):
   ```bash
   python3 zreflect/trust.py --upgrade <path-to-Einfacht>
   ```
-  Verifies `<suite>/zreflect/SEAL.json` + `<suite>/zreflect/SUITE.sig` (`suite.release`), blocks `suite_seq` downgrades, swaps `zreflect/` + `ruff.toml`, preserves `reflect-local/`, refreshes `FACTS.json` / `STATE.md` / `PRINCIPLES.md` / `hook.py --chain`, and updates `ANCHORS.json`.
+  Verifies `<suite>/zreflect/SEAL.json` + `<suite>/zreflect/SUITE.sig` (`suite.release`, non-expiring), blocks `suite_seq` downgrades, swaps `zreflect/` + `ruff.toml`, preserves `reflect-local/`, cleans stale legacy `pre-push` wrappers and `doc_py_sha256`, refreshes `FACTS.json` (with `--allow-drop` for retired fact keys) / `STATE.md` / `PRINCIPLES.md` / `hook.py --chain`, and updates `ANCHORS.json`.
   - If `--upgrade` fails with `approval.receipt_required` (`suite.release`) or `trust.suite_downgrade`, the source checkout lacks a valid `SUITE.sig` (not released upstream) or has an older `suite_seq` than `ANCHORS.json`.
 
 ## 3. Filing & Landing Approval Requests (`--submit` / `--pull` / `--sync`)
@@ -53,7 +53,7 @@ python3 zreflect/registry.py --run commit
   - `knobs.json`, or added `REFLECT_OFF_GATES` basenames (`check_*.py`, `doctor.py`) -> `gate.off`
   - `REFLECT_NO_PRINCIPLES` -> `principles.disable`
   - `reflect-local/*.py` & `reflect-local/principles.json` -> `seal.core`
-  - `PRINCIPLES.md` -> `principles.edit` · `zreflect/doc.py` -> `seal.doc` *(exempt on signed `SUITE.sig` `--upgrade`)*
+  - `PRINCIPLES.md` -> `principles.edit` *(exempt on signed `SUITE.sig` `--upgrade`; `zreflect/doc.py` covered solely by `SEAL.json`)*
   - `questions/*.md` -> `question.create` / `question.modify` / `question.delete` *(exempt: settling -> `resolved`, or toggling `ready-for-human` <-> `ready-for-agent` with identical body & `Settling:`)*
   - `zreflect/SEAL.json` -> `seal.core` *(only when `SUITE.sig` absent; prefer `--upgrade`)*
 - **Env & paths**: `EINFACHT_APPROVER_URL` (default `http://127.0.0.1:18443`), `EINFACHT_APPROVAL_RECEIPT` (default `<git-common-dir>/einfacht-receipt.json`, shared across worktrees), `EINFACHT_APPROVER_PUB` / `/etc/einfacht-approver/signing_pub.pem`. `ANCHORS.json["repo"]` (`<owner>/<repo>` from `origin`, else dirname) must match the bound approver keychain.

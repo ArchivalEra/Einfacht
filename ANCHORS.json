@@ -18,7 +18,6 @@
     "doctor.py"
   ],
   "principles": {
-    "doc_py_sha256": "ead2ac0459b7d6e4eb3bd71e3d9cd5a1ac540cac8153d143887247b4d6cdf332",
     "no_principles": false,
     "principles_md_sha256": "8593a4ca2f18a5540bd963434ba1801c51885d6fb2c87a2270fd067404228b0d"
   },
@@ -192,16 +191,16 @@
       "status": "ready-for-agent"
     },
     "questions/39-unify-doc-seal-authorization.md": {
-      "body_sha256": "be80b90c3499ce74882a3c87dea962db695f9c2f5ab3132cf0339260bdf023a9",
-      "settling": "None -- 第一交付物是裁决后的迁移自测，覆盖锁定和未锁定消费仓、旧锚点和旧回执。",
-      "sha256": "2a1c8ff31d00ad713cf12166344ca7941c63eeedd2c348316693c17684da4204",
-      "status": "ready-for-human"
+      "body_sha256": "db6427e2c508c885d5f8d8e54fbc86f37bd131968cde149abee399a754457b52",
+      "settling": "python3 zreflect/trust_core.py --selftest && python3 zreflect/trust.py --selftest -- rc=0 => doc.py governed solely by SEAL.json/SUITE.sig, seal.doc retired, legacy doc_py_sha256 cleaned; rc!=0 => Q39 regression",
+      "sha256": "dc771d2d9b1b0c72fa9de0012bebbcc9935a8519fd0361349e3585171249c78d",
+      "status": "resolved"
     },
     "questions/40-decide-suite-signature-lifetime.md": {
-      "body_sha256": "240132f3ce21e70b5062d76f7eeb8bc54ed7b23a9e2c38ec820f9b08a3d4618f",
-      "settling": "None -- 第一交付物是两仓兼容性自测，覆盖旧客户端、发布签名的过期行为、吊销和序号回退。",
-      "sha256": "84da202a17136f84e1433925a0dee175f14d02046d404c748f91cff04fa2e24b",
-      "status": "ready-for-human"
+      "body_sha256": "f86cb73e3bc652992e1d262fc4075d4b97c2cc1ee8eb66d490f6033ec79d9fef",
+      "settling": "python3 zreflect/trust_core.py --selftest && python3 zreflect/trust.py --selftest -- rc=0 => suite.release verification ignores expiry while enforcing revocation/scope/seq/sig and legacy compat upgrade passes; rc!=0 => Q40 regression",
+      "sha256": "94557445304543b0367a70f572ff85cdfa4a8dcd2c425ee503f848244513396d",
+      "status": "resolved"
     }
   },
   "questions_dir": "questions",
@@ -209,5 +208,5 @@
   "revoked_ids": [],
   "schema": 2,
   "suite_seq": 10,
-  "suite_tree_sha256": "24c4de8aac5c19af2c2e0ac8b016988a4c372f2c283f918a2be3d66dccd7ce68"
+  "suite_tree_sha256": "7290399157967e71101e3f06dfc00ec08262c96b268916deaeea9bec1a41f419"
 }

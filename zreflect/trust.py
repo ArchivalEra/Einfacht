@@ -387,8 +387,6 @@ def _baseline_anchors(base):
 def _classify_action(rel, text, prev_sha="NONE"):
     if rel == _PRINCIPLES_MD:
         return "principles.edit"
-    if rel == _DOC_REL:
-        return "seal.doc"
     if rel in (_KNOBS_JSON, "ANCHORS.json"):
         return _GATE_OFF
     if rel.startswith("questions/"):
@@ -445,8 +443,6 @@ def _add_pr_and_q_overrides(base, anc, out):
     pr = anc.get("principles") or {}
     if "principles_md_sha256" in pr:
         out[_PRINCIPLES_MD] = (pr.get("principles_md_sha256") or "", None)
-    if "doc_py_sha256" in pr:
-        out[_DOC_REL] = (pr.get("doc_py_sha256") or "", None)
     for qrel, qmeta in (anc.get("questions") or {}).items():
         if isinstance(qmeta, dict):
             out[qrel] = (qmeta.get("sha256") or "NONE", None)
@@ -733,28 +729,29 @@ def _load_target_doc(base):
     return mod
 
 
-def _verified_suite_doc_and_md(base, anchors):
-    """Return `(doc_sha, principles_md_sha)` iff valid `SUITE.sig` authorizes `doc.py` and rendered `PRINCIPLES.md`."""
+def _verified_suite_principles_md(base, anchors):
+    """Return rendered `PRINCIPLES.md` sha256 iff valid `SUITE.sig` backs `SEAL.json` + `doc.py`."""
     zd = os.path.join(base, "zreflect")
     if not os.path.isdir(zd):
         zd = gate.zdir()
     data, err = load_seal(seal_path(zd))
     sig = load_suite_sig(zd)
     if err or not data or not sig:
-        return None, None
+        return None
     pub = (anchors or {}).get("approver_pub")
     revoked = (anchors or {}).get("revoked_ids") or ()
     if trust_core.verify_suite_sig(data, sig, pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify):
-        return None, None
-    doc_p = os.path.join(zd, _DOC_NAME)
-    doc_sha = _sha256_norm_file(doc_p)
-    sealed_doc = ((data.get("files") or {}).get(_DOC_REL) or {}).get("file_sha256")
-    if not doc_sha or doc_sha != sealed_doc:
-        return None, None
+        return None
+    doc_sha = _sha256_norm_file(os.path.join(zd, _DOC_NAME))
+    files_map = data.get("files") or {}
+    sealed_doc = (files_map.get(_DOC_REL) or {}).get("file_sha256")
+    if (not doc_sha or doc_sha != sealed_doc
+            or trust_core.compute_tree_sha(files_map) != data.get("tree_sha256")):
+        return None
     md_p = os.path.join(base, _PRINCIPLES_MD)
     if not os.path.isfile(md_p):
-        return doc_sha, None
-    return doc_sha, (_sha256_norm_file(md_p) if _principles_md_clean(base, md_p) else None)
+        return None
+    return _sha256_norm_file(md_p) if _principles_md_clean(base, md_p) else None
 
 
 def _strip_block(txt, begin, end):
@@ -793,11 +790,11 @@ def _check_integrity(anchors, root, rec):
     head, err = _baseline_anchors(root)
     if err:
         return [M("approval.anchors_broken")]
-    s_doc, s_md = _verified_suite_doc_and_md(root, anchors)
+    s_md = _verified_suite_principles_md(root, anchors)
     return trust_core.eval_anchors_integrity(
         head, anchors, receipt=rec,
         repo_name=anchors.get("repo") or repo_id(root), verify_sig_fn=ed25519_verify,
-        suite_doc_sha=s_doc, suite_principles_md_sha=s_md)
+        suite_principles_md_sha=s_md)
 
 
 def _run_anchor_gate(root, receipt, auto_sync, eval_fn):
@@ -845,41 +842,31 @@ def check_knobs_anchor(root=None, receipt=None, now=None, *, auto_sync=False):
     return _run_anchor_gate(root, receipt, auto_sync, _eval)
 
 
-def _principles_diff_probs(rname, doc_sha, md_sha, pr, rec, pub, revoked, suite_sync):
-    if suite_sync:
+def _principles_diff_probs(rname, md_sha, pr, rec, pub, revoked, suite_sync):
+    if suite_sync or md_sha == pr.get("principles_md_sha256"):
         return []
-    probs = []
-    if md_sha != pr.get("principles_md_sha256"):
-        probs += trust_core.verify_receipt(
-            rec, repo_name=rname, action="principles.edit", target=_PRINCIPLES_MD,
-            prev_sha256=pr.get("principles_md_sha256", ""), target_sha256=md_sha or "DELETED",
-            pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
-    if doc_sha != pr.get("doc_py_sha256"):
-        probs += trust_core.verify_receipt(
-            rec, repo_name=rname, action="seal.doc", target=_DOC_REL,
-            prev_sha256=pr.get("doc_py_sha256", ""), target_sha256=doc_sha or "DELETED",
-            pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
-    return probs
+    return trust_core.verify_receipt(
+        rec, repo_name=rname, action="principles.edit", target=_PRINCIPLES_MD,
+        prev_sha256=pr.get("principles_md_sha256", ""), target_sha256=md_sha or "DELETED",
+        pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
 
 
 def check_principles_repo(root=None, receipt=None, *, auto_sync=False):
-    """Verify `PRINCIPLES.md`, `doc.py`, and `REFLECT_NO_PRINCIPLES` against `ANCHORS.json`."""
+    """Verify `PRINCIPLES.md` and `REFLECT_NO_PRINCIPLES` against `ANCHORS.json` (`doc.py` covered by `SEAL.json`)."""
     def _eval(base, anchors, rec, ctx):
         rname, pub, revoked = ctx
-        doc_sha = _sha256_norm_file(_doc_path_for(base))
         md_sha = _sha256_norm_file(os.path.join(base, _PRINCIPLES_MD))
         no_pr = knobs.flag("REFLECT_NO_PRINCIPLES") is True
-        s_doc, s_md = _verified_suite_doc_and_md(base, anchors)
+        s_md = _verified_suite_principles_md(base, anchors)
         pr = anchors.get("principles") or {}
-        suite_md_ok = (s_md is not None and md_sha == s_md) or (no_pr and not md_sha and pr.get("no_principles"))
-        suite_sync = bool(s_doc and doc_sha == s_doc and suite_md_ok)
+        suite_sync = bool((s_md is not None and md_sha == s_md) or (no_pr and not md_sha and pr.get("no_principles")))
         probs = []
         if no_pr and not pr.get("no_principles", False):
             probs += trust_core.verify_receipt(
                 rec, repo_name=rname, action="principles.disable", target="REFLECT_NO_PRINCIPLES",
                 prev_sha256="false", target_sha256="true", pub_b64=pub, revoked_ids=revoked,
                 verify_sig_fn=ed25519_verify)
-        return probs + _principles_diff_probs(rname, doc_sha, md_sha, pr, rec, pub, revoked, suite_sync)
+        return probs + _principles_diff_probs(rname, md_sha, pr, rec, pub, revoked, suite_sync)
 
     return _run_anchor_gate(root, receipt, auto_sync, _eval)
 
@@ -959,7 +946,6 @@ def _build_anchors(root, pub_b64=None):
         "local_scripts": local_scripts_map(root),
         "off_gates": off_list,
         "principles": {
-            "doc_py_sha256": _sha256_norm_file(_doc_path_for(root)),
             "principles_md_sha256": _sha256_norm_file(os.path.join(root, _PRINCIPLES_MD)),
             "no_principles": knobs.flag("REFLECT_NO_PRINCIPLES") is True,
         },
@@ -1034,10 +1020,49 @@ def _validate_upgrade_source(src, dst_anc):
     return seal_d, None
 
 
-def _post_upgrade_refresh(dst):
+def _clean_legacy_pre_push(dst):
+    """Remove stale Einfacht `pre-push` hook wrappers (restoring `.einfacht-prev`) if old hook.py left them."""
+    if not _has_git(dst):
+        return
+    r = _git_run(dst, "rev-parse", "--git-path", "hooks")
+    raw = r.stdout.strip() if (r and r.returncode == 0 and r.stdout.strip()) else ""
+    hooks = (raw if os.path.isabs(raw) else os.path.join(dst, raw)) if raw else os.path.join(dst, ".git", "hooks")
+    target = os.path.join(hooks, "pre-push")
+    if not os.path.isfile(target):
+        return
+    try:
+        with open(target, encoding="utf-8", errors="replace") as fh:
+            body = fh.read()
+    except OSError:
+        return
+    if any(tok in body for tok in ("hook.py", "gate.py", "einfacht-gate.sh")):
+        os.unlink(target)
+        prev = target + ".einfacht-prev"
+        if os.path.isfile(prev):
+            os.replace(prev, target)
+
+
+def _ensure_upgrade_principles_md(dst, migrated):
+    md_p = os.path.join(dst, _PRINCIPLES_MD)
+    pr = (migrated or {}).get("principles") or {}
+    if os.path.isfile(md_p) or pr.get("no_principles") or knobs.flag("REFLECT_NO_PRINCIPLES", root=dst) is True:
+        return
+    doc_name = knobs.get("REFLECT_DOC", root=dst) or "STATE.md"
+    if not os.path.isfile(os.path.join(dst, doc_name)):
+        return
+    doc_mod = _load_target_doc(dst)
+    with open(md_p, "w", encoding="utf-8") as fh:
+        fh.write("# PRINCIPLES.md\n\n" + doc_mod.render_rules(doc_mod.all_rules(dst)) + "\n")
+
+
+def _post_upgrade_refresh(dst, migrated=None):
+    _ensure_upgrade_principles_md(dst, migrated)
     sub_env = dict(os.environ, GATE_REPO=dst)
-    for sub_cmd in ([sys.executable, _FACTS_REL, "--accept-changes"],
-                    [sys.executable, _FACTS_REL, "--render-doc"]):
+    cmds = [[sys.executable, _FACTS_REL, "--accept-changes", "--allow-drop"]]
+    doc_name = knobs.get("REFLECT_DOC", root=dst) or "STATE.md"
+    if os.path.isfile(os.path.join(dst, doc_name)):
+        cmds.append([sys.executable, _FACTS_REL, "--render-doc"])
+    for sub_cmd in cmds:
         r = subprocess.run(sub_cmd, cwd=dst, env=sub_env, capture_output=True, text=True, check=False,
                            encoding="utf-8", errors="replace")
         if r.returncode != 0:
@@ -1047,6 +1072,7 @@ def _post_upgrade_refresh(dst):
     if os.path.isfile(hook_py):
         subprocess.run([sys.executable, hook_py, "--chain"], cwd=dst, env=sub_env, capture_output=True, text=True,
                        check=False, encoding="utf-8", errors="replace")
+    _clean_legacy_pre_push(dst)
     return 0
 
 
@@ -1070,13 +1096,18 @@ def _prepare_upgrade(src, dst):
 def _refresh_upgraded_principles(dst, migrated):
     if migrated is None:
         return
-    s_doc, s_md = _verified_suite_doc_and_md(dst, migrated)
-    pr = dict(migrated.get("principles") or {})
-    no_pr = bool(pr.get("no_principles")) and not os.path.isfile(os.path.join(dst, "PRINCIPLES.md"))
-    if s_doc and (s_md or no_pr):
-        pr["doc_py_sha256"] = s_doc
-        if s_md:
-            pr["principles_md_sha256"] = s_md
+    pr = trust_core.clean_principles(migrated.get("principles"))
+    md_p = os.path.join(dst, _PRINCIPLES_MD)
+    no_pr = bool(pr.get("no_principles") or knobs.flag("REFLECT_NO_PRINCIPLES", root=dst) is True) and not os.path.isfile(md_p)
+    s_md = _verified_suite_principles_md(dst, migrated)
+    if not s_md and not migrated.get("lock_core") and os.path.isfile(md_p) and _principles_md_clean(dst, md_p):
+        s_md = _sha256_norm_file(md_p)
+    if no_pr:
+        pr["no_principles"] = True
+        pr["principles_md_sha256"] = ""
+    elif s_md:
+        pr["principles_md_sha256"] = s_md
+    if pr != migrated.get("principles"):
         migrated["principles"] = pr
         write_anchors(dst, migrated)
 
@@ -1086,6 +1117,8 @@ def cmd_upgrade(argv):
     if len(argv) < 2 or not os.path.isdir(os.path.join(argv[1], "zreflect")):
         return fatal(M("trust.unknown_command"))
     src, dst = os.path.abspath(argv[1]), os.path.abspath(gate.GATE_REPO)
+    if os.path.realpath(src) == os.path.realpath(dst):
+        return fatal(M("trust.unknown_command"))
     seal_d, migrated, err = _prepare_upgrade(src, dst)
     if err or not seal_d:
         return fatal(err)
@@ -1097,7 +1130,7 @@ def cmd_upgrade(argv):
         shutil.copy2(os.path.join(src, _RUFF_TOML), os.path.join(dst, _RUFF_TOML))
     if migrated is not None:
         write_anchors(dst, migrated)
-    rc = _post_upgrade_refresh(dst)
+    rc = _post_upgrade_refresh(dst, migrated)
     if rc != 0:
         return rc
     _refresh_upgraded_principles(dst, migrated)
@@ -1332,27 +1365,29 @@ def _selftest_suite_sig_doc_upgrade():
         tree, err = reseal([_DOC_REL], force_all=True, root=rt, zdir=zd, bump_seq=True)
         if err or not tree:
             return False
-        payload = {
-            "repo": trust_core.TRUSTED_UPSTREAM_REPO, "action": _SUITE_RELEASE,
-            "target_path": _SEAL_REL, "suite_seq": 2, "target_sha256": tree,
-            "expires_at": _EXP_FUTURE,
-        }
-        sig_b64 = base64.b64encode(priv.sign(trust_core.canonical_json(payload))).decode("ascii")
-        _write_json_atomic(os.path.join(zd, SUITE_SIG_NAME), {"payload": payload, "sig": sig_b64})
-        import doc  # noqa: PLC0415
-        md_p = os.path.join(rt, _PRINCIPLES_MD)
-        with open(md_p, "w", encoding="utf-8") as fh:
-            fh.write("# Principles\n\n" + doc.render_rules(doc.all_rules(rt)) + "\n")
-        write_anchors(rt, {
-            "schema": 2, "repo": _TEST_CONSUMER, "approver_pub": pub_pem, "lock_core": True,
-            "revoked_ids": [], "suite_seq": 2, "suite_tree_sha256": tree,
-            "knobs_sha256": "NONE", "questions_dir": "questions", "local_scripts": {},
-            "off_gates": [],
-            "principles": {"doc_py_sha256": "old_doc", "principles_md_sha256": "old_md", "no_principles": False},
-            "questions": {},
-        })
-        probs = check_principles_repo(root=rt, receipt={"receipts": []})
-        return probs == []
+        # SUITE.sig with no expires_at and even past expires_at stays valid forever (non-expiring)
+        for extra in ({}, {"expires_at": "2000-01-01T00:00:00+00:00"}):
+            payload = {
+                "id": "rec-suite-perm", "repo": trust_core.TRUSTED_UPSTREAM_REPO, "action": _SUITE_RELEASE,
+                "target_path": _SEAL_REL, "suite_seq": 2, "target_sha256": tree, **extra,
+            }
+            sig_b64 = base64.b64encode(priv.sign(trust_core.canonical_json(payload))).decode("ascii")
+            _write_json_atomic(os.path.join(zd, SUITE_SIG_NAME), {"payload": payload, "sig": sig_b64})
+            import doc  # noqa: PLC0415
+            md_p = os.path.join(rt, _PRINCIPLES_MD)
+            with open(md_p, "w", encoding="utf-8") as fh:
+                fh.write("# Principles\n\n" + doc.render_rules(doc.all_rules(rt)) + "\n")
+            write_anchors(rt, {
+                "schema": 2, "repo": _TEST_CONSUMER, "approver_pub": pub_pem, "lock_core": True,
+                "revoked_ids": [], "suite_seq": 2, "suite_tree_sha256": tree,
+                "knobs_sha256": "NONE", "questions_dir": "questions", "local_scripts": {},
+                "off_gates": [],
+                "principles": {"doc_py_sha256": "old_doc", "principles_md_sha256": "old_md", "no_principles": False},
+                "questions": {},
+            })
+            if check_principles_repo(root=rt, receipt={"receipts": []}) != []:
+                return False
+        return True
 
 
 def _selftest_happy_upgrade():
@@ -1365,6 +1400,7 @@ def _selftest_happy_upgrade():
     pub_pem = priv.public_key().public_bytes(
         serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo,
     ).decode("ascii")
+    genv = _clean_git_env()
     with tempfile.TemporaryDirectory() as rt:
         src, dst = os.path.join(rt, "src"), os.path.join(rt, "dst")
         shutil.copytree(os.path.join(gate.tool_repo(), "zreflect"), os.path.join(src, "zreflect"),
@@ -1376,31 +1412,41 @@ def _selftest_happy_upgrade():
         sdata, _ = load_seal(seal_path(os.path.join(src, "zreflect")))
         payload = {"id": "rec-upg-1", "repo": trust_core.TRUSTED_UPSTREAM_REPO, "action": _SUITE_RELEASE,
                    "target_path": _SEAL_REL, "suite_seq": int(sdata["suite_seq"]), "target_sha256": tree,
-                   "expires_at": _EXP_FUTURE}
+                   "expires_at": 4102444800}
         sig_b64 = base64.b64encode(priv.sign(trust_core.canonical_json(payload))).decode("ascii")
         _write_json_atomic(os.path.join(src, "zreflect", SUITE_SIG_NAME), {"payload": payload, "sig": sig_b64})
         os.makedirs(os.path.join(dst, "zreflect"))
+        subprocess.run(["git", "init", "-q", dst], check=True, env=genv)
+        stale_pp = os.path.join(dst, ".git", "hooks", "pre-push")
+        with open(stale_pp, "w", encoding="utf-8") as fh:
+            fh.write("#!/bin/sh\nexec python3 reflect-local/hook.py pre-push\n")
         subprocess.run([sys.executable, _FACTS_REL, "--init"], cwd=src,
                        env=dict(os.environ, GATE_REPO=src), capture_output=True, check=False)
-        for fn in ("STATE.md", _PRINCIPLES_MD, "FACTS.json", "AGENTS.md", "README.md", "retractions.json", _KNOBS_JSON):
+        for fn in ("STATE.md", _PRINCIPLES_MD, "AGENTS.md", "README.md", "retractions.json", _KNOBS_JSON):
             if os.path.isfile(os.path.join(src, fn)):
                 shutil.copy2(os.path.join(src, fn), os.path.join(dst, fn))
+        # Seed legacy FACTS.json with a dropped obsolete key to verify --allow-drop upgrade migration
+        _write_json_atomic(os.path.join(dst, "FACTS.json"), {"schema": 1, "facts": {"obsolete_key": {"value": 1}}})
         write_anchors(dst, {
-            "schema": 2, "repo": _TEST_CONSUMER, "approver_pub": pub_pem, "lock_core": True,
+            "schema": 1, "repo": _TEST_CONSUMER, "approver_pub": pub_pem, "lock_core": True,
             "revoked_ids": [], "suite_seq": 1, "suite_tree_sha256": "0" * 64,
-            "knobs_sha256": "NONE", "questions_dir": "questions", "local_scripts": {},
+            "knobs_sha256": "NONE", "questions_dir": "questions", "custom_scripts": {},
             "off_gates": [], "principles": {"doc_py_sha256": "old", "principles_md_sha256": "old", "no_principles": False},
             "questions": {},
         })
         old_repo = gate.GATE_REPO
         try:
             gate.GATE_REPO = dst
-            if cmd_upgrade(["--upgrade", src]) != 0:
+            if cmd_upgrade(["--upgrade", src]) != 0 or cmd_upgrade(["--upgrade", dst]) == 0:
                 return False
         finally:
             gate.GATE_REPO = old_repo
         upg_anc = load_anchors(dst)
-        return bool(upg_anc and upg_anc["principles"]["doc_py_sha256"] != "old"
+        facts_d = _load_json_dict(os.path.join(dst, "FACTS.json")) or {}
+        return bool(upg_anc and upg_anc["schema"] == 2 and "doc_py_sha256" not in upg_anc["principles"]
+                    and upg_anc["principles"]["principles_md_sha256"] != "old"
+                    and "obsolete_key" not in (facts_d.get("facts") or {})
+                    and not os.path.exists(stale_pp)
                     and not check_principles_repo(root=dst, receipt={"receipts": []}))
 
 

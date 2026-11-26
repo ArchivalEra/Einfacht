@@ -103,14 +103,14 @@
    "file_sha256": "0c215a9e6f3d62b611f91de0f05b5f5203ad2e71a727c0a964b9bb631044f98b"
   },
   "zreflect/trust.py": {
-   "file_sha256": "c43c45e2fe5333105bfb2c843add967cc02f93aa60fac3ecdc954927ff8fa1bc"
+   "file_sha256": "3afa765eae0a33e2fe5a3c71e2883b8bc340713b73925c4bf07bbc4ef4c01b45"
   },
   "zreflect/trust_core.py": {
-   "file_sha256": "1e4445a5f52a266b9544a89c94f13aaebcfcfec9833aa93174467d8399d91e0e"
+   "file_sha256": "8bfae8aca22375328b72b65a43c3a396a95bbda71213d832871b07eb06c94d60"
   }
  },
  "schema": 2,
  "suite_seq": 10,
- "tree_sha256": "24c4de8aac5c19af2c2e0ac8b016988a4c372f2c283f918a2be3d66dccd7ce68",
+ "tree_sha256": "7290399157967e71101e3f06dfc00ec08262c96b268916deaeea9bec1a41f419",
  "upstream_repo": "ArchivalEra/Einfacht"
 }
