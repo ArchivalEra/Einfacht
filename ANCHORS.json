@@ -3,7 +3,7 @@
   "knobs_sha256": "119e965608f59977ac092efe080ed4f5b0b538d00cfdc643882d9b6a5eca3468",
   "local_scripts": {
     "reflect-local/authors.py": "d97a80d10435b7d15ce2f3a08216063be4d9c4eb491212a7db4f34e2a71cf1fa",
-    "reflect-local/hook.py": "e37dc7910569dbb9d717498ee11d4623cb37c923a892b941b0480258da33056c",
+    "reflect-local/hook.py": "0c0b7e7d8dd7eec0e493ce2823dfe262e67170009ef8f52d55530f44a949a87c",
     "reflect-local/principles.json": "85716f475139889cdb7eabfb879bf1b127b43a15e6f31b3bcb65c816dc83a0a7"
   },
   "lock_core": true,
@@ -18,7 +18,7 @@
     "doctor.py"
   ],
   "principles": {
-    "doc_py_sha256": "adab25026da89f7c63709984fe91fafec2b42a9230a04a6de9c4e5151f669ac2",
+    "doc_py_sha256": "ead2ac0459b7d6e4eb3bd71e3d9cd5a1ac540cac8153d143887247b4d6cdf332",
     "no_principles": false,
     "principles_md_sha256": "8593a4ca2f18a5540bd963434ba1801c51885d6fb2c87a2270fd067404228b0d"
   },
@@ -190,6 +190,6 @@
   "repo": "ArchivalEra/Einfacht",
   "revoked_ids": [],
   "schema": 2,
-  "suite_seq": 9,
-  "suite_tree_sha256": "637510831d103bf28ecf7921b7638eccde7aded008baff59ac5403f265522b22"
+  "suite_seq": 10,
+  "suite_tree_sha256": "b62bd1d941a577c18980a62c00994edd968eba97e022a2c12ec63073d9c80d3b"
 }

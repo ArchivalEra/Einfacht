@@ -42,6 +42,10 @@ PHASES = ("commit",)
 PHASE_OF = {"pre-commit": "commit"}
 LEGACY_HOOKS = ("pre-push",)
 GATE_SCRIPT = os.path.abspath(__file__)
+_HOOK_NAME = "hook.py"
+_PREV_SUFFIX = ".einfacht-prev"
+_HOOKS_PATH_CFG = "core.hooksPath"
+_RUFF_TOML = "ruff.toml"
 
 
 def _sh(cmd, stdin=None, cwd=None, env=None):
@@ -107,7 +111,7 @@ def _has_unstaged_facts(repo):
     if rc != 0:
         return os.path.isfile(os.path.join(repo, facts_rel)), facts_rel
     for ln in (status_out or "").splitlines():
-        if len(ln) >= 2 and (ln[1] != " " or ln[:2] == "??"):
+        if len(ln) >= 2 and (ln[1] != " " or ln.startswith("??")):
             return True, facts_rel
     return False, facts_rel
 
@@ -202,7 +206,7 @@ def _wrapper_body(name, phase):
 
 
 def _is_einfacht_hook(body):
-    return "hook.py" in body or "gate.py" in body or "einfacht-gate.sh" in body
+    return _HOOK_NAME in body or "gate.py" in body or "einfacht-gate.sh" in body
 
 
 def _read_hook(path):
@@ -216,7 +220,7 @@ def _read_hook(path):
 def _remove_einfacht_hook(hooks, name):
     lines = []
     target = os.path.join(hooks, name)
-    prev = target + ".einfacht-prev"
+    prev = target + _PREV_SUFFIX
     removed = os.path.isfile(target) and _is_einfacht_hook(_read_hook(target))
     if removed:
         os.unlink(target)
@@ -232,7 +236,7 @@ def install_chain(repo):
     hooks = _hooks_dir(repo)
     if not os.path.isdir(hooks):
         return 2, [str(M("install.no_hooks_dir", path=hooks))]
-    rc, current = _git(repo, "config", "core.hooksPath")
+    rc, current = _git(repo, "config", _HOOKS_PATH_CFG)
     if rc == 0 and (current or "").strip():
         return 2, [str(M("install.chain_blocked_by_hookspath", value=current.strip())),
                    str(M("install.chain_blocked_fix"))]
@@ -240,7 +244,7 @@ def install_chain(repo):
     for name, phase in PHASE_OF.items():
         target = os.path.join(hooks, name)
         if os.path.isfile(target) and not _is_einfacht_hook(_read_hook(target)):
-            os.replace(target, target + ".einfacht-prev")
+            os.replace(target, target + _PREV_SUFFIX)
             lines.append(str(M("install.kept_existing", name=name)))
         with open(target, "w", encoding="utf-8") as fh:
             fh.write(_wrapper_body(name, phase))
@@ -381,10 +385,10 @@ def _t_uninstall(d):
 
 
 def _t_blocked(d):
-    _git(d, "config", "core.hooksPath", "reflect-local")
+    _git(d, "config", _HOOKS_PATH_CFG, "reflect-local")
     rc, _l = install_chain(d)
     wrapper = os.path.join(_hooks_dir(d), "pre-commit")
-    return rc == 2 and "hook.py" not in _read_hook(wrapper)
+    return rc == 2 and _HOOK_NAME not in _read_hook(wrapper)
 
 
 def _t_staged_readmes(d):
@@ -393,8 +397,8 @@ def _t_staged_readmes(d):
     _git(d, "config", "user.name", "a")
     shutil.copytree(os.path.join(TOOL_REPO, "zreflect"), os.path.join(d, "zreflect"),
                     dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    if os.path.isfile(os.path.join(TOOL_REPO, "ruff.toml")):
-        shutil.copy2(os.path.join(TOOL_REPO, "ruff.toml"), os.path.join(d, "ruff.toml"))
+    if os.path.isfile(os.path.join(TOOL_REPO, _RUFF_TOML)):
+        shutil.copy2(os.path.join(TOOL_REPO, _RUFF_TOML), os.path.join(d, _RUFF_TOML))
     open(os.path.join(d, "knobs.json"), "w", encoding="utf-8").write(
         '{"REFLECT_READMES": "README.md,README.zh.md,README.de.md"}\n')
     for fn in ("README.md", "README.zh.md", "README.de.md"):

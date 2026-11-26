@@ -75,31 +75,35 @@ def _replay_one(k, raw_entry, run, seconds, out, stats, cache, rule_keys=()):
     _judge_ok(k, entry, cmd, stdout, out, stats, rule_keys=rule_keys)
 
 
+def _probe_one(key, raw_entry, run, seconds, out, stats, gate_mod):
+    entry = raw_entry if isinstance(raw_entry, dict) else {"value": raw_entry}
+    if "calibrate" not in entry:
+        return
+    probe = str(entry.get("calibrate") or "").strip()
+    if not probe or gate_mod.prose_in_exec_problems("facts/%s" % key, "calibrate", probe):
+        out.append(M("replay.calibrate_command_failed", key=key, return_code=2, command=probe))
+        return
+    if entry.get("calibrate_expect") is None:
+        out.append(M("replay.calibrate_missing_expect", key=key))
+        return
+    stats["calibrate_attempts"] += 1
+    rc, stdout = run(probe)
+    want = str(entry.get("calibrate_expect"))
+    if rc is None:
+        out.append(M("replay.calibrate_timeout", key=key, seconds=seconds, command=probe))
+    elif rc != 0:
+        out.append(M("replay.calibrate_command_failed", key=key, return_code=rc, command=probe))
+    elif stdout.strip() != want:
+        out.append(M("replay.calibrate_mismatch", key=key,
+                     actual=quote(stdout.strip()), expected=quote(want)))
+    else:
+        stats["calibrated"] += 1
+
+
 def _run_probes(f, run, seconds, out, stats):
     import gate  # noqa: PLC0415
     for key in sorted(f):
-        entry = f[key] if isinstance(f[key], dict) else {"value": f[key]}
-        if "calibrate" not in entry:
-            continue
-        probe = str(entry.get("calibrate") or "").strip()
-        if not probe or gate.prose_in_exec_problems("facts/%s" % key, "calibrate", probe):
-            out.append(M("replay.calibrate_command_failed", key=key, return_code=2, command=probe))
-            continue
-        if entry.get("calibrate_expect") is None:
-            out.append(M("replay.calibrate_missing_expect", key=key))
-            continue
-        stats["calibrate_attempts"] += 1
-        rc, stdout = run(probe)
-        want = str(entry.get("calibrate_expect"))
-        if rc is None:
-            out.append(M("replay.calibrate_timeout", key=key, seconds=seconds, command=probe))
-        elif rc != 0:
-            out.append(M("replay.calibrate_command_failed", key=key, return_code=rc, command=probe))
-        elif stdout.strip() != want:
-            out.append(M("replay.calibrate_mismatch", key=key,
-                         actual=quote(stdout.strip()), expected=quote(want)))
-        else:
-            stats["calibrated"] += 1
+        _probe_one(key, f[key], run, seconds, out, stats, gate)
 
 
 def replay_all(ledger, runner=None):
@@ -182,6 +186,7 @@ def _cases():
             return any(all(a in str(p) for a in anchors)
                        for p in replay_all(led, runner=runner)["problems"])
 
+    none_ran = "replay.none_ran"
     return [
         ("replay.ok_trailing_newline",
          lambda: replay_all(led, runner=lambda c: (0, "12\n"))["problems"] == []),
@@ -192,10 +197,10 @@ def _cases():
          == ["replay.mismatch"] and hint_has(lambda c: (0, "13"), "accept-changes", "facts.py")),
         ("★ replay.command_failed",
          lambda: [p.code for p in replay_all(led, runner=lambda c: (1, ""))["problems"]]
-         == ["replay.command_failed", "replay.none_ran"]),
+         == ["replay.command_failed", none_ran]),
         ("★ replay.timeout_cold_start_hint",
          lambda: [p.code for p in replay_all(led, runner=lambda c: (None, ""))["problems"]]
-         == ["replay.timeout", "replay.none_ran"]
+         == ["replay.timeout", none_ran]
          and hint_has(lambda c: (None, ""), "REFLECT_REPLAY_TIMEOUT")),
         ("★ replay.no_cmd",
          lambda: [p.code for p in replay_all({"facts": {"n": {"value": 1}}}, lambda c: (0, "1"))["problems"]]
@@ -205,7 +210,7 @@ def _cases():
          == ["replay.empty_ledger"]),
         ("★ replay.none_ran",
          lambda: [p.code for p in replay_all(two, runner=lambda c: (1, ""))["problems"]][-1]
-         == "replay.none_ran"),
+         == none_ran),
         ("★ replay.skip_is_gone",
          lambda: [p.code for p in replay_all({"facts": {"a": {"value": 1, "cmd": "x", "replay": False}}},
                                              lambda c: (0, "1"))["problems"]] == ["replay.skip_is_gone"]),

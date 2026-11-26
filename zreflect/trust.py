@@ -31,6 +31,22 @@ APPROVER_URL_ENV = "EINFACHT_APPROVER_URL"
 APPROVER_PUB_ENV = "EINFACHT_APPROVER_PUB"
 DEFAULT_APPROVER_URL = "http://127.0.0.1:18443"
 SYSTEM_PUB_PATH = "/etc/einfacht-approver/signing_pub.pem"
+_RUFF_TOML = "ruff.toml"
+_RECEIPT_FILE = "einfacht-receipt.json"
+_HEAD_PREFIX = "HEAD:"
+_PRINCIPLES_MD = "PRINCIPLES.md"
+_DOC_REL = "zreflect/doc.py"
+_KNOBS_JSON = "knobs.json"
+_SEAL_REL = "zreflect/SEAL.json"
+_FACTS_REL = "zreflect/facts.py"
+_DOC_NAME = "doc.py"
+_PEM_HDR = "BEGIN PUBLIC KEY"
+_EXP_FUTURE = "2099-01-01T00:00:00+00:00"
+_TEST_CONSUMER = "consumer/app"
+_TEST_ORG = "org/r"
+_GATE_OFF = "gate.off"
+_SEAL_CORE = "seal.core"
+_SUITE_RELEASE = "suite.release"
 PINNED_APPROVER_PUB = (
     "-----BEGIN PUBLIC KEY-----\n"
     "MCowBQYDK2VwAyEAvf9ckQEI6CkK30ookgtqjT6I3H0PXzo6ov25212pyDQ=\n"
@@ -46,7 +62,7 @@ def _read_pub_text(path):
     try:
         with open(path, encoding="ascii") as fh:
             txt = fh.read().strip()
-        if "BEGIN PUBLIC KEY" in txt:
+        if _PEM_HDR in txt:
             return txt + "\n"
         return txt or None
     except OSError:
@@ -61,10 +77,10 @@ def pinned_approver_pub():
             loaded = _read_pub_text(env_pub)
             if loaded:
                 return loaded
-        return env_pub + ("\n" if "BEGIN PUBLIC KEY" in env_pub else "")
+        return env_pub + ("\n" if _PEM_HDR in env_pub else "")
     if os.path.isfile(SYSTEM_PUB_PATH):
         loaded = _read_pub_text(SYSTEM_PUB_PATH)
-        if loaded and "BEGIN PUBLIC KEY" in loaded:
+        if loaded and _PEM_HDR in loaded:
             return loaded
     return PINNED_APPROVER_PUB
 
@@ -78,7 +94,7 @@ def ed25519_verify(payload_bytes, sig_b64, pub_key):
     except ImportError:
         return False, "crypto_unavailable"
     try:
-        if "BEGIN PUBLIC KEY" in str(pub_key):
+        if _PEM_HDR in str(pub_key):
             loaded = serialization.load_pem_public_key(str(pub_key).encode("ascii"))
             if not isinstance(loaded, Ed25519PublicKey):
                 return False, "signature_invalid"
@@ -184,9 +200,9 @@ def _collect_suite_relpaths(root, zdir):
                 continue
             full = os.path.join(dirpath, fname)
             out.append(os.path.relpath(full, root).replace(os.sep, "/"))
-    ruff = os.path.join(root, "ruff.toml")
+    ruff = os.path.join(root, _RUFF_TOML)
     if os.path.isfile(ruff):
-        out.append("ruff.toml")
+        out.append(_RUFF_TOML)
     return sorted(set(out))
 
 
@@ -294,8 +310,8 @@ def _default_receipt_path(root=None):
             gdir = r.stdout.strip()
             if not os.path.isabs(gdir):
                 gdir = os.path.join(base, gdir)
-            return os.path.abspath(os.path.join(gdir, "einfacht-receipt.json"))
-    return os.path.join(base, ".git", "einfacht-receipt.json")
+            return os.path.abspath(os.path.join(gdir, _RECEIPT_FILE))
+    return os.path.join(base, ".git", _RECEIPT_FILE)
 
 
 def load_receipt(path=None, root=None):
@@ -349,12 +365,12 @@ def _save_receipts_to_bundle(receipts, out_path):
 def _baseline_anchors(base):
     if not _has_git(base):
         return None, None
-    cat = _git_run(base, "cat-file", "-e", "HEAD:" + ANCHORS_FILE)
+    cat = _git_run(base, "cat-file", "-e", _HEAD_PREFIX + ANCHORS_FILE)
     if cat is None:
         return {}, "broken"
     if cat.returncode != 0:
         return None, None
-    show = _git_run(base, "show", "HEAD:" + ANCHORS_FILE)
+    show = _git_run(base, "show", _HEAD_PREFIX + ANCHORS_FILE)
     if show is None or show.returncode != 0:
         return {}, "broken"
     try:
@@ -369,23 +385,23 @@ def _baseline_anchors(base):
 # ---------------------------------------------------------------------------
 
 def _classify_action(rel, text, prev_sha="NONE"):
-    if rel == "PRINCIPLES.md":
+    if rel == _PRINCIPLES_MD:
         return "principles.edit"
-    if rel == "zreflect/doc.py":
+    if rel == _DOC_REL:
         return "seal.doc"
-    if rel in ("knobs.json", "ANCHORS.json"):
-        return "gate.off"
+    if rel in (_KNOBS_JSON, "ANCHORS.json"):
+        return _GATE_OFF
     if rel.startswith("questions/"):
         if prev_sha == "NONE":
             return "question.create"
         if text is None:
             return "question.delete"
         return "question.modify"
-    return "seal.core"
+    return _SEAL_CORE
 
 
 def _git_prev_sha_and_diff(base, rel):
-    r = _git_run(base, "show", "HEAD:" + rel, text=False)
+    r = _git_run(base, "show", _HEAD_PREFIX + rel, text=False)
     prev_sha = _sha256_bytes_norm(r.stdout) if (r is not None and r.returncode == 0) else "NONE"
     d = _git_run(base, "diff", "HEAD", "--", rel)
     return prev_sha, ((d.stdout if d is not None else "") or "")[:8000]
@@ -401,7 +417,7 @@ def _symbolic_request(rel, rname, agent):
         }
     if "/" not in rel and (rel == "doctor.py" or (rel.startswith("check_") and rel.endswith(".py"))):
         return {
-            "repo": rname, "agent_id": agent, "action": "gate.off",
+            "repo": rname, "agent_id": agent, "action": _GATE_OFF,
             "target_path": rel, "prev_sha256": "on", "target_sha256": "off",
             "target_content": "REFLECT_OFF_GATES += %s\n" % rel,
             "diff_summary": "gate.off %s: on -> off" % rel,
@@ -425,23 +441,27 @@ def _seal_pair(base, anchors):
     return None, None
 
 
-def _anchored_overrides(base, anchors):
-    anc = anchors if anchors is not None else (load_anchors(base) or {})
-    out = {"knobs.json": (anc.get("knobs_sha256", "NONE"), None)}
-    anc_local = anc.get("local_scripts") if "local_scripts" in anc else (anc.get("custom_scripts") or {})
-    for rel in set(anc_local or ()) | set(local_scripts_map(base)):
-        out[rel] = ((anc_local or {}).get(rel, "NONE"), None)
+def _add_pr_and_q_overrides(base, anc, out):
     pr = anc.get("principles") or {}
     if "principles_md_sha256" in pr:
-        out["PRINCIPLES.md"] = (pr.get("principles_md_sha256") or "", None)
+        out[_PRINCIPLES_MD] = (pr.get("principles_md_sha256") or "", None)
     if "doc_py_sha256" in pr:
-        out["zreflect/doc.py"] = (pr.get("doc_py_sha256") or "", None)
+        out[_DOC_REL] = (pr.get("doc_py_sha256") or "", None)
     for qrel, qmeta in (anc.get("questions") or {}).items():
         if isinstance(qmeta, dict):
             out[qrel] = (qmeta.get("sha256") or "NONE", None)
     sp, st = _seal_pair(base, anc)
     if sp is not None:
-        out["zreflect/SEAL.json"] = (sp, st)
+        out[_SEAL_REL] = (sp, st)
+
+
+def _anchored_overrides(base, anchors):
+    anc = anchors if anchors is not None else (load_anchors(base) or {})
+    out = {_KNOBS_JSON: (anc.get("knobs_sha256", "NONE"), None)}
+    anc_local = anc.get("local_scripts") if "local_scripts" in anc else (anc.get("custom_scripts") or {})
+    for rel in set(anc_local or ()) | set(local_scripts_map(base)):
+        out[rel] = ((anc_local or {}).get(rel, "NONE"), None)
+    _add_pr_and_q_overrides(base, anc, out)
     return out
 
 
@@ -500,7 +520,7 @@ def _approver_json(url, path, payload=None, *, timeout=3.0):
         return (body if isinstance(body, dict) else {}), None
     except urllib.error.HTTPError as exc:
         return None, f"HTTP {exc.code}: {_http_err_detail(exc)}"
-    except (urllib.error.URLError, OSError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         return None, str(exc)
 
 
@@ -550,8 +570,10 @@ def _auto_sync_for_probs(base, anchors, probs):
                           anchors=head_anc or anchors)
     url = (os.environ.get(APPROVER_URL_ENV) or DEFAULT_APPROVER_URL).rstrip("/")
     out_path = os.environ.get(RECEIPT_ENV) or _default_receipt_path(base)
-    results = [_post_auto_sync(url, p, out_path) for p in reqs]
-    return any(results)
+    synced = False
+    for payload in reqs:
+        synced = _post_auto_sync(url, payload, out_path) or synced
+    return synced
 
 
 # ---------------------------------------------------------------------------
@@ -582,8 +604,8 @@ def _load_verified_seal(base, zd=None):
 
 def _verify_suite_receipt(rt, anchors, anc_tree, tree_sha, receipt, *, auto_sync=False):
     rec = receipt if receipt is not None else load_receipt(root=rt)
-    kw = {"repo_name": anchors.get("repo") or repo_id(rt), "action": "seal.core",
-          "target": "zreflect/SEAL.json", "prev_sha256": anc_tree, "target_sha256": tree_sha,
+    kw = {"repo_name": anchors.get("repo") or repo_id(rt), "action": _SEAL_CORE,
+          "target": _SEAL_REL, "prev_sha256": anc_tree, "target_sha256": tree_sha,
           "pub_b64": anchors.get("approver_pub"), "revoked_ids": anchors.get("revoked_ids") or [],
           "verify_sig_fn": ed25519_verify}
     probs = trust_core.verify_receipt(rec, **kw)
@@ -611,6 +633,20 @@ def _require_anchors_or_head(base):
     return anchors, []
 
 
+def _try_suite_sig_lock(zd, data, anchors, seal_seq, anc_seq):
+    sig = load_suite_sig(zd)
+    if sig is None:
+        return False, []
+    sig_probs = trust_core.verify_suite_sig(
+        data, sig, pub_b64=anchors.get("approver_pub"),
+        revoked_ids=anchors.get("revoked_ids") or (), verify_sig_fn=ed25519_verify)
+    if not sig_probs:
+        return True, []
+    if seal_seq > anc_seq:
+        return True, sig_probs
+    return False, []
+
+
 def _verify_anchor_lock(rt, zd, data, anchors, receipt, *, auto_sync=False):
     anc_seq = trust_core.safe_int(anchors.get("suite_seq"), 0)
     seal_seq = trust_core.safe_int(data.get("suite_seq"), 0)
@@ -618,15 +654,9 @@ def _verify_anchor_lock(rt, zd, data, anchors, receipt, *, auto_sync=False):
         return [M("approval.anchors_broken")]
     if seal_seq < anc_seq:
         return [M("trust.suite_downgrade", old_seq=anc_seq, new_seq=seal_seq)]
-    sig = load_suite_sig(zd)
-    if sig is not None:
-        sig_probs = trust_core.verify_suite_sig(
-            data, sig, pub_b64=anchors.get("approver_pub"),
-            revoked_ids=anchors.get("revoked_ids") or (), verify_sig_fn=ed25519_verify)
-        if not sig_probs:
-            return []
-        if seal_seq > anc_seq:
-            return sig_probs
+    handled, sig_probs = _try_suite_sig_lock(zd, data, anchors, seal_seq, anc_seq)
+    if handled:
+        return sig_probs
     cur_file_sha = _sha256_norm_file(seal_path(zd)) or "DELETED"
     head_file_sha = _head_seal_file_sha(rt)
     if head_file_sha and cur_file_sha != head_file_sha:
@@ -652,6 +682,16 @@ def verify_problems(root=None, zdir=None, receipt=None, *, auto_sync=False):
     return _verify_anchor_lock(rt, zd, data, anchors, receipt, auto_sync=auto_sync)
 
 
+def _updated_seal_files(rt, rels, old_files, norm_targets, force_all):
+    new_files = {}
+    for rel in rels:
+        if force_all or rel in norm_targets or rel not in old_files:
+            new_files[rel] = {"file_sha256": _sha256_norm_file(os.path.join(rt, rel))}
+        else:
+            new_files[rel] = old_files[rel]
+    return new_files
+
+
 def reseal(targets, force_all=False, root=None, zdir=None, bump_seq=False):
     """Update `zreflect/SEAL.json` for `targets` (or all suite files when `force_all=True`)."""
     zd = zdir or gate.zdir()
@@ -663,17 +703,12 @@ def reseal(targets, force_all=False, root=None, zdir=None, bump_seq=False):
     for t in norm_targets:
         if t not in rels:
             return None, M("seal.unlisted_file", file=t)
-    new_files = {}
-    for rel in rels:
-        if force_all or rel in norm_targets or rel not in old_files:
-            new_files[rel] = {"file_sha256": _sha256_norm_file(os.path.join(rt, rel))}
-        else:
-            new_files[rel] = old_files[rel]
+    new_files = _updated_seal_files(rt, rels, old_files, norm_targets, force_all)
     tree = trust_core.compute_tree_sha(new_files)
     old_seq = int((old_data or {}).get("suite_seq") or 1)
     out = {
         "schema": trust_core.SEAL_SCHEMA,
-        "upstream_repo": (old_data or {}).get("upstream_repo") or "ArchivalEra/Einfacht",
+        "upstream_repo": (old_data or {}).get("upstream_repo") or trust_core.TRUSTED_UPSTREAM_REPO,
         "suite_seq": old_seq + (1 if bump_seq else 0),
         "tree_sha256": tree,
         "files": new_files,
@@ -683,8 +718,8 @@ def reseal(targets, force_all=False, root=None, zdir=None, bump_seq=False):
 
 
 def _doc_path_for(base):
-    p = os.path.join(base, "zreflect", "doc.py")
-    return p if os.path.isfile(p) else os.path.join(gate.zdir(), "doc.py")
+    p = os.path.join(base, "zreflect", _DOC_NAME)
+    return p if os.path.isfile(p) else os.path.join(gate.zdir(), _DOC_NAME)
 
 
 def _load_target_doc(base):
@@ -711,12 +746,12 @@ def _verified_suite_doc_and_md(base, anchors):
     revoked = (anchors or {}).get("revoked_ids") or ()
     if trust_core.verify_suite_sig(data, sig, pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify):
         return None, None
-    doc_p = os.path.join(zd, "doc.py")
+    doc_p = os.path.join(zd, _DOC_NAME)
     doc_sha = _sha256_norm_file(doc_p)
-    sealed_doc = ((data.get("files") or {}).get("zreflect/doc.py") or {}).get("file_sha256")
+    sealed_doc = ((data.get("files") or {}).get(_DOC_REL) or {}).get("file_sha256")
     if not doc_sha or doc_sha != sealed_doc:
         return None, None
-    md_p = os.path.join(base, "PRINCIPLES.md")
+    md_p = os.path.join(base, _PRINCIPLES_MD)
     if not os.path.isfile(md_p):
         return doc_sha, None
     return doc_sha, (_sha256_norm_file(md_p) if _principles_md_clean(base, md_p) else None)
@@ -797,12 +832,12 @@ def check_knobs_anchor(root=None, receipt=None, now=None, *, auto_sync=False):
                 expected_local, local_scripts_map(base), lock_core=bool(anchors.get("lock_core", False)),
                 receipt=rec, repo_name=rname, pub_b64=pub, revoked_ids=revoked, now=now,
                 verify_sig_fn=ed25519_verify)
-        if "knobs_sha256" in anchors or os.path.isfile(os.path.join(base, "knobs.json")):
-            cur_sha = _sha256_norm_file(os.path.join(base, "knobs.json")) or "NONE"
+        if "knobs_sha256" in anchors or os.path.isfile(os.path.join(base, _KNOBS_JSON)):
+            cur_sha = _sha256_norm_file(os.path.join(base, _KNOBS_JSON)) or "NONE"
             prev_sha = anchors.get("knobs_sha256", "NONE")
             if cur_sha != prev_sha:
                 out += trust_core.verify_receipt(
-                    rec, repo_name=rname, action="gate.off", target="knobs.json",
+                    rec, repo_name=rname, action=_GATE_OFF, target=_KNOBS_JSON,
                     prev_sha256=prev_sha, target_sha256=cur_sha, pub_b64=pub,
                     revoked_ids=revoked, now=now, verify_sig_fn=ed25519_verify)
         return out
@@ -810,12 +845,29 @@ def check_knobs_anchor(root=None, receipt=None, now=None, *, auto_sync=False):
     return _run_anchor_gate(root, receipt, auto_sync, _eval)
 
 
+def _principles_diff_probs(rname, doc_sha, md_sha, pr, rec, pub, revoked, suite_sync):
+    if suite_sync:
+        return []
+    probs = []
+    if md_sha != pr.get("principles_md_sha256"):
+        probs += trust_core.verify_receipt(
+            rec, repo_name=rname, action="principles.edit", target=_PRINCIPLES_MD,
+            prev_sha256=pr.get("principles_md_sha256", ""), target_sha256=md_sha or "DELETED",
+            pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
+    if doc_sha != pr.get("doc_py_sha256"):
+        probs += trust_core.verify_receipt(
+            rec, repo_name=rname, action="seal.doc", target=_DOC_REL,
+            prev_sha256=pr.get("doc_py_sha256", ""), target_sha256=doc_sha or "DELETED",
+            pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
+    return probs
+
+
 def check_principles_repo(root=None, receipt=None, *, auto_sync=False):
     """Verify `PRINCIPLES.md`, `doc.py`, and `REFLECT_NO_PRINCIPLES` against `ANCHORS.json`."""
     def _eval(base, anchors, rec, ctx):
         rname, pub, revoked = ctx
         doc_sha = _sha256_norm_file(_doc_path_for(base))
-        md_sha = _sha256_norm_file(os.path.join(base, "PRINCIPLES.md"))
+        md_sha = _sha256_norm_file(os.path.join(base, _PRINCIPLES_MD))
         no_pr = knobs.flag("REFLECT_NO_PRINCIPLES") is True
         s_doc, s_md = _verified_suite_doc_and_md(base, anchors)
         pr = anchors.get("principles") or {}
@@ -827,17 +879,7 @@ def check_principles_repo(root=None, receipt=None, *, auto_sync=False):
                 rec, repo_name=rname, action="principles.disable", target="REFLECT_NO_PRINCIPLES",
                 prev_sha256="false", target_sha256="true", pub_b64=pub, revoked_ids=revoked,
                 verify_sig_fn=ed25519_verify)
-        if md_sha != pr.get("principles_md_sha256") and not suite_sync:
-            probs += trust_core.verify_receipt(
-                rec, repo_name=rname, action="principles.edit", target="PRINCIPLES.md",
-                prev_sha256=pr.get("principles_md_sha256", ""), target_sha256=md_sha or "DELETED",
-                pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
-        if doc_sha != pr.get("doc_py_sha256") and not suite_sync:
-            probs += trust_core.verify_receipt(
-                rec, repo_name=rname, action="seal.doc", target="zreflect/doc.py",
-                prev_sha256=pr.get("doc_py_sha256", ""), target_sha256=doc_sha or "DELETED",
-                pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
-        return probs
+        return probs + _principles_diff_probs(rname, doc_sha, md_sha, pr, rec, pub, revoked, suite_sync)
 
     return _run_anchor_gate(root, receipt, auto_sync, _eval)
 
@@ -850,7 +892,7 @@ def check_off_gates_anchor(off_list, root=None, receipt=None, now=None, *, auto_
         res = []
         for name in sorted(os.path.basename(f) for f in off_list if os.path.basename(f) not in allowed):
             res += trust_core.verify_receipt(
-                rec, repo_name=rname, action="gate.off", target=name,
+                rec, repo_name=rname, action=_GATE_OFF, target=name,
                 prev_sha256="on", target_sha256="off", pub_b64=pub, revoked_ids=revoked,
                 now=now, verify_sig_fn=ed25519_verify)
         return res
@@ -863,6 +905,19 @@ def _q_field(text, name):
         return ""
     import check_questions  # noqa: PLC0415
     return check_questions.field(text, name) or ""
+
+
+def _eval_existing_question(rel, cur, prev, r, *, rname, pub, revoked):
+    st, sl = _q_field(cur, "Status"), _q_field(cur, "Settling")
+    if trust_core.sha256_text(cur) == prev.get("sha256"):
+        snap = trust_core.question_snapshot(cur, st, sl)
+        return [] if snap == prev else [M("approval.anchors_broken")]
+    if trust_core.is_legal_settlement(st, sl, cur, prev) or trust_core.is_legal_status_triage(st, sl, cur, prev):
+        return []
+    return trust_core.verify_receipt(
+        r, repo_name=rname, action="question.modify", target=rel,
+        prev_sha256=prev.get("sha256", ""), target_sha256=trust_core.sha256_text(cur),
+        pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
 
 
 def _eval_one_question(rel, cur, prev, r, *, rname, pub, revoked):
@@ -879,16 +934,7 @@ def _eval_one_question(rel, cur, prev, r, *, rname, pub, revoked):
             prev_sha256="NONE", target_sha256=trust_core.sha256_text(cur),
             pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
     if prev is not None and cur is not None:
-        st, sl = _q_field(cur, "Status"), _q_field(cur, "Settling")
-        if trust_core.sha256_text(cur) == prev.get("sha256"):
-            snap = trust_core.question_snapshot(cur, st, sl)
-            return [] if snap == prev else [M("approval.anchors_broken")]
-        if trust_core.is_legal_settlement(st, sl, cur, prev) or trust_core.is_legal_status_triage(st, sl, cur, prev):
-            return []
-        return trust_core.verify_receipt(
-            r, repo_name=rname, action="question.modify", target=rel,
-            prev_sha256=prev.get("sha256", ""), target_sha256=trust_core.sha256_text(cur),
-            pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
+        return _eval_existing_question(rel, cur, prev, r, rname=rname, pub=pub, revoked=revoked)
     return []
 
 
@@ -934,13 +980,13 @@ def _build_anchors(root, pub_b64=None):
         "revoked_ids": [],
         "suite_seq": int((seal_d or {}).get("suite_seq") or 1),
         "suite_tree_sha256": (seal_d or {}).get("tree_sha256") or "",
-        "knobs_sha256": _sha256_norm_file(os.path.join(root, "knobs.json")) or "NONE",
+        "knobs_sha256": _sha256_norm_file(os.path.join(root, _KNOBS_JSON)) or "NONE",
         "questions_dir": str((knobs.repo_config(root) or {}).get("REFLECT_QUESTIONS") or "questions").strip().rstrip("/") or "questions",
         "local_scripts": local_scripts_map(root),
         "off_gates": off_list,
         "principles": {
             "doc_py_sha256": _sha256_norm_file(_doc_path_for(root)),
-            "principles_md_sha256": _sha256_norm_file(os.path.join(root, "PRINCIPLES.md")),
+            "principles_md_sha256": _sha256_norm_file(os.path.join(root, _PRINCIPLES_MD)),
             "no_principles": knobs.flag("REFLECT_NO_PRINCIPLES") is True,
         },
         "questions": q_map,
@@ -1016,8 +1062,8 @@ def _validate_upgrade_source(src, dst_anc):
 
 def _post_upgrade_refresh(dst):
     sub_env = dict(os.environ, GATE_REPO=dst)
-    for sub_cmd in ([sys.executable, "zreflect/facts.py", "--accept-changes"],
-                    [sys.executable, "zreflect/facts.py", "--render-doc"]):
+    for sub_cmd in ([sys.executable, _FACTS_REL, "--accept-changes"],
+                    [sys.executable, _FACTS_REL, "--render-doc"]):
         r = subprocess.run(sub_cmd, cwd=dst, env=sub_env, capture_output=True, text=True, check=False,
                            encoding="utf-8", errors="replace")
         if r.returncode != 0:
@@ -1073,8 +1119,8 @@ def cmd_upgrade(argv):
     if os.path.isdir(dst_z):
         shutil.rmtree(dst_z)
     shutil.copytree(os.path.join(src, "zreflect"), dst_z, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    if os.path.isfile(os.path.join(src, "ruff.toml")):
-        shutil.copy2(os.path.join(src, "ruff.toml"), os.path.join(dst, "ruff.toml"))
+    if os.path.isfile(os.path.join(src, _RUFF_TOML)):
+        shutil.copy2(os.path.join(src, _RUFF_TOML), os.path.join(dst, _RUFF_TOML))
     if migrated is not None:
         write_anchors(dst, migrated)
     rc = _post_upgrade_refresh(dst)
@@ -1127,26 +1173,26 @@ def _selftest_local_scripts_and_upgrade():
         os.makedirs(os.path.join(src, "zreflect"))
         os.makedirs(os.path.join(dst, "zreflect"))
         os.makedirs(os.path.join(dst, "reflect-local"))
-        with open(os.path.join(src, "zreflect", "doc.py"), "w", encoding="utf-8") as fh:
+        with open(os.path.join(src, "zreflect", _DOC_NAME), "w", encoding="utf-8") as fh:
             fh.write("RULES = ()\n")
-        with open(os.path.join(src, "ruff.toml"), "w", encoding="utf-8") as fh:
+        with open(os.path.join(src, _RUFF_TOML), "w", encoding="utf-8") as fh:
             fh.write("line-length = 120\n")
-        shutil.copy2(os.path.join(src, "zreflect", "doc.py"), os.path.join(dst, "zreflect", "doc.py"))
-        shutil.copy2(os.path.join(src, "ruff.toml"), os.path.join(dst, "ruff.toml"))
+        shutil.copy2(os.path.join(src, "zreflect", _DOC_NAME), os.path.join(dst, "zreflect", _DOC_NAME))
+        shutil.copy2(os.path.join(src, _RUFF_TOML), os.path.join(dst, _RUFF_TOML))
         # Build v1 SEAL in src with suite_seq=2 and SUITE.sig
         files_map = {
-            "ruff.toml": {"file_sha256": _sha256_norm_file(os.path.join(src, "ruff.toml"))},
-            "zreflect/doc.py": {"file_sha256": _sha256_norm_file(os.path.join(src, "zreflect", "doc.py"))},
+            _RUFF_TOML: {"file_sha256": _sha256_norm_file(os.path.join(src, _RUFF_TOML))},
+            _DOC_REL: {"file_sha256": _sha256_norm_file(os.path.join(src, _DOC_REL))},
         }
         tree = trust_core.compute_tree_sha(files_map)
         with open(os.path.join(src, "zreflect", SEAL_NAME), "w", encoding="utf-8") as fh:
-            json.dump({"schema": 2, "upstream_repo": "ArchivalEra/Einfacht", "suite_seq": 2,
+            json.dump({"schema": 2, "upstream_repo": trust_core.TRUSTED_UPSTREAM_REPO, "suite_seq": 2,
                        "tree_sha256": tree, "files": files_map}, fh)
         sig = {
             "payload": {
-                "repo": "ArchivalEra/Einfacht", "action": "suite.release",
-                "target_path": "zreflect/SEAL.json", "suite_seq": 2, "target_sha256": tree,
-                "expires_at": "2099-01-01T00:00:00+00:00",
+                "repo": trust_core.TRUSTED_UPSTREAM_REPO, "action": _SUITE_RELEASE,
+                "target_path": _SEAL_REL, "suite_seq": 2, "target_sha256": tree,
+                "expires_at": _EXP_FUTURE,
             },
             "sig": base64.b64encode(b"0" * 64).decode("ascii"),
         }
@@ -1160,7 +1206,7 @@ def _selftest_local_scripts_and_upgrade():
         with open(meas_p, "w", encoding="utf-8") as fh:
             fh.write("def measure():\n    return {}\n")
         anc = {
-            "schema": 2, "repo": "consumer/app", "approver_pub": pub_b64, "lock_core": True,
+            "schema": 2, "repo": _TEST_CONSUMER, "approver_pub": pub_b64, "lock_core": True,
             "revoked_ids": [], "suite_seq": 1, "suite_tree_sha256": "0" * 64,
             "knobs_sha256": "NONE", "questions_dir": "questions",
             "local_scripts": local_scripts_map(dst),
@@ -1202,7 +1248,7 @@ def _selftest_reseal_approval():
             return False
         os.remove(os.path.join(rt, "zreflect", "new_unsealed.py"))
         write_anchors(rt, {
-            "schema": 2, "repo": "org/r", "approver_pub": pinned_approver_pub(), "lock_core": True,
+            "schema": 2, "repo": _TEST_ORG, "approver_pub": pinned_approver_pub(), "lock_core": True,
             "revoked_ids": [], "suite_seq": 1, "suite_tree_sha256": "0" * 64,
             "knobs_sha256": "NONE", "questions_dir": "questions", "local_scripts": {},
             "off_gates": [], "principles": {}, "questions": {},
@@ -1227,8 +1273,8 @@ def _selftest_crlf_and_verify():
         orig = globals()["_post_auto_sync"]
         globals()["_post_auto_sync"] = lambda _u, p, _o: seen.setdefault(p["target_path"], True)
         try:
-            probs = [M("approval.receipt_required", action="gate.off", target="knobs.json"),
-                     M("approval.receipt_required", action="gate.off", target="check_readme_sync.py")]
+            probs = [M("approval.receipt_required", action=_GATE_OFF, target=_KNOBS_JSON),
+                     M("approval.receipt_required", action=_GATE_OFF, target="check_readme_sync.py")]
             if (not _auto_sync_for_probs(rt, {"approver_pub": "x"}, probs)
                     or seen.get("check_readme_sync.py") is not True or len(seen) != 2):
                 return False
@@ -1245,7 +1291,7 @@ def _selftest_no_http_on_verify():
             fh.write("x = 1\n")
         reseal(["zreflect/a.py"], force_all=True, root=rt, zdir=os.path.join(rt, "zreflect"))
         write_anchors(rt, {
-            "schema": 2, "repo": "org/r", "approver_pub": pinned_approver_pub(), "lock_core": True,
+            "schema": 2, "repo": _TEST_ORG, "approver_pub": pinned_approver_pub(), "lock_core": True,
             "revoked_ids": [], "suite_seq": 1, "suite_tree_sha256": "0" * 64,
             "knobs_sha256": "NONE", "questions_dir": "questions", "local_scripts": {},
             "off_gates": [], "principles": {}, "questions": {},
@@ -1270,7 +1316,7 @@ def _selftest_no_http_on_verify():
         os.makedirs(os.path.join(rt2, ".git"))
         cnt, rname, out_p = pull_receipts(
             root=rt2,
-            fetcher=lambda _u, _r: [{"payload": {"repo": "r", "action": "gate.off", "target_path": "x"}, "sig": "s"}],
+            fetcher=lambda _u, _r: [{"payload": {"repo": "r", "action": _GATE_OFF, "target_path": "x"}, "sig": "s"}],
         )
         if cnt != 1 or not rname or not os.path.isfile(out_p):
             return False
@@ -1283,9 +1329,9 @@ def _selftest_worktree_and_baseline():
         subprocess.run(["git", "init", "-q", rt], check=True, env=genv)
         subprocess.run(["git", "-C", rt, "config", "user.email", "t@e.com"], check=True, env=genv)
         subprocess.run(["git", "-C", rt, "config", "user.name", "t"], check=True, env=genv)
-        with open(os.path.join(rt, "knobs.json"), "w", encoding="utf-8") as fh:
+        with open(os.path.join(rt, _KNOBS_JSON), "w", encoding="utf-8") as fh:
             fh.write('{"REFLECT_OFF_GATES": "check_ab.py"}\n')
-        subprocess.run(["git", "-C", rt, "add", "knobs.json"], check=True, env=genv)
+        subprocess.run(["git", "-C", rt, "add", _KNOBS_JSON], check=True, env=genv)
         subprocess.run(["git", "-C", rt, "commit", "-qm", "init"], check=True, env=genv)
         wt = os.path.join(rt, ".wt-tmp")
         subprocess.run(["git", "-C", rt, "worktree", "add", "--detach", "-q", wt, "HEAD"], check=True, env=genv)
@@ -1295,12 +1341,12 @@ def _selftest_worktree_and_baseline():
         finally:
             subprocess.run(["git", "-C", rt, "worktree", "remove", "--force", wt], check=False, env=genv)
         anc = {
-            "schema": 2, "repo": "org/r", "approver_pub": pinned_approver_pub(), "lock_core": True,
+            "schema": 2, "repo": _TEST_ORG, "approver_pub": pinned_approver_pub(), "lock_core": True,
             "revoked_ids": [], "suite_seq": 1, "suite_tree_sha256": "0" * 64,
             "knobs_sha256": "anchored_prev_sha", "questions_dir": "questions", "local_scripts": {},
             "off_gates": [], "principles": {}, "questions": {},
         }
-        reqs = build_requests(["knobs.json"], root=rt, repo_name="org/r", anchors=anc)
+        reqs = build_requests([_KNOBS_JSON], root=rt, repo_name=_TEST_ORG, anchors=anc)
         return len(reqs) == 1 and reqs[0]["prev_sha256"] == "anchored_prev_sha"
 
 
@@ -1317,23 +1363,23 @@ def _selftest_suite_sig_doc_upgrade():
     with tempfile.TemporaryDirectory() as rt:
         zd = os.path.join(rt, "zreflect")
         os.makedirs(zd)
-        shutil.copy2(os.path.join(gate.zdir(), "doc.py"), os.path.join(zd, "doc.py"))
-        tree, err = reseal(["zreflect/doc.py"], force_all=True, root=rt, zdir=zd, bump_seq=True)
+        shutil.copy2(os.path.join(gate.zdir(), _DOC_NAME), os.path.join(zd, _DOC_NAME))
+        tree, err = reseal([_DOC_REL], force_all=True, root=rt, zdir=zd, bump_seq=True)
         if err or not tree:
             return False
         payload = {
-            "repo": "ArchivalEra/Einfacht", "action": "suite.release",
-            "target_path": "zreflect/SEAL.json", "suite_seq": 2, "target_sha256": tree,
-            "expires_at": "2099-01-01T00:00:00+00:00",
+            "repo": trust_core.TRUSTED_UPSTREAM_REPO, "action": _SUITE_RELEASE,
+            "target_path": _SEAL_REL, "suite_seq": 2, "target_sha256": tree,
+            "expires_at": _EXP_FUTURE,
         }
         sig_b64 = base64.b64encode(priv.sign(trust_core.canonical_json(payload))).decode("ascii")
         _write_json_atomic(os.path.join(zd, SUITE_SIG_NAME), {"payload": payload, "sig": sig_b64})
         import doc  # noqa: PLC0415
-        md_p = os.path.join(rt, "PRINCIPLES.md")
+        md_p = os.path.join(rt, _PRINCIPLES_MD)
         with open(md_p, "w", encoding="utf-8") as fh:
             fh.write("# Principles\n\n" + doc.render_rules(doc.all_rules(rt)) + "\n")
         write_anchors(rt, {
-            "schema": 2, "repo": "consumer/app", "approver_pub": pub_pem, "lock_core": True,
+            "schema": 2, "repo": _TEST_CONSUMER, "approver_pub": pub_pem, "lock_core": True,
             "revoked_ids": [], "suite_seq": 2, "suite_tree_sha256": tree,
             "knobs_sha256": "NONE", "questions_dir": "questions", "local_scripts": {},
             "off_gates": [],
@@ -1357,25 +1403,25 @@ def _selftest_happy_upgrade():
     with tempfile.TemporaryDirectory() as rt:
         src, dst = os.path.join(rt, "src"), os.path.join(rt, "dst")
         shutil.copytree(os.path.join(gate.tool_repo(), "zreflect"), os.path.join(src, "zreflect"),
-                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "SUITE.sig"))
-        shutil.copy2(os.path.join(gate.tool_repo(), "ruff.toml"), os.path.join(src, "ruff.toml"))
-        tree, err = reseal(["zreflect/doc.py"], force_all=True, root=src, zdir=os.path.join(src, "zreflect"), bump_seq=True)
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", SUITE_SIG_NAME))
+        shutil.copy2(os.path.join(gate.tool_repo(), _RUFF_TOML), os.path.join(src, _RUFF_TOML))
+        tree, err = reseal([_DOC_REL], force_all=True, root=src, zdir=os.path.join(src, "zreflect"), bump_seq=True)
         if err or not tree:
             return False
         sdata, _ = load_seal(seal_path(os.path.join(src, "zreflect")))
-        payload = {"id": "rec-upg-1", "repo": trust_core.TRUSTED_UPSTREAM_REPO, "action": "suite.release",
-                   "target_path": "zreflect/SEAL.json", "suite_seq": int(sdata["suite_seq"]), "target_sha256": tree,
-                   "expires_at": "2099-01-01T00:00:00+00:00"}
+        payload = {"id": "rec-upg-1", "repo": trust_core.TRUSTED_UPSTREAM_REPO, "action": _SUITE_RELEASE,
+                   "target_path": _SEAL_REL, "suite_seq": int(sdata["suite_seq"]), "target_sha256": tree,
+                   "expires_at": _EXP_FUTURE}
         sig_b64 = base64.b64encode(priv.sign(trust_core.canonical_json(payload))).decode("ascii")
         _write_json_atomic(os.path.join(src, "zreflect", SUITE_SIG_NAME), {"payload": payload, "sig": sig_b64})
         os.makedirs(os.path.join(dst, "zreflect"))
-        subprocess.run([sys.executable, "zreflect/facts.py", "--init"], cwd=src,
+        subprocess.run([sys.executable, _FACTS_REL, "--init"], cwd=src,
                        env=dict(os.environ, GATE_REPO=src), capture_output=True, check=False)
-        for fn in ("STATE.md", "PRINCIPLES.md", "FACTS.json", "AGENTS.md", "README.md", "retractions.json", "knobs.json"):
+        for fn in ("STATE.md", _PRINCIPLES_MD, "FACTS.json", "AGENTS.md", "README.md", "retractions.json", _KNOBS_JSON):
             if os.path.isfile(os.path.join(src, fn)):
                 shutil.copy2(os.path.join(src, fn), os.path.join(dst, fn))
         write_anchors(dst, {
-            "schema": 2, "repo": "consumer/app", "approver_pub": pub_pem, "lock_core": True,
+            "schema": 2, "repo": _TEST_CONSUMER, "approver_pub": pub_pem, "lock_core": True,
             "revoked_ids": [], "suite_seq": 1, "suite_tree_sha256": "0" * 64,
             "knobs_sha256": "NONE", "questions_dir": "questions", "local_scripts": {},
             "off_gates": [], "principles": {"doc_py_sha256": "old", "principles_md_sha256": "old", "no_principles": False},
@@ -1400,13 +1446,13 @@ def _selftest_cli_flows():
         nested = os.path.join(sub, "pkg", "inner")
         os.makedirs(nested)
         subprocess.run(["git", "init", "-q", sub], check=True, env=genv)
-        if os.path.realpath(_default_receipt_path(nested)) != os.path.realpath(os.path.join(sub, ".git", "einfacht-receipt.json")):
+        if os.path.realpath(_default_receipt_path(nested)) != os.path.realpath(os.path.join(sub, ".git", _RECEIPT_FILE)):
             return False
-        if [r["action"] for r in build_requests(["doctor.py"], root=sub, repo_name="r/x")] != ["gate.off"]:
+        if [r["action"] for r in build_requests(["doctor.py"], root=sub, repo_name="r/x")] != [_GATE_OFF]:
             return False
-        out_b = os.path.join(sub, ".git", "einfacht-receipt.json")
-        r_new = {"payload": {"repo": "r/x", "action": "seal.core", "target_path": "x", "prev_sha256": "p1", "target_sha256": "t2", "id": "rec-new"}, "sig": "s2"}
-        r_old = {"payload": {"repo": "r/x", "action": "seal.core", "target_path": "x", "prev_sha256": "p0", "target_sha256": "t1", "id": "rec-old"}, "sig": "s1"}
+        out_b = os.path.join(sub, ".git", _RECEIPT_FILE)
+        r_new = {"payload": {"repo": "r/x", "action": _SEAL_CORE, "target_path": "x", "prev_sha256": "p1", "target_sha256": "t2", "id": "rec-new"}, "sig": "s2"}
+        r_old = {"payload": {"repo": "r/x", "action": _SEAL_CORE, "target_path": "x", "prev_sha256": "p0", "target_sha256": "t1", "id": "rec-old"}, "sig": "s1"}
         pull_receipts(root=sub, fetcher=lambda _u, _r: [r_new, r_old])
         loaded = load_receipt(path=out_b)
         if not (isinstance(loaded, dict) and len(loaded.get("receipts") or []) == 2):
@@ -1429,8 +1475,9 @@ def _selftest_cli_flows():
 def _selftest_security_edges():
     with tempfile.TemporaryDirectory() as rt:
         list_b = os.path.join(rt, "list.json")
-        r1 = {"payload": {"repo": "r/x", "action": "seal.core", "target_path": "a", "prev_sha256": "p0", "target_sha256": "t1"}, "sig": "s1"}
-        r2 = {"payload": {"repo": "r/x", "action": "seal.core", "target_path": "b", "prev_sha256": "p1", "target_sha256": "t2"}, "sig": "s2"}
+        payload = {"id": "rec-sec", "repo": "r/x", "action": _SEAL_CORE, "target_path": "a", "prev_sha256": "p0", "target_sha256": "t1"}
+        r1 = {"payload": payload, "sig": "s1"}
+        r2 = {"payload": {**payload, "target_path": "b", "prev_sha256": "p1", "target_sha256": "t2"}, "sig": "s2"}
         _write_json_atomic(list_b, [r1])
         _save_receipts_to_bundle([r2], list_b)
         if len((load_receipt(path=list_b) or {}).get("receipts") or ()) != 2:
@@ -1513,7 +1560,7 @@ def pull_receipts(root=None, *, fetcher=None):
 def _cmd_pull(_argv):
     try:
         count, rname, out_path = pull_receipts(gate.GATE_REPO)
-    except (urllib.error.URLError, OSError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         return fatal(str(exc))
     print(M("approval.pulled", count=count, repo=rname, path=out_path))
     return 0
@@ -1568,11 +1615,11 @@ def _cmd_release(_argv):
         hit = _matching_suite_sig(_fetch_repo_receipts(url, rname), tree_sha, seq)
         if hit is not None:
             return _write_suite_sig(zd, hit, data)
-    except (urllib.error.URLError, OSError, ValueError):
+    except (OSError, ValueError):
         pass
     payload = {
-        "repo": rname, "agent_id": os.environ.get("USER", "agent"), "action": "suite.release",
-        "target_path": "zreflect/SEAL.json", "prev_sha256": anc.get("suite_tree_sha256") or "NONE",
+        "repo": rname, "agent_id": os.environ.get("USER", "agent"), "action": _SUITE_RELEASE,
+        "target_path": _SEAL_REL, "prev_sha256": anc.get("suite_tree_sha256") or "NONE",
         "target_sha256": tree_sha, "suite_seq": seq,
         "target_content": json.dumps(data, indent=1, sort_keys=True),
         "diff_summary": f"suite.release seq={seq} tree={tree_sha[:16]}",
