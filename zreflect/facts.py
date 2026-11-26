@@ -590,17 +590,16 @@ def measure(argv):
     return 0
 
 
-def _facts_with_principles(led):
+def facts_with_principles(led):
+    """Return the combined entries and the keys supplied by active rules."""
     import doc  # noqa: PLC0415
-    f = dict(facts_of(led))
-    if doc.accepts_principles():
-        f.update(doc.facts_of_rules())
-    return f
+    rules = doc.facts_of_rules() if doc.accepts_principles() else {}
+    return {**facts_of(led), **rules}, set(rules)
 
 
 def get_value(led, key):
     """Return `(found?, value_or_error_message)` across ledger and active principles."""
-    f = _facts_with_principles(led)
+    f, _ = facts_with_principles(led)
     if key not in f:
         return False, M("facts.unknown_key", key=key,
                         existing=", ".join(sorted(f)) or M("facts.none"))
@@ -796,7 +795,7 @@ def cmd_accept(argv):
 
 
 def cmd_show(argv):
-    f = _facts_with_principles(_load_or_die())
+    f, _ = facts_with_principles(_load_or_die())
     keys = [argv[1]] if len(argv) > 1 else sorted(f)
     rc = 0
     for k in keys:

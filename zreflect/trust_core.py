@@ -390,7 +390,8 @@ def _eval_existing_question_entry(rel, prev, cur, *, receipt, repo_name, pub, re
         pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
 
 
-def _eval_question_anchor_entry(rel, prev, cur, *, receipt, repo_name, pub, revoked, verify_sig_fn):
+def eval_question_entry(rel, prev, cur, *, receipt, repo_name, pub, revoked, verify_sig_fn):
+    """Authorize a change between two question snapshots."""
     if (prev is not None and not isinstance(prev, dict)) or (cur is not None and not isinstance(cur, dict)):
         return [M("approval.anchors_broken")]
     if prev is not None and cur is None:
@@ -417,7 +418,7 @@ def _eval_questions_anchor(head_anc, cur_anc, *, receipt, repo_name, pub, revoke
         return [M("approval.anchors_broken")]
     probs = []
     for rel in sorted(set(h_q) | set(c_q)):
-        probs += _eval_question_anchor_entry(
+        probs += eval_question_entry(
             rel, h_q.get(rel), c_q.get(rel), receipt=receipt, repo_name=repo_name,
             pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn)
     return probs

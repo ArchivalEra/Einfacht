@@ -900,42 +900,17 @@ def check_off_gates_anchor(off_list, root=None, receipt=None, now=None, *, auto_
     return _run_anchor_gate(root, receipt, auto_sync, _eval)
 
 
-def _q_field(text, name):
-    if not text:
-        return ""
+def _question_snapshot(text):
     import check_questions  # noqa: PLC0415
-    return check_questions.field(text, name) or ""
-
-
-def _eval_existing_question(rel, cur, prev, r, *, rname, pub, revoked):
-    st, sl = _q_field(cur, "Status"), _q_field(cur, "Settling")
-    if trust_core.sha256_text(cur) == prev.get("sha256"):
-        snap = trust_core.question_snapshot(cur, st, sl)
-        return [] if snap == prev else [M("approval.anchors_broken")]
-    if trust_core.is_legal_settlement(st, sl, cur, prev) or trust_core.is_legal_status_triage(st, sl, cur, prev):
-        return []
-    return trust_core.verify_receipt(
-        r, repo_name=rname, action="question.modify", target=rel,
-        prev_sha256=prev.get("sha256", ""), target_sha256=trust_core.sha256_text(cur),
-        pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
+    return trust_core.question_snapshot(
+        text, check_questions.field(text, "Status"), check_questions.field(text, "Settling"))
 
 
 def _eval_one_question(rel, cur, prev, r, *, rname, pub, revoked):
-    if prev is not None and not isinstance(prev, dict):
-        return [M("approval.anchors_broken")]
-    if cur is None and prev is not None:
-        return trust_core.verify_receipt(
-            r, repo_name=rname, action="question.delete", target=rel,
-            prev_sha256=prev.get("sha256", ""), target_sha256="DELETED",
-            pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
-    if prev is None and cur is not None:
-        return trust_core.verify_receipt(
-            r, repo_name=rname, action="question.create", target=rel,
-            prev_sha256="NONE", target_sha256=trust_core.sha256_text(cur),
-            pub_b64=pub, revoked_ids=revoked, verify_sig_fn=ed25519_verify)
-    if prev is not None and cur is not None:
-        return _eval_existing_question(rel, cur, prev, r, rname=rname, pub=pub, revoked=revoked)
-    return []
+    snapshot = _question_snapshot(cur) if cur is not None else None
+    return trust_core.eval_question_entry(
+        rel, prev, snapshot, receipt=r, repo_name=rname, pub=pub, revoked=revoked,
+        verify_sig_fn=ed25519_verify)
 
 
 def check_questions_against_anchor(files, root=None, receipt=None, qdir=None, *, auto_sync=False):
@@ -968,8 +943,7 @@ def check_questions_against_anchor(files, root=None, receipt=None, qdir=None, *,
 def _build_anchors(root, pub_b64=None):
     import check_questions  # noqa: PLC0415
     files = check_questions.collect(root=root)
-    q_map = {k: trust_core.question_snapshot(v, _q_field(v, "Status"), _q_field(v, "Settling"))
-             for k, v in sorted(files.items())}
+    q_map = {k: _question_snapshot(v) for k, v in sorted(files.items())}
     off_list = sorted(x.strip() for x in (knobs.get("REFLECT_OFF_GATES") or "").split(",") if x.strip())
     seal_d, _ = load_seal(seal_path(os.path.join(root, "zreflect")))
     return {
@@ -1132,19 +1106,10 @@ def cmd_upgrade(argv):
 
 
 def _sync_settled(root):
-    import check_questions  # noqa: PLC0415
     anchors = load_anchors(root)
     if not anchors:
         return 2
-    files = check_questions.collect(root=root)
-    off_list = sorted(x.strip() for x in (knobs.get("REFLECT_OFF_GATES") or "").split(",") if x.strip())
-    probs = (
-        verify_problems(root=root, zdir=os.path.join(root, "zreflect"))
-        + check_knobs_anchor(root=root)
-        + check_off_gates_anchor(off_list, root=root)
-        + check_principles_repo(root=root)
-        + check_questions_against_anchor(files, root=root)
-    )
+    probs = _all_anchor_probs(root, auto_sync=False)
     if probs:
         for p in probs:
             print(p, file=sys.stderr)
@@ -1496,6 +1461,33 @@ def _selftest_security_edges():
     return [p.code for p in probs] == ["approval.anchors_broken"]
 
 
+def _selftest_question_evaluation_shared():
+    from unittest.mock import patch  # noqa: PLC0415
+    rel = "questions/01.md"
+    original = "# Q\n**Status:** ready-for-agent\n**Settling:** python3 -c pass\n"
+    prior = trust_core.question_snapshot(original, "ready-for-agent", "python3 -c pass")
+    with patch.object(trust_core, "eval_question_entry", wraps=trust_core.eval_question_entry) as evaluate:
+        for previous, current, action in (
+            (None, original, "question.create"),
+            (prior, None, "question.delete"),
+            (prior, original, None),
+            (prior, original.replace("ready-for-agent", "ready-for-human"), None),
+            (prior, original.replace("ready-for-agent", "resolved"), None),
+            (prior, original.replace("# Q", "# New"), "question.modify"),
+        ):
+            worktree = _eval_one_question(
+                rel, current, previous, None, rname=_TEST_ORG, pub="PUB", revoked=())
+            anchors = trust_core._eval_questions_anchor(
+                {"questions": {rel: previous} if previous is not None else {}},
+                {"questions": {rel: _question_snapshot(current)} if current is not None else {}},
+                receipt=None, repo_name=_TEST_ORG, pub="PUB", revoked=(), verify_sig_fn=ed25519_verify)
+            expected = [("approval.receipt_required", action)] if action else []
+            if any([(p.code, p.params.get("action")) for p in probs] != expected
+                   for probs in (worktree, anchors)):
+                return False
+        return evaluate.call_count == 12
+
+
 def _cases():
     return [
         ("★ trust.local_scripts_tamper_and_downgrade_rejected", _selftest_local_scripts_and_upgrade),
@@ -1507,6 +1499,7 @@ def _cases():
         ("★ trust.happy_upgrade_refreshes_principles", _selftest_happy_upgrade),
         ("★ trust.cli_subdir_doctor_and_pull_bundle", _selftest_cli_flows),
         ("★ trust.security_edges_and_bundle_safety", _selftest_security_edges),
+        ("trust.question_shared_evaluation", _selftest_question_evaluation_shared),
     ]
 
 

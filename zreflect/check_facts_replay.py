@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import doc  # noqa: E402
 import i18n  # noqa: E402
 import knobs  # noqa: E402
-from facts import facts_of, load_or_fatal, value_of  # noqa: E402
+from facts import facts_of, facts_with_principles, load_or_fatal, value_of  # noqa: E402
 from gate import (  # noqa: E402
     default_timeout,
     fatal,
@@ -106,8 +106,9 @@ def _run_probes(f, run, seconds, out, stats):
         _probe_one(key, f[key], run, seconds, out, stats, gate)
 
 
-def replay_all(ledger, runner=None):
-    """Replay every fact/principle entry in `ledger`, deduplicating identical `cmd` strings."""
+def replay_all(ledger, runner=None, *, include_principles=False):
+    """Replay ledger entries and optionally active rules, deduplicating commands."""
+    f, rule_keys = _replay_entries(ledger, include_principles)
     if runner is None:
         try:
             depth = int(os.environ.get(_DEPTH_ENV, "0") or 0)
@@ -117,7 +118,6 @@ def replay_all(ledger, runner=None):
             return {"problems": [M("replay.too_deep", depth=depth, limit=_MAX_DEPTH)],
                     "ok": 0, "attempts": 0, "ran": 0, "calibrate_attempts": 0, "calibrated": 0}
     run = runner or run_cmd_cached
-    f = facts_of(ledger)
     stats: dict[str, Any] = {
         "ok": 0, "attempts": 0, "ran": 0, "calibrate_attempts": 0, "calibrated": 0,
         "problems": [],
@@ -125,7 +125,6 @@ def replay_all(ledger, runner=None):
     if not f:
         stats["problems"] = [M("replay.empty_ledger")]
         return stats
-    rule_keys = set(doc.facts_of_rules()) if doc.accepts_principles() else set()
     out: list[i18n.Message] = []
     cache: dict[str, tuple[int | None, str]] = {}
     seconds = default_timeout()
@@ -138,11 +137,12 @@ def replay_all(ledger, runner=None):
     return stats
 
 
-def _with_principles(ledger):
-    f = dict(facts_of(ledger))
-    if doc.accepts_principles():
-        f.update(doc.facts_of_rules())
-    return {"facts": f}
+def _replay_entries(ledger, include_principles):
+    entries = facts_of(ledger)
+    if not entries and not include_principles:
+        return entries, set()
+    combined, rule_keys = facts_with_principles(ledger)
+    return (combined if include_principles else entries), rule_keys
 
 
 def run(argv):
@@ -160,9 +160,26 @@ def run(argv):
     pre_probs = doc.local_rules_problems(repo()) + trust.check_principles_repo(repo()) + trust.check_knobs_anchor(repo())
     if pre_probs:
         return finish(M("replay.title"), pre_probs, M("replay.ok", count=0, calibrated=""))
-    r = replay_all(_with_principles(load_or_fatal(p)))
+    r = replay_all(load_or_fatal(p), include_principles=True)
     ctail = str(M("replay.ok_calibrated", count=r["calibrated"]) if r["calibrated"] else "")
     return finish(M("replay.title"), r["problems"], M("replay.ok", count=r["ok"], calibrated=ctail))
+
+
+def _selftest_principles_loaded_once():
+    from unittest.mock import patch  # noqa: PLC0415
+
+    import trust  # noqa: PLC0415
+    name = "principle.only_measured"
+    rules = {name: {"value": "rule", "cmd": "rule", "kind": "principle"}}
+    with (patch.object(doc, "accepts_principles", return_value=True),
+          patch.object(doc, "facts_of_rules", return_value=rules) as load,
+          patch.object(doc, "local_rules_problems", return_value=[]),
+          patch.object(trust, "check_principles_repo", return_value=[]),
+          patch.object(trust, "check_knobs_anchor", return_value=[]),
+          patch.object(os.path, "exists", return_value=True),
+          patch.object(sys.modules[__name__], "load_or_fatal", return_value={"facts": {}}),
+          patch.object(sys.modules[__name__], "run_cmd_cached", return_value=(0, "measured"))):
+        return run([]) == 0 and load.call_count == 1
 
 
 def _cases():
@@ -188,6 +205,7 @@ def _cases():
 
     none_ran = "replay.none_ran"
     return [
+        ("replay.principle_snapshot_loaded_once", _selftest_principles_loaded_once),
         ("replay.ok_trailing_newline",
          lambda: replay_all(led, runner=lambda c: (0, "12\n"))["problems"] == []),
         ("replay.deduplicates_identical_cmds",
