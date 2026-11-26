@@ -37,7 +37,7 @@
    "file_sha256": "b96d473ff004a9cd6cafccc2525a54956d5247d05f22c3a70eebd53205765afe"
   },
   "zreflect/check_questions.py": {
-   "file_sha256": "7ebe55f896a31137ffbb1625906315f114873cf4816f49d17373d3e2acd91365"
+   "file_sha256": "76c5821ed6004789e77f360c2c538da03814c3b8d1c86863555452e0c28f2ad0"
   },
   "zreflect/check_readme_sync.py": {
    "file_sha256": "16f9a66e06dbeff7a0744980d0292538d333182624fc537f5160ef483f368dbf"
@@ -103,14 +103,14 @@
    "file_sha256": "0c215a9e6f3d62b611f91de0f05b5f5203ad2e71a727c0a964b9bb631044f98b"
   },
   "zreflect/trust.py": {
-   "file_sha256": "3afa765eae0a33e2fe5a3c71e2883b8bc340713b73925c4bf07bbc4ef4c01b45"
+   "file_sha256": "1539c2976ebb43472f0156370e42d88d413cece695a857f2325dcc8c2e3cbb2e"
   },
   "zreflect/trust_core.py": {
-   "file_sha256": "8bfae8aca22375328b72b65a43c3a396a95bbda71213d832871b07eb06c94d60"
+   "file_sha256": "d024109ea31e4e72b106d959d7eba608f5dd07b4feed70ccfb58e7ab754f9d02"
   }
  },
  "schema": 2,
- "suite_seq": 11,
- "tree_sha256": "7290399157967e71101e3f06dfc00ec08262c96b268916deaeea9bec1a41f419",
+ "suite_seq": 12,
+ "tree_sha256": "772bda2cb9702dc06fb30a0a447af82d70e56218cb22aa7ced234ec6e2c3a855",
  "upstream_repo": "ArchivalEra/Einfacht"
 }
