@@ -110,7 +110,7 @@
   }
  },
  "schema": 2,
- "suite_seq": 10,
+ "suite_seq": 11,
  "tree_sha256": "7290399157967e71101e3f06dfc00ec08262c96b268916deaeea9bec1a41f419",
  "upstream_repo": "ArchivalEra/Einfacht"
 }
