@@ -184,6 +184,24 @@
       "settling": "python3 zreflect/gate.py --selftest -- rc=0 => pure in-process script/selftest execution, _INPROC_CACHE dedup, forged env/cache rejection, and red selftest rc!=0 pass; rc!=0 => Q35 regression",
       "sha256": "7266c492aebcad1c5bb42d27956e9d4a9812ea3bbed78b7522206c918a1c648c",
       "status": "resolved"
+    },
+    "questions/38-consolidate-trust-facts-and-impact.md": {
+      "body_sha256": "7d3f1e79afb8cd3345eb27808ef5fad46c546767e27f704f43cf6126aa8c0aec",
+      "settling": "None -- 第一交付物是能区分重复实现与统一实现的自证。先在重构前看到红例，落地后将本字段换成实际可回放的自测命令。",
+      "sha256": "8c03442e42fdc611827c1265fad202a4631707be4bbe124e308ccab2527cbfbf",
+      "status": "ready-for-agent"
+    },
+    "questions/39-unify-doc-seal-authorization.md": {
+      "body_sha256": "be80b90c3499ce74882a3c87dea962db695f9c2f5ab3132cf0339260bdf023a9",
+      "settling": "None -- 第一交付物是裁决后的迁移自测，覆盖锁定和未锁定消费仓、旧锚点和旧回执。",
+      "sha256": "2a1c8ff31d00ad713cf12166344ca7941c63eeedd2c348316693c17684da4204",
+      "status": "ready-for-human"
+    },
+    "questions/40-decide-suite-signature-lifetime.md": {
+      "body_sha256": "240132f3ce21e70b5062d76f7eeb8bc54ed7b23a9e2c38ec820f9b08a3d4618f",
+      "settling": "None -- 第一交付物是两仓兼容性自测，覆盖旧客户端、发布签名的过期行为、吊销和序号回退。",
+      "sha256": "84da202a17136f84e1433925a0dee175f14d02046d404c748f91cff04fa2e24b",
+      "status": "ready-for-human"
     }
   },
   "questions_dir": "questions",
