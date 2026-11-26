@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import doc  # noqa: E402
 import i18n  # noqa: E402
 import knobs  # noqa: E402
-from facts import facts_of, facts_with_principles, load_or_fatal, value_of  # noqa: E402
+from facts import facts_of, load_or_fatal, value_of  # noqa: E402
 from gate import (  # noqa: E402
     default_timeout,
     fatal,
@@ -139,10 +139,8 @@ def replay_all(ledger, runner=None, *, include_principles=False):
 
 def _replay_entries(ledger, include_principles):
     entries = facts_of(ledger)
-    if not entries and not include_principles:
-        return entries, set()
-    combined, rule_keys = facts_with_principles(ledger)
-    return (combined if include_principles else entries), rule_keys
+    rules = doc.facts_of_rules() if doc.accepts_principles() else {}
+    return ({**entries, **rules} if include_principles else entries), set(rules)
 
 
 def run(argv):
@@ -182,6 +180,35 @@ def _selftest_principles_loaded_once():
         return run([]) == 0 and load.call_count == 1
 
 
+def _selftest_ledger_extracted_once():
+    from unittest.mock import patch  # noqa: PLC0415
+
+    import facts  # noqa: PLC0415
+    ledger = {"facts": {"n": {"value": 12, "cmd": "c"}}}
+    calls: list[str] = []
+    real_local, real_facts = facts_of, facts.facts_of
+
+    def count_local(*a, **k):
+        calls.append("local")
+        return real_local(*a, **k)
+
+    def count_facts(*a, **k):
+        calls.append("facts")
+        return real_facts(*a, **k)
+
+    with (patch.object(sys.modules[__name__], "facts_of", count_local),
+          patch.object(facts, "facts_of", count_facts),
+          patch.object(doc, "accepts_principles", return_value=False)):
+        stats = replay_all(ledger, runner=lambda _c: (0, "12"), include_principles=True)
+    if stats["problems"] or calls != ["local"]:
+        return False
+    calls.clear()
+    with (patch.object(sys.modules[__name__], "facts_of", count_local),
+          patch.object(facts, "facts_of", count_facts)):
+        stats = replay_all(ledger, runner=lambda _c: (0, "12"))
+    return not stats["problems"] and calls == ["local"]
+
+
 def _cases():
     led = {"facts": {"n": {"value": 12, "cmd": "c"}}}
     two = {"facts": {"a": {"value": 1, "cmd": "x"}, "b": {"value": 2, "cmd": "y"}}}
@@ -206,6 +233,7 @@ def _cases():
     none_ran = "replay.none_ran"
     return [
         ("replay.principle_snapshot_loaded_once", _selftest_principles_loaded_once),
+        ("★ replay.ledger_extracted_once", _selftest_ledger_extracted_once),
         ("replay.ok_trailing_newline",
          lambda: replay_all(led, runner=lambda c: (0, "12\n"))["problems"] == []),
         ("replay.deduplicates_identical_cmds",
