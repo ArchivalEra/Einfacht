@@ -106,11 +106,11 @@
    "file_sha256": "1539c2976ebb43472f0156370e42d88d413cece695a857f2325dcc8c2e3cbb2e"
   },
   "zreflect/trust_core.py": {
-   "file_sha256": "d024109ea31e4e72b106d959d7eba608f5dd07b4feed70ccfb58e7ab754f9d02"
+   "file_sha256": "978c0fe6f315964c6303995dbfdd66e528162dc53fb254d19a171dfbab0f3569"
   }
  },
  "schema": 2,
- "suite_seq": 13,
- "tree_sha256": "32c457b30fcfb39eca6dcfa48c3ac307bb51a6eea22a0277e63a8f8bdd3a80e0",
+ "suite_seq": 14,
+ "tree_sha256": "e13e8a18c31a82678e788863b7fde338ec0a179301e3adb4ac4af61381996895",
  "upstream_repo": "ArchivalEra/Einfacht"
 }
