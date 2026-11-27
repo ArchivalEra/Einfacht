@@ -208,6 +208,8 @@ GATE = meta("Static machine check",
             "ruff's C901/F/E9/B, criteria in ruff.toml -- the 'all clear' must be"
             " re-established by every commit, not handwritten into the ledger"
             " from a single manual run (R-004)",
+            knobs=("REFLECT_LINT_CONFIG",),
+            scopes=("*.py",),
             off_reason="ruff not installed on this machine (external tool, not a"
                        " repo dependency) => explicitly not enabled; CI pip-installs"
                        " it, and there the gate really runs")

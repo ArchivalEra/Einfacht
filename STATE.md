@@ -9,11 +9,11 @@
 
 | key | value | measured at | replay cmd |
 |---|---|---|---|
-| `core_seal` | `bce3d33271407c70...` | 2026-11-27T16:41:07+0800 | `python3 zreflect/registry.py --verify-seal` |
-| `md_files` | **52** | 2026-11-27T16:41:07+0800 | `python3 zreflect/facts.py --count -files .md` |
-| `md_lines` | **2261** | 2026-11-27T16:41:07+0800 | `python3 zreflect/facts.py --count -md` |
-| `py_files` | **46** | 2026-11-27T16:41:07+0800 | `python3 zreflect/facts.py --count -files .py` |
-| `py_lines` | **16043** | 2026-11-27T16:41:07+0800 | `python3 zreflect/facts.py --count -lines .py` |
+| `core_seal` | `f7bca4b9a917a6a7...` | 2026-11-27T22:42:00+0800 | `python3 zreflect/registry.py --verify-seal` |
+| `md_files` | **52** | 2026-11-27T22:42:00+0800 | `python3 zreflect/facts.py --count -files .md` |
+| `md_lines` | **2261** | 2026-11-27T22:42:00+0800 | `python3 zreflect/facts.py --count -md` |
+| `py_files` | **46** | 2026-11-27T22:42:00+0800 | `python3 zreflect/facts.py --count -files .py` |
+| `py_lines` | **16020** | 2026-11-27T22:42:00+0800 | `python3 zreflect/facts.py --count -lines .py` |
 
 5 facts.
 <!-- /AUTO:FACTS -->
@@ -26,11 +26,11 @@
 |---|---|---|---|---|
 | `check_ab.py`（A/B gate） | commit | A/B same-flags invariant (a difference outside the allow axis = confounding variable, A/B void) | `REFLECT_AB` | repos that run no A/B experiments do not need it: spec unset => explicitly not enabled |
 | `check_facts.py`（Facts gate） | commit | block agreement / bare numbers / bad citations | `REFLECT_DOC`, `REFLECT_DOCS`, `REFLECT_FACTS`, `REFLECT_NAKED_MIN`, `REFLECT_QUESTIONS` | -- |
-| `check_facts_replay.py`（Replay gate） | commit | ledger cmds re-run verbatim (bare-value contract: stdout must equal the value) | `REFLECT_FACTS`, `REFLECT_REPLAY`, `REFLECT_REPLAY_TIMEOUT` | closes only when REFLECT_REPLAY=off is explicitly set |
+| `check_facts_replay.py`（Replay gate） | commit | ledger cmds re-run verbatim (bare-value contract: stdout must equal the value) | `REFLECT_FACTS`, `REFLECT_QUESTIONS`, `REFLECT_REPLAY`, `REFLECT_REPLAY_TIMEOUT` | closes only when REFLECT_REPLAY=off is explicitly set |
 | `check_i18n.py`（language coverage gate） | commit | zero-language core output via M(code) and optional language pack sync/coverage | `REFLECT_I18N_ROOT` | -- |
 | `check_instruments.py`（Instrument lifecycle gate） | commit | constancy detection (first_seen) + falsified-method registry | `REFLECT_INSTRUMENTS`, `REFLECT_INSTRUMENT_DAYS`, `REFLECT_FACTS` | both knobs unset => the specialized mechanism is not enabled (pluggable; this repo turns it on when needed) |
 | `check_invariants.py`（Invariants gate） | commit | declarative invariants: repo files must / must not contain a snippet (grep level) | `REFLECT_INVARIANTS` | repos that write no declarative invariants do not need it: spec unset => explicitly not enabled (pluggable) |
-| `check_lint.py`（Static machine check） | commit | ruff's C901/F/E9/B, criteria in ruff.toml -- the 'all clear' must be re-established by every commit, not handwritten into the ledger from a single manual run (R-004) | -- | ruff not installed on this machine (external tool, not a repo dependency) => explicitly not enabled; CI pip-installs it, and there the gate really runs |
+| `check_lint.py`（Static machine check） | commit | ruff's C901/F/E9/B, criteria in ruff.toml -- the 'all clear' must be re-established by every commit, not handwritten into the ledger from a single manual run (R-004) | `REFLECT_LINT_CONFIG` | ruff not installed on this machine (external tool, not a repo dependency) => explicitly not enabled; CI pip-installs it, and there the gate really runs |
 | `check_locks.py`（Locked-sources gate） | commit | locked-sources list (content fingerprints of URL + file + sha256) | `REFLECT_LOCKS` | repos that do not pin upstream bytes do not need it: spec unset => explicitly not enabled |
 | `check_pins.py`（pin gate） | commit | derived-tree pin consistency (stamp commit / dirty / version string cross-read) | `REFLECT_PINS` | repos without a derived tree do not need it: spec unset => explicitly not enabled |
 | `check_questions.py`（Question ledger gate） | commit | an unresolved question must carry a runnable settler | `REFLECT_QUESTIONS` | -- |

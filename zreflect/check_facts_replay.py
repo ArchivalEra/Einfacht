@@ -289,7 +289,8 @@ def _bad_timeout_fatals_ok():
 
 
 GATE = meta("Replay gate", "ledger cmds re-run verbatim (bare-value contract: stdout must equal the value)",
-            knobs=("REFLECT_FACTS", "REFLECT_REPLAY", "REFLECT_REPLAY_TIMEOUT"),
+            knobs=("REFLECT_FACTS", "REFLECT_QUESTIONS", "REFLECT_REPLAY", "REFLECT_REPLAY_TIMEOUT"),
+            scopes=("PRINCIPLES.md",),
             name_dependent=True,
             off_reason="closes only when REFLECT_REPLAY=off is explicitly set")
 

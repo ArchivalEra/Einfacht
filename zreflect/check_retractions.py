@@ -255,7 +255,7 @@ def _cases():
 
 
 GATE = meta("Retraction-resurfacing check", "a retracted assertion may not quietly return as the current state",
-            knobs=("REFLECT_RETRACTIONS", "REFLECT_DOCS", "REFLECT_HISTORY_SECS"), name_dependent=True)
+            knobs=("REFLECT_RETRACTIONS", "REFLECT_DOCS", "REFLECT_HISTORY_SECS"), name_dependent=True, scopes=("*",))
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_retractions", _cases, run))

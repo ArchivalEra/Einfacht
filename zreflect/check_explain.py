@@ -248,6 +248,7 @@ def _cases():
 GATE = meta("Comment discipline",
             "strict: no docstrings; mismatch: explanation chars within AST complexity budget",
             knobs=("REFLECT_COMMENTS",),
+            scopes=("*.py",),
             runs_at="start-of-work",
             off_reason="only disabled when REFLECT_COMMENTS=off is explicitly set")
 

@@ -392,7 +392,7 @@ def _empty_tree_case(tempfile):
 
 
 GATE = meta("Secrets gate", "plain-text credential detection with explicit paths and justified exact exemptions",
-            knobs=("REFLECT_SECRETS",),
+            knobs=("REFLECT_SECRETS",), scopes=("*",),
             off_reason="a repo that declares no credential-scanning spec keeps this "
                        "gate off; a spec named explicitly but absent is a "
                        "configuration error, never a disable")

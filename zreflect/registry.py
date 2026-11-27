@@ -84,7 +84,8 @@ def _eval_call_decl(call, func, rel):
             "knobs": tuple(kw.get("knobs", ())),
             "name_dependent": bool(kw.get("name_dependent", False)),
             "runs_at": str(kw.get("runs_at", "commit")),
-            "off_reason": kw.get("off_reason")}
+            "off_reason": kw.get("off_reason"),
+            "scopes": tuple(kw.get("scopes", ()))}
 
 
 def _declaration(path, rel, attr="GATE", func="meta"):

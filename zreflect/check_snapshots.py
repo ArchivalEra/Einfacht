@@ -612,7 +612,7 @@ def _cases():
 
 GATE = meta("module-level snapshot gate",
             "a mutable global imported across modules is a value copy (stale snapshot): switch to importing the module and reading the attribute",
-            knobs=("REFLECT_SNAPSHOT_ROOT",))
+            knobs=("REFLECT_SNAPSHOT_ROOT",), scopes=("*.py",))
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],

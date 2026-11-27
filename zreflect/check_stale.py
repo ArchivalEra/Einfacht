@@ -419,7 +419,7 @@ def _cases():
 GATE = meta("Stale-assertion gate", "sha provenance / retired names / age check",
             knobs=("REFLECT_DOCS", "REFLECT_FACTS", "REFLECT_HISTORY_SECS",
                    "REFLECT_RETIRED", "REFLECT_STALE_DAYS"),
-            name_dependent=True)
+            name_dependent=True, scopes=("*",))
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_stale", _cases, run))

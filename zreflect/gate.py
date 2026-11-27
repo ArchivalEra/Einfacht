@@ -613,13 +613,14 @@ def run_cmd_cached(cmd, timeout=None, bump_depth=True):
         ev.set()
 
 
-def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit", off_reason=None):
+def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit", off_reason=None, scopes=()):
     """Gate declaration dict parsed by `registry.gates()`."""
     return {
         "name": name, "desc": desc, "knobs": tuple(knobs),
         "name_dependent": bool(name_dependent),
         "runs_at": str(runs_at),
         "off_reason": (None if off_reason is None else str(off_reason)),
+        "scopes": tuple(scopes),
     }
 
 

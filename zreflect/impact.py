@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Pure mechanical affected-gate selector (AST reverse deps + knob/path map, fail-closed)."""
+"""Deep mechanical affected-gate selector (declarative gate scopes + knobs, fail-closed on suite/git)."""
 
 import ast
+import fnmatch
 import os
 import subprocess
 import sys
@@ -14,8 +15,11 @@ from i18n import M
 _GLOBAL_FALLBACK_FILES = frozenset({
     "ANCHORS.json",
     "knobs.json",
+    "SEAL.json",
+    "zreflect/SEAL.json",
 })
 _GLOBAL_FALLBACK_PREFIXES = (
+    "zreflect/",
     "reflect-local/",
     ".github/",
 )
@@ -128,6 +132,14 @@ def _knob_paths(knob_values=None):
         "questions_prefix": (qdir + "/") if qdir else "questions/",
         "secrets": _norm(_knob_val("REFLECT_SECRETS", knob_values) or "secrets.json"),
         "lint_cfg": _norm(_knob_val("REFLECT_LINT_CONFIG", knob_values) or "ruff.toml"),
+        "rights": _norm(_knob_val("REFLECT_RIGHTS", knob_values) or "right.json"),
+        "invariants": _norm(_knob_val("REFLECT_INVARIANTS", knob_values) or "invariants.json"),
+        "locks": _norm(_knob_val("REFLECT_LOCKS", knob_values) or "upstream-lock.json"),
+        "pins": _norm(_knob_val("REFLECT_PINS", knob_values) or "pins.json"),
+        "ab": _norm(_knob_val("REFLECT_AB", knob_values) or "ab.json"),
+        "world": _norm(_knob_val("REFLECT_WORLD", knob_values) or "world.json"),
+        "doctor": _norm(_knob_val("REFLECT_DOCTOR", knob_values) or "doctor.json"),
+        "instruments": _norm(_knob_val("REFLECT_INSTRUMENTS", knob_values)),
     }
 
 
@@ -145,6 +157,14 @@ def _matches_knob(rel, gate_knobs, kp):
         ("REFLECT_RETRACTIONS", kp["retractions"]),
         ("REFLECT_SECRETS", kp["secrets"]),
         ("REFLECT_LINT_CONFIG", kp["lint_cfg"]),
+        ("REFLECT_RIGHTS", kp["rights"]),
+        ("REFLECT_INVARIANTS", kp["invariants"]),
+        ("REFLECT_LOCKS", kp["locks"]),
+        ("REFLECT_PINS", kp["pins"]),
+        ("REFLECT_AB", kp["ab"]),
+        ("REFLECT_WORLD", kp["world"]),
+        ("REFLECT_DOCTOR", kp["doctor"]),
+        ("REFLECT_INSTRUMENTS", kp["instruments"]),
     )
     if any(k in gate_knobs and rel in paths for k, paths in set_knobs):
         return True
@@ -155,64 +175,17 @@ def _matches_knob(rel, gate_knobs, kp):
     return "REFLECT_QUESTIONS" in gate_knobs and rel.startswith(kp["questions_prefix"])
 
 
+def _matches_scope(rel, scopes):
+    return any(pat == "*" or fnmatch.fnmatch(rel, pat) for pat in scopes)
+
+
 def _is_global_fallback(rel):
     return rel in _GLOBAL_FALLBACK_FILES or any(rel.startswith(p) for p in _GLOBAL_FALLBACK_PREFIXES)
 
 
-def _match_by_knobs(rel, phase_gates, kp):
-    matched: set[str] = set()
-    known = False
-    is_secret_doc = (rel in kp["docs"] or rel.startswith(kp["questions_prefix"]) or _is_history_rel(rel, kp)
-                     or rel in kp["readmes"] or rel in (kp["retractions"], kp["facts"]))
-    for g in phase_gates:
-        gfile = g["file"]
-        base = os.path.basename(gfile)
-        if _matches_knob(rel, set(g.get("knobs") or ()), kp):
-            matched.add(gfile)
-            known = True
-        if base == "check_secrets.py" and is_secret_doc:
-            matched.add(gfile)
-        if base == "check_facts_replay.py" and (
-                rel in (kp["facts"], "PRINCIPLES.md") or rel.startswith(kp["questions_prefix"])):
-            matched.add(gfile)
-            known = True
-    return matched, known
-
-
-def _match_non_py(rel, phase_gates, kp):
-    if rel.endswith(".py"):
-        py_gates = ("check_lint.py", "check_explain.py", "check_snapshots.py", "check_secrets.py")
-        return {g["file"] for g in phase_gates if os.path.basename(g["file"]) in py_gates}, True
-    if rel.startswith("zreflect/lang/") and rel.endswith(".json"):
-        return {g["file"] for g in phase_gates}, True
-    if rel.startswith("examples/"):
-        return {g["file"] for g in phase_gates if os.path.basename(g["file"]) == "check_secrets.py"}, True
-    return _match_by_knobs(rel, phase_gates, kp)
-
-
-def _select_py_deps(rel, rev, gates_list, kp):
-    key = "zreflect/facts.py" if (rel.startswith(("zreflect/measure_", "reflect-local/measure_"))) else rel
-    out = set(rev.get(key, ())) | _match_non_py(rel, gates_list, kp)[0]
-    if any(os.path.basename(f) == "check_facts_replay.py" for f in out):
-        out.add("zreflect/check_facts_replay.py")
-    return out
-
-
-def _select_for_path(rel, rev, gates_list, kp):
-    if _is_global_fallback(rel):
-        return None, "global:%s" % rel
-    if rel in ("SEAL.json", "zreflect/SEAL.json"):
-        return set(rev.get("zreflect/trust.py", ())), None
-    if rel in rev or (rel.startswith(("zreflect/measure_", "reflect-local/measure_")) and rel.endswith(".py")):
-        return _select_py_deps(rel, rev, gates_list, kp), None
-    matched, known = _match_non_py(rel, gates_list, kp)
-    if not known:
-        return None, "unmapped:%s" % rel
-    return matched, None
-
-
 def affected_plan(changed_paths, phase_gates, zdir=None, knob_values=None):
     """Pure mechanical selector: return `{full_fallback, reason, selected, total, changed_count}`."""
+    _ = zdir
     gates_list = list(phase_gates or [])
     total = len(gates_list)
     if changed_paths is None:
@@ -222,15 +195,16 @@ def affected_plan(changed_paths, phase_gates, zdir=None, knob_values=None):
     if not normed:
         return {"full_fallback": False, "reason": "no_changes",
                 "selected": [], "total": total, "changed_count": 0}
-    rev = reverse_import_graph(zdir)
-    kp = _knob_paths(knob_values)
-    selected_files: set[str] = set()
     for rel in normed:
-        hit, fallback_reason = _select_for_path(rel, rev, gates_list, kp)
-        if fallback_reason is not None:
-            return {"full_fallback": True, "reason": fallback_reason,
+        if _is_global_fallback(rel):
+            return {"full_fallback": True, "reason": "global:%s" % rel,
                     "selected": gates_list, "total": total, "changed_count": len(normed)}
-        selected_files |= hit
+    kp = _knob_paths(knob_values)
+    selected_files = {
+        g["file"] for g in gates_list
+        if any(_matches_knob(rel, set(g.get("knobs") or ()), kp) or _matches_scope(rel, g.get("scopes") or ())
+               for rel in normed)
+    }
     selected = [g for g in gates_list if g["file"] in selected_files]
     return {"full_fallback": False, "reason": "impacted",
             "selected": selected, "total": total, "changed_count": len(normed)}
@@ -277,38 +251,35 @@ def git_changed_files(repo_root=None):
 
 def _cases():
     fake_gates = [
-        {"file": "zreflect/check_questions.py", "knobs": ("REFLECT_QUESTIONS",)},
-        {"file": "zreflect/check_facts.py", "knobs": ("REFLECT_FACTS", "REFLECT_DOCS")},
-        {"file": "zreflect/check_stale.py", "knobs": ("REFLECT_DOCS", "REFLECT_FACTS")},
-        {"file": "zreflect/check_lint.py", "knobs": ("REFLECT_LINT_CONFIG",)},
-        {"file": "zreflect/check_readme_sync.py", "knobs": ("REFLECT_READMES",)},
-        {"file": "zreflect/check_secrets.py", "knobs": ("REFLECT_SECRETS",)},
+        {"file": "zreflect/check_questions.py", "knobs": ("REFLECT_QUESTIONS",), "scopes": ()},
+        {"file": "zreflect/check_facts.py", "knobs": ("REFLECT_FACTS", "REFLECT_DOCS"), "scopes": ()},
+        {"file": "zreflect/check_lint.py", "knobs": ("REFLECT_LINT_CONFIG",), "scopes": ("*.py",)},
+        {"file": "zreflect/check_secrets.py", "knobs": ("REFLECT_SECRETS",), "scopes": ("*",)},
     ]
-    z = gate.zdir()
     def names(plan):
-        return [os.path.basename(g["file"]) for g in plan["selected"]]
+        return {os.path.basename(g["file"]) for g in plan["selected"]}
     return [
         ("impact.question_only_scopes",
-         lambda: not affected_plan(["questions/28-foo.md"], fake_gates, zdir=z)["full_fallback"]
-                 and set(names(affected_plan(["questions/28-foo.md"], fake_gates, zdir=z)))
+         lambda: not affected_plan(["questions/28-foo.md"], fake_gates)["full_fallback"]
+                 and names(affected_plan(["questions/28-foo.md"], fake_gates))
                  == {"check_questions.py", "check_secrets.py"}),
-        ("impact.core_gate_py_fans_out",
-         lambda: {"check_questions.py", "check_facts.py", "check_lint.py"}.issubset(
-             set(names(affected_plan(["zreflect/gate.py"], fake_gates, zdir=z))))),
+        ("impact.suite_edit_full_fallback",
+         lambda: affected_plan(["zreflect/gate.py"], fake_gates)["full_fallback"]
+                 and affected_plan(["zreflect/gate.py"], fake_gates)["reason"] == "global:zreflect/gate.py"),
         ("impact.git_unavailable_full_fallback",
-         lambda: affected_plan(None, fake_gates, zdir=z)["full_fallback"]
-                 and len(affected_plan(None, fake_gates, zdir=z)["selected"]) == len(fake_gates)),
+         lambda: affected_plan(None, fake_gates)["full_fallback"]
+                 and len(affected_plan(None, fake_gates)["selected"]) == len(fake_gates)),
         ("impact.global_knobs_full_fallback",
-         lambda: affected_plan(["knobs.json"], fake_gates, zdir=z)["full_fallback"]
-                 and len(affected_plan(["knobs.json"], fake_gates, zdir=z)["selected"]) == len(fake_gates)),
-        ("impact.unmapped_root_full_fallback",
-         lambda: affected_plan(["Makefile"], fake_gates, zdir=z)["full_fallback"]),
+         lambda: affected_plan(["knobs.json"], fake_gates)["full_fallback"]
+                 and len(affected_plan(["knobs.json"], fake_gates)["selected"]) == len(fake_gates)),
+        ("★ impact.normal_project_file_no_full_fallback",
+         lambda: not affected_plan(["src/app.ts"], fake_gates)["full_fallback"]
+                 and names(affected_plan(["src/app.ts"], fake_gates)) == {"check_secrets.py"}
+                 and not affected_plan(["src/app.py"], fake_gates)["full_fallback"]
+                 and names(affected_plan(["src/app.py"], fake_gates)) == {"check_lint.py", "check_secrets.py"}),
         ("impact.clean_empty_list",
-         lambda: not affected_plan([], fake_gates, zdir=z)["full_fallback"]
-                 and affected_plan([], fake_gates, zdir=z)["selected"] == []),
-        ("★ impact.measure_module_selects_facts_and_lint",
-         lambda: {"check_facts.py", "check_lint.py", "check_secrets.py"}.issubset(
-             set(names(affected_plan(["zreflect/measure_example.py"], fake_gates, zdir=z))))),
+         lambda: not affected_plan([], fake_gates)["full_fallback"]
+                 and affected_plan([], fake_gates)["selected"] == []),
     ]
 
 
@@ -330,7 +301,7 @@ def main(argv):
 
 
 MODULE = module_meta("Affected gate selector",
-                     "pure mechanical AST + knob impact planner (fail-closed)",
+                     "deep mechanical selector (declarative gate scopes + knobs, fail-closed on suite/git)",
                      selftest=True)
 
 if __name__ == "__main__":

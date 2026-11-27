@@ -260,7 +260,7 @@ def _cases():
 
 GATE = meta("Invariants gate",
             "declarative invariants: repo files must / must not contain a snippet (grep level)",
-            knobs=("REFLECT_INVARIANTS",),
+            knobs=("REFLECT_INVARIANTS",), scopes=("*",),
             off_reason="repos that write no declarative invariants do not need it:"
                        " spec unset => explicitly not enabled (pluggable)")
 
